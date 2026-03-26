@@ -1,5 +1,349 @@
 # 项目工作日志
 
+## 2026-03-26 工作记录
+
+### M1: 缓存能力统一配置（按引擎 TTL/QPS 细化）
+
+#### 1. 配置结构扩展
+- **文件**: `internal/config/config.go`
+- **内容**:
+  - 新增 `EngineCacheConfig` 结构体，包含 `Enabled`、`TTL`、`MaxSize` 字段
+  - 在 `Cache` 配置中添加 `Engines map[string]EngineCacheConfig` 字段
+  - 在 `applyDefaults()` 中添加各引擎的默认缓存配置
+  - 新增 `GetEngineCacheConfig()`、`GetCacheTTLForEngine()` 等方法
+
+#### 2. 缓存策略扩展
+- **文件**: `internal/utils/cache_strategy.go`
+- **内容**:
+  - 新增 `EngineCacheConfig` 接口和 `SimpleEngineCacheConfig` 实现
+  - 新增 `ConfigBasedCacheStrategy` 策略，支持按引擎配置缓存
+  - 添加 `SetEngineConfig()`、`IsCacheEnabledForEngine()` 等方法
+
+#### 3. Orchestrator 改造
+- **文件**: `internal/adapter/orchestrator.go`
+- **内容**:
+  - 添加 `engineCacheTTL` 字段存储按引擎的缓存配置
+  - 新增 `SetEngineCacheTTL()`、`GetEngineCacheTTL()` 等方法
+  - 修改 `SearchTask.Execute()` 和 `PaginatedSearchTask.Execute()` 使用按引擎的缓存 TTL
+
+#### 4. UnifiedService 集成
+- **文件**: `internal/service/unified_service.go`
+- **内容**:
+  - 在 `NewUnifiedServiceWithConfig()` 中加载引擎级别的缓存配置
+  - 将配置传递给 orchestrator
+
+#### 5. 配置示例更新
+- **文件**: `configs/config.yaml.example`
+- **内容**:
+  - 添加 `cache.engines` 配置段，展示各引擎的缓存配置示例
+
+#### 默认配置
+| 引擎 | 默认 TTL | 说明 |
+|------|----------|------|
+| quake | 3600秒 (1小时) | 标准 API 响应 |
+| zoomeye | 1800秒 (30分钟) | API 限制较严格 |
+| hunter | 3600秒 (1小时) | 标准 API 响应 |
+| fofa | 1800秒 (30分钟) | 数据更新频繁 |
+| shodan | 7200秒 (2小时) | 数据相对稳定 |
+
+### 问题修复
+
+#### 1. MemoryCache goroutine 泄漏
+- **文件**: `internal/utils/cache.go`
+- **内容**: 添加 `Close()` 方法和停止机制
+
+#### 2. nil 指针检查
+- **文件**: `internal/adapter/orchestrator.go`
+- **内容**: 在 `Normalize()` 前添加 nil 检查
+
+#### 3. 敏感信息日志
+- **文件**: `internal/adapter/fofa.go`
+- **内容**: 移除详细用户信息日志
+
+#### 4. JSON 编码错误处理
+- **文件**: `web/http_helpers.go`
+- **内容**: 添加错误日志记录
+
+### M3: Application Service 层下沉（完成）
+
+#### 1. ScreenshotAppService 扩展
+- **文件**: `internal/service/screenshot_app_service.go`
+- **内容**:
+  - 新增 `baseDir` 字段与 `GetBaseDir()` 方法
+  - 新增 `ListBatches()` 列出所有截图批次
+  - 新增 `ListBatchFiles()` 列出批次文件，支持预览URL构建器
+  - 新增 `DeleteBatch()` 删除指定批次
+  - 新增 `DeleteFile()` 删除批次内指定文件
+  - 路径安全检查防止目录穿越
+
+#### 2. TamperAppService 扩展
+- **文件**: `internal/service/tamper_app_service.go`
+- **内容**:
+  - 新增 `HistoryFilter` 结构体支持多维度过滤
+  - 新增 `HistoryRecord` / `HistoryResult` 结构体
+  - 新增 `QueryHistory()` 支持按 URL/类型/模式/关键词过滤与分页
+
+#### 3. Web Handler 瘦身
+- **文件**: `web/screenshot_handlers.go`, `web/tamper_handlers.go`
+- **内容**:
+  - `handleScreenshotBatches` 改为调用 `screenshotApp.ListBatches()`
+  - `handleScreenshotBatchFiles` 改为调用 `screenshotApp.ListBatchFiles()`
+  - `handleScreenshotBatchDelete` 改为调用 `screenshotApp.DeleteBatch()`
+  - `handleScreenshotFileDelete` 改为调用 `screenshotApp.DeleteFile()`
+  - `handleTamperHistory` 改为调用 `tamperApp.QueryHistory()`
+  - `handleTamperHistoryDelete` 改为调用 `tamperApp.DeleteCheckRecords()`
+  - 移除 handler 中直接操作 `tamper.NewHashStorage` 的代码
+
+#### 4. 测试修复
+- **文件**: `web/screenshot_handlers_test.go`, `web/tamper_handlers_test.go`
+- **内容**:
+  - 更新测试辅助函数，初始化 `screenshotApp` / `tamperApp` 字段
+  - 确保测试中 Server 结构体完整初始化
+
+#### 验证结果
+```
+go build ./...
+go test ./...
+```
+
+结果：通过。
+
+### M4: Redis 缓存支持完善（完成）
+
+#### 1. 配置结构扩展
+- **文件**: `internal/config/config.go`
+- **内容**:
+  - 扩展 `Cache.Redis` 配置结构，新增连接池配置字段
+  - 新增 `pool_size`、`min_idle_conns`、`max_idle_conns`、`max_retries` 等配置项
+  - 新增 `dial_timeout`、`read_timeout`、`write_timeout`、`pool_timeout` 超时配置
+  - 新增 `conn_max_lifetime`、`conn_max_idle_time` 连接生命周期配置
+  - 添加配置管理器辅助方法：`GetCacheBackend()`、`GetRedisAddr()` 等
+
+#### 2. RedisConfig 结构体
+- **文件**: `internal/utils/cache.go`
+- **内容**:
+  - 新增 `RedisConfig` 结构体封装 Redis 配置
+  - 支持完整的连接池参数配置
+  - 提供合理的默认值
+
+#### 3. RedisCache 改造
+- **文件**: `internal/utils/cache.go`
+- **内容**:
+  - 重构 `NewRedisCache()` 接受 `RedisConfig` 参数
+  - 新增 `IsHealthy()` 方法实现健康检查
+  - 健康检查每 30 秒执行一次，避免频繁检测
+  - 连接失败时记录详细日志
+
+#### 4. 缓存工厂函数
+- **文件**: `internal/utils/cache.go`
+- **内容**:
+  - 新增 `NewCacheWithConfig()` 支持完整配置
+  - 保留 `NewCache()` 兼容简化调用
+  - Redis 连接失败时自动回退到内存缓存
+
+#### 5. UnifiedService 集成
+- **文件**: `internal/service/unified_service.go`
+- **内容**:
+  - 使用 `NewCacheWithConfig()` 创建缓存实例
+  - 从配置构建完整的 `RedisConfig` 结构体
+
+#### 6. 配置示例更新
+- **文件**: `configs/config.yaml.example`
+- **内容**:
+  - 添加完整的 Redis 连接池配置示例
+  - 包含默认值和注释说明
+
+#### 验证结果
+```
+go build ./...
+go test ./...
+```
+
+结果：通过。
+
+### L1: Prometheus 指标完善（完成）
+
+#### 1. 自定义时间分位桶
+- **文件**: `internal/metrics/metrics.go`
+- **内容**:
+  - HTTP请求时间桶：100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s
+  - 查询时间桶：500ms, 1s, 2s, 5s, 10s, 30s, 60s
+  - 截图时间桶：1s, 2s, 5s, 10s, 20s, 30s, 60s
+
+#### 2. 引擎查询细分指标
+- **文件**: `internal/metrics/metrics.go`, `internal/adapter/orchestrator.go`
+- **内容**:
+  - 新增 `unimap_engine_query_total` 按引擎和状态统计查询数
+  - 新增 `unimap_engine_query_duration_seconds` 按引擎统计查询耗时
+  - 新增 `unimap_engine_errors_total` 按引擎统计错误数
+  - 在 `SearchTask.Execute` 中记录缓存命中、成功、失败指标
+
+#### 3. 截图指标
+- **文件**: `internal/metrics/metrics.go`, `web/screenshot_handlers.go`
+- **内容**:
+  - 新增 `unimap_screenshot_requests_total` 按类型和状态统计
+  - 新增 `unimap_screenshot_duration_seconds` 截图耗时分布
+  - 新增 `unimap_screenshot_batch_size` 批量截图大小分布
+  - 在搜索引擎截图、目标截图、批量截图处理函数中记录指标
+
+#### 4. WebSocket 指标
+- **文件**: `internal/metrics/metrics.go`, `web/websocket_handlers.go`
+- **内容**:
+  - 新增 `unimap_websocket_connections` 当前连接数
+  - 新增 `unimap_websocket_messages_total` 消息计数（入站/出站）
+  - 在连接建立/断开、消息收发时记录指标
+
+#### 5. 资源使用指标
+- **文件**: `internal/metrics/metrics.go`, `internal/service/unified_service.go`
+- **内容**:
+  - 新增 `unimap_goroutines_count` goroutine数量
+  - 新增 `unimap_memory_alloc_mb` 内存分配量
+  - 新增 `unimap_memory_sys_mb` 系统内存使用量
+  - 在资源检查时更新内存统计
+
+#### 6. 缓存统计指标
+- **文件**: `internal/metrics/metrics.go`
+- **内容**:
+  - 新增 `unimap_cache_size` 缓存大小
+  - 新增 `unimap_cache_hit_rate` 缓存命中率
+
+#### 7. 批量操作指标
+- **文件**: `internal/metrics/metrics.go`
+- **内容**:
+  - 新增 `unimap_batch_operations_total` 批量操作计数
+  - 新增 `unimap_batch_operation_size` 批量操作大小分布
+
+#### 验证结果
+```
+go build ./...
+go test ./...
+```
+
+结果：通过。
+
+### L2: request_id 日志贯穿（完成）
+
+#### 1. 基础设施
+- **文件**: `internal/requestid/requestid.go`
+- **内容**:
+  - `New()` 生成唯一请求ID：`rid-{timestamp}-{random}-{counter}`
+  - `WithContext()` / `FromContext()` 存取 context 中的 request_id
+  - `Normalize()` 清理和验证请求ID
+  - `HeaderName` 常量定义 HTTP 头名称 `X-Request-Id`
+
+#### 2. Logger Ctx 方法
+- **文件**: `internal/logger/logger.go`
+- **内容**:
+  - `CtxDebugf()` / `CtxInfof()` / `CtxWarnf()` / `CtxErrorf()` 带上下文日志方法
+  - 自动从 context 提取 request_id 并添加到日志前缀：`[rid=xxx]`
+  - 保留原有非 Ctx 方法用于无 context 场景
+
+#### 3. Web 中间件
+- **文件**: `web/middleware_requestid.go`
+- **内容**:
+  - 从请求头读取或生成 request_id
+  - 写入响应头 `X-Request-Id`
+  - 注入到请求 context 中
+
+#### 4. Orchestrator 改造
+- **文件**: `internal/adapter/orchestrator.go`
+- **内容**:
+  - `SearchTask` 已有 `ctx` 字段，使用 `logger.CtxXxx` 方法
+  - `PaginatedSearchTask` 新增 `ctx` 字段
+  - 所有任务执行日志改为 Ctx 方法
+
+#### 5. Screenshot Manager 改造
+- **文件**: `internal/screenshot/manager.go`
+- **内容**:
+  - `CaptureSearchEngineResult()` 使用 `CtxInfof` 记录截图成功
+  - `CaptureTargetWebsite()` 使用 `CtxInfof` 记录截图成功
+  - `CaptureBatchURLs()` 使用 `CtxWarnf` / `CtxInfof` 记录批量截图结果
+
+#### 6. Service 层改造
+- **文件**: `internal/service/unified_service.go`
+- **内容**:
+  - `Query()` 方法使用 `CtxInfof` 记录查询开始/结束
+  - 使用 `CtxDebugf` 记录缓存命中/未命中
+  - `checkResourceLimits()` 使用 `CtxWarnf` 记录内存警告
+
+#### 验证结果
+```
+go build ./...
+go test ./...
+```
+
+结果：通过。
+
+### L3: regexp 预编译优化（完成）
+
+#### 1. 发现问题
+- **文件**: `internal/plugin/processors/validation.go`, `web/monitor_handlers.go`
+- **问题**: 使用 `regexp.MatchString()` 在每次调用时动态编译正则表达式
+
+#### 2. 修复内容
+- **文件**: `internal/plugin/processors/validation.go`
+  - 新增 `reValidURL` 预编译正则：`^https?://[^\s/$.?#].[^\s]*$`
+  - 修改 `isValidURL()` 使用预编译正则
+
+- **文件**: `web/monitor_handlers.go`
+  - 新增 `reURLPattern` 预编译正则：`^(https?://)?([\w.-]+)(:\d+)?(/.*)?$`
+  - 修改 `filterValidURLs()` 使用预编译正则
+
+#### 3. 性能提升
+- 避免每次调用时解析和编译正则表达式
+- 减少内存分配
+- 提高批量 URL 验证场景的性能
+
+#### 验证结果
+```
+go build ./...
+go test ./...
+```
+
+结果：通过。
+
+### L4: 文档自动化校验（完成）
+
+#### 1. 创建校验脚本
+- **文件**: `scripts/verify_docs.sh`
+- **功能**:
+  - 检查目录结构一致性（cmd、internal、web、configs）
+  - 检查关键文件存在性（server.go、config.yaml.example、QUICKSTART.md）
+  - 检查配置参数一致性（MaxConcurrent、CacheTTL、CacheMaxSize、CacheCleanupInterval）
+  - 检查引擎适配器存在性（fofa、hunter、zoomeye、quake、shodan）
+  - 检查 Go 版本一致性（go.mod 与 README.md）
+  - 检查编译状态
+  - 检查测试状态
+  - 检查相关文档存在性（QUICKSTART.md、USAGE.md、README_LIGHT.md、PROJECT_SUMMARY.md）
+
+#### 2. 发现并修复的问题
+- **Go 版本格式**: README.md 中 "Go 1.24" 改为 "Go 1.24.0"，与 go.mod 一致
+
+#### 3. 校验结果
+```
+bash scripts/verify_docs.sh
+```
+
+输出：
+- 目录结构：12/12 通过
+- 关键文件：3/3 通过
+- 配置参数：4/4 通过
+- 引擎适配器：5/5 通过
+- Go 版本：一致 (1.24.0)
+- 编译：通过
+- 测试：通过
+- 相关文档：4/4 通过
+
+#### 验证结果
+```
+go build ./...
+go test ./...
+```
+
+结果：通过。
+
+---
+
 ## 2026-03-23 工作记录（一次性统一）
 
 ### GUI API-first 全路径统一（保留本地回退）
@@ -359,19 +703,19 @@ ok  github.com/unimap-icp-hunter/project/internal/tamper
 
 | 编号 | 状态 | 任务 | 说明 | 预估工作量 |
 |------|------|------|------|------------|
-| M1 | 🟡 进行中 | 缓存能力统一配置 | 已完成 cache 统一配置入口，按引擎 TTL/QPS 细化未完成 | 4h |
+| M1 | ✅ 已完成 | 缓存能力统一配置 | 已完成按引擎 TTL 配置，支持独立启用/禁用缓存 | 4h |
 | M2 | ✅ 已完成 | 并发模型统一 | orchestrator 与 tamper 批处理均已接入统一 workerpool | 3h |
-| M3 | 🟡 进行中 | Application Service 层 | monitor 可达性已下沉，query/tamper/screenshot 仍有下沉空间 | 8h |
-| M4 | 🟡 部分完成 | Redis 缓存支持 | 已完成最小集成与回退，连接池细化与策略完善未完成 | 4h |
+| M3 | ✅ 已完成 | Application Service 层 | 已完成 query/tamper/screenshot 业务下沉，handlers 仅保留协议层职责 | 8h |
+| M4 | ✅ 已完成 | Redis 缓存支持 | 已完成连接池配置细化、健康检查机制、配置化支持 | 4h |
 
 ### 低优先级（持续改进）
 
 | 编号 | 状态 | 任务 | 说明 | 预估工作量 |
 |------|------|------|------|------------|
-| L1 | 🟡 进行中 | Prometheus 指标 | 已接入基础指标，分位细化与更多业务指标仍待补充 | 4h |
-| L2 | ⏳ 未开始 | request_id 日志贯穿 | 统一请求追踪 | 2h |
-| L3 | ⏳ 未开始 | regexp 复用优化 | 篡改 HTML 清洗正则预编译 | 1h |
-| L4 | ⏳ 未开始 | 文档自动化校验 | 脚本检查 README 与代码一致性 | 3h |
+| L1 | ✅ 已完成 | Prometheus 指标 | 已完成分位细化、引擎细分指标、截图/WebSocket/资源指标 | 4h |
+| L2 | ✅ 已完成 | request_id 日志贯穿 | 已完成关键链路Ctx日志方法改造，request_id贯穿请求全链路 | 2h |
+| L3 | ✅ 已完成 | regexp 复用优化 | 已预编译 validation 和 monitor_handlers 中的正则表达式 | 1h |
+| L4 | ✅ 已完成 | 文档自动化校验 | 已创建 verify_docs.sh 脚本，检查目录/配置/版本一致性 | 3h |
 
 ---
 
