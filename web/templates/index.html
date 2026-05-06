@@ -134,13 +134,31 @@
 						<button type="button" class="btn btn-secondary" id="btn-connect-cdp">连接 CDP</button>
 						<span class="cookie-status cookie-status--off" id="bridge-status">扩展检测中</span>
 						<button type="button" class="btn btn-secondary" id="btn-refresh-bridge-status">刷新扩展</button>
-						<label class="option-label">
-							<input type="checkbox" id="browser-query-mode" name="browser_query" value="true">
-							查询时同步在浏览器打开结果页
-						</label>
-						<span class="form-text" id="cdp-status-info"></span>
-						<span class="form-text" id="bridge-status-info"></span>
-					</div>
+						</div>
+						<!-- 浏览器执行模式选择 -->
+						<div class="query-options" style="margin-top: 8px;">
+							<label class="option-label">浏览器执行模式</label>
+							<div class="mode-selector">
+								<label class="mode-option">
+									<input type="radio" name="screenshot-mode" value="cdp" id="mode-cdp">
+									<span>CDP</span>
+								</label>
+								<label class="mode-option">
+									<input type="radio" name="screenshot-mode" value="extension" id="mode-extension">
+									<span>扩展</span>
+								</label>
+								<label class="mode-option">
+									<input type="radio" name="screenshot-mode" value="auto" id="mode-auto" checked>
+									<span>自动</span>
+								</label>
+							</div>
+							<label class="option-label">
+								<input type="checkbox" id="browser-query-mode" name="browser_query" value="true">
+								查询时同步在浏览器打开结果页
+							</label>
+							<span class="form-text" id="cdp-status-info"></span>
+							<span class="form-text" id="bridge-status-info"></span>
+						</div>
 					<small class="form-text">默认检测 127.0.0.1:9222。开启后会保留现有 API 查询，同时通过已连接的 CDP 浏览器打开所选引擎结果页</small>
 				</div>
 

@@ -917,6 +917,48 @@ func (m *Manager) generateBatchFilename(targetURL string, index int) string {
 	return fmt.Sprintf("%03d_%s_%s.png", index, host, timestamp)
 }
 
+// CollectSearchEngineResult opens a search engine result page and extracts
+// structured data (title, URL) from it. This is a minimal implementation;
+// full per-engine DOM extraction belongs in Phase 3.
+func (m *Manager) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
+	searchURL := m.BuildSearchEngineURL(engine, query)
+	if searchURL == "" {
+		return nil, fmt.Errorf("unsupported engine: %s", engine)
+	}
+
+	collectTimeout := m.timeout
+	if collectTimeout <= 0 || collectTimeout > 30*time.Second {
+		collectTimeout = 30 * time.Second
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, collectTimeout)
+	defer cancel()
+
+	allocCtx, allocCancel, err := m.newAllocator(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer allocCancel()
+
+	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+	defer browserCancel()
+
+	title := ""
+	html := ""
+	if err := m.loadPageContent(browserCtx, searchURL, nil, &title, &html); err != nil {
+		return nil, fmt.Errorf("collect search engine result failed: %w", err)
+	}
+
+	result := CollectResult{
+		Engine:    engine,
+		Query:     query,
+		RawURL:    searchURL,
+		Title:     title,
+		Timestamp: time.Now().Unix(),
+	}
+	return []CollectResult{result}, nil
+}
+
 // GetScreenshotDirectory 获取截图根目录
 func (m *Manager) GetScreenshotDirectory() string {
 	return m.baseDir

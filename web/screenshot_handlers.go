@@ -14,6 +14,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/unimap-icp-hunter/project/internal/logger"
 	"github.com/unimap-icp-hunter/project/internal/metrics"
+	"github.com/unimap-icp-hunter/project/internal/screenshot"
 	"github.com/unimap-icp-hunter/project/internal/service"
 )
 
@@ -738,5 +739,47 @@ func (s *Server) handleScreenshotRouterStatus(w http.ResponseWriter, r *http.Req
 		"ext_healthy":    extHealthy,
 		"priority":       string(cfg.Priority),
 		"fallback":       cfg.Fallback,
+	})
+}
+
+// handleSetScreenshotMode changes the screenshot execution mode at runtime.
+func (s *Server) handleSetScreenshotMode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	var req struct {
+		Mode string `json:"mode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(req.Mode))
+	if mode != "cdp" && mode != "extension" && mode != "auto" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mode must be one of: cdp, extension, auto"})
+		return
+	}
+
+	// Update the router if available
+	if s.screenshotRouter != nil {
+		s.screenshotRouter.SetMode(screenshot.ScreenshotMode(mode))
+	}
+
+	// Also update the app service for its engine-first logic
+	if s.screenshotApp != nil {
+		s.screenshotApp.SetMode(mode)
+	}
+
+	routerMode := mode
+	if s.screenshotRouter != nil {
+		routerMode = string(s.screenshotRouter.CurrentMode())
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"mode":        mode,
+		"router_mode": routerMode,
 	})
 }

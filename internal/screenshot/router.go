@@ -17,6 +17,7 @@ type ScreenshotMode string
 const (
 	ModeCDP       ScreenshotMode = "cdp"
 	ModeExtension ScreenshotMode = "extension"
+	ModeAuto      ScreenshotMode = "auto"
 )
 
 // RouterConfig holds the routing configuration.
@@ -171,6 +172,21 @@ func (r *ScreenshotRouter) runProbes(ctx context.Context) {
 }
 
 func (r *ScreenshotRouter) determineBestMode(current ScreenshotMode, cdpOK, extOK bool) ScreenshotMode {
+	// Auto mode: pick the healthiest provider
+	if current == ModeAuto {
+		if cdpOK && extOK {
+			return ModeCDP // prefer CDP when both healthy
+		}
+		if cdpOK {
+			return ModeCDP
+		}
+		if extOK {
+			return ModeExtension
+		}
+		return ModeAuto // neither healthy, stay auto
+	}
+
+	// Forced mode: respect the configured mode, fall back only if configured
 	switch current {
 	case ModeCDP:
 		if cdpOK {
@@ -208,8 +224,11 @@ func (r *ScreenshotRouter) Config() RouterConfig {
 }
 
 // SetMode sets the active screenshot execution mode.
+// ModeAuto delegates to the health probe loop to pick the best mode.
+// ModeCDP and ModeExtension are forced modes — they will not auto-switch
+// unless fallback is enabled and the forced provider is unhealthy.
 func (r *ScreenshotRouter) SetMode(mode ScreenshotMode) {
-	if mode != ModeCDP && mode != ModeExtension {
+	if mode != ModeCDP && mode != ModeExtension && mode != ModeAuto {
 		return
 	}
 	old := r.currentMode.Load().(ScreenshotMode)
@@ -269,6 +288,15 @@ func (r *ScreenshotRouter) OpenSearchEngineResult(ctx context.Context, engine, q
 		return "", err
 	}
 	return provider.OpenSearchEngineResult(ctx, engine, query)
+}
+
+// CollectSearchEngineResult collects structured data from a search engine result using the active mode.
+func (r *ScreenshotRouter) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
+	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
+	if err != nil {
+		return nil, err
+	}
+	return provider.CollectSearchEngineResult(ctx, engine, query, queryID)
 }
 
 // resolveProvider returns the best available Provider based on current health and fallback config.
@@ -486,6 +514,56 @@ func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, 
 		return "", fmt.Errorf("extension bridge open failed: %w", err)
 	}
 	return searchURL, nil
+}
+
+func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
+	if p == nil || p.bridge == nil {
+		return nil, fmt.Errorf("extension provider not initialized")
+	}
+	searchURL := ""
+	if p.mgr != nil {
+		searchURL = strings.TrimSpace(p.mgr.BuildSearchEngineURL(engine, query))
+	}
+	if searchURL == "" {
+		searchURL = buildSearchEngineURL(engine, query)
+	}
+	if searchURL == "" {
+		return nil, fmt.Errorf("unsupported engine: %s", engine)
+	}
+
+	task := BridgeTask{
+		RequestID:    fmt.Sprintf("router_collect_%d", time.Now().UnixNano()),
+		URL:          searchURL,
+		BatchID:      queryID,
+		WaitStrategy: "load",
+		Action:       "collect",
+	}
+	result, err := p.bridge.Submit(ctx, task)
+	if err != nil {
+		return nil, fmt.Errorf("extension bridge collect failed: %w", err)
+	}
+	if !result.Success {
+		errMsg := strings.TrimSpace(result.Error)
+		if errMsg == "" {
+			errMsg = strings.TrimSpace(result.ErrorCode)
+		}
+		if errMsg == "" {
+			errMsg = "unknown bridge error"
+		}
+		return nil, fmt.Errorf("extension bridge collect failed: %s", errMsg)
+	}
+
+	// Parse collected data if available; fall back to minimal result
+	collectResult := CollectResult{
+		Engine:    engine,
+		Query:     query,
+		RawURL:    searchURL,
+		Timestamp: time.Now().Unix(),
+	}
+	if result.CollectedData != "" {
+		collectResult.Title = result.CollectedData
+	}
+	return []CollectResult{collectResult}, nil
 }
 
 // buildSearchEngineURL builds a search engine result URL for bridge capture.

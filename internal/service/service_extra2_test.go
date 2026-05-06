@@ -296,3 +296,6 @@ func (m *mockScreenshotProvider) GetScreenshotDirectory() string { return "/mock
 func (m *mockScreenshotProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
 	return "/mock/open", nil
 }
+func (m *mockScreenshotProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]screenshot.CollectResult, error) {
+	return nil, nil
+}
