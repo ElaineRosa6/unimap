@@ -1,9 +1,11 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -137,6 +139,17 @@ func isOriginAllowed(origin, host string, allowedOrigins []string) bool {
 func isTrustedRequest(r *http.Request, allowedOrigins []string) bool {
 	origin := r.Header.Get("Origin")
 	referer := r.Header.Get("Referer")
+
+	// 对状态变更操作（POST, PUT, PATCH, DELETE）要求必须有 Origin 或 Referer
+	isStateChange := r.Method == http.MethodPost ||
+		r.Method == http.MethodPut ||
+		r.Method == http.MethodPatch ||
+		r.Method == http.MethodDelete
+
+	if isStateChange && strings.TrimSpace(origin) == "" && strings.TrimSpace(referer) == "" {
+		return false
+	}
+
 	if strings.TrimSpace(origin) == "" && strings.TrimSpace(referer) == "" {
 		// Keep compatibility for non-browser clients.
 		return true
@@ -169,6 +182,51 @@ func requestSizeLimitMiddleware(maxBodyBytes int64) func(http.Handler) http.Hand
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// isPrivateOrInternalHost 检查主机名是否为私有/回环/内部地址，对域名做 DNS 解析
+func isPrivateOrInternalHost(ctx context.Context, host string) bool {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		return false
+	}
+	// 去除端口
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	// 检查常见主机名
+	lower := strings.ToLower(host)
+	if lower == "localhost" || lower == "127.0.0.1" || lower == "::1" || lower == "0.0.0.0" {
+		return true
+	}
+	// 如果是字面 IP，直接检查
+	if ip := net.ParseIP(host); ip != nil {
+		return isBlockedIP(ip)
+	}
+	// 对域名做 DNS 解析，所有解析结果都必须是公网 IP
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return true // DNS 解析失败视为不安全
+	}
+	for _, addr := range ips {
+		if isBlockedIP(addr.IP) {
+			return true
+		}
+	}
+	return false
+}
+
+func isBlockedIP(ip net.IP) bool {
+	return ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified()
+}
+
+// isPrivateOrInternalIP 兼容旧接口，内部委托给 isPrivateOrInternalHost
+func isPrivateOrInternalIP(host string) bool {
+	return isPrivateOrInternalHost(context.Background(), host)
 }
 
 func corsMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeaders []string, allowCredentials bool, maxAge int) func(http.Handler) http.Handler {
@@ -221,4 +279,25 @@ func corsMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeade
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// sanitizeError removes internal details from error messages before returning to client
+func sanitizeError(err string) string {
+	if err == "" {
+		return ""
+	}
+	// Strip common internal patterns: file paths, stack traces, connection strings
+	sanitized := err
+	// Remove Go stack trace patterns
+	if idx := strings.Index(sanitized, "\ngoroutine "); idx != -1 {
+		sanitized = sanitized[:idx]
+	}
+	if idx := strings.Index(sanitized, "\nruntime."); idx != -1 {
+		sanitized = sanitized[:idx]
+	}
+	// Truncate very long errors
+	if len(sanitized) > 500 {
+		sanitized = sanitized[:500] + "..."
+	}
+	return sanitized
 }

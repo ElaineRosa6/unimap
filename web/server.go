@@ -2,6 +2,9 @@ package web
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,13 +18,16 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/appversion"
+	"github.com/unimap-icp-hunter/project/internal/alerting"
+	"github.com/unimap-icp-hunter/project/internal/auth"
 	"github.com/unimap-icp-hunter/project/internal/config"
 	"github.com/unimap-icp-hunter/project/internal/distributed"
 	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap-icp-hunter/project/internal/metrics"
 	"github.com/unimap-icp-hunter/project/internal/model"
 	"github.com/unimap-icp-hunter/project/internal/proxypool"
 	"github.com/unimap-icp-hunter/project/internal/requestid"
+	"github.com/unimap-icp-hunter/project/internal/scheduler"
 	"github.com/unimap-icp-hunter/project/internal/screenshot"
 	"github.com/unimap-icp-hunter/project/internal/service"
 )
@@ -55,40 +61,35 @@ type ConnectionManager struct {
 
 // Server Web服务器
 type Server struct {
-	port                 int
-	httpServer           *http.Server
-	templates            *template.Template
-	service              *service.UnifiedService
-	queryApp             *service.QueryAppService
-	monitorApp           *service.MonitorAppService
-	tamperApp            *service.TamperAppService
-	screenshotApp        *service.ScreenshotAppService
-	orchestrator         *adapter.EngineOrchestrator
-	upgrader             websocket.Upgrader
-	connManager          *ConnectionManager
-	queryStatus          map[string]*QueryStatus
-	queryMutex           sync.RWMutex
-	configMutex          sync.Mutex
-	webRoot              string
-	staticVersion        string
-	screenshotMgr        *screenshot.Manager
-	config               *config.Config
-	configManager        *config.Manager
-	chromeCmd            *os.Process
-	chromeCmdMu          sync.Mutex
-	bridgeService        *screenshot.BridgeService
-	bridgeMock           *bridgeMockClient
-	bridgeTokens         map[string]int64
-	bridgeCallbackNonces map[string]int64
-	bridgeLastErr        string
-	bridgeLastAt         int64
-	bridgeTokenLastSeen  map[string]int64
-	proxyPool            *proxypool.Pool
-	nodeRegistry         *distributed.Registry
-	nodeTaskQueue        *distributed.TaskQueue
-	distributedEnabled   bool
-	shutdownCtx          context.Context
-	shutdownCancel       context.CancelFunc
+	port             int
+	httpServer       *http.Server
+	templates        *template.Template
+	service          *service.UnifiedService
+	queryApp         *service.QueryAppService
+	monitorApp       *service.MonitorAppService
+	tamperApp        *service.TamperAppService
+	screenshotApp    *service.ScreenshotAppService
+	orchestrator     *adapter.EngineOrchestrator
+	upgrader         websocket.Upgrader
+	connManager      *ConnectionManager
+	queryStatus      map[string]*QueryStatus
+	queryMutex       sync.RWMutex
+	configMutex      sync.Mutex
+	webRoot          string
+	staticVersion    string
+	screenshotMgr    *screenshot.Manager
+	screenshotRouter *screenshot.ScreenshotRouter
+	config           *config.Config
+	configManager    *config.Manager
+	chromeCmd        *os.Process
+	chromeCmdMu      sync.Mutex
+	bridge           *BridgeState
+	proxyPool        *proxypool.Pool
+	distributed      *DistributedState
+	scheduler        *scheduler.Scheduler
+	apiAuth          *auth.AuthMiddleware
+	shutdownCtx      context.Context
+	shutdownCancel   context.CancelFunc
 }
 
 // NewServer 创建Web服务器
@@ -215,56 +216,189 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 
 	heartbeatTimeout := 30 * time.Second
 	maxReassign := 1
-	distributedEnabled := false
 	if cfg != nil {
 		heartbeatTimeout = time.Duration(cfg.Distributed.HeartbeatTimeoutSeconds) * time.Second
 		if heartbeatTimeout <= 0 {
 			heartbeatTimeout = 30 * time.Second
 		}
 		maxReassign = cfg.Distributed.MaxReassignAttempts
-		distributedEnabled = cfg.Distributed.Enabled
 	}
 
 	nodeRegistry := distributed.NewRegistry(heartbeatTimeout)
-	nodeTaskQueue := distributed.NewTaskQueue()
+	nodeTaskQueue := distributed.NewTaskQueueWithPath("./data/distributed_tasks.json")
+	nodeRegistry.SetTaskQueue(nodeTaskQueue)
 	nodeTaskQueue.SetDefaultMaxReassign(maxReassign)
+
+	// 初始化分布式调度器
+	if cfg != nil && cfg.Distributed.Scheduler.Strategy != "" {
+		strategy := distributed.SchedulerStrategy(cfg.Distributed.Scheduler.Strategy)
+		scheduler := distributed.NewSchedulerFromStrategy(strategy)
+		nodeTaskQueue.SetScheduler(scheduler)
+	}
 
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 
-	srv := &Server{
-		port:                 port,
-		templates:            templates,
-		service:              unifiedSvc,
-		queryApp:             service.NewQueryAppService(unifiedSvc, orchestrator),
-		monitorApp:           service.NewMonitorAppService(proxyPool),
-		tamperApp:            service.NewTamperAppService("./hash_store"),
-		screenshotApp:        screenshotApp,
-		orchestrator:         orchestrator,
-		upgrader:             upgrader,
-		connManager:          &ConnectionManager{connections: make(map[string]*managedConn)},
-		queryStatus:          make(map[string]*QueryStatus),
-		webRoot:              webRoot,
-		staticVersion:        strconv.FormatInt(time.Now().Unix(), 10),
-		screenshotMgr:        screenshotMgr,
-		config:               cfg,
-		configManager:        cfgManager,
-		bridgeTokens:         make(map[string]int64),
-		bridgeTokenLastSeen:  make(map[string]int64),
-		bridgeCallbackNonces: make(map[string]int64),
-		proxyPool:            proxyPool,
-		nodeRegistry:         nodeRegistry,
-		nodeTaskQueue:        nodeTaskQueue,
-		distributedEnabled:   distributedEnabled,
-		shutdownCtx:          shutdownCtx,
-		shutdownCancel:       shutdownCancel,
+	// 初始化告警管理器（仅用于 tamperApp 构造参数）
+	alertManager := alerting.NewManager()
+
+	// 注册日志告警渠道
+	logChannel := alerting.NewLogChannel(true)
+	alertManager.RegisterChannel(logChannel)
+
+	// 注册 Webhook 告警渠道（从配置读取）
+	if cfg != nil && cfg.Alerting.Webhook.Enabled && cfg.Alerting.Webhook.URL != "" {
+		headers := make(map[string]string)
+		if cfg.Alerting.Webhook.AuthToken != "" {
+			headers["Authorization"] = "Bearer " + cfg.Alerting.Webhook.AuthToken
+		}
+		webhookChannel := alerting.NewWebhookChannel(cfg.Alerting.Webhook.URL, headers, true)
+		alertManager.RegisterChannel(webhookChannel)
 	}
 
-	if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Screenshot.Engine), "extension") {
+	srv := &Server{
+		port:          port,
+		templates:     templates,
+		service:       unifiedSvc,
+		queryApp:      service.NewQueryAppService(unifiedSvc, orchestrator),
+		monitorApp:    service.NewMonitorAppService(proxyPool),
+		tamperApp:     service.NewTamperAppService("./hash_store", alertManager),
+		screenshotApp: screenshotApp,
+		orchestrator:  orchestrator,
+		upgrader:      upgrader,
+		connManager:   &ConnectionManager{connections: make(map[string]*managedConn)},
+		queryStatus:   make(map[string]*QueryStatus),
+		webRoot:       webRoot,
+		staticVersion: strconv.FormatInt(time.Now().Unix(), 10),
+		screenshotMgr: screenshotMgr,
+		config:        cfg,
+		configManager: cfgManager,
+		bridge: &BridgeState{
+			Tokens:         make(map[string]int64),
+			LastSeen:       make(map[string]int64),
+			CallbackNonces: make(map[string]int64),
+		},
+		proxyPool: proxyPool,
+		distributed: &DistributedState{
+			NodeRegistry:  nodeRegistry,
+			NodeTaskQueue: nodeTaskQueue,
+		},
+		apiAuth:        auth.NewAuthMiddleware(auth.NewAPIKeyManager("./data/api_keys.json")),
+		shutdownCtx:    shutdownCtx,
+		shutdownCancel: shutdownCancel,
+	}
+
+	// 初始化定时任务调度器
+	maxHistory := 500
+	if cfg != nil && cfg.Scheduler.MaxHistory > 0 {
+		maxHistory = cfg.Scheduler.MaxHistory
+	}
+	storePath := "./data/scheduler_tasks.json"
+	historyPath := "./data/scheduler_history.json"
+	sched := scheduler.NewScheduler(storePath, historyPath, maxHistory)
+
+	// 注册8种任务处理器
+	sched.RegisterHandler(scheduler.NewQueryRunner(srv.queryApp))
+	sched.RegisterHandler(scheduler.NewSearchScreenshotRunner(screenshotApp, screenshotMgr))
+	sched.RegisterHandler(scheduler.NewBatchScreenshotRunner(screenshotApp, screenshotMgr))
+	sched.RegisterHandler(scheduler.NewTamperCheckRunner(srv.tamperApp, nil))
+	sched.RegisterHandler(scheduler.NewURLReachabilityRunner(srv.monitorApp))
+	sched.RegisterHandler(scheduler.NewCookieVerifyRunner(screenshotApp, screenshotMgr))
+	sched.RegisterHandler(scheduler.NewLoginStatusCheckRunner(screenshotMgr))
+	sched.RegisterHandler(scheduler.NewDistributedSubmitRunner(nodeTaskQueue))
+
+	// 注册中优先级 Runner (ST-09 ~ ST-16)
+	sched.RegisterHandler(scheduler.NewExportRunner(srv.queryApp, orchestrator, "./data/exports"))
+	sched.RegisterHandler(scheduler.NewPortScanRunner(srv.monitorApp))
+	sched.RegisterHandler(scheduler.NewScreenshotCleanupRunner(screenshotApp, 30))
+	sched.RegisterHandler(scheduler.NewTamperCleanupRunner(srv.tamperApp, 90))
+	sched.RegisterHandler(scheduler.NewQuotaMonitorRunner(orchestrator, 10))
+	sched.RegisterHandler(scheduler.NewAlertSummaryRunner(alertManager))
+	sched.RegisterHandler(scheduler.NewBaselineRefreshRunner(srv.tamperApp))
+	sched.RegisterHandler(scheduler.NewURLImportRunner("./data/imports"))
+
+	// 注册低优先级 Runner (ST-17 ~ ST-20)
+	sched.RegisterHandler(scheduler.NewPluginHealthRunner(unifiedSvc))
+	sched.RegisterHandler(scheduler.NewBridgeTokenRotateRunner(nil)) // bridge service may be nil
+	sched.RegisterHandler(scheduler.NewAlertSilenceRunner(alertManager))
+	sched.RegisterHandler(scheduler.NewCacheWarmupRunner())
+
+	// 加载持久化的任务
+	if err := sched.Load(); err != nil {
+		logger.Warnf("Failed to load scheduled tasks: %v", err)
+	}
+
+	srv.scheduler = sched
+
+	// 截图模式初始化
+	screenshotMode := "cdp"
+	if cfg != nil {
+		screenshotMode = strings.ToLower(strings.TrimSpace(cfg.Screenshot.Mode))
+		if screenshotMode == "" {
+			screenshotMode = "cdp"
+		}
+	}
+
+	if screenshotMode == "auto" {
+		// 双模式高可用：确保 CDP provider 存在
+		cdpProvider := screenshotProvider
+		if cdpProvider == nil && screenshotMgr != nil {
+			cdpProvider = screenshot.NewCDPProvider(screenshotMgr)
+		}
+
+		// 始终创建 BridgeService
+		extMaxConcurrency := 5
+		extTaskTimeout := 30
+		if cfg != nil {
+			extMaxConcurrency = cfg.Screenshot.Extension.MaxConcurrency
+			extTaskTimeout = cfg.Screenshot.Extension.TaskTimeoutSeconds
+		}
+		mockClient := newBridgeMockClient()
+		bridgeSvc := screenshot.NewBridgeService(mockClient, extMaxConcurrency, time.Duration(extTaskTimeout)*time.Second)
+		bridgeSvc.Start(shutdownCtx)
+		srv.bridge.Mock = mockClient
+		srv.bridge.Service = bridgeSvc
+		screenshotApp.SetBridgeService(bridgeSvc)
+
+		// 创建 ScreenshotRouter
+		fallback := true
+		priority := screenshot.ScreenshotMode("cdp")
+		if cfg != nil {
+			if cfg.Screenshot.Fallback != nil {
+				fallback = *cfg.Screenshot.Fallback
+			}
+			priority = screenshot.ScreenshotMode(strings.ToLower(strings.TrimSpace(cfg.Screenshot.Priority)))
+			if priority == "" {
+				priority = screenshot.ModeCDP
+			}
+		}
+
+		routerCfg := screenshot.RouterConfig{
+			Priority:      priority,
+			Fallback:      fallback,
+			ProbeInterval: 30 * time.Second,
+			ProbeTimeout:  5 * time.Second,
+		}
+
+		router := screenshot.NewScreenshotRouter(routerCfg, cdpProvider, bridgeSvc, screenshotMgr)
+		router.SetMetricsHooks(
+			func(from, to screenshot.ScreenshotMode) {
+				metrics.IncScreenshotModeSwitch(string(from), string(to))
+			},
+			func(mode string, healthy bool) {
+				metrics.IncScreenshotHealthCheck(mode, healthy)
+			},
+		)
+		router.Start(shutdownCtx)
+		srv.screenshotRouter = router
+
+		logger.Infof("Screenshot router initialized: mode=auto, priority=%s, fallback=%v", priority, fallback)
+	} else if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Screenshot.Engine), "extension") {
+		// 传统 extension 单模式
 		mockClient := newBridgeMockClient()
 		bridgeSvc := screenshot.NewBridgeService(mockClient, cfg.Screenshot.Extension.MaxConcurrency, time.Duration(cfg.Screenshot.Extension.TaskTimeoutSeconds)*time.Second)
 		bridgeSvc.Start(context.Background())
-		srv.bridgeMock = mockClient
-		srv.bridgeService = bridgeSvc
+		srv.bridge.Mock = mockClient
+		srv.bridge.Service = bridgeSvc
 		screenshotApp.SetBridgeService(bridgeSvc)
 	}
 
@@ -332,20 +466,36 @@ func isWebRoot(dir string) bool {
 	return true
 }
 
+type cspNonceKey struct{}
+
+func cspNonceFromContext(ctx context.Context) string {
+	if v := ctx.Value(cspNonceKey{}); v != nil {
+		return v.(string)
+	}
+	return ""
+}
+
+func generateCSPNonce() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
 // securityMiddleware 添加安全响应头的中间件
 func securityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 防止点击劫持
+		nonce := generateCSPNonce()
+		ctx := context.WithValue(r.Context(), cspNonceKey{}, nonce)
+		r = r.WithContext(ctx)
+
 		w.Header().Set("X-Frame-Options", "DENY")
-		// 防止MIME类型嗅探
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		// XSS保护
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
-		// 内容安全策略
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;")
-		// 引用策略
+		w.Header().Set("Content-Security-Policy",
+			fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s' 'unsafe-hashes' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;", nonce))
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		// 权限策略
 		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 
 		next.ServeHTTP(w, r)
@@ -374,7 +524,7 @@ func (s *Server) Start() error {
 
 	allowedOrigins := allowedOriginsFromConfig(s.config)
 	allowedMethods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
-	allowedHeaders := []string{"Content-Type", "Authorization", "X-Requested-With", "X-WebSocket-Token", requestid.HeaderName}
+	allowedHeaders := []string{"Content-Type", "Authorization", "X-Admin-Token", "X-Requested-With", "X-WebSocket-Token", requestid.HeaderName}
 	exposedHeaders := []string{requestid.HeaderName}
 	allowCredentials := true
 	maxAge := 600
@@ -398,33 +548,58 @@ func (s *Server) Start() error {
 	handler = requestIDMiddleware(handler)
 	handler = requestSizeLimitMiddleware(maxBodyBytes)(handler)
 	handler = corsMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeaders, allowCredentials, maxAge)(handler)
+
+	// Auth middleware — always enabled (auto-generated token if not configured)
+	if s.config != nil && s.config.Web.Auth.Enabled && s.config.Web.Auth.AdminToken != "" {
+		handler = s.adminAuthMiddleware()(handler)
+		logger.Infof("Web auth enabled: admin token authentication active")
+	} else {
+		// Fallback: should not be reached with default config (auth is auto-enabled)
+		bindAddr := s.bindAddr()
+		if bindAddr != "127.0.0.1" && bindAddr != "localhost" {
+			logger.Warnf("⚠️  WARNING: Admin auth is DISABLED and server is bound to %s (non-loopback). All API endpoints are publicly accessible!", bindAddr)
+		}
+	}
+
 	handler = metricsMiddleware(handler)
+	handler = auditMiddleware(handler)
 
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		isWebSocket := strings.Contains(r.Header.Get("Connection"), "Upgrade") &&
 			strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-		
+
 		if isWebSocket && r.URL.Path == "/api/ws" {
+			// WebSocket must pass admin auth (same middleware chain as regular requests)
+			if s.adminToken() != "" && !s.isPublicPath(r.URL.Path) {
+				token := r.Header.Get("X-Admin-Token")
+				if token == "" {
+					token = extractBearerToken(r.Header.Get("Authorization"))
+				}
+				if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.adminToken())) != 1 {
+					writeJSON(w, http.StatusUnauthorized, map[string]string{
+						"error": "unauthorized: valid admin token required",
+					})
+					return
+				}
+			}
 			s.handleWebSocket(w, r)
 			return
 		}
-		
-		isBridgeAPI := strings.HasPrefix(r.URL.Path, "/api/screenshot/bridge/")
-		if isBridgeAPI {
-			mux.ServeHTTP(w, r)
-			return
-		}
-		
+
+		// Bridge API goes through the full middleware chain (auth, ratelimit, audit, metrics)
 		handler.ServeHTTP(w, r)
 	})
 
-	addr := fmt.Sprintf(":%d", s.port)
+	addr := fmt.Sprintf("%s:%d", s.bindAddr(), s.port)
 	s.httpServer = &http.Server{
 		Addr:    addr,
 		Handler: rootHandler,
 	}
 
-	logger.Infof("Web server started at http://localhost%s", addr)
+	go s.cleanupStaleQueries()
+	go s.cleanupStaleBridgeTokens()
+
+	logger.Infof("Web server started at http://%s:%d", s.bindAddr(), s.port)
 	logger.Infof("Registered %d routes", len(router.GetRoutes()))
 	logger.Infof("Web security config loaded: cors_origins=%d rate_limit_enabled=%t max_body_bytes=%d",
 		len(allowedOrigins), rateLimitEnabled, maxBodyBytes)
@@ -433,7 +608,11 @@ func (s *Server) Start() error {
 
 func allowedOriginsFromConfig(cfg *config.Config) []string {
 	if cfg == nil || len(cfg.Web.CORS.AllowedOrigins) == 0 {
-		return []string{"http://localhost:8448", "http://127.0.0.1:8448"}
+		port := 8448
+		if cfg != nil && cfg.Web.Port != 0 {
+			port = cfg.Web.Port
+		}
+		return []string{fmt.Sprintf("http://localhost:%d", port), fmt.Sprintf("http://127.0.0.1:%d", port)}
 	}
 	origins := make([]string, 0, len(cfg.Web.CORS.AllowedOrigins))
 	for _, origin := range cfg.Web.CORS.AllowedOrigins {
@@ -444,7 +623,11 @@ func allowedOriginsFromConfig(cfg *config.Config) []string {
 		origins = append(origins, origin)
 	}
 	if len(origins) == 0 {
-		return []string{"http://localhost:8448", "http://127.0.0.1:8448"}
+		port := 8448
+		if cfg != nil && cfg.Web.Port != 0 {
+			port = cfg.Web.Port
+		}
+		return []string{fmt.Sprintf("http://localhost:%d", port), fmt.Sprintf("http://127.0.0.1:%d", port)}
 	}
 	return origins
 }
@@ -462,8 +645,26 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.shutdownCancel()
 	}
 
+	// 停止分布式组件
+	if s.distributed != nil && s.distributed.NodeRegistry != nil {
+		s.distributed.NodeRegistry.Stop()
+	}
+	if s.distributed != nil && s.distributed.NodeTaskQueue != nil {
+		s.distributed.NodeTaskQueue.Stop()
+	}
+
+	// 停止定时任务调度器
+	if s.scheduler != nil {
+		s.scheduler.Stop()
+	}
+
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		return fmt.Errorf("web server shutdown error: %w", err)
+	}
+
+	// 停止截图Router（停止健康探测goroutine）
+	if s.screenshotRouter != nil {
+		s.screenshotRouter.Stop()
 	}
 
 	// 关闭Chrome进程
@@ -496,18 +697,73 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// bindAddr returns the configured bind address, defaulting to "127.0.0.1".
+func (s *Server) bindAddr() string {
+	if s.config != nil && s.config.Web.BindAddress != "" {
+		return s.config.Web.BindAddress
+	}
+	return "127.0.0.1"
+}
+
+func (s *Server) cleanupStaleQueries() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.queryMutex.Lock()
+			now := time.Now()
+			maxAge := 1 * time.Hour
+			for id, status := range s.queryStatus {
+				if now.Sub(status.StartTime) > maxAge {
+					delete(s.queryStatus, id)
+				}
+			}
+			s.queryMutex.Unlock()
+		case <-s.shutdownCtx.Done():
+			return
+		}
+	}
+}
+
+func (s *Server) cleanupStaleBridgeTokens() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.bridge.mu.Lock()
+			now := time.Now().Unix()
+			if s.bridge.Tokens != nil {
+				for token, exp := range s.bridge.Tokens {
+					if exp <= now {
+						delete(s.bridge.Tokens, token)
+						delete(s.bridge.LastSeen, token)
+					}
+				}
+			}
+			if s.bridge.CallbackNonces != nil {
+				for key, exp := range s.bridge.CallbackNonces {
+					if exp <= now {
+						delete(s.bridge.CallbackNonces, key)
+					}
+				}
+			}
+			s.bridge.mu.Unlock()
+		case <-s.shutdownCtx.Done():
+			return
+		}
+	}
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	health := map[string]interface{}{
-		"status":  "ok",
-		"version": appversion.Full(),
-		"time":    time.Now().UTC().Format(time.RFC3339),
-		"engines": s.orchestrator.ListAdapters(),
-	}
-
-	if s.service != nil {
-		health["plugins"] = s.service.HealthCheck()
+		"status": "ok",
+		"time":   time.Now().UTC().Format(time.RFC3339),
 	}
 
 	_ = json.NewEncoder(w).Encode(health)

@@ -12,7 +12,14 @@
       "Bash(xxd:*)",
       "Bash(printf '\\\\t\\\\tCount\\(\\\\®istered\\)\\\\n')",
       "Bash(go vet:*)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "Bash(go get:*)",
+      "Bash(netstat -ano)",
+      "Bash(awk '{print $5}')",
+      "Bash(xargs -I {} taskkill //F //PID {})",
+      "Bash(go tool:*)",
+      "Bash(sort -t: -k2 -n)",
+      "Bash(git *)"
     ]
   }
 }
