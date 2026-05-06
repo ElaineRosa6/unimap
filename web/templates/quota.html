@@ -9,9 +9,15 @@
 <body>
 	<header>
 		<h1>UniMap - 多引擎网络资产查询</h1>
-		<nav>
+		<nav class="nav-bar">
 			<a href="/">首页</a>
-			<a href="/quota" class="active">查看配额</a>
+			<a href="/quota" class="active">配额</a>
+			<a href="/batch-screenshot">批量截图</a>
+			<a href="/monitor">监控</a>
+			<a href="/scheduler">定时任务</a>
+			<form method="POST" action="/api/logout" class="logout-form">
+				<button type="submit" class="btn-logout">退出</button>
+			</form>
 		</nav>
 	</header>
 

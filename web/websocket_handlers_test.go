@@ -9,14 +9,16 @@ import (
 	"testing"
 
 	"github.com/unimap-icp-hunter/project/internal/adapter"
+	"github.com/unimap-icp-hunter/project/internal/config"
 	"github.com/unimap-icp-hunter/project/internal/service"
 )
 
 func TestHandleWebSocket_ValidationFailure_Returns401(t *testing.T) {
-	os.Setenv("UNIMAP_WS_TOKEN", "test-token")
-	defer os.Unsetenv("UNIMAP_WS_TOKEN")
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "test-token"
 
-	s := &Server{}
+	s := &Server{config: cfg}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	s.handleWebSocket(rec, req)
@@ -219,17 +221,11 @@ func TestValidateWebSocketRequest_NoToken_DevelopmentMode(t *testing.T) {
 }
 
 func TestValidateWebSocketRequest_NoToken_ProductionMode(t *testing.T) {
-	oldToken := os.Getenv("UNIMAP_WS_TOKEN")
-	os.Setenv("UNIMAP_WS_TOKEN", "prod-token")
-	defer func() {
-		if oldToken != "" {
-			os.Setenv("UNIMAP_WS_TOKEN", oldToken)
-		} else {
-			os.Unsetenv("UNIMAP_WS_TOKEN")
-		}
-	}()
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "prod-token"
 
-	s := &Server{}
+	s := &Server{config: cfg}
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	if s.validateWebSocketRequest(req) {
 		t.Fatal("expected request to be rejected in production mode without token")
@@ -271,10 +267,11 @@ func TestValidateWebSocketRequest_NoEnvToken_Allows(t *testing.T) {
 }
 
 func TestValidateWebSocketRequest_EnvToken_Missing(t *testing.T) {
-	os.Setenv("UNIMAP_WS_TOKEN", "test-token")
-	defer os.Unsetenv("UNIMAP_WS_TOKEN")
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "test-token"
 
-	s := &Server{}
+	s := &Server{config: cfg}
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	if s.validateWebSocketRequest(req) {
 		t.Fatal("expected request to be rejected when token is required but missing")
@@ -282,10 +279,11 @@ func TestValidateWebSocketRequest_EnvToken_Missing(t *testing.T) {
 }
 
 func TestValidateWebSocketRequest_EnvToken_Invalid(t *testing.T) {
-	os.Setenv("UNIMAP_WS_TOKEN", "test-token")
-	defer os.Unsetenv("UNIMAP_WS_TOKEN")
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "test-token"
 
-	s := &Server{}
+	s := &Server{config: cfg}
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	req.Header.Set("X-WebSocket-Token", "wrong-token")
 	if s.validateWebSocketRequest(req) {
@@ -294,10 +292,11 @@ func TestValidateWebSocketRequest_EnvToken_Invalid(t *testing.T) {
 }
 
 func TestValidateWebSocketRequest_EnvToken_ValidHeader(t *testing.T) {
-	os.Setenv("UNIMAP_WS_TOKEN", "test-token")
-	defer os.Unsetenv("UNIMAP_WS_TOKEN")
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "test-token"
 
-	s := &Server{}
+	s := &Server{config: cfg}
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	req.Header.Set("X-WebSocket-Token", "test-token")
 	if !s.validateWebSocketRequest(req) {
@@ -306,10 +305,11 @@ func TestValidateWebSocketRequest_EnvToken_ValidHeader(t *testing.T) {
 }
 
 func TestValidateWebSocketRequest_EnvToken_ValidQuery(t *testing.T) {
-	os.Setenv("UNIMAP_WS_TOKEN", "test-token")
-	defer os.Unsetenv("UNIMAP_WS_TOKEN")
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "test-token"
 
-	s := &Server{}
+	s := &Server{config: cfg}
 	req := httptest.NewRequest(http.MethodGet, "/ws?token=test-token", nil)
 	if !s.validateWebSocketRequest(req) {
 		t.Fatal("expected request to be allowed with valid query token")

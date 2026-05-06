@@ -138,13 +138,19 @@
 	<header>
 		<h1>批量URL截图</h1>
 		<p>上传URL列表，批量截图网站页面</p>
+		<nav class="nav-bar">
+			<a href="/">首页</a>
+			<a href="/quota">配额</a>
+			<a href="/batch-screenshot" class="active">批量截图</a>
+			<a href="/monitor">监控</a>
+			<a href="/scheduler">定时任务</a>
+			<form method="POST" action="/api/logout" class="logout-form">
+				<button type="submit" class="btn-logout">退出</button>
+			</form>
+		</nav>
 	</header>
 
 	<main>
-		<div class="nav-links">
-			<a href="/">← 返回首页</a>
-			<a href="/quota">查看配额</a>
-		</div>
 
 		<section class="query-form">
 			<h2>URL列表</h2>

@@ -569,9 +569,15 @@ func (s *Server) Start() error {
 			strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 
 		if isWebSocket && r.URL.Path == "/api/ws" {
-			// WebSocket must pass admin auth (same middleware chain as regular requests)
+			// WebSocket auth: cookie → query param → header
 			if s.adminToken() != "" && !s.isPublicPath(r.URL.Path) {
-				token := r.Header.Get("X-Admin-Token")
+				token := s.getSessionToken(r)
+				if token == "" {
+					token = r.URL.Query().Get("token")
+				}
+				if token == "" {
+					token = r.Header.Get("X-Admin-Token")
+				}
 				if token == "" {
 					token = extractBearerToken(r.Header.Get("Authorization"))
 				}
