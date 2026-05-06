@@ -353,11 +353,20 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 		query = `protocol="http"`
 	}
 
-	// Detect CDP connection status
-	cdpConnected := s.screenshotMgr != nil && s.screenshotMgr.RemoteDebugURL() != ""
+	// Detect CDP connection status — actual HTTP probe to /json/version
+	cdpConnected := false
+	if s.screenshotMgr != nil && s.screenshotMgr.RemoteDebugURL() != "" {
+		baseURL := s.resolveCDPURL()
+		if online, _, _ := s.checkCDPStatus(r.Context(), baseURL); online {
+			cdpConnected = true
+		}
+	}
 
-	// Detect Extension pairing status (non-mock)
-	extPaired := s.bridge != nil && s.bridge.Service != nil
+	// Detect Extension pairing status — check for live clients (seen in last 15s)
+	extPaired := false
+	if s.bridge != nil && s.bridge.Service != nil {
+		extPaired = s.activeBridgeLiveTokens() > 0
+	}
 
 	// Check per-engine login status
 	engines := []string{"fofa", "hunter", "zoomeye", "quake"}

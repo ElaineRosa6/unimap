@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -122,32 +121,29 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 // validateWebSocketRequest 验证WebSocket连接请求
 func (s *Server) validateWebSocketRequest(r *http.Request) bool {
-	// 从请求头获取令牌
-	token := r.Header.Get("X-WebSocket-Token")
+	adminToken := s.adminToken()
+	if adminToken == "" {
+		return true // auth not configured
+	}
 
-	// 从查询参数获取令牌
+	// 1. Session cookie (browser sends automatically)
+	token := s.getSessionToken(r)
+	// 2. Query parameter (fallback for non-browser clients)
 	if token == "" {
 		token = r.URL.Query().Get("token")
 	}
-
-	// 检查是否有配置的令牌
-	configToken := os.Getenv("UNIMAP_WS_TOKEN")
-	if configToken != "" {
-		// 生产环境：强制要求令牌验证
-		if token == "" {
-			logger.Warn("WebSocket connection rejected: missing token")
-			return false
-		}
-		if subtle.ConstantTimeCompare([]byte(token), []byte(configToken)) != 1 {
-			logger.Warn("WebSocket connection rejected: invalid token")
-			return false
-		}
-		return true
+	// 3. Header
+	if token == "" {
+		token = r.Header.Get("X-WebSocket-Token")
 	}
 
-	// 开发环境：允许无令牌连接，但记录警告
 	if token == "" {
-		logger.Warn("WebSocket connection without token (development mode)")
+		logger.Warn("WebSocket connection rejected: missing token")
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(token), []byte(adminToken)) != 1 {
+		logger.Warn("WebSocket connection rejected: invalid token")
+		return false
 	}
 	return true
 }

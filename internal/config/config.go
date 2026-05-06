@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 )
 
@@ -136,9 +137,11 @@ type Config struct {
 			MaxMultipartMemory int64 `yaml:"max_multipart_memory_bytes"`
 		} `yaml:"request_limits"`
 		Auth struct {
-			Enabled     bool   `yaml:"enabled"`      // 是否启用 Web 鉴权
-			AdminToken  string `yaml:"admin_token"`  // 管理端点 token
-			APIKeyStore string `yaml:"api_key_store"` // API Key 文件路径
+			Enabled      bool   `yaml:"enabled"`       // 是否启用 Web 鉴权
+			AdminToken   string `yaml:"admin_token"`   // 管理端点 token
+			Username     string `yaml:"username"`       // 登录用户名
+			PasswordHash string `yaml:"password_hash"` // 登录密码 bcrypt 哈希
+			APIKeyStore  string `yaml:"api_key_store"`  // API Key 文件路径
 		} `yaml:"auth"`
 	} `yaml:"web"`
 
@@ -708,6 +711,21 @@ func (m *Manager) applyDefaults(config *Config) {
 		config.Web.Auth.Enabled = true
 	}
 
+	// 默认登录凭据：如果未配置 username/password_hash，生成默认 admin/admin
+	if strings.TrimSpace(config.Web.Auth.Username) == "" {
+		config.Web.Auth.Username = "admin"
+	}
+	if strings.TrimSpace(config.Web.Auth.PasswordHash) == "" {
+		hash, err := HashPassword("admin")
+		if err != nil {
+			fmt.Printf("[config] WARNING: failed to hash default password: %v\n", err)
+		} else {
+			config.Web.Auth.PasswordHash = hash
+			fmt.Printf("[config] Generated default login credentials: admin/admin\n")
+			fmt.Printf("[config] CHANGE THESE CREDENTIALS: set 'username' and 'password_hash' in your config file.\n")
+		}
+	}
+
 	// 默认定时任务配置
 	if !config.Scheduler.Enabled {
 		config.Scheduler.Enabled = true
@@ -1162,4 +1180,18 @@ func generateSecureToken(length int) string {
 		token[i] = charset[n.Int64()]
 	}
 	return string(token)
+}
+
+// HashPassword hashes a password using bcrypt with default cost.
+func HashPassword(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("hash password: %w", err)
+	}
+	return string(hash), nil
+}
+
+// CheckPassword compares a password against a bcrypt hash.
+func CheckPassword(password, hash string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }

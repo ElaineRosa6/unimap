@@ -38,6 +38,11 @@ func (r *Router) RegisterRoutes() http.Handler {
 	r.addRoute("monitor", "GET", "/monitor", r.server.handleMonitorPage, false)
 	r.addRoute("scheduler", "GET", "/scheduler", r.server.handleSchedulerPage, false)
 
+	// 登录/登出路由
+	r.addRoute("login-page", "GET", "/login", r.server.handleLoginPage, false)
+	r.addRoute("login-api", "POST", "/api/login", r.server.handleLoginAPI, true)
+	r.addRoute("logout-api", "POST", "/api/logout", r.server.handleLogoutAPI, false)
+
 	// API 路由 - 查询相关（限流）
 	r.addRoute("health", "GET", "/health", r.server.handleHealth, false)
 	r.addRoute("health-ready", "GET", "/health/ready", r.server.handleHealthReady, false)

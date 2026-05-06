@@ -1273,3 +1273,133 @@ section h3 {
 		min-width: 100px;
 	}
 }
+
+/* Navigation bar */
+.nav-bar {
+	margin-top: 10px;
+	display: flex;
+	align-items: center;
+	gap: 15px;
+	flex-wrap: wrap;
+}
+.nav-bar a {
+	text-decoration: none;
+	color: rgba(255, 255, 255, 0.85);
+	font-size: 14px;
+	padding: 4px 10px;
+	border-radius: 4px;
+	transition: background 0.2s, color 0.2s;
+}
+.nav-bar a:hover,
+.nav-bar a.active {
+	background: rgba(255, 255, 255, 0.15);
+	color: #fff;
+}
+.logout-form {
+	display: inline;
+	margin-left: auto;
+}
+.btn-logout {
+	background: rgba(255, 255, 255, 0.1);
+	color: rgba(255, 255, 255, 0.85);
+	border: 1px solid rgba(255, 255, 255, 0.3);
+	padding: 4px 14px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 13px;
+	transition: background 0.2s, color 0.2s;
+}
+.btn-logout:hover {
+	background: rgba(255, 255, 255, 0.25);
+	color: #fff;
+}
+
+/* Login page */
+.login-page {
+	background: #f0f2f5;
+	min-height: 100vh;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.login-page header {
+	display: none;
+}
+.login-container {
+	width: 100%;
+	max-width: 400px;
+	padding: 20px;
+}
+.login-card {
+	background: #fff;
+	border-radius: 8px;
+	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+	padding: 40px 36px;
+}
+.login-header {
+	text-align: center;
+	margin-bottom: 32px;
+}
+.login-header h1 {
+	font-size: 28px;
+	color: #2c3e50;
+	margin: 0 0 8px 0;
+}
+.login-header p {
+	color: #7f8c8d;
+	font-size: 14px;
+	margin: 0;
+}
+.login-card .form-group {
+	margin-bottom: 20px;
+}
+.login-card label {
+	display: block;
+	margin-bottom: 6px;
+	font-weight: 600;
+	color: #34495e;
+	font-size: 14px;
+}
+.login-card input[type="text"],
+.login-card input[type="password"] {
+	width: 100%;
+	padding: 10px 12px;
+	border: 1px solid #dcdfe6;
+	border-radius: 4px;
+	font-size: 14px;
+	box-sizing: border-box;
+	transition: border-color 0.2s;
+}
+.login-card input:focus {
+	outline: none;
+	border-color: #3498db;
+	box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+.login-card .btn-primary {
+	width: 100%;
+	padding: 12px;
+	background: #3498db;
+	color: #fff;
+	border: none;
+	border-radius: 4px;
+	font-size: 16px;
+	cursor: pointer;
+	transition: background 0.2s;
+	margin-top: 8px;
+}
+.login-card .btn-primary:hover {
+	background: #2980b9;
+}
+.login-card .btn-primary:disabled {
+	background: #95a5a6;
+	cursor: not-allowed;
+}
+.login-error {
+	background: #fdf2f2;
+	color: #e74c3c;
+	border: 1px solid #fde2e2;
+	border-radius: 4px;
+	padding: 10px 12px;
+	margin-bottom: 16px;
+	font-size: 14px;
+}

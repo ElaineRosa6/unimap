@@ -94,9 +94,14 @@
 		<h1>⏰ 定时任务管理</h1>
 
 		<div class="nav-links">
-			<a href="/">← 返回首页</a>
-			<a href="/monitor">网页监控</a>
+			<a href="/">首页</a>
+			<a href="/quota">配额</a>
 			<a href="/batch-screenshot">批量截图</a>
+			<a href="/monitor">监控</a>
+			<a href="/scheduler" class="active">定时任务</a>
+			<form method="POST" action="/api/logout" style="display:inline;margin-left:15px;">
+				<button type="submit" class="btn-logout">退出</button>
+			</form>
 		</div>
 
 		<div class="summary-cards">
@@ -289,19 +294,6 @@
 	</div>
 
 	<script>
-	// Admin token management
-	function getAdminToken() {
-		return sessionStorage.getItem('admin_token') || '';
-	}
-	function authHeaders() {
-		const t = getAdminToken();
-		return t ? {'X-Admin-Token': t} : {};
-	}
-	function authQuery() {
-		const t = getAdminToken();
-		return t ? '&admin_token=' + encodeURIComponent(t) : '';
-	}
-
 	// Tab switching
 	document.querySelectorAll('.tab-btn').forEach(btn => {
 		btn.addEventListener('click', () => {
@@ -322,7 +314,7 @@
 
 	async function loadTasks() {
 		try {
-			const res = await fetch('/api/scheduler/tasks' + authQuery());
+			const res = await fetch('/api/scheduler/tasks' );
 			const tasks = await res.json();
 			const tbody = document.getElementById('task-list');
 			tbody.innerHTML = '';
@@ -379,7 +371,7 @@
 		if (limit) params.set('limit', limit);
 
 		try {
-			const res = await fetch('/api/scheduler/history?' + params.toString() + authQuery());
+			const res = await fetch('/api/scheduler/history?' + params.toString() );
 			const records = await res.json();
 			const tbody = document.getElementById('history-list');
 			tbody.innerHTML = '';
@@ -427,7 +419,7 @@
 
 		const res = await fetch('/api/scheduler/tasks/create', {
 			method: 'POST',
-			headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({name, type: taskType, enabled, cron_expr: cronExpr, payload, timeout_seconds: timeout, max_retries: retries})
 		});
 
@@ -446,9 +438,9 @@
 
 	async function deleteTask(id) {
 		if (!confirm('确定删除此任务？')) return;
-		const res = await fetch('/api/scheduler/tasks/delete' + authQuery(), {
+		const res = await fetch('/api/scheduler/tasks/delete' , {
 			method: 'POST',
-			headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({id})
 		});
 		const data = await res.json();
@@ -461,9 +453,9 @@
 	}
 
 	async function runTask(id) {
-		const res = await fetch('/api/scheduler/tasks/run' + authQuery(), {
+		const res = await fetch('/api/scheduler/tasks/run' , {
 			method: 'POST',
-			headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({id})
 		});
 		const data = await res.json();
@@ -476,9 +468,9 @@
 
 	async function toggleTask(id, enable) {
 		const endpoint = enable ? '/api/scheduler/tasks/enable' : '/api/scheduler/tasks/disable';
-		const res = await fetch(endpoint + authQuery(), {
+		const res = await fetch(endpoint , {
 			method: 'POST',
-			headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({id})
 		});
 		const data = await res.json();
@@ -509,7 +501,7 @@
 // --- Edit task modal ---
 async function editTask(id) {
 	try {
-		const res = await fetch('/api/scheduler/tasks/get?id=' + encodeURIComponent(id) + authQuery());
+		const res = await fetch('/api/scheduler/tasks/get?id=' + encodeURIComponent(id) );
 		if (!res.ok) { showToast('获取任务失败', 'error'); return; }
 		const task = await res.json();
 
@@ -556,7 +548,7 @@ async function saveTask() {
 
 	const res = await fetch('/api/scheduler/tasks/update', {
 		method: 'POST',
-		headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+		headers: {'Content-Type': 'application/json'},
 		body: JSON.stringify({id, name, type: taskType, enabled, cron_expr: cronExpr, payload, timeout_seconds: timeout, max_retries: retries})
 	});
 
@@ -572,21 +564,6 @@ async function saveTask() {
 }
 
 document.getElementById('btn-save-task').addEventListener('click', saveTask);
-
-	// Intercept 401 responses and prompt for token
-	const origFetch = window.fetch;
-	window.fetch = async function(...args) {
-		const res = await origFetch.apply(this, args);
-		if (res.status === 401) {
-			const token = prompt('Admin token required. Enter your admin token:');
-			if (token) {
-				sessionStorage.setItem('admin_token', token);
-				loadTasks();
-				loadHistory();
-			}
-		}
-		return res;
-	};
 
 	document.getElementById('btn-create-task').addEventListener('click', createTask);
 	</script>
