@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -17,9 +18,11 @@ var reURLPattern = regexp.MustCompile(`^(https?://)?([\w.-]+)(:\d+)?(/.*)?$`)
 
 // handleScreenshot 处理截图请求
 func (s *Server) handleMonitorPage(w http.ResponseWriter, r *http.Request) {
-	s.templates.ExecuteTemplate(w, "monitor.html", map[string]interface{}{
+	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "monitor.html", map[string]interface{}{
 		"staticVersion": s.staticVersion,
-	})
+	}) {
+		return
+	}
 }
 
 // handleImportURLs 处理URL文件导入
@@ -64,7 +67,7 @@ func (s *Server) handleImportURLs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "file_parse_failed", "failed to parse file", err.Error())
+		writeAPIError(w, http.StatusInternalServerError, "file_parse_failed", "failed to parse file", sanitizeError(err.Error()))
 		return
 	}
 
@@ -99,6 +102,18 @@ func (s *Server) handleURLReachability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 检查所有URL是否指向内网地址
+	for _, urlStr := range req.URLs {
+		parsed, err := url.Parse(urlStr)
+		if err != nil {
+			continue
+		}
+		if isPrivateOrInternalIP(parsed.Hostname()) {
+			writeAPIError(w, http.StatusForbidden, "blocked_url", "target url resolves to private/internal address", nil)
+			return
+		}
+	}
+
 	if s.monitorApp == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "monitor_service_unavailable", "monitor app service not initialized", nil)
 		return
@@ -106,7 +121,7 @@ func (s *Server) handleURLReachability(w http.ResponseWriter, r *http.Request) {
 
 	response, err := s.monitorApp.CheckURLReachability(r.Context(), req.URLs, req.Concurrency)
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "reachability_check_failed", "url reachability check failed", err.Error())
+		writeAPIError(w, http.StatusInternalServerError, "reachability_check_failed", "url reachability check failed", sanitizeError(err.Error()))
 		return
 	}
 
@@ -138,6 +153,18 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 检查所有URL是否指向内网地址
+	for _, urlStr := range req.URLs {
+		parsed, err := url.Parse(urlStr)
+		if err != nil {
+			continue
+		}
+		if isPrivateOrInternalIP(parsed.Hostname()) {
+			writeAPIError(w, http.StatusForbidden, "blocked_url", "target url resolves to private/internal address", nil)
+			return
+		}
+	}
+
 	if s.monitorApp == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "monitor_service_unavailable", "monitor app service not initialized", nil)
 		return
@@ -145,7 +172,7 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 
 	response, err := s.monitorApp.ScanURLPorts(r.Context(), req.URLs, req.Ports, req.Concurrency)
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "url_port_scan_failed", "url port scan failed", err.Error())
+		writeAPIError(w, http.StatusInternalServerError, "url_port_scan_failed", "url port scan failed", sanitizeError(err.Error()))
 		return
 	}
 

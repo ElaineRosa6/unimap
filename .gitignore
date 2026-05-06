@@ -9,6 +9,7 @@ output/
 /unimap-api
 /icp-hunter
 /unimap-gui
+/unimap-web
 
 # Configs with secrets
 configs/config.yaml
@@ -59,3 +60,12 @@ screenshots/**
 !screenshots/.gitkeep
 hash_store/records/**/*.json
 !hash_store/records/.gitkeep
+
+# Claude memory
+memory/
+
+# Runtime data
+data/
+
+# Backup test files
+internal/backup/backups/*.tar.gz

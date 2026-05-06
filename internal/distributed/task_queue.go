@@ -1,7 +1,11 @@
 package distributed
 
 import (
+	"encoding/json"
 	"fmt"
+	"math/rand"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -35,6 +39,17 @@ type TaskResult struct {
 	DurationMS int64                  `json:"duration_ms,omitempty"`
 	Output     map[string]interface{} `json:"output,omitempty"`
 	Error      string                 `json:"error,omitempty"`
+	Retryable  bool                   `json:"retryable,omitempty"` // 是否可重试
+}
+
+// RetryRecord 重试记录
+type RetryRecord struct {
+	Attempt     int       `json:"attempt"`
+	NodeID      string    `json:"node_id"`
+	Error       string    `json:"error"`
+	RetryDelay  int64     `json:"retry_delay_ms"`
+	NextRetryAt time.Time `json:"next_retry_at"`
+	Timestamp   time.Time `json:"timestamp"`
 }
 
 // TaskRecord is the queue-side task state.
@@ -55,6 +70,12 @@ type TaskRecord struct {
 	UpdatedAt      time.Time              `json:"updated_at"`
 	LastError      string                 `json:"last_error,omitempty"`
 	Result         map[string]interface{} `json:"result,omitempty"`
+
+	// 重试相关字段
+	Retryable    bool          `json:"retryable"`               // 是否可重试
+	RetryDelay   time.Duration `json:"retry_delay,omitempty"`   // 重试延迟
+	NextRetryAt  time.Time     `json:"next_retry_at,omitempty"` // 下次重试时间
+	RetryHistory []RetryRecord `json:"retry_history,omitempty"` // 重试历史
 }
 
 // TaskQueue stores distributed tasks in memory and supports node claim/result workflow.
@@ -63,19 +84,27 @@ type TaskQueue struct {
 	pending            []string
 	leaseJitter        time.Duration
 	defaultMaxReassign int
+	scheduler          Scheduler
+	snapshotPath       string
 	mu                 sync.Mutex
 	stopChan           chan struct{}
 	stopped            bool
 }
 
 func NewTaskQueue() *TaskQueue {
+	return NewTaskQueueWithPath("")
+}
+
+func NewTaskQueueWithPath(snapshotPath string) *TaskQueue {
 	q := &TaskQueue{
 		tasks:              make(map[string]*TaskRecord),
 		pending:            make([]string, 0),
 		leaseJitter:        2 * time.Second,
 		defaultMaxReassign: 1,
 		stopChan:           make(chan struct{}),
+		snapshotPath:       snapshotPath,
 	}
+	q.loadSnapshot()
 	go q.startBackgroundRecycle()
 	return q
 }
@@ -113,6 +142,13 @@ func (q *TaskQueue) SetDefaultMaxReassign(v int) {
 	q.defaultMaxReassign = normalizeMaxReassign(v)
 }
 
+// SetScheduler sets the task scheduler for selecting tasks during claim
+func (q *TaskQueue) SetScheduler(s Scheduler) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.scheduler = s
+}
+
 func (q *TaskQueue) Enqueue(env TaskEnvelope) (TaskRecord, error) {
 	taskID := strings.TrimSpace(env.TaskID)
 	if taskID == "" {
@@ -147,6 +183,7 @@ func (q *TaskQueue) Enqueue(env TaskEnvelope) (TaskRecord, error) {
 	q.tasks[taskID] = rec
 	q.pending = append(q.pending, taskID)
 	q.sortPendingLocked()
+	q.saveLocked()
 	return *rec, nil
 }
 
@@ -173,27 +210,130 @@ func (q *TaskQueue) Claim(nodeID string, nodeCaps []string) (*TaskRecord, error)
 		caps[v] = struct{}{}
 	}
 
+	now := time.Now()
+
 	for idx, taskID := range q.pending {
 		rec := q.tasks[taskID]
 		if rec == nil || rec.Status != TaskStatusPending {
 			continue
 		}
+
+		// 检查是否到达重试时间
+		if !rec.NextRetryAt.IsZero() && now.Before(rec.NextRetryAt) {
+			continue
+		}
+
 		if !canHandleCaps(rec.RequiredCaps, caps) {
 			continue
 		}
 
 		rec.Status = TaskStatusClaimed
 		rec.AssignedNode = nodeID
-		rec.Attempt++
-		rec.UpdatedAt = time.Now()
-		rec.LeaseUntil = rec.UpdatedAt.Add(time.Duration(rec.TimeoutSeconds)*time.Second + q.leaseJitter)
+		rec.LeaseUntil = now.Add(time.Duration(rec.TimeoutSeconds)*time.Second + q.leaseJitter)
+		rec.UpdatedAt = now
+		// 清除重试相关状态，准备重新执行
+		rec.NextRetryAt = time.Time{}
+		rec.RetryDelay = 0
 
 		q.pending = append(q.pending[:idx], q.pending[idx+1:]...)
+		q.saveLocked()
 		copyRec := *rec
 		return &copyRec, nil
 	}
 
 	return nil, nil
+}
+
+// ClaimWithNode claims a task using the configured scheduler and full node record.
+// When no scheduler is set, falls back to built-in priority-based selection.
+func (q *TaskQueue) ClaimWithNode(node *NodeRecord) (*TaskRecord, error) {
+	if node == nil {
+		return nil, fmt.Errorf("node is required")
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	q.recycleExpiredLocked()
+	if len(q.pending) == 0 {
+		return nil, nil
+	}
+
+	// Skip nodes that are offline or in critical health
+	if !node.Online || node.HealthStatus == "critical" {
+		return nil, nil
+	}
+
+	// Gather eligible pending tasks
+	eligible := make([]*TaskRecord, 0, len(q.pending))
+	now := time.Now()
+	for _, taskID := range q.pending {
+		rec := q.tasks[taskID]
+		if rec == nil || rec.Status != TaskStatusPending {
+			continue
+		}
+		if !rec.NextRetryAt.IsZero() && now.Before(rec.NextRetryAt) {
+			continue
+		}
+		if !canHandleCaps(rec.RequiredCaps, makeCapSet(node.Capabilities)) {
+			continue
+		}
+		eligible = append(eligible, rec)
+	}
+
+	if len(eligible) == 0 {
+		return nil, nil
+	}
+
+	var selected *TaskRecord
+	if q.scheduler != nil {
+		selected = q.scheduler.SelectTask(eligible, node)
+	} else {
+		// Fallback: select highest priority, earliest created task
+		selected = eligible[0]
+		for _, t := range eligible[1:] {
+			if t.Priority > selected.Priority ||
+				(t.Priority == selected.Priority && t.CreatedAt.Before(selected.CreatedAt)) {
+				selected = t
+			}
+		}
+	}
+
+	if selected == nil {
+		return nil, nil
+	}
+
+	// Mark task as claimed
+	selected.Status = TaskStatusClaimed
+	selected.AssignedNode = node.NodeID
+	selected.LeaseUntil = now.Add(time.Duration(selected.TimeoutSeconds)*time.Second + q.leaseJitter)
+	selected.UpdatedAt = now
+	selected.NextRetryAt = time.Time{}
+	selected.RetryDelay = 0
+
+	// Remove from pending list
+	for i, id := range q.pending {
+		if id == selected.TaskID {
+			q.pending = append(q.pending[:i], q.pending[i+1:]...)
+			break
+		}
+	}
+
+	q.saveLocked()
+
+	copyRec := *selected
+	return &copyRec, nil
+}
+
+func makeCapSet(caps []string) map[string]struct{} {
+	result := make(map[string]struct{}, len(caps))
+	for _, c := range caps {
+		v := strings.TrimSpace(c)
+		if v != "" {
+			result[v] = struct{}{}
+		}
+	}
+	return result
 }
 
 func (q *TaskQueue) SubmitResult(res TaskResult) (TaskRecord, error) {
@@ -224,11 +364,56 @@ func (q *TaskQueue) SubmitResult(res TaskResult) (TaskRecord, error) {
 		return TaskRecord{}, fmt.Errorf("task assigned to another node")
 	}
 
-	rec.Status = status
-	rec.LastError = strings.TrimSpace(res.Error)
-	rec.Result = cloneMap(res.Output)
-	rec.UpdatedAt = time.Now()
-	rec.LeaseUntil = time.Time{}
+	now := time.Now()
+
+	if status == TaskStatusCompleted {
+		// 任务成功完成
+		rec.Status = status
+		rec.Result = cloneMap(res.Output)
+		rec.UpdatedAt = now
+		rec.LeaseUntil = time.Time{}
+	} else if status == TaskStatusFailed {
+		// 任务失败
+		rec.LastError = strings.TrimSpace(res.Error)
+		rec.UpdatedAt = now
+		rec.LeaseUntil = time.Time{}
+
+		// 检查是否应该重试
+		if res.Retryable && rec.Attempt < rec.MaxReassign {
+			// 计算重试延迟（指数退避）
+			retryDelay := q.calculateRetryDelay(rec.Attempt)
+			nextRetryAt := now.Add(retryDelay)
+
+			// 创建重试记录
+			retryRecord := RetryRecord{
+				Attempt:     rec.Attempt,
+				NodeID:      nodeID,
+				Error:       rec.LastError,
+				RetryDelay:  int64(retryDelay / time.Millisecond),
+				NextRetryAt: nextRetryAt,
+				Timestamp:   now,
+			}
+
+			// 更新任务状态为等待重试
+			rec.Status = TaskStatusPending
+			rec.AssignedNode = ""
+			rec.Retryable = true
+			rec.RetryDelay = retryDelay
+			rec.NextRetryAt = nextRetryAt
+			rec.RetryHistory = append(rec.RetryHistory, retryRecord)
+			rec.Attempt++
+
+			// 将任务重新加入待处理队列
+			q.pending = append(q.pending, taskID)
+			q.dedupPendingLocked()
+			q.sortPendingLocked()
+		} else {
+			// 达到最大重试次数或不可重试，标记为失败
+			rec.Status = TaskStatusFailed
+		}
+	}
+
+	q.saveLocked()
 	return *rec, nil
 }
 
@@ -292,7 +477,8 @@ func (q *TaskQueue) Delete(taskID string) error {
 	}
 
 	delete(q.tasks, taskID)
-	_ = rec // suppress unused variable warning
+	_ = rec
+	q.saveLocked()
 	return nil
 }
 
@@ -358,7 +544,20 @@ func (q *TaskQueue) recycleExpiredLocked() {
 		rec.UpdatedAt = now
 		q.pending = append(q.pending, rec.TaskID)
 	}
+	q.dedupPendingLocked()
 	q.sortPendingLocked()
+}
+
+func (q *TaskQueue) dedupPendingLocked() {
+	seen := make(map[string]bool, len(q.pending))
+	deduped := q.pending[:0]
+	for _, id := range q.pending {
+		if !seen[id] {
+			seen[id] = true
+			deduped = append(deduped, id)
+		}
+	}
+	q.pending = deduped
 }
 
 func (q *TaskQueue) sortPendingLocked() {
@@ -449,6 +648,35 @@ func normalizedTimeoutSeconds(v int) int {
 	return v
 }
 
+// calculateRetryDelay 计算重试延迟（指数退避）
+func (q *TaskQueue) calculateRetryDelay(attempt int) time.Duration {
+	// 基础延迟：1秒
+	baseDelay := 1 * time.Second
+
+	// 最大延迟：60秒
+	maxDelay := 60 * time.Second
+
+	// 指数退避：2^attempt * baseDelay，加上随机抖动
+	delay := baseDelay * time.Duration(1<<uint(attempt))
+
+	// 添加随机抖动（±20%）
+	jitterFactor := rand.Float64() // 0.0-1.0
+	jitter := time.Duration(float64(delay) * 0.2 * jitterFactor)
+
+	if rand.Intn(2) == 0 {
+		delay += jitter
+	} else {
+		delay -= jitter
+	}
+
+	// 限制最大延迟
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+
+	return delay
+}
+
 func cloneMap(in map[string]interface{}) map[string]interface{} {
 	if len(in) == 0 {
 		return nil
@@ -465,4 +693,81 @@ func cloneMap(in map[string]interface{}) map[string]interface{} {
 		return nil
 	}
 	return out
+}
+
+// saveSnapshot persists the current task queue state to disk.
+func (q *TaskQueue) saveSnapshot() {
+	if q.snapshotPath == "" {
+		return
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.saveLocked()
+}
+
+func (q *TaskQueue) saveLocked() {
+	if q.snapshotPath == "" {
+		return
+	}
+
+	dir := filepath.Dir(q.snapshotPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return
+	}
+
+	type snapshot struct {
+		Tasks   []*TaskRecord `json:"tasks"`
+		Pending []string      `json:"pending"`
+	}
+	s := &snapshot{
+		Tasks:   make([]*TaskRecord, 0, len(q.tasks)),
+		Pending: make([]string, len(q.pending)),
+	}
+	for _, rec := range q.tasks {
+		s.Tasks = append(s.Tasks, rec)
+	}
+	copy(s.Pending, q.pending)
+
+	data, err := json.Marshal(s)
+	if err != nil {
+		return
+	}
+
+	tmpPath := q.snapshotPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		return
+	}
+	os.Rename(tmpPath, q.snapshotPath)
+}
+
+// loadSnapshot restores the task queue state from disk.
+func (q *TaskQueue) loadSnapshot() {
+	if q.snapshotPath == "" {
+		return
+	}
+	data, err := os.ReadFile(q.snapshotPath)
+	if err != nil {
+		return
+	}
+
+	var s struct {
+		Tasks   []*TaskRecord `json:"tasks"`
+		Pending []string      `json:"pending"`
+	}
+	if err := json.Unmarshal(data, &s); err != nil {
+		return
+	}
+
+	seen := make(map[string]bool)
+	for _, rec := range s.Tasks {
+		if rec != nil {
+			q.tasks[rec.TaskID] = rec
+			seen[rec.TaskID] = true
+		}
+	}
+	for _, id := range s.Pending {
+		if seen[id] {
+			q.pending = append(q.pending, id)
+		}
+	}
 }
