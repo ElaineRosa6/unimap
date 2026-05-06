@@ -90,7 +90,7 @@ func TestApplyDefaults(t *testing.T) {
 	// Test default web configurations
 	assert.Equal(t, []string{"http://localhost:8448", "http://127.0.0.1:8448"}, cfg.Web.CORS.AllowedOrigins)
 	assert.Equal(t, []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}, cfg.Web.CORS.AllowedMethods)
-	assert.Equal(t, []string{"Content-Type", "Authorization", "X-Requested-With", "X-WebSocket-Token"}, cfg.Web.CORS.AllowedHeaders)
+	assert.Equal(t, []string{"Content-Type", "Authorization", "X-Admin-Token", "X-Requested-With", "X-WebSocket-Token"}, cfg.Web.CORS.AllowedHeaders)
 	assert.Equal(t, 600, cfg.Web.CORS.MaxAge)
 	
 	assert.Equal(t, 60, cfg.Web.RateLimit.RequestsPerWindow)

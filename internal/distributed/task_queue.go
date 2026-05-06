@@ -1,8 +1,11 @@
 package distributed
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -82,19 +85,26 @@ type TaskQueue struct {
 	leaseJitter        time.Duration
 	defaultMaxReassign int
 	scheduler          Scheduler
+	snapshotPath       string
 	mu                 sync.Mutex
 	stopChan           chan struct{}
 	stopped            bool
 }
 
 func NewTaskQueue() *TaskQueue {
+	return NewTaskQueueWithPath("")
+}
+
+func NewTaskQueueWithPath(snapshotPath string) *TaskQueue {
 	q := &TaskQueue{
 		tasks:              make(map[string]*TaskRecord),
 		pending:            make([]string, 0),
 		leaseJitter:        2 * time.Second,
 		defaultMaxReassign: 1,
 		stopChan:           make(chan struct{}),
+		snapshotPath:       snapshotPath,
 	}
+	q.loadSnapshot()
 	go q.startBackgroundRecycle()
 	return q
 }
@@ -173,6 +183,7 @@ func (q *TaskQueue) Enqueue(env TaskEnvelope) (TaskRecord, error) {
 	q.tasks[taskID] = rec
 	q.pending = append(q.pending, taskID)
 	q.sortPendingLocked()
+	q.saveLocked()
 	return *rec, nil
 }
 
@@ -225,6 +236,7 @@ func (q *TaskQueue) Claim(nodeID string, nodeCaps []string) (*TaskRecord, error)
 		rec.RetryDelay = 0
 
 		q.pending = append(q.pending[:idx], q.pending[idx+1:]...)
+		q.saveLocked()
 		copyRec := *rec
 		return &copyRec, nil
 	}
@@ -306,6 +318,8 @@ func (q *TaskQueue) ClaimWithNode(node *NodeRecord) (*TaskRecord, error) {
 			break
 		}
 	}
+
+	q.saveLocked()
 
 	copyRec := *selected
 	return &copyRec, nil
@@ -399,6 +413,7 @@ func (q *TaskQueue) SubmitResult(res TaskResult) (TaskRecord, error) {
 		}
 	}
 
+	q.saveLocked()
 	return *rec, nil
 }
 
@@ -462,7 +477,8 @@ func (q *TaskQueue) Delete(taskID string) error {
 	}
 
 	delete(q.tasks, taskID)
-	_ = rec // suppress unused variable warning
+	_ = rec
+	q.saveLocked()
 	return nil
 }
 
@@ -677,4 +693,81 @@ func cloneMap(in map[string]interface{}) map[string]interface{} {
 		return nil
 	}
 	return out
+}
+
+// saveSnapshot persists the current task queue state to disk.
+func (q *TaskQueue) saveSnapshot() {
+	if q.snapshotPath == "" {
+		return
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.saveLocked()
+}
+
+func (q *TaskQueue) saveLocked() {
+	if q.snapshotPath == "" {
+		return
+	}
+
+	dir := filepath.Dir(q.snapshotPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return
+	}
+
+	type snapshot struct {
+		Tasks   []*TaskRecord `json:"tasks"`
+		Pending []string      `json:"pending"`
+	}
+	s := &snapshot{
+		Tasks:   make([]*TaskRecord, 0, len(q.tasks)),
+		Pending: make([]string, len(q.pending)),
+	}
+	for _, rec := range q.tasks {
+		s.Tasks = append(s.Tasks, rec)
+	}
+	copy(s.Pending, q.pending)
+
+	data, err := json.Marshal(s)
+	if err != nil {
+		return
+	}
+
+	tmpPath := q.snapshotPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		return
+	}
+	os.Rename(tmpPath, q.snapshotPath)
+}
+
+// loadSnapshot restores the task queue state from disk.
+func (q *TaskQueue) loadSnapshot() {
+	if q.snapshotPath == "" {
+		return
+	}
+	data, err := os.ReadFile(q.snapshotPath)
+	if err != nil {
+		return
+	}
+
+	var s struct {
+		Tasks   []*TaskRecord `json:"tasks"`
+		Pending []string      `json:"pending"`
+	}
+	if err := json.Unmarshal(data, &s); err != nil {
+		return
+	}
+
+	seen := make(map[string]bool)
+	for _, rec := range s.Tasks {
+		if rec != nil {
+			q.tasks[rec.TaskID] = rec
+			seen[rec.TaskID] = true
+		}
+	}
+	for _, id := range s.Pending {
+		if seen[id] {
+			q.pending = append(q.pending, id)
+		}
+	}
 }

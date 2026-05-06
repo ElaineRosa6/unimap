@@ -126,8 +126,9 @@ func TestGenerateAPIKey(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if apiKey.ExpiresAt.Before(time.Now()) {
-			t.Error("expected future or zero expiration")
+		// Zero expiration means no expiration (IsZero)
+		if !apiKey.ExpiresAt.IsZero() {
+			t.Errorf("expected zero expiration (no expiry), got %v", apiKey.ExpiresAt)
 		}
 	})
 }
@@ -304,8 +305,8 @@ func TestUpdateLastUsed(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		mgr.UpdateLastUsed(apiKey.Key)
 
-		// Verify by looking up - LastUsed should have been set
-		found := mgr.keys[apiKey.Key]
+		// Verify by looking up by ID - LastUsed should have been set
+		found := mgr.keys[apiKey.ID]
 		if !found.LastUsed.After(before) {
 			t.Error("expected LastUsed to be updated")
 		}

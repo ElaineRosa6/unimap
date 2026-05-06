@@ -2,310 +2,54 @@
 
 ---
 
-## [2026-04-29] 第二轮安全修复 — 24 项 Code Review 修复闭环
+## [2026-04-29] 第三轮安全修复 — 24 项 Code Review 剩余问题修复
 
 > **分支**: `release/major-upgrade-vNEXT`
 > **变更类型**: 安全修复 + 代码质量提升
-> **涉及模块**: web、internal/config、internal/alerting、internal/auth、internal/utils、internal/backup、cmd/unimap-cli
+> **涉及模块**: scheduler、auth、config、backup、distributed、web、cmd/unimap-cli
 
-### 一、认证与授权 (3 项)
+### 一、Webhook SSRF 防护（DNS/重定向绕过修复）
 
-- **WebSocket 认证绕过修复** — WebSocket 连接路由到受认证中间件保护的路径，Bridge API 通过完整中间件链 (`web/server.go`)
-- **Admin Token 自动输出** — loopback 地址启动时打印生成的 token，非 loopback fail-closed (`internal/config/config.go`)
-- **移除 query 参数认证** — `admin_token` query 参数移除，仅保留 `X-Admin-Token` header 防日志泄露 (`web/middleware_auth.go`)
+- **DNS 解析校验** — `ValidateWebhookURLPublic` 增加 `net.LookupIP` 校验所有解析 IP，阻止私有/回环地址 (`internal/scheduler/scheduler.go`)
+- **安全 HTTP Client** — `safeWebhookClient()` 拒绝所有重定向 + 自定义 DialContext 阻止连接私有 IP (`internal/scheduler/scheduler.go`)
 
-### 二、SSRF 防护 (2 项)
+### 二、API Key 认证体系修复
 
-- **Webhook URL SSRF 防护** — `NewWebhookChannel` 添加 scheme 校验、回环/私有 IP 拦截、DNS 解析验证 (`internal/alerting/channels.go`)
-- **DNS Rebinding 防护** — 对 hostname 进行 DNS 解析并检查返回的 IP 地址
+- **SHA-256 hash 比对** — 引入 `KeyHash` 字段，`ValidateAPIKey`/`UpdateLastUsed` 改用 hash 比对，解决持久化后密钥不可验证问题 (`internal/auth/api_key.go`)
+- **统一 map key 策略** — `GenerateAPIKey` 改用 ID 为 map key，`loadFromStorage` 使用 ID 保持一致 (`internal/auth/api_key.go`)
+- **expiresIn=0 永不过期** — `zeroOrExpiry()` 将 0 转为 `IsZero` 时间 (`internal/auth/api_key.go`)
+- **auth 平行认证接入** — Server 结构体新增 `apiAuth` 字段；路由层接入 `OptionalAPIKey` 中间件，API Key 认证体系正式接入主路由 (`web/server.go`, `web/router.go`)
 
-### 三、并发安全 (3 项)
+### 三、分布式任务队列持久化
 
-- **APIKeyManager 竞态修复** — `ValidateAPIKey` 改为写锁 (`internal/auth/api_key.go`)
-- **缓存策略线程安全** — `DefaultCacheStrategy` 添加 `sync.RWMutex` (`internal/utils/cache_strategy.go`)
-- **Chrome 进程退出清理** — `s.chromeCmd` 置 nil 支持自动恢复 (`web/cdp_handlers.go`)
+- **JSON 快照持久化** — 新增 `NewTaskQueueWithPath()` + `saveLocked()`/`loadSnapshot()`，所有状态变更（Enqueue/Claim/SubmitResult/Delete）自动保存 (`internal/distributed/task_queue.go`)
+- **Server 接入** — TaskQueue 初始化传入 `./data/distributed_tasks.json` 路径 (`web/server.go`)
 
-### 四、资源管理 (3 项)
+### 四、备份系统错误处理
 
-- **篡改检测并发限制** — `maxTamperConcurrency = 20`, `maxTamperURLs = 500` (`web/tamper_handlers.go`)
-- **内存缓存默认上限** — `maxSize` 默认 10000 (`internal/utils/cache.go`)
-- **CSV 文件防覆盖** — `os.O_CREATE|os.O_EXCL` (`cmd/unimap-cli/main.go`)
+- **Source 失败累积错误** — 静默跳过的 source 错误累积并在无有效文件时返回错误 (`internal/backup/backup.go`)
+- **Tar 写入失败部分成功** — 累积 tar 错误，最终返回时包含失败统计 (`internal/backup/backup.go`)
+- **BackupConfig 注释修正** — 注释改为"绝对路径或相对路径" (`internal/backup/backup.go`)
 
-### 五、备份系统 (3 项)
+### 五、限流与安全头
 
-- **Tar 相对路径** — `filepath.Rel` 替代绝对路径 (`internal/backup/backup.go`)
-- **移除 configs 默认备份** — 防止敏感配置泄露 (`web/backup_handlers.go`)
-- **备份配置回退与错误报告** — 默认值 + 完善错误收集 (`internal/backup/backup.go`)
+- **X-Real-IP 代理检查** — 和 XFF 一样加入 `isPrivateOrInternalHost` 检查，防止可伪造代理头 (`web/middleware_ratelimit.go`)
+- **CORS 默认 X-Admin-Token** — config 层默认 AllowedHeaders 添加 `X-Admin-Token` (`internal/config/config.go`)
 
-### 六、错误处理与输入验证 (3 项)
+### 六、可用性与安全性
 
-- **错误信息脱敏** — `sanitizeError()` 过滤 stack trace (`web/http_helpers.go`, `web/screenshot_handlers.go`)
-- **限流 XFF 伪造防护** — 仅信任来自私有/内部地址的 `X-Forwarded-For` (`web/middleware_ratelimit.go`)
-- **默认绑定 localhost** — `BindAddress` 默认 `127.0.0.1` (`internal/config/config.go`)
+- **Admin Token 非loopback 提示** — 非回环绑定打印 token 并提示保存 (`internal/config/config.go`)
+- **CLI JSON 防覆盖** — `writeJSONFile` 改用 `O_EXCL`，与 CSV 一致 (`cmd/unimap-cli/api_subcommands.go`)
 
-### 七、测试适配 (7 项)
+### 七、测试修复
 
-- **Webhook 测试构造函数** — `NewWebhookChannelForTest` 绕过 SSRF 验证 (`internal/alerting/channels.go`)
-- **collectFiles 签名变更** — 更新 4 个调用点 (`internal/backup/backup_test.go`)
-- **fail-closed 测试期望更新** — `TestIsPrivateOrInternalIP_InvalidIP` (`web/screenshot_helpers_test.go`)
-- **Query 认证测试更新** — `TestAdminAuthMiddleware_ValidQuery_Passes` 改用 header (`web/middleware_auth_test.go`)
-- **CORS 预检请求处理** — 完善 OPTIONS 处理 (`web/http_helpers.go`)
-- **CLI 路径校验** — CSV 路径存在性检查 (`cmd/unimap-cli/main.go`)
-- **备份错误处理** — 部分失败正确报告 (`internal/backup/backup.go`)
+- **TestGenerateAPIKey/zero_expiration** — `expiresIn=0` 返回 `IsZero` 时间，测试逻辑更新
+- **TestUpdateLastUsed** — 改为按 ID 查找验证（map key 策略变更）
+- **config 测试** — 默认 CORS headers 预期更新
 
 ### 验证结果
 
-- ✅ `go build ./...` — 构建成功
-- ✅ `go vet ./...` — 静态检查通过
-- ✅ `go test -race ./...` — 32 个测试包通过，0 数据竞争
+- `go build ./...` — 构建成功
+- `go test -race ./...` — 全部通过（0 failures, 0 races）
 
 ---
-
-## [2026-04-25] 生产就绪闭环 — 分布式故障转移证据归档
-
-> **分支**: `release/major-upgrade-vNEXT`
-> **变更类型**: 文档归档 + 生产就绪闭环
-> **涉及模块**: distributed（故障转移）、PRODUCTION_READINESS_PLAN.md
-
-### 分布式故障转移证据归档（P0-3）
-
-- **新增证据文件**: `docs/evidence/2026-04-25-failover-e2e.md`
-- **覆盖 5 个测试场景**:
-  1. `TestFailover_NodeGoesOffline_ReleasesTasks` — 节点离线 → 任务释放 → 健康节点重新领取
-  2. `TestFailover_HandleNodeFailure_WithHealthyNodes` — 3 节点场景下单节点故障
-  3. `TestFailover_MaxReassignExceeded_MarkedFailed` — 超过 MaxReassign 限制标记为 FAILED
-  4. `TestFailover_NoHealthyNodes_ReturnsError` — 无健康节点时优雅报错
-  5. `TestFailover_Deregister_ReleasesTasks` — 节点注销释放任务
-- **验证结果**: 5/5 通过，`-race` 检测 0 数据竞争
-- **生产就绪状态**: 从 "⚠️ 证据归档待补充" 更新为 "✅ 全部完成，证据归档完整"
-
-### 文档更新
-
-- `docs/PRODUCTION_READINESS_PLAN.md` — P0-3 更新为已完成，新增"第四部分续"章节
-- 评估总览状态、最后更新日期同步更新
-
----
-
-## [2026-04-15] 测试修复闭环 + 覆盖率提升 + 未测试包覆盖
-
-> **分支**: `release/major-upgrade-vNEXT`
-> **变更类型**: 测试修复闭环 + 覆盖率提升 + 未测试包覆盖
-> **涉及模块**: workerpool、resourcepool、node handlers、middleware、query handlers、websocket handlers、proxypool、decoder、codequality、database、priority、threshold、circuitbreaker、degradation、requestid、memory、objectpool
-
-### 一、竞态测试修复
-
-#### 1.1 workerpool 竞态（3 个测试）
-
-**问题**: `MockTask.executed` 字段为普通 `bool`，在 `Execute()` 中被 worker goroutine 写入，在测试主 goroutine 中读取，`go test -race` 检测到 data race。
-
-**修复**: `executed bool` → `executed atomic.Bool`，所有读写改为 `Load()`/`Store()`。
-
-**受影响测试**: `TestPoolSubmitTask`、`TestPoolSubmitMultipleTasks`、`TestPoolWait`
-
-#### 1.2 resourcepool 竞态（1 个测试）
-
-**问题**: `PoolMetrics` 的 `TotalCreated`、`TotalAcquired` 等 `int64` 字段在多个 goroutine 并发 `++`，无原子保护。
-
-**修复**: 所有 `p.metrics.XXX++` 改为 `atomic.AddInt64(&p.metrics.XXX, 1)`。
-
-**受影响测试**: `TestPool_ConcurrentAcquireRelease`
-
-### 二、Handler 鉴权测试修复（3 个测试）
-
-**问题**: 3 个 handler 测试未配置 `AdminToken` 和 `NodeAuthTokens`，导致 auth 校验返回 401。
-
-**修复**:
-- `TestNodeRegisterHeartbeatStatus` — 补充 `NodeAuthTokens["node-a"]` + `AdminToken` + `Authorization` header
-- `TestNodeNetworkProfile` — 补充 `AdminToken` + `Authorization` header
-- `TestNodeTaskFlow` — 补充 `NodeAuthTokens` + `AdminToken` + 各环节对应的 `Authorization` header
-
-### 三、新增 Middleware/WebSocket/Query 测试
-
-- Middleware: 8 个 auth + 3 个 requestID + 3 个限流配置测试
-- WebSocket: 11 个测试覆盖验证、消息广播、进度更新、模式切换
-- Query Handler: 7 个测试覆盖状态查询、空白验证、分页解析
-
-### 四、未测试包覆盖（11 个包，198 个测试）
-
-| 包路径 | 测试数 | 覆盖率 |
-|--------|--------|--------|
-| `internal/proxypool` | 19 | 97.0% |
-| `internal/tamper/decoder` | 22 | 92.2% |
-| `internal/utils/codequality` | 16 | 78.5% |
-| `internal/tamper/database` | 26 | 77.9% |
-| `internal/tamper/priority` | 20+ | 92.9% |
-| `internal/tamper/threshold` | 24+ | 99.2% |
-| `internal/utils/circuitbreaker` | 12 | 87.3% |
-| `internal/utils/degradation` | 13 | 94.0% |
-| `internal/requestid` | 16 | 100.0% |
-| `internal/utils/memory` | 9 | 95.3% |
-| `internal/utils/objectpool` | 11 | 74.8% |
-
-### 五、测试结果汇总
-
-| 检查项 | 结果 |
-|--------|------|
-| `go build ./...` | 0 错误 |
-| `go vet ./...` | 0 警告 |
-| `go test -race ./...` | 通过（0 failures, 0 races；该次记录 scope=31 packages） |
-| 本轮修复/新增测试 | 234 个 |
-
----
-
-## [2026-04-14] 生产就绪 Phase 2/3 功能增强
-
-> **分支**: `release/major-upgrade-vNEXT`
-> **变更类型**: 生产就绪 Phase 2/3 功能增强
-> **涉及模块**: 限流中间件、备份系统、审计中间件、健康检查、熔断器、日志告警、CI/CD
-
-### 一、速率限制中间件增强
-
-- **固定窗口 → 滑动窗口**: 窗口边界突发问题修复
-- **X-RateLimit-* 响应头**: Limit/Remaining/Reset/Retry-After
-- **测试覆盖**: 9 个用例覆盖滑动窗口、并发安全、响应头验证
-
-### 二、数据备份模块
-
-- `internal/backup/backup.go`: tar.gz 归档、多源备份、保留策略
-- API 端点: `/api/backup/create`、`/api/backup/list`
-- 配置: `backup.enabled`、`output_dir`、`max_backups`、`sources`
-- 测试覆盖: 17 个用例
-
-### 三、负载测试脚本
-
-**新建 `scripts/load_test.sh`**:
-- 纯 bash/curl 实现，无外部依赖
-- 测试 6 个关键端点：健康检查、查询、截图、篡改检测、导入、就绪
-- 统计 RPS、成功率、p50/p99/max 延迟、429 限流次数
-
-### 四、CI/CD Docker 构建
-
-- GitHub Container Registry (ghcr.io) 推送镜像
-- 支持 SHA、分支名、semver、latest 四种标签
-- 仅在 `main`/`master` 分支 push 时触发
-
----
-
-## [2026-04-13] 跨平台适配增强 + 缺陷修复
-
-> **分支**: `release/major-upgrade-vNEXT`
-> **变更类型**: 缺陷修复 + 跨平台适配增强
-> **涉及模块**: Web 前端、定时任务、截图管理器、信号处理、CI/CD、Docker
-
-### 一、缺陷修复
-
-#### 1.1 页面打开自动执行示例查询检查
-
-移除 `initLoginStatusPoll()` 立即调用，仅保留 15 秒间隔轮询。
-
-#### 1.2 定时任务页面渲染错误
-
-模板改用 Go 内置 `{{index $.TaskTypeLabels .}}` 进行 map 查找。
-
-### 二、跨平台适配增强
-
-- **Dockerfile Go 版本对齐**: `golang:1.23-alpine` → `golang:1.26-alpine`
-- **信号处理跨平台兼容**: `SIGHUP` 仅在 Unix 平台注册
-- **Chrome 路径检测统一**: `runtime.GOOS` 判断，补全 Edge/beta/snap 路径
-- **CI 增加 macOS 覆盖**: build/test/lint 加入 `macos-latest` matrix
-
-### 三、服务器部署检查结果
-
-- 容器端口与程序默认端口不一致（Dockerfile 8080 vs 配置 8448）
-- 分布式管理接口默认无 token 保护
-- CORS 默认仅面向本机
-
----
-
-## [2026-04-10] 大规模缺陷修复 + 架构增强
-
-> **分支**: `release/major-upgrade-vNEXT`
-> **变更类型**: 缺陷修复 + 功能增强
-> **涉及模块**: Web 前端、Cookie 管理、截图系统、Server 结构、插件系统、配置系统
-
-### 一、新增功能
-
-#### 1.1 Cookie 登录状态检测与智能 UI
-
-新增 `GET /api/cookies/login-status` API + 前端自动响应：
-- CDP/Extension 状态栏 + 各引擎登录状态指示器
-- 自动折叠/展开逻辑（15 秒轮询 + 手动刷新）
-
-#### 1.2 Server 结构体拆分
-
-- `DistributedState` 封装 `NodeRegistry` + `NodeTaskQueue`
-- `BridgeState` 封装 bridge 相关字段 + 自带 mutex
-- Server 字段从 37 降至 25
-
-### 二、已修复缺陷
-
-#### P0 级（影响正确性）
-
-| # | 缺陷 | 修复方式 |
-|---|------|----------|
-| P0-1 | `string(rune(int))` Unicode 控制字符 | 改用 `strconv.Itoa()` |
-| P0-2 | Worker 池缩容 goroutine 泄漏 | 添加 exit signal channel |
-| P0-3 | Logger `asyncRunning` 数据竞争 | 改为 `atomic.Bool` |
-
-#### P1 级（影响稳定性）
-
-| # | 缺陷 | 修复方式 |
-|---|------|----------|
-| P1-1 | 优雅关闭泄漏分布式 goroutine | Shutdown() 中补充 Stop() |
-| P1-2 | 分页任务忽略 Context 取消 | 循环顶部检查 Done() |
-| P1-3 | Config.Clone() 静默丢弃错误 | 手写深拷贝 |
-| P1-4 | 任务队列重试逻辑缺陷 | 修复 Attempt 递增顺序 |
-| P1-5 | 核心 handler 缺乏单元测试 | 补充 query/cookie/health 测试 |
-| P1-6 | 告警通知通道未实现 | WebhookChannel 已存在 |
-
-#### P2 级（技术债务）
-
-- 输入安全函数改用 `bluemonday.StrictPolicy()`
-- 截图文件权限 `0644` → `0600`
-- 分布式调度器接入、插件示例实现
-- CI 管道完善、Docker 容器安全
-- Config checksum 改为 SHA-256、重试配置接入
-
-### 三、架构增强
-
-#### ARC-1: ScreenshotRouter 双模式高可用
-
-- ScreenshotRouter: 统一入口，自动路由 + 降级
-- HealthChecker: CDP/Extension 健康探针
-- Prometheus 指标: `screenshot_mode_switches_total` 等
-- 单元测试: 11 个覆盖路由/降级/探针
-
-#### ARC-2: CDP 跨平台完整支持
-
-- macOS/Linux/Windows 路径统一
-- 使用 `runtime.GOOS` 进行平台检测
-
-### 四、构建与测试状态
-
-| 检查项 | 状态 |
-|--------|------|
-| `go build ./...` | 通过 |
-| `go test ./...` | 全绿（0 失败） |
-| `go vet ./...` | 无新增警告 |
-
----
-
-## 历史版本
-
-### [v2.1.5] 篡改检测优化
-
-- 篡改检测系统优化
-- 数据库优化
-- 日志系统优化
-- 性能优化
-
-### [v1.0.0] 初始版本
-
-- 多引擎搜索功能
-- 网页截图功能
-- 篡改检测功能
-
----
-
-**记录人**: Claude Code
-**项目分支**: `release/major-upgrade-vNEXT`

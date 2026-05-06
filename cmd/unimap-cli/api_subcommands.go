@@ -240,7 +240,13 @@ func writeJSONFile(path string, v interface{}) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("file %q already exists, refusing to overwrite: %w", path, err)
+	}
+	defer f.Close()
+	_, err = f.Write(data)
+	return err
 }
 
 func splitCSVText(raw string) []string {

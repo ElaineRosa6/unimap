@@ -4,6 +4,7 @@ package scheduler
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -629,6 +630,7 @@ func validateWebhookURL(webhookURL string) error {
 }
 
 // ValidateWebhookURLPublic validates a webhook URL to prevent SSRF.
+// It performs DNS resolution to verify the resolved IP, not just the literal hostname.
 func ValidateWebhookURLPublic(webhookURL string) error {
 	if webhookURL == "" {
 		return nil
@@ -641,19 +643,20 @@ func ValidateWebhookURLPublic(webhookURL string) error {
 		return fmt.Errorf("webhook URL must use https scheme")
 	}
 	host := parsed.Hostname()
-	// Check for private/internal IPs
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
+	// Resolve DNS and check ALL resolved IPs
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("failed to resolve webhook URL host: %v", err)
 	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return fmt.Errorf("webhook URL resolved to private/internal address: %s", ip)
+		}
+	}
+	// Also check literal hostname for localhost strings (covers DNS rebinding edge cases)
 	lowerHost := strings.ToLower(host)
 	if lowerHost == "localhost" || lowerHost == "127.0.0.1" || lowerHost == "::1" || lowerHost == "0.0.0.0" {
 		return fmt.Errorf("webhook URL cannot point to localhost/loopback address")
-	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	if ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			return fmt.Errorf("webhook URL cannot point to private/internal address")
-		}
 	}
 	return nil
 }
@@ -997,6 +1000,38 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 }
 
 // sendWebhookNotification sends a webhook notification.
+// safeWebhookClient returns an http.Client that:
+// 1. Refuses all redirects (prevents redirect-based SSRF bypass)
+// 2. Only dials public IPs (prevents DNS rebinding at connection time)
+func safeWebhookClient() *http.Client {
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			// Resolve and verify all IPs
+			ips, err := net.LookupIP(host)
+			if err != nil {
+				return nil, fmt.Errorf("DNS lookup blocked for webhook: %v", err)
+			}
+			for _, ip := range ips {
+				if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+					return nil, fmt.Errorf("connection to private IP blocked: %s", ip)
+				}
+			}
+			return net.DialTimeout(network, net.JoinHostPort(host, port), 10*time.Second)
+		},
+	}
+	return &http.Client{
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // refuse all redirects
+		},
+	}
+}
+
 func (s *Scheduler) sendWebhookNotification(webhookURL string, payload map[string]interface{}) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1017,7 +1052,7 @@ func (s *Scheduler) sendWebhookNotification(webhookURL string, payload map[strin
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "UniMap-Scheduler/1.0")
 
-		client := &http.Client{}
+		client := safeWebhookClient()
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("[scheduler] failed to send webhook to %s: %v", webhookURL, err)

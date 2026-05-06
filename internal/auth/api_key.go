@@ -2,7 +2,9 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +19,8 @@ import (
 // APIKey API密钥结构
 type APIKey struct {
 	ID          string    `json:"id"`
-	Key         string    `json:"key,omitempty"`
+	Key         string    `json:"key,omitempty"`      // plaintext key (in-memory only)
+	KeyHash     string    `json:"key_hash,omitempty"` // SHA-256 hash of key (persisted)
 	Description string    `json:"description"`
 	CreatedAt   time.Time `json:"created_at"`
 	ExpiresAt   time.Time `json:"expires_at"`
@@ -69,14 +72,15 @@ func (m *APIKeyManager) GenerateAPIKey(description string, permissions []string,
 	apiKey := &APIKey{
 		ID:          id,
 		Key:         key,
+		KeyHash:     hashKey(key),
 		Description: description,
 		CreatedAt:   time.Now(),
-		ExpiresAt:   time.Now().Add(expiresIn),
+		ExpiresAt:   zeroOrExpiry(expiresIn),
 		Permissions: permissions,
 		Status:      "active",
 	}
 
-	m.keys[key] = apiKey
+	m.keys[id] = apiKey
 	m.saveToStorage()
 
 	return apiKey, nil
@@ -84,28 +88,26 @@ func (m *APIKeyManager) GenerateAPIKey(description string, permissions []string,
 
 // ValidateAPIKey 验证API密钥
 func (m *APIKeyManager) ValidateAPIKey(key string) (*APIKey, error) {
-	m.mutex.Lock() // Write lock because we may modify status
+	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	apiKey, exists := m.keys[key]
-	if !exists {
-		return nil, unierror.APIUnauthorized("Invalid API key")
+	providedHash := hashKey(key)
+	for _, apiKey := range m.keys {
+		if apiKey.KeyHash != "" && apiKey.KeyHash == providedHash {
+			// 检查密钥状态
+			if apiKey.Status != "active" {
+				return nil, unierror.APIUnauthorized("API key is not active")
+			}
+			// 检查是否过期
+			if !apiKey.ExpiresAt.IsZero() && time.Now().After(apiKey.ExpiresAt) {
+				apiKey.Status = "expired"
+				m.saveToStorage()
+				return nil, unierror.APIUnauthorized("API key has expired")
+			}
+			return apiKey, nil
+		}
 	}
-
-	// 检查密钥状态
-	if apiKey.Status != "active" {
-		return nil, unierror.APIUnauthorized("API key is not active")
-	}
-
-	// 检查是否过期
-	if !apiKey.ExpiresAt.IsZero() && time.Now().After(apiKey.ExpiresAt) {
-		// 更新状态为过期
-		apiKey.Status = "expired"
-		m.saveToStorage() // Persist the status change
-		return nil, unierror.APIUnauthorized("API key has expired")
-	}
-
-	return apiKey, nil
+	return nil, unierror.APIUnauthorized("Invalid API key")
 }
 
 // CheckPermission 检查密钥是否有权限
@@ -175,10 +177,13 @@ func (m *APIKeyManager) UpdateLastUsed(key string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	apiKey, exists := m.keys[key]
-	if exists {
-		apiKey.LastUsed = time.Now()
-		m.saveToStorage()
+	providedHash := hashKey(key)
+	for _, apiKey := range m.keys {
+		if apiKey.KeyHash != "" && apiKey.KeyHash == providedHash {
+			apiKey.LastUsed = time.Now()
+			m.saveToStorage()
+			return
+		}
 	}
 }
 
@@ -194,11 +199,11 @@ func (m *APIKeyManager) saveToStorage() {
 		return
 	}
 
-	// 准备保存数据（不包含实际密钥）
+	// 准备保存数据（不包含明文密钥，只保存 keyHash）
 	var keysToSave []*APIKey
 	for _, apiKey := range m.keys {
 		keyCopy := *apiKey
-		keyCopy.Key = "" // 不保存实际密钥
+		keyCopy.Key = "" // 不保存明文密钥
 		keysToSave = append(keysToSave, &keyCopy)
 	}
 
@@ -229,11 +234,24 @@ func (m *APIKeyManager) loadFromStorage() {
 		return
 	}
 
-	// 注意：加载时没有实际密钥，只加载元数据
-	// 实际密钥需要通过其他方式管理
+	// 加载时使用 ID 作为 map key，与生成时保持一致
 	for _, key := range keys {
 		m.keys[key.ID] = key
 	}
+}
+
+// hashKey computes a SHA-256 hash of the plaintext key for comparison.
+func hashKey(key string) string {
+	h := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(h[:])
+}
+
+// zeroOrExpiry returns zero time for no expiration, otherwise the computed expiry.
+func zeroOrExpiry(d time.Duration) time.Time {
+	if d == 0 {
+		return time.Time{}
+	}
+	return time.Now().Add(d)
 }
 
 // fileExists 检查文件是否存在
