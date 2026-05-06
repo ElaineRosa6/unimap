@@ -143,6 +143,7 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 // BrowserRouter is the minimal interface needed for browser query operations.
 type BrowserRouter interface {
 	OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error)
+	CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]screenshot.CollectResult, error)
 }
 
 func checkCDPStatus(ctx context.Context, baseURL string) (bool, map[string]interface{}, error) {

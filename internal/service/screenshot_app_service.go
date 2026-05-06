@@ -69,6 +69,19 @@ func (s *ScreenshotAppService) SetFallbackToCDP(enabled bool) {
 	s.fallbackToCDP = enabled
 }
 
+// SetMode updates the screenshot execution mode. It maps the mode to the
+// engine field for the service's extension-first logic.
+func (s *ScreenshotAppService) SetMode(mode string) {
+	if s == nil {
+		return
+	}
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "cdp" || mode == "extension" {
+		s.engine = mode
+	}
+	// "auto" leaves engine as-is; the router handles mode selection.
+}
+
 // IsCaptureAvailable reports whether screenshot capture can run with current dependencies.
 func (s *ScreenshotAppService) IsCaptureAvailable(mgr *screenshot.Manager) bool {
 	if s != nil && s.provider != nil {

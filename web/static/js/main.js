@@ -95,6 +95,7 @@ function initQueryForm() {
 	initCookieStatus();
 	initCDPControls();
 	initBridgeStatusControls();
+	initScreenshotModeSelector();
 	
 	// 表单提交事件
 	form.addEventListener('submit', function(e) {
@@ -132,8 +133,15 @@ function initQueryForm() {
 		}
 
 		const browserQuery = isBrowserQueryModeEnabled();
-		if (browserQuery && !cdpOnline && !bridgeOnline) {
-			alert('浏览器查询模式需要先连接 CDP 或扩展桥接');
+		if (browserQuery && !isBrowserModeAvailable()) {
+			const mode = getSelectedScreenshotMode();
+			let msg = '浏览器查询模式当前不可用';
+			if (mode === 'cdp') {
+				msg = 'CDP 模式需要先连接 CDP 浏览器';
+			} else if (mode === 'extension') {
+				msg = '扩展模式需要扩展桥接在线';
+			}
+			alert(msg);
 			submitBtn.textContent = originalText;
 			submitBtn.disabled = false;
 			submitBtn.classList.remove('loading');
@@ -196,6 +204,34 @@ function initBridgeStatusControls() {
 
 	if (refreshBtn) {
 		refreshBtn.addEventListener('click', refresh);
+	}
+}
+
+// Initialize the screenshot mode selector UI.
+function initScreenshotModeSelector() {
+	// Restore saved mode from localStorage
+	const savedMode = localStorage.getItem('screenshotMode');
+	if (savedMode) {
+		const radio = document.querySelector(`input[name="screenshot-mode"][value="${savedMode}"]`);
+		if (radio) radio.checked = true;
+	}
+
+	// Send mode change request when selection changes
+	const radios = document.querySelectorAll('input[name="screenshot-mode"]');
+	for (const radio of radios) {
+		radio.addEventListener('change', function() {
+			const mode = this.value;
+			localStorage.setItem('screenshotMode', mode);
+			fetch('/api/screenshot/set-mode', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mode })
+			}).then(resp => resp.json())
+				.then(data => {
+					console.log('Screenshot mode set to:', data.mode);
+				})
+				.catch(() => {});
+		});
 	}
 }
 
@@ -383,6 +419,23 @@ function updateCDPBadge(badge, online) {
 function isBrowserQueryModeEnabled() {
 	const checkbox = document.getElementById('browser-query-mode');
 	return !!(checkbox && checkbox.checked);
+}
+
+// Returns the selected screenshot mode: 'cdp', 'extension', or 'auto'.
+function getSelectedScreenshotMode() {
+	const radios = document.querySelectorAll('input[name="screenshot-mode"]');
+	for (const radio of radios) {
+		if (radio.checked) return radio.value;
+	}
+	return 'auto';
+}
+
+// Checks if the current screenshot mode has an available backend.
+function isBrowserModeAvailable() {
+	const mode = getSelectedScreenshotMode();
+	if (mode === 'cdp') return cdpOnline;
+	if (mode === 'extension') return bridgeOnline;
+	return cdpOnline || bridgeOnline; // auto mode
 }
 
 function importCookieJSON(button) {

@@ -196,6 +196,9 @@ func (m *mockProvider) GetScreenshotDirectory() string {
 func (m *mockProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
 	return "/mock/open", nil
 }
+func (m *mockProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
+	return nil, nil
+}
 
 // countGoroutines returns the current number of goroutines.
 func countGoroutines() int {

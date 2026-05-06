@@ -83,6 +83,7 @@ func (r *Router) RegisterRoutes() http.Handler {
 	r.addRoute("screenshot-bridge-task-next", "GET", "/api/screenshot/bridge/tasks/next", r.server.handleScreenshotBridgeTaskNext, false)
 	r.addRoute("screenshot-bridge-mock-result", "POST", "/api/screenshot/bridge/mock/result", r.server.handleScreenshotBridgeMockResult, false)
 	r.addRoute("screenshot-router-status", "GET", "/api/screenshot/router/status", r.server.handleScreenshotRouterStatus, false)
+	r.addRoute("screenshot-set-mode", "POST", "/api/screenshot/set-mode", r.server.handleSetScreenshotMode, false)
 
 	// API 路由 - 导入（限流）
 	r.addRoute("import-urls", "POST", "/api/import/urls", r.server.handleImportURLs, true)
