@@ -193,6 +193,9 @@ func (m *mockProvider) CaptureBatchURLs(ctx context.Context, urls []string, batc
 func (m *mockProvider) GetScreenshotDirectory() string {
 	return "/mock/screenshots"
 }
+func (m *mockProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
+	return "/mock/open", nil
+}
 
 // countGoroutines returns the current number of goroutines.
 func countGoroutines() int {

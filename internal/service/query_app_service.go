@@ -75,6 +75,7 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 	screenshotApp *ScreenshotAppService,
 	screenshotMgr *screenshot.Manager,
 	previewURLBuilder func(string) string,
+	browserRouter BrowserRouter,
 ) <-chan BrowserQueryOutcome {
 	if !enabled {
 		return nil
@@ -100,8 +101,15 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 		}
 
 		for _, engine := range engines {
-			if screenshotMgr == nil {
-				outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open skipped for %s: screenshot manager not initialized", engine))
+			// Open search engine result page using the active browser mode
+			if browserRouter != nil {
+				if _, err := browserRouter.OpenSearchEngineResult(ctx, engine, query); err != nil {
+					outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
+				} else {
+					outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
+				}
+			} else if screenshotMgr == nil {
+				outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open skipped for %s: no browser provider", engine))
 			} else if _, err := screenshotMgr.OpenSearchEngineResult(ctx, engine, query); err != nil {
 				outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
 			} else {
@@ -130,6 +138,11 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 	}()
 
 	return resultCh
+}
+
+// BrowserRouter is the minimal interface needed for browser query operations.
+type BrowserRouter interface {
+	OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error)
 }
 
 func checkCDPStatus(ctx context.Context, baseURL string) (bool, map[string]interface{}, error) {

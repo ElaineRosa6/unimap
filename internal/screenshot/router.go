@@ -207,9 +207,29 @@ func (r *ScreenshotRouter) Config() RouterConfig {
 	return r.cfg
 }
 
+// SetMode sets the active screenshot execution mode.
+func (r *ScreenshotRouter) SetMode(mode ScreenshotMode) {
+	if mode != ModeCDP && mode != ModeExtension {
+		return
+	}
+	old := r.currentMode.Load().(ScreenshotMode)
+	if old == mode {
+		return
+	}
+	r.currentMode.Store(mode)
+	if r.onModeSwitch != nil {
+		r.onModeSwitch(old, mode)
+	}
+}
+
+// CurrentMode returns the active screenshot execution mode.
+func (r *ScreenshotRouter) CurrentMode() ScreenshotMode {
+	return r.currentMode.Load().(ScreenshotMode)
+}
+
 // CaptureSearchEngineResult captures a search engine result using the active mode.
 func (r *ScreenshotRouter) CaptureSearchEngineResult(ctx context.Context, engine, query, queryID string) (string, error) {
-	provider, err := r.resolveProvider(ModeCDP)
+	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
 	if err != nil {
 		return "", err
 	}
@@ -218,7 +238,7 @@ func (r *ScreenshotRouter) CaptureSearchEngineResult(ctx context.Context, engine
 
 // CaptureTargetWebsite captures a target website using the active mode.
 func (r *ScreenshotRouter) CaptureTargetWebsite(ctx context.Context, targetURL, ip, port, protocol, queryID string) (string, error) {
-	provider, err := r.resolveProvider(ModeCDP)
+	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
 	if err != nil {
 		return "", err
 	}
@@ -227,7 +247,7 @@ func (r *ScreenshotRouter) CaptureTargetWebsite(ctx context.Context, targetURL, 
 
 // CaptureBatchURLs captures a batch of URLs using the active mode.
 func (r *ScreenshotRouter) CaptureBatchURLs(ctx context.Context, urls []string, batchID string, concurrency int) ([]BatchScreenshotResult, error) {
-	provider, err := r.resolveProvider(ModeCDP)
+	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
 	if err != nil {
 		return nil, err
 	}
@@ -240,6 +260,15 @@ func (r *ScreenshotRouter) GetScreenshotDirectory() string {
 		return r.mgr.GetScreenshotDirectory()
 	}
 	return ""
+}
+
+// OpenSearchEngineResult opens a search engine result page using the active mode.
+func (r *ScreenshotRouter) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
+	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
+	if err != nil {
+		return "", err
+	}
+	return provider.OpenSearchEngineResult(ctx, engine, query)
 }
 
 // resolveProvider returns the best available Provider based on current health and fallback config.
@@ -430,6 +459,33 @@ func (p *ExtensionProvider) GetScreenshotDirectory() string {
 		return p.mgr.GetScreenshotDirectory()
 	}
 	return ""
+}
+
+func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
+	if p == nil || p.bridge == nil {
+		return "", fmt.Errorf("extension provider not initialized")
+	}
+	searchURL := ""
+	if p.mgr != nil {
+		searchURL = strings.TrimSpace(p.mgr.BuildSearchEngineURL(engine, query))
+	}
+	if searchURL == "" {
+		searchURL = buildSearchEngineURL(engine, query)
+	}
+	if searchURL == "" {
+		return "", fmt.Errorf("unsupported engine: %s", engine)
+	}
+
+	task := BridgeTask{
+		RequestID:    fmt.Sprintf("router_open_%d", time.Now().UnixNano()),
+		URL:          searchURL,
+		WaitStrategy: "load",
+	}
+	_, err := p.bridge.Submit(ctx, task)
+	if err != nil {
+		return "", fmt.Errorf("extension bridge open failed: %w", err)
+	}
+	return searchURL, nil
 }
 
 // buildSearchEngineURL builds a search engine result URL for bridge capture.
