@@ -132,8 +132,8 @@ function initQueryForm() {
 		}
 
 		const browserQuery = isBrowserQueryModeEnabled();
-		if (browserQuery && !cdpOnline) {
-			alert('浏览器查询模式需要先连接 CDP 浏览器');
+		if (browserQuery && !cdpOnline && !bridgeOnline) {
+			alert('浏览器查询模式需要先连接 CDP 或扩展桥接');
 			submitBtn.textContent = originalText;
 			submitBtn.disabled = false;
 			submitBtn.classList.remove('loading');
@@ -210,6 +210,9 @@ function refreshBridgeStatus(statusBadge, statusInfo) {
 			const liveClients = Number((data && data.live_clients) || 0);
 			const pendingTasks = Number((data && data.pending_tasks) || 0);
 			const isConnected = engine === 'extension' && extensionEnabled && liveClients > 0;
+
+			// Track bridge availability for browser_query gating (independent of engine config)
+			bridgeOnline = liveClients > 0;
 
 			updateBridgeBadge(statusBadge, isConnected);
 			if (!statusInfo) {
@@ -641,6 +644,7 @@ let wsConnection = null;
 let wsConnected = false;
 let currentQueryID = null;
 let cdpOnline = false;
+let bridgeOnline = false; // tracks extension live_clients > 0
 
 // ============================================================
 // 登录状态检测
@@ -668,6 +672,7 @@ function refreshLoginStatus() {
 }
 
 function updateCDPStatus(connected) {
+	cdpOnline = !!connected;
 	const el = document.getElementById('status-cdp');
 	if (!el) return;
 	if (connected) {
@@ -680,6 +685,7 @@ function updateCDPStatus(connected) {
 }
 
 function updateExtStatus(paired) {
+	bridgeOnline = !!paired;
 	const el = document.getElementById('status-ext');
 	if (!el) return;
 	if (paired) {

@@ -59,6 +59,7 @@ func (s *Server) isPublicPath(path string) bool {
 	publicPrefixes := []string{
 		"/static/",
 		"/screenshots/",
+		"/api/screenshot/bridge/", // bridge has its own auth (loopback + bearer token)
 	}
 	for _, prefix := range publicPrefixes {
 		if strings.HasPrefix(path, prefix) {

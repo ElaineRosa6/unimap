@@ -30,6 +30,7 @@ func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines
 		s.screenshotApp,
 		s.screenshotMgr,
 		s.screenshotPathToPreviewURL,
+		s.screenshotRouter,
 	)
 }
 

@@ -451,3 +451,6 @@ func (m *mockScreenshotCDPProvider) CaptureBatchURLs(ctx context.Context, urls [
 	return results, nil
 }
 func (m *mockScreenshotCDPProvider) GetScreenshotDirectory() string { return "/mock/screenshots" }
+func (m *mockScreenshotCDPProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
+	return "https://mock.engine/result?q=" + query, nil
+}
