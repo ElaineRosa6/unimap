@@ -2,7 +2,7 @@
 
 > **创建日期：** 2026-04-11
 > **分支：** `release/major-upgrade-vNEXT`
-> **状态：** 🟢 所有已知安全问题和生产就绪项已闭环（2026-04-29 第二轮 code review 24 项修复）
+> **状态：** 🟢 所有已知安全问题和生产就绪项已闭环（2026-04-29 第三轮 code review 24 项剩余问题修复完成）
 > **最后更新：** 2026-04-29
 > **安全审计报告：** [SECURITY_AUDIT_REPORT.md](./SECURITY_AUDIT_REPORT.md)
 
@@ -553,3 +553,34 @@
 所有严重问题已修复。建议：
 - 在发布前进行一次完整的安全复评（渗透测试）
 - 关注低优先级未修复项（L-01、L-04、L-05、L-07），可按需后续处理
+
+---
+
+## 安全修复记录 (2026-04-29 第三轮)
+
+### 修复概况
+
+本次修复完成了 2026-04-29 深度代码审查报告中剩余 **全部 24 项问题 + 1 项测试失败**，具体修复内容如下：
+
+| 编号 | 问题描述 | 修复文件 | 说明 |
+|------|---------|---------|------|
+| SSRF-1 | Webhook URL DNS/重定向绕过 | `internal/scheduler/scheduler.go` | DNS 解析校验 + safeWebhookClient 拒重定向 |
+| AUTH-1 | APIKeyManager 持久化后密钥不可验证 | `internal/auth/api_key.go` | SHA-256 hash 比对 + 统一 ID map key |
+| AUTH-2 | internal/auth 平行认证体系未接入 | `web/server.go`, `web/router.go` | OptionalAPIKey 中间件接入主路由 |
+| DIST-1 | 分布式任务队列纯内存 | `internal/distributed/task_queue.go` | JSON 快照持久化 |
+| BACKUP-1 | 备份错误被吞掉 | `internal/backup/backup.go` | source/tar 错误累积返回 |
+| BACKUP-2 | BackupConfig BaseDir 注释不一致 | `internal/backup/backup.go` | 注释修正 |
+| RATE-1 | 限流 X-Real-IP 无条件信任 | `web/middleware_ratelimit.go` | 代理检查 |
+| CONFIG-1 | Admin Token 非loopback 静默生成 | `internal/config/config.go` | 打印 token 提示保存 |
+| CONFIG-2 | CORS 默认值缺少 X-Admin-Token | `internal/config/config.go` | 添加默认值 |
+| CLI-1 | JSON 输出文件覆盖 | `cmd/unimap-cli/api_subcommands.go` | O_EXCL 防覆盖 |
+| TEST-1 | TestGenerateAPIKey/zero_expiration | `internal/auth/api_key.go`, `*_test.go` | expiresIn=0 表示永不过期 |
+
+### 验证结果
+
+| 验证项 | 结果 |
+|--------|------|
+| `go build ./...` | ✅ 构建成功，无错误 |
+| `go vet ./...` | ✅ 静态检查通过，无警告 |
+| `go test -race ./...` | ✅ 全部通过，0 failures，0 races |
+

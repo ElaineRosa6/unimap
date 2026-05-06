@@ -132,6 +132,9 @@ func (r *Router) RegisterRoutes() http.Handler {
 			handler = rateLimitMiddleware(handler)
 		}
 
+		// API key auth — optional, enriches context with key info if valid key provided
+		handler = r.server.apiAuth.OptionalAPIKey()(handler)
+
 		mux.Handle(route.Pattern, handler)
 	}
 

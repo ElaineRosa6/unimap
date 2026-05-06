@@ -226,9 +226,11 @@ func getClientIP(r *http.Request) string {
 		}
 	}
 
-	// 检查 X-Real-IP 头
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
+	// Check X-Real-IP only when connection is from a trusted proxy
+	if isPrivateOrInternalHost(r.Context(), r.RemoteAddr) {
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return strings.TrimSpace(xri)
+		}
 	}
 
 	// 使用 RemoteAddr

@@ -671,7 +671,7 @@ func (m *Manager) applyDefaults(config *Config) {
 		config.Web.CORS.AllowedMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 	}
 	if len(config.Web.CORS.AllowedHeaders) == 0 {
-		config.Web.CORS.AllowedHeaders = []string{"Content-Type", "Authorization", "X-Requested-With", "X-WebSocket-Token"}
+		config.Web.CORS.AllowedHeaders = []string{"Content-Type", "Authorization", "X-Admin-Token", "X-Requested-With", "X-WebSocket-Token"}
 	}
 	if config.Web.CORS.MaxAge == 0 {
 		config.Web.CORS.MaxAge = 600
@@ -696,7 +696,8 @@ func (m *Manager) applyDefaults(config *Config) {
 		if config.Web.BindAddress != "127.0.0.1" && config.Web.BindAddress != "localhost" {
 			config.Web.Auth.AdminToken = generateSecureToken(32)
 			config.Web.Auth.Enabled = true
-			// Non-loopback binding requires explicit admin_token — token generated but must be set via config
+			fmt.Printf("[config] Generated production admin token (bind=%s): %s\n", config.Web.BindAddress, config.Web.Auth.AdminToken)
+			fmt.Printf("[config] SAVE THIS TOKEN: it will not be shown again. Set 'admin_token' in your config file.\n")
 		} else {
 			token := generateSecureToken(32)
 			config.Web.Auth.AdminToken = token

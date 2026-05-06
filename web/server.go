@@ -19,6 +19,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/unimap-icp-hunter/project/internal/adapter"
 	"github.com/unimap-icp-hunter/project/internal/alerting"
+	"github.com/unimap-icp-hunter/project/internal/auth"
 	"github.com/unimap-icp-hunter/project/internal/config"
 	"github.com/unimap-icp-hunter/project/internal/distributed"
 	"github.com/unimap-icp-hunter/project/internal/logger"
@@ -86,6 +87,7 @@ type Server struct {
 	proxyPool        *proxypool.Pool
 	distributed      *DistributedState
 	scheduler        *scheduler.Scheduler
+	apiAuth          *auth.AuthMiddleware
 	shutdownCtx      context.Context
 	shutdownCancel   context.CancelFunc
 }
@@ -223,7 +225,7 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 	}
 
 	nodeRegistry := distributed.NewRegistry(heartbeatTimeout)
-	nodeTaskQueue := distributed.NewTaskQueue()
+	nodeTaskQueue := distributed.NewTaskQueueWithPath("./data/distributed_tasks.json")
 	nodeRegistry.SetTaskQueue(nodeTaskQueue)
 	nodeTaskQueue.SetDefaultMaxReassign(maxReassign)
 
@@ -280,6 +282,7 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 			NodeRegistry:  nodeRegistry,
 			NodeTaskQueue: nodeTaskQueue,
 		},
+		apiAuth:        auth.NewAuthMiddleware(auth.NewAPIKeyManager("./data/api_keys.json")),
 		shutdownCtx:    shutdownCtx,
 		shutdownCancel: shutdownCancel,
 	}

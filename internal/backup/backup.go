@@ -16,7 +16,7 @@ import (
 
 // BackupConfig 备份配置
 type BackupConfig struct {
-	// Sources 要备份的目录/文件列表（相对于 baseDir 或绝对路径）
+	// Sources 要备份的目录/文件列表（绝对路径或相对路径）
 	Sources []string
 	// OutputDir 备份输出目录
 	OutputDir string
@@ -71,10 +71,11 @@ func Backup(cfg BackupConfig) (*BackupResult, error) {
 		baseDir string
 	}
 	var files []fileWithBase
+	var sourceErrors []error
 	for _, src := range cfg.Sources {
 		srcFiles, baseDir, err := collectFiles(src)
 		if err != nil {
-			logger.Warnf("Backup source %s: %v", src, err)
+			sourceErrors = append(sourceErrors, fmt.Errorf("source %s: %w", src, err))
 			continue
 		}
 		for _, f := range srcFiles {
@@ -83,12 +84,17 @@ func Backup(cfg BackupConfig) (*BackupResult, error) {
 	}
 
 	if len(files) == 0 {
+		if len(sourceErrors) > 0 {
+			return nil, fmt.Errorf("no files found to backup, sources failed: %v", sourceErrors)
+		}
 		return nil, fmt.Errorf("no files found to backup")
 	}
 
 	// 写入 tar
+	var tarErrors []error
 	for _, f := range files {
 		if err := addFileToTar(tw, f.path, f.baseDir); err != nil {
+			tarErrors = append(tarErrors, fmt.Errorf("%s: %w", f.path, err))
 			logger.Warnf("Failed to add %s to backup: %v", f.path, err)
 		}
 	}
@@ -110,6 +116,11 @@ func Backup(cfg BackupConfig) (*BackupResult, error) {
 	// 清理旧备份
 	if cfg.MaxBackups > 0 {
 		cleanupOldBackups(cfg.OutputDir, cfg.Prefix, cfg.MaxBackups)
+	}
+
+	// Report partial failure if some files failed to add
+	if len(tarErrors) > 0 {
+		return result, fmt.Errorf("backup partially complete: %d/%d files failed: %v", len(tarErrors), len(files)+len(tarErrors), tarErrors)
 	}
 
 	return result, nil
