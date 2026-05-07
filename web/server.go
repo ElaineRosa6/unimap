@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"text/template"
+	"html/template"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -532,7 +532,7 @@ func securityMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		w.Header().Set("Content-Security-Policy",
-			fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s' 'unsafe-hashes' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;", nonce))
+			fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s' 'unsafe-hashes'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;", nonce))
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 
@@ -587,12 +587,11 @@ func (s *Server) Start() error {
 	handler = requestSizeLimitMiddleware(maxBodyBytes)(handler)
 	handler = corsMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeaders, allowCredentials, maxAge)(handler)
 
-	// Auth middleware — always enabled (auto-generated token if not configured)
-	if s.config != nil && s.config.Web.Auth.Enabled && s.config.Web.Auth.AdminToken != "" {
+	// Auth middleware — always enabled when auth.enabled is true (auto-generates token if needed)
+	if s.config != nil && s.config.Web.Auth.Enabled {
 		handler = s.adminAuthMiddleware()(handler)
 		logger.Infof("Web auth enabled: admin token authentication active")
 	} else {
-		// Fallback: should not be reached with default config (auth is auto-enabled)
 		bindAddr := s.bindAddr()
 		if bindAddr != "127.0.0.1" && bindAddr != "localhost" {
 			logger.Warnf("⚠️  WARNING: Admin auth is DISABLED and server is bound to %s (non-loopback). All API endpoints are publicly accessible!", bindAddr)
@@ -905,10 +904,10 @@ func parseWSInt(val interface{}, defaultValue int) int {
 
 func validateQueryInput(query string) error {
 	if strings.TrimSpace(query) == "" {
-		return fmt.Errorf("Query cannot be empty")
+		return fmt.Errorf("query cannot be empty")
 	}
 	if len(query) > 1000 {
-		return fmt.Errorf("Query is too long (maximum 1000 characters)")
+		return fmt.Errorf("query is too long (maximum 1000 characters)")
 	}
 	for _, r := range query {
 		if r < 32 && r != '\t' && r != '\n' && r != '\r' {
