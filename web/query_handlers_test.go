@@ -223,6 +223,7 @@ func TestBuildQueryAPIPayload(t *testing.T) {
 		browserQueryOutcome{
 			Enabled: true,
 		},
+		"capture",
 	)
 
 	if payload["query"] != "test" {
@@ -241,6 +242,7 @@ func TestBuildQueryAPIPayload_CombinesErrors(t *testing.T) {
 		browserQueryOutcome{
 			Errors: []string{"browser error"},
 		},
+		"",
 		"explicit error",
 	)
 

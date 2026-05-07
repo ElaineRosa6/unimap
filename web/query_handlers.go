@@ -14,7 +14,7 @@ import (
 	"github.com/unimap-icp-hunter/project/internal/service"
 )
 
-func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, queryID string) <-chan browserQueryOutcome {
+func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, action string, queryID string) <-chan browserQueryOutcome {
 	autoCaptureEnabled := false
 	if s.config != nil {
 		autoCaptureEnabled = s.config.Screenshot.AutoCapture.Enabled && s.config.Screenshot.AutoCapture.CaptureSearchResults
@@ -25,6 +25,7 @@ func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines
 		query,
 		engines,
 		enabled,
+		action,
 		queryID,
 		autoCaptureEnabled,
 		s.screenshotApp,
@@ -34,7 +35,7 @@ func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines
 	)
 }
 
-func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, explicitErrors ...string) map[string]interface{} {
+func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string, explicitErrors ...string) map[string]interface{} {
 	combinedErrors := []string{}
 	if resp != nil {
 		combinedErrors = append(combinedErrors, resp.Errors...)
@@ -60,6 +61,7 @@ func buildQueryAPIPayload(query string, engines []string, resp *service.QueryRes
 		"engineStats":          engineStats,
 		"errors":               combinedErrors,
 		"browserQuery":         browserOutcome.Enabled,
+		"browserAction":        browserAction,
 		"browserOpenedEngines": browserOutcome.OpenedEngines,
 		"browserQueryErrors":   browserOutcome.Errors,
 		"autoCapture":          browserOutcome.AutoCaptureEnabled,
@@ -101,7 +103,8 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	browserQueryID := fmt.Sprintf("query_%d", time.Now().UnixNano())
-	browserQueryCh := s.runBrowserQueryAsync(r.Context(), query, engines, parseBoolValue(r.FormValue("browser_query")), browserQueryID)
+	browserAction := strings.TrimSpace(r.FormValue("browser_action"))
+	browserQueryCh := s.runBrowserQueryAsync(r.Context(), query, engines, parseBoolValue(r.FormValue("browser_query")), browserAction, browserQueryID)
 
 	resp, err := s.queryApp.ExecuteQuery(r.Context(), query, engines, pageSize)
 	var browserOutcome browserQueryOutcome
@@ -114,14 +117,14 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 			http.StatusBadGateway,
 			"query_execution_failed",
 			fmt.Sprintf("query failed: %v", err),
-			buildQueryAPIPayload(query, engines, nil, browserOutcome, fmt.Sprintf("Query failed: %v", err)),
+			buildQueryAPIPayload(query, engines, nil, browserOutcome, browserAction, fmt.Sprintf("Query failed: %v", err)),
 		)
 		return
 	}
 
 	// 返回JSON结果
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(buildQueryAPIPayload(query, engines, resp, browserOutcome))
+	json.NewEncoder(w).Encode(buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction))
 }
 
 // handleIndex 处理首页请求

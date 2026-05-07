@@ -166,6 +166,10 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 
 	pageSize := parseWSInt(message["page_size"], 50)
 	browserQuery := parseWSBool(message["browser_query"])
+	browserAction := ""
+	if ba, ok := message["browser_action"].(string); ok {
+		browserAction = strings.TrimSpace(ba)
+	}
 
 	engines := parseWSStringList(message["engines"])
 	if len(engines) == 0 {
@@ -219,7 +223,7 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 
 	// 异步执行查询
 	go func() {
-		browserQueryCh := s.runBrowserQueryAsync(ctx, query, engines, browserQuery, queryID)
+		browserQueryCh := s.runBrowserQueryAsync(ctx, query, engines, browserQuery, browserAction, queryID)
 
 		// 执行查询
 		req := service.QueryRequest{
@@ -291,6 +295,7 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 				"errors":               combinedErrors,
 				"error":                errMsg,
 				"browserQuery":         browserOutcome.Enabled,
+				"browserAction":        browserAction,
 				"browserOpenedEngines": browserOutcome.OpenedEngines,
 				"browserQueryErrors":   browserOutcome.Errors,
 				"autoCapture":          browserOutcome.AutoCaptureEnabled,
@@ -309,6 +314,7 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 				"engineStats":          resp.EngineStats,
 				"errors":               combinedErrors,
 				"browserQuery":         browserOutcome.Enabled,
+				"browserAction":        browserAction,
 				"browserOpenedEngines": browserOutcome.OpenedEngines,
 				"browserQueryErrors":   browserOutcome.Errors,
 				"autoCapture":          browserOutcome.AutoCaptureEnabled,

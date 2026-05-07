@@ -149,7 +149,8 @@ function initQueryForm() {
 		}
 		
 		// 执行异步查询
-		executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery);
+		const browserAction = getBrowserAction();
+			executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery, browserAction);
 	});
 
 	// 初始化引擎状态
@@ -239,47 +240,74 @@ function refreshBridgeStatus(statusBadge, statusInfo) {
 	fetch('/api/screenshot/bridge/status')
 		.then(resp => resp.json())
 		.then(data => {
+			// Consume runtime state from ScreenshotRouter (authoritative)
+			const routerMode = data && data.router_mode ? String(data.router_mode) : '';
+			const cdpHealthy = !!(data && data.router_cdp_healthy);
+			const extHealthy = !!(data && data.router_ext_healthy);
+
+			// Fallback to legacy config-level fields
 			const engine = data && data.engine ? String(data.engine) : 'cdp';
 			const extensionEnabled = !!(data && data.extension_enabled);
 			const bridgeConnected = !!(data && data.bridge_connected);
 			const pairedClients = Number((data && data.paired_clients) || 0);
 			const liveClients = Number((data && data.live_clients) || 0);
 			const pendingTasks = Number((data && data.pending_tasks) || 0);
-			const isConnected = engine === 'extension' && extensionEnabled && liveClients > 0;
 
-			// Track bridge availability for browser_query gating (independent of engine config)
-			bridgeOnline = liveClients > 0;
+			// Derive effective mode: prefer router runtime state, fall back to config
+			const effectiveMode = routerMode || engine;
+			const isConnected = effectiveMode === 'extension' && extHealthy;
+
+			// Track bridge availability for browser_query gating
+			bridgeOnline = effectiveMode === 'auto'
+				? (cdpHealthy || extHealthy)
+				: effectiveMode === 'extension'
+					? extHealthy
+					: effectiveMode === 'cdp'
+						? cdpHealthy
+						: liveClients > 0;
 
 			updateBridgeBadge(statusBadge, isConnected);
 			if (!statusInfo) {
 				return;
 			}
 
-			if (engine !== 'extension') {
-				statusInfo.textContent = `当前截图引擎为 ${engine}，扩展桥接未启用`;
+			if (effectiveMode === 'auto') {
+				const parts = [];
+				if (cdpHealthy) parts.push('CDP 在线');
+				if (extHealthy) parts.push('扩展在线');
+				if (parts.length === 0) {
+					statusInfo.textContent = '自动模式：CDP 和扩展均不可用';
+				} else {
+					statusInfo.textContent = `自动模式：${parts.join('、')}（已配对 ${pairedClients}）`;
+				}
 				return;
 			}
-			if (!extensionEnabled) {
-				statusInfo.textContent = '扩展桥接已禁用，请检查 screenshot.extension.enabled 配置';
+			if (effectiveMode === 'extension') {
+				if (extHealthy) {
+					statusInfo.textContent = `扩展在线（在线 ${liveClients} / 已配对 ${pairedClients}）`;
+					return;
+				}
+				if (pairedClients > 0) {
+					statusInfo.textContent = `扩展已配对但离线（已配对 ${pairedClients}）`;
+					return;
+				}
+				if (bridgeConnected && pendingTasks > 0) {
+					statusInfo.textContent = `扩展未配对（待处理任务 ${pendingTasks}）`;
+					return;
+				}
+				if (bridgeConnected) {
+					statusInfo.textContent = '桥接已就绪，请在扩展中完成配对';
+					return;
+				}
+				statusInfo.textContent = '扩展桥接未连接，请检查 bridge 服务状态';
 				return;
 			}
-			if (liveClients > 0) {
-				statusInfo.textContent = `扩展在线（在线 ${liveClients} / 已配对 ${pairedClients}）`;
+			// cdp mode
+			if (cdpHealthy) {
+				statusInfo.textContent = 'CDP 浏览器已连接';
 				return;
 			}
-			if (pairedClients > 0) {
-				statusInfo.textContent = `扩展已配对但离线（已配对 ${pairedClients}）`;
-				return;
-			}
-			if (bridgeConnected && pendingTasks > 0) {
-				statusInfo.textContent = `扩展未配对（待处理任务 ${pendingTasks}）`;
-				return;
-			}
-			if (bridgeConnected) {
-				statusInfo.textContent = '桥接已就绪，请在扩展中完成配对';
-				return;
-			}
-			statusInfo.textContent = '桥接服务未就绪';
+			statusInfo.textContent = '当前截图引擎为 CDP，浏览器未连接';
 		})
 		.catch(err => {
 			console.error('Bridge status error:', err);
@@ -416,9 +444,27 @@ function updateCDPBadge(badge, online) {
 	badge.classList.toggle('cookie-status--off', !online);
 }
 
+// Returns whether browser query is enabled (reads from new radio group or legacy checkbox).
 function isBrowserQueryModeEnabled() {
+	const radios = document.querySelectorAll('input[name="browser-action"]');
+	for (const radio of radios) {
+		if (radio.checked) return true;
+	}
+	// Legacy fallback: if no radio group exists, check the old checkbox
 	const checkbox = document.getElementById('browser-query-mode');
 	return !!(checkbox && checkbox.checked);
+}
+
+// Returns the selected browser action: 'open', 'capture', 'collect', or '' if none selected.
+function getBrowserAction() {
+	const radios = document.querySelectorAll('input[name="browser-action"]');
+	for (const radio of radios) {
+		if (radio.checked) return radio.value;
+	}
+	// Legacy fallback
+	const checkbox = document.getElementById('browser-query-mode');
+	if (checkbox && checkbox.checked) return 'capture';
+	return '';
 }
 
 // Returns the selected screenshot mode: 'cdp', 'extension', or 'auto'.
@@ -977,7 +1023,7 @@ function handleQueryComplete(message) {
 }
 
 // 执行异步查询（WebSocket版本）
-function executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery) {
+function executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery, browserAction) {
 	const safeQuery = escapeHtml(query);
 	const safeEnginesText = engines.map(engine => escapeHtml(engine)).join(', ');
 
@@ -989,7 +1035,7 @@ function executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery
 			<h2>查询结果</h2>
 			<p>查询语句: <code>${safeQuery}</code></p>
 			<p>使用引擎: ${safeEnginesText}</p>
-			<p>浏览器查询: ${browserQuery ? '已开启' : '未开启'}</p>
+			<p>浏览器查询: ${browserQuery ? '已开启' : '未开启'}${browserAction ? ' (' + browserAction + ')' : ''}</p>
 			<div class="loading-indicator">
 				<div class="spinner"></div>
 				<p>正在查询...请稍候</p>
@@ -1008,7 +1054,7 @@ function executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery
 	// 检查WebSocket连接
 	if (!wsConnected || wsConnection.readyState !== WebSocket.OPEN) {
 		// WebSocket未连接，使用传统API
-		useFallbackAPI(query, engines, submitBtn, originalText, browserQuery);
+		useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, browserAction);
 		return;
 	}
 
@@ -1018,12 +1064,13 @@ function executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery
 		query: query,
 		engines: engines,
 		page_size: 50,
-		browser_query: !!browserQuery
+		browser_query: !!browserQuery,
+			browser_action: browserAction || '',
 	}));
 }
 
 // 传统API回退方案
-function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery) {
+function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, browserAction) {
 	// 发送API请求
 	fetch('/api/query', {
 		method: 'POST',
@@ -1035,6 +1082,7 @@ function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery) {
 			'engines': engines.join(','),
 			'page_size': '50',
 			'browser_query': browserQuery ? 'true' : 'false',
+			'browser_action': browserAction || '',
 		}),
 	})
 	.then(response => response.json())

@@ -95,7 +95,7 @@
 
 		<!-- 执行历史 -->
 		<div class="tab-content" id="tab-history">
-			<div class="form-row" style="margin-bottom: 16px;">
+			<div class="form-row mb-sm">
 				<div class="form-group">
 					<select id="history-type-filter" class="form-control" onchange="loadHistory()">
 						<option value="">全部类型</option>
@@ -287,7 +287,7 @@
 					<td>${duration}</td>
 					<td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
 					<td>${escHtml(r.result || '-')}</td>
-					<td style="color:#c00">${escHtml(r.error || '')}</td>
+					<td class="text-danger">${escHtml(r.error || '')}</td>
 				`;
 				tbody.appendChild(tr);
 			});
