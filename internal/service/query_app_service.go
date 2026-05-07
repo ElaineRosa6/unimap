@@ -64,12 +64,13 @@ func (s *QueryAppService) ExecuteQuery(ctx context.Context, query string, engine
 	})
 }
 
-// RunBrowserQueryAsync 执行可选浏览器联动（打开结果页、自动截图）。
+// RunBrowserQueryAsync 执行可选浏览器联动（打开结果页、截图、采集结构化结果）。
 func (s *QueryAppService) RunBrowserQueryAsync(
 	ctx context.Context,
 	query string,
 	engines []string,
 	enabled bool,
+	action string,
 	queryID string,
 	autoCaptureEnabled bool,
 	screenshotApp *ScreenshotAppService,
@@ -81,12 +82,18 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 		return nil
 	}
 
+	// Anti-corruption: old clients send browser_query=true without browser_action;
+	// fallback to "capture" semantics (the previous default behavior).
+	if action == "" {
+		action = "capture"
+	}
+
 	resultCh := make(chan BrowserQueryOutcome, 1)
 	go func() {
 		defer close(resultCh)
 		outcome := BrowserQueryOutcome{Enabled: true}
 
-		if autoCaptureEnabled {
+		if autoCaptureEnabled && action == "capture" {
 			if strings.TrimSpace(queryID) == "" {
 				queryID = fmt.Sprintf("query_%d", time.Now().UnixNano())
 			}
@@ -101,36 +108,54 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 		}
 
 		for _, engine := range engines {
-			// Open search engine result page using the active browser mode
+			// Open search engine result page (always done for all actions)
 			if browserRouter != nil {
 				if _, err := browserRouter.OpenSearchEngineResult(ctx, engine, query); err != nil {
 					outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
-				} else {
-					outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
+					continue
 				}
+				outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
 			} else if screenshotMgr == nil {
 				outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open skipped for %s: no browser provider", engine))
+				continue
 			} else if _, err := screenshotMgr.OpenSearchEngineResult(ctx, engine, query); err != nil {
 				outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
+				continue
 			} else {
 				outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
 			}
 
-			if outcome.AutoCaptureEnabled && captureAvailable {
-				path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, query, outcome.AutoCaptureQueryID)
-				if err != nil {
-					outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture failed for %s: %v", engine, err))
-					continue
+			// Action-specific follow-up
+			switch action {
+			case "capture":
+				// Open + screenshot (existing behavior)
+				if outcome.AutoCaptureEnabled && captureAvailable {
+					path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, query, outcome.AutoCaptureQueryID)
+					if err != nil {
+						outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture failed for %s: %v", engine, err))
+						continue
+					}
+					if previewURLBuilder == nil {
+						continue
+					}
+					previewURL := previewURLBuilder(path)
+					if previewURL == "" {
+						outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture preview unavailable for %s", engine))
+						continue
+					}
+					outcome.AutoCapturedPaths[engine] = previewURL
 				}
-				if previewURLBuilder == nil {
-					continue
+
+			case "collect":
+				// Open + collect structured DOM data
+				if browserRouter != nil {
+					collected, err := browserRouter.CollectSearchEngineResult(ctx, engine, query, queryID)
+					if err != nil {
+						outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser collect failed for %s: %v", engine, err))
+						continue
+					}
+					_ = collected // TODO: wire collected data into response payload
 				}
-				previewURL := previewURLBuilder(path)
-				if previewURL == "" {
-					outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture preview unavailable for %s", engine))
-					continue
-				}
-				outcome.AutoCapturedPaths[engine] = previewURL
 			}
 		}
 

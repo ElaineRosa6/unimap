@@ -206,3 +206,109 @@ func countGoroutines() int {
 	// We import runtime implicitly
 	return 0 // placeholder, real count below
 }
+
+func TestParseStructuredCollectedData_EmptyItems(t *testing.T) {
+	data := map[string]interface{}{
+		"total":    float64(100),
+		"has_more": true,
+	}
+	assets, total, hasMore := parseStructuredCollectedData(data, "fofa")
+	if len(assets) != 0 {
+		t.Fatalf("expected 0 assets, got %d", len(assets))
+	}
+	if total != 100 {
+		t.Fatalf("expected total 100, got %d", total)
+	}
+	if !hasMore {
+		t.Fatal("expected has_more true")
+	}
+}
+
+func TestParseStructuredCollectedData_ParsesItems(t *testing.T) {
+	data := map[string]interface{}{
+		"total":    float64(2),
+		"has_more": false,
+		"items": []interface{}{
+			map[string]interface{}{
+				"ip":           "1.2.3.4",
+				"port":         float64(443),
+				"protocol":     "https",
+				"host":         "example.com",
+				"title":        "Example",
+				"country_code": "CN",
+				"server":       "nginx/1.21",
+				"unknown_key":  "preserved_in_extra",
+			},
+		},
+	}
+	assets, total, hasMore := parseStructuredCollectedData(data, "fofa")
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 asset, got %d", len(assets))
+	}
+	if total != 2 {
+		t.Fatalf("expected total 2, got %d", total)
+	}
+	if hasMore {
+		t.Fatal("expected has_more false")
+	}
+	a := assets[0]
+	if a.IP != "1.2.3.4" {
+		t.Fatalf("expected ip 1.2.3.4, got %s", a.IP)
+	}
+	if a.Port != 443 {
+		t.Fatalf("expected port 443, got %d", a.Port)
+	}
+	if a.Protocol != "https" {
+		t.Fatalf("expected protocol https, got %s", a.Protocol)
+	}
+	if a.Host != "example.com" {
+		t.Fatalf("expected host example.com, got %s", a.Host)
+	}
+	if a.Title != "Example" {
+		t.Fatalf("expected title Example, got %s", a.Title)
+	}
+	if a.CountryCode != "CN" {
+		t.Fatalf("expected country_code CN, got %s", a.CountryCode)
+	}
+	if a.Server != "nginx/1.21" {
+		t.Fatalf("expected server nginx/1.21, got %s", a.Server)
+	}
+	if a.Source != "fofa" {
+		t.Fatalf("expected source fofa, got %s", a.Source)
+	}
+	// Extra should contain unknown_key
+	if v, ok := a.Extra["unknown_key"]; !ok || v != "preserved_in_extra" {
+		t.Fatal("expected unknown_key preserved in Extra")
+	}
+}
+
+func TestParseStructuredCollectedData_MalformedItems(t *testing.T) {
+	data := map[string]interface{}{
+		"items": []interface{}{
+			"not a map",
+			map[string]interface{}{
+				"ip":   "10.0.0.1",
+				"port": float64(80),
+			},
+			42,
+		},
+	}
+	assets, _, _ := parseStructuredCollectedData(data, "hunter")
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 valid asset (2 malformed skipped), got %d", len(assets))
+	}
+	if assets[0].IP != "10.0.0.1" {
+		t.Fatalf("expected ip 10.0.0.1, got %s", assets[0].IP)
+	}
+}
+
+func TestParseStructuredCollectedData_MissingItemsKey(t *testing.T) {
+	data := map[string]interface{}{}
+	assets, total, hasMore := parseStructuredCollectedData(data, "zoomeye")
+	if len(assets) != 0 {
+		t.Fatalf("expected 0 assets, got %d", len(assets))
+	}
+	if total != 0 || hasMore {
+		t.Fatal("expected total 0 and has_more false")
+	}
+}

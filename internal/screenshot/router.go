@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/unimap-icp-hunter/project/internal/model"
 )
 
 // ScreenshotMode represents the active screenshot capture mode.
@@ -553,16 +555,23 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 		return nil, fmt.Errorf("extension bridge collect failed: %s", errMsg)
 	}
 
-	// Parse collected data if available; fall back to minimal result
 	collectResult := CollectResult{
 		Engine:    engine,
 		Query:     query,
 		RawURL:    searchURL,
 		Timestamp: time.Now().Unix(),
 	}
-	if result.CollectedData != "" {
+
+	// Anti-corruption: prefer structured data, fall back to string payload.
+	if len(result.StructuredCollectedData) > 0 {
+		collectResult.Assets, collectResult.Total, collectResult.HasMore = parseStructuredCollectedData(result.StructuredCollectedData, engine)
+		if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
+			collectResult.Title = title
+		}
+	} else if result.CollectedData != "" {
 		collectResult.Title = result.CollectedData
 	}
+
 	return []CollectResult{collectResult}, nil
 }
 
@@ -631,4 +640,104 @@ func isMockBridgeClient(svc *BridgeService) bool {
 // urlBase64 encodes a string as URL-safe base64.
 func urlBase64(s string) string {
 	return url.QueryEscape(base64.StdEncoding.EncodeToString([]byte(s)))
+}
+
+// parseStructuredCollectedData extracts assets, total count, and has_more from
+// the extension's structured collect payload. Anti-corruption: gracefully handles
+// missing or malformed fields.
+func parseStructuredCollectedData(data map[string]interface{}, engine string) ([]model.UnifiedAsset, int, bool) {
+	assets := []model.UnifiedAsset{}
+	total := 0
+	hasMore := false
+
+	if t, ok := data["total"].(float64); ok {
+		total = int(t)
+	}
+	if hm, ok := data["has_more"].(bool); ok {
+		hasMore = hm
+	}
+
+	rawItems, ok := data["items"]
+	if !ok {
+		return assets, total, hasMore
+	}
+
+	items, ok := rawItems.([]interface{})
+	if !ok {
+		return assets, total, hasMore
+	}
+
+	for _, raw := range items {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		asset := model.UnifiedAsset{
+			Source: engine,
+		}
+		if v, ok := item["url"].(string); ok {
+			asset.URL = v
+		}
+		if v, ok := item["title"].(string); ok {
+			asset.Title = v
+		}
+		if v, ok := item["ip"].(string); ok {
+			asset.IP = v
+		}
+		if v, ok := item["port"].(float64); ok {
+			asset.Port = int(v)
+		}
+		if v, ok := item["protocol"].(string); ok {
+			asset.Protocol = v
+		}
+		if v, ok := item["host"].(string); ok {
+			asset.Host = v
+		}
+		if v, ok := item["body_snippet"].(string); ok {
+			asset.BodySnippet = v
+		}
+		if v, ok := item["server"].(string); ok {
+			asset.Server = v
+		}
+		if v, ok := item["status_code"].(float64); ok {
+			asset.StatusCode = int(v)
+		}
+		if v, ok := item["country_code"].(string); ok {
+			asset.CountryCode = v
+		}
+		if v, ok := item["region"].(string); ok {
+			asset.Region = v
+		}
+		if v, ok := item["city"].(string); ok {
+			asset.City = v
+		}
+		if v, ok := item["asn"].(string); ok {
+			asset.ASN = v
+		}
+		if v, ok := item["org"].(string); ok {
+			asset.Org = v
+		}
+		if v, ok := item["isp"].(string); ok {
+			asset.ISP = v
+		}
+		// Store unrecognized engine-specific fields in Extra
+		extra := make(map[string]interface{})
+		known := map[string]bool{
+			"url": true, "title": true, "ip": true, "port": true,
+			"protocol": true, "host": true, "body_snippet": true,
+			"server": true, "status_code": true, "country_code": true,
+			"region": true, "city": true, "asn": true, "org": true, "isp": true,
+		}
+		for k, v := range item {
+			if !known[k] {
+				extra[k] = v
+			}
+		}
+		if len(extra) > 0 {
+			asset.Extra = extra
+		}
+		assets = append(assets, asset)
+	}
+
+	return assets, total, hasMore
 }

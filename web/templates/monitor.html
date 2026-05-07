@@ -61,7 +61,7 @@
 					<button type="button" class="btn" id="btn-clear">🗑️ 清空</button>
 					<button type="button" class="btn" id="btn-load-example">📝 加载示例</button>
 					<button type="button" class="btn" id="btn-import-file">📁 导入文件</button>
-					<input type="file" id="file-input" accept=".txt,.csv" style="display: none;">
+					<input type="file" id="file-input" accept=".txt,.csv" class="hidden-input">
 				</div>
 
 			<div class="progress-container" id="progress-container">
@@ -72,7 +72,7 @@
 			</div>
 
 			<!-- 结果区域 -->
-			<div class="results-section" id="results-section" style="display: none;">
+			<div class="results-section hidden" id="results-section">
 				<div class="tabs">
 					<button class="tab active" data-tab="tamper">篡改检测结果</button>
 					<button class="tab" data-tab="screenshot">截图结果</button>
@@ -81,7 +81,7 @@
 
 				<!-- 篡改检测结果 -->
 				<div class="tab-content active" id="tamper-tab">
-					<div class="summary-cards" id="tamper-summary" style="display: none;">
+					<div class="summary-cards hidden" id="tamper-summary">
 						<div class="summary-card">
 							<div class="value" id="tamper-total">0</div>
 							<div class="label">检测总数</div>
@@ -108,7 +108,7 @@
 
 				<!-- 截图结果 -->
 				<div class="tab-content" id="screenshot-tab">
-					<div class="summary-cards" id="screenshot-summary" style="display: none;">
+					<div class="summary-cards hidden" id="screenshot-summary">
 						<div class="summary-card">
 							<div class="value" id="screenshot-total">0</div>
 							<div class="label">截图总数</div>

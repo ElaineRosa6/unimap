@@ -84,6 +84,9 @@ func (s *Server) handleScreenshotBridgePair(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	s.clearBridgeLastError()
+	s.bridge.mu.Lock()
+	s.bridge.LastPairAt = time.Now().Unix()
+	s.bridge.mu.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":    true,
@@ -232,6 +235,9 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		DurationMS: 1,
 	})
 	s.clearBridgeLastError()
+	s.bridge.mu.Lock()
+	s.bridge.LastCallbackAt = time.Now().Unix()
+	s.bridge.mu.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":       true,
@@ -274,6 +280,10 @@ func (s *Server) handleScreenshotBridgeTaskNext(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	s.bridge.mu.Lock()
+	s.bridge.LastTaskPullAt = time.Now().Unix()
+	s.bridge.mu.Unlock()
+
 	timeoutMS := int(task.Timeout / time.Millisecond)
 	if timeoutMS <= 0 {
 		timeoutMS = 15000
@@ -289,6 +299,7 @@ func (s *Server) handleScreenshotBridgeTaskNext(w http.ResponseWriter, r *http.R
 			"timeout_ms":      timeoutMS,
 			"viewport_width":  task.ViewportWidth,
 			"viewport_height": task.ViewportHeight,
+			"action":          task.Action,
 		},
 	})
 	s.clearBridgeLastError()
@@ -754,6 +765,9 @@ func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
 	s.bridge.mu.Lock()
 	lastErr := s.bridge.LastErr
 	lastAt := s.bridge.LastAt
+	lastPairAt := s.bridge.LastPairAt
+	lastTaskPullAt := s.bridge.LastTaskPullAt
+	lastCallbackAt := s.bridge.LastCallbackAt
 	s.bridge.mu.Unlock()
 
 	return map[string]interface{}{
@@ -772,6 +786,9 @@ func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
 		"worker_count":      workers,
 		"last_error":        lastErr,
 		"last_error_at":     lastAt,
+		"last_pair_at":      lastPairAt,
+		"last_task_pull_at": lastTaskPullAt,
+		"last_callback_at":  lastCallbackAt,
 		"router_mode":       s.screenshotRouterMode(),
 		"router_cdp_healthy": s.screenshotRouterCDPHealthy(),
 		"router_ext_healthy": s.screenshotRouterExtHealthy(),

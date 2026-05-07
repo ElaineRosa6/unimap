@@ -135,14 +135,27 @@
 								<span>自动</span>
 							</label>
 						</div>
-						<label class="option-label">
-							<input type="checkbox" id="browser-query-mode" name="browser_query" value="true">
-							查询时同步在浏览器打开结果页
-						</label>
+							<div class="browser-action-group">
+								<span class="option-label">浏览器动作</span>
+								<div class="browser-action-selector">
+									<label class="action-option">
+										<input type="radio" name="browser-action" value="open" id="browser-action-open">
+										<span>仅打开结果页</span>
+									</label>
+									<label class="action-option">
+										<input type="radio" name="browser-action" value="capture" id="browser-action-capture" checked>
+										<span>打开并截图</span>
+									</label>
+									<label class="action-option">
+										<input type="radio" name="browser-action" value="collect" id="browser-action-collect">
+										<span>打开并采集结构化结果</span>
+									</label>
+								</div>
+							</div>
 						<span class="form-text" id="cdp-status-info"></span>
 						<span class="form-text" id="bridge-status-info"></span>
 					</div>
-					<small class="form-text">默认检测 127.0.0.1:9222。开启后会保留现有 API 查询，同时通过已连接的 CDP 浏览器打开所选引擎结果页</small>
+					<small class="form-text">默认检测 127.0.0.1:9222。开启后会保留现有 API 查询，同时通过当前选择的浏览器执行模式打开所选引擎结果页</small>
 				</div>
 
 				<div class="form-group">

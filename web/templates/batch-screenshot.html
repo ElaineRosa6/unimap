@@ -1,7 +1,5 @@
 {{template "head-plain" (dict "Title" "批量截图 - UniMap" "staticVersion" .staticVersion)}}
 {{template "header" (dict "ActiveNav" "batch" "staticVersion" .staticVersion)}}
-		</nav>
-	</header>
 
 	<main>
 
@@ -44,7 +42,7 @@
 				<button type="button" class="btn" id="btn-clear-urls">🗑️ 清空列表</button>
 				<button type="button" class="btn" id="btn-load-example">📝 加载示例</button>
 				<button type="button" class="btn" id="btn-import-file">📁 导入文件</button>
-				<input type="file" id="file-input" accept=".txt,.csv,.xlsx,.xls" style="display: none;">
+				<input type="file" id="file-input" accept=".txt,.csv,.xlsx,.xls" class="hidden-input">
 			</div>
 
 			<div class="progress-container" id="progress-container">
@@ -54,11 +52,11 @@
 				<div class="progress-text" id="progress-text">准备中...</div>
 			</div>
 
-			<div class="results-container" id="results-container" style="display: none;">
+			<div class="results-container hidden" id="results-container">
 				<h3>截图结果</h3>
 				<div id="results-list"></div>
 			</div>
 		</section>
-</main>
+	</main>
 
 {{template "footer" .}}
