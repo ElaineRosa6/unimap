@@ -4,7 +4,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>{{.Title}} - UniMap</title>
+	<title>{{if .Title}}{{.Title}}{{else}}UniMap{{end}} - 多引擎网络资产查询</title>
 	<link rel="stylesheet" href="/static/css/style.css?v={{.staticVersion}}">
 </head>
 {{end}}
@@ -15,7 +15,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>{{.Title}}</title>
+	<title>{{if .Title}}{{.Title}}{{else}}UniMap{{end}}</title>
 	<link rel="stylesheet" href="/static/css/style.css?v={{.staticVersion}}">
 </head>
 {{end}}
