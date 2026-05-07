@@ -416,54 +416,22 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 			results = append(results, item)
 		}
 	} else if extPaired {
-		// Extension paired → use bridge to open each engine page
+		// Extension paired → report connection status without opening engine pages.
+		// Opening pages for login check would interfere with the user's browsing
+		// session and cause unwanted screenshots every poll interval.
 		for _, engine := range engines {
-			searchURL := ""
-			if s.screenshotMgr != nil {
-				searchURL = s.screenshotMgr.BuildSearchEngineURL(engine, query)
-			}
 			loginURL := ""
 			if s.screenshotMgr != nil {
 				loginURL = s.screenshotMgr.EngineLoginURL(engine)
 			}
-
 			item := map[string]interface{}{
-				"engine":     engine,
+				"engine":        engine,
+				"logged_in":     true,
+				"reason":        "browser_session",
+				"title":         "",
+				"login_url":     loginURL,
 				"cdp_connected": cdpConnected,
-				"ext_paired": extPaired,
-				"login_url":  loginURL,
-			}
-
-			if searchURL != "" {
-				ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-				result, err := s.bridge.Service.Submit(ctx, screenshot.BridgeTask{
-					RequestID:    fmt.Sprintf("login_check_%s_%d", engine, time.Now().UnixNano()),
-					URL:          searchURL,
-					BatchID:      "login_status",
-					WaitStrategy: "load",
-				})
-				cancel()
-
-				if err != nil {
-					item["logged_in"] = false
-					item["reason"] = "bridge_failed"
-					item["error"] = err.Error()
-				} else if result.Success {
-					item["logged_in"] = true
-					item["reason"] = "browser_session"
-					item["title"] = result.ImagePath
-				} else {
-					errMsg := strings.TrimSpace(result.Error)
-					if errMsg == "" {
-						errMsg = strings.TrimSpace(result.ErrorCode)
-					}
-					item["logged_in"] = false
-					item["reason"] = "bridge_check_failed"
-					item["error"] = errMsg
-				}
-			} else {
-				item["logged_in"] = false
-				item["reason"] = "unsupported_engine"
+				"ext_paired":    extPaired,
 			}
 			results = append(results, item)
 		}
