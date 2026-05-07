@@ -64,17 +64,23 @@
 							<span class="toggle-arrow">&#9654;</span> Headless 模式备用 Cookie 填写
 						</button>
 						<div class="cookie-input-content" id="cookie-input-content" style="display:none;">
-							<div class="query-options">
-								<label class="option-label" for="cookie-fofa">FOFA</label>
+							<div class="cookie-engine-row">
+								<span class="engine-label">FOFA</span>
 								<span class="cookie-status {{if .cookieHasFofa}}cookie-status--on{{else}}cookie-status--off{{end}}" id="cookie-status-fofa">{{if .cookieHasFofa}}已配置{{else}}未配置{{end}}</span>
 								<input type="text" id="cookie-fofa" name="cookie_fofa" placeholder="session=xxx; token=yyy" value="{{.cookieFofa}}">
-								<label class="option-label" for="cookie-hunter">Hunter</label>
+							</div>
+							<div class="cookie-engine-row">
+								<span class="engine-label">Hunter</span>
 								<span class="cookie-status {{if .cookieHasHunter}}cookie-status--on{{else}}cookie-status--off{{end}}" id="cookie-status-hunter">{{if .cookieHasHunter}}已配置{{else}}未配置{{end}}</span>
 								<input type="text" id="cookie-hunter" name="cookie_hunter" placeholder="session=xxx; token=yyy" value="{{.cookieHunter}}">
-								<label class="option-label" for="cookie-zoomeye">ZoomEye</label>
+							</div>
+							<div class="cookie-engine-row">
+								<span class="engine-label">ZoomEye</span>
 								<span class="cookie-status {{if .cookieHasZoomeye}}cookie-status--on{{else}}cookie-status--off{{end}}" id="cookie-status-zoomeye">{{if .cookieHasZoomeye}}已配置{{else}}未配置{{end}}</span>
 								<input type="text" id="cookie-zoomeye" name="cookie_zoomeye" placeholder="session=xxx; token=yyy" value="{{.cookieZoomeye}}">
-								<label class="option-label" for="cookie-quake">Quake</label>
+							</div>
+							<div class="cookie-engine-row">
+								<span class="engine-label">Quake</span>
 								<span class="cookie-status {{if .cookieHasQuake}}cookie-status--on{{else}}cookie-status--off{{end}}" id="cookie-status-quake">{{if .cookieHasQuake}}已配置{{else}}未配置{{end}}</span>
 								<input type="text" id="cookie-quake" name="cookie_quake" placeholder="session=xxx; token=yyy" value="{{.cookieQuake}}">
 							</div>

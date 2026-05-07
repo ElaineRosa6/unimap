@@ -1335,13 +1335,15 @@ section h3 {
 .btn-toggle-cookie {
 	display: flex;
 	align-items: center;
-	gap: 0.4rem;
-	background: none;
-	border: 1px dashed #bdc3c7;
-	border-radius: 4px;
-	padding: 0.4rem 0.75rem;
+	justify-content: space-between;
+	gap: 0.5rem;
+	background: var(--bg-light);
+	border: 1px solid var(--border-color);
+	border-radius: var(--radius-md);
+	padding: 0.6rem 1rem;
 	font-size: 0.85rem;
-	color: #7f8c8d;
+	font-weight: 600;
+	color: var(--text-secondary);
 	cursor: pointer;
 	width: 100%;
 	text-align: left;
@@ -1349,14 +1351,23 @@ section h3 {
 }
 
 .btn-toggle-cookie:hover {
-	border-color: #3498db;
-	color: #3498db;
+	border-color: var(--primary);
+	color: var(--primary);
+	background: var(--bg-card);
+}
+
+.btn-toggle-cookie.expanded {
+	border-bottom-left-radius: 0;
+	border-bottom-right-radius: 0;
+	border-bottom-color: var(--border-color);
+	color: var(--text-primary);
 }
 
 .toggle-arrow {
 	display: inline-block;
 	transition: transform 0.2s ease;
 	font-size: 0.7rem;
+	color: var(--text-muted);
 }
 
 .toggle-arrow.expanded {
@@ -1364,9 +1375,64 @@ section h3 {
 }
 
 .cookie-input-content {
-	margin-top: 0.5rem;
-	padding: 0.5rem 0;
+	margin-top: 0;
+	padding: 1rem;
+	background: var(--bg-card);
+	border: 1px solid var(--border-color);
+	border-top: none;
+	border-bottom-left-radius: var(--radius-md);
+	border-bottom-right-radius: var(--radius-md);
 	animation: slideDown 0.2s ease;
+}
+
+/* Cookie 引擎行 - 每行一个引擎 */
+.cookie-engine-row {
+	display: grid;
+	grid-template-columns: 90px 80px 1fr;
+	gap: 0.75rem;
+	align-items: center;
+	padding: 0.6rem 0;
+	border-bottom: 1px solid var(--border-light);
+}
+
+.cookie-engine-row:last-child {
+	border-bottom: none;
+	padding-bottom: 0;
+}
+
+.cookie-engine-row .engine-label {
+	font-weight: 600;
+	font-size: 0.85rem;
+	color: var(--text-primary);
+	white-space: nowrap;
+}
+
+.cookie-engine-row .engine-label abbr {
+	text-decoration: none;
+	border-bottom: 1px dotted var(--text-muted);
+	cursor: help;
+}
+
+.cookie-engine-row input[type="text"] {
+	margin: 0;
+}
+
+/* Cookie 导入区域 */
+.cookie-import {
+	display: grid;
+	grid-template-columns: 140px 1fr auto;
+	gap: 0.75rem;
+	align-items: start;
+}
+
+.cookie-import select,
+.cookie-import textarea {
+	margin: 0;
+}
+
+.cookie-import textarea {
+	resize: vertical;
+	min-height: 60px;
 }
 
 @keyframes slideDown {
