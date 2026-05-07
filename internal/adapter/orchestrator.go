@@ -332,6 +332,18 @@ func (o *EngineOrchestrator) ListAdapters() []string {
 	return names
 }
 
+// SetWebOnlyBrowserBackend wires a browser query backend into all WebOnly
+// adapters that support it (via the SetBrowserBackend method).
+func (o *EngineOrchestrator) SetWebOnlyBrowserBackend(backend BrowserQueryBackend) {
+	o.mutex.RLock()
+	defer o.mutex.RUnlock()
+	for _, a := range o.adapters {
+		if w, ok := a.(interface{ SetBrowserBackend(BrowserQueryBackend) }); ok {
+			w.SetBrowserBackend(backend)
+		}
+	}
+}
+
 // TranslateQuery 将UQL转换为各引擎查询
 func (o *EngineOrchestrator) TranslateQuery(ast *model.UQLAST, engineNames []string) ([]model.EngineQuery, error) {
 	if ast == nil {

@@ -1,14 +1,21 @@
 package screenshot
 
-import "context"
+import (
+	"context"
+
+	"github.com/unimap-icp-hunter/project/internal/model"
+)
 
 // CollectResult holds structured data extracted from a search engine result page.
 type CollectResult struct {
-	Engine    string `json:"engine"`
-	Query     string `json:"query"`
-	RawURL    string `json:"raw_url"`
-	Title     string `json:"title"`
-	Timestamp int64  `json:"timestamp"`
+	Engine    string                 `json:"engine"`
+	Query     string                 `json:"query"`
+	RawURL    string                 `json:"raw_url"`
+	Title     string                 `json:"title"`
+	Timestamp int64                  `json:"timestamp"`
+	Assets    []model.UnifiedAsset   `json:"assets,omitempty"`
+	Total     int                    `json:"total,omitempty"`
+	HasMore   bool                   `json:"has_more,omitempty"`
 }
 
 // Provider defines screenshot capabilities used by the app service layer.
