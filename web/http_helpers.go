@@ -133,6 +133,10 @@ func isOriginAllowed(origin, host string, allowedOrigins []string) bool {
 	if isSameHostURL(origin, host) {
 		return true
 	}
+	// Allow Chrome extension origins (chrome-extension://<id>)
+	if strings.HasPrefix(origin, "chrome-extension://") {
+		return true
+	}
 	return originAllowedByList(origin, allowedOrigins)
 }
 
