@@ -124,6 +124,20 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		"join": func(elems []string, sep string) string {
 			return strings.Join(elems, sep)
 		},
+		"dict": func(values ...interface{}) (map[string]interface{}, error) {
+			if len(values)%2 != 0 {
+				return nil, fmt.Errorf("invalid dict call: odd number of arguments")
+			}
+			dict := make(map[string]interface{}, len(values)/2)
+			for i := 0; i < len(values); i += 2 {
+				key, ok := values[i].(string)
+				if !ok {
+					return nil, fmt.Errorf("dict keys must be strings, got %T", values[i])
+				}
+				dict[key] = values[i+1]
+			}
+			return dict, nil
+		},
 	}
 
 	webRoot, err := resolveWebRoot()
