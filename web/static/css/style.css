@@ -41,6 +41,15 @@
 	--shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
 	--shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
 	--shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.15);
+
+	/* Accent / elevated surface */
+	--accent: #3498db;
+	--surface-elevated: #f8f9fa;
+
+	/* Transitions */
+	--duration-fast: 150ms;
+	--duration-normal: 300ms;
+	--ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* 全局样式 */
@@ -1173,24 +1182,6 @@ section h3 {
 }
 
 /* 错误消息样式 */
-.error-message {
-	background-color: #f8d7da;
-	border: 1px solid #f5c6cb;
-	border-radius: 4px;
-	padding: 2rem;
-	text-align: center;
-	margin: 2rem 0;
-}
-
-.error-message h3 {
-	color: #721c24;
-	margin-bottom: 1rem;
-}
-
-.error-message p {
-	color: #721c24;
-	margin-bottom: 1.5rem;
-}
 
 /* 无结果样式 */
 .no-results {

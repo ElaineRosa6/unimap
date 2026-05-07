@@ -58,7 +58,7 @@ func (s *Server) handleSchedulerPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "scheduler.html", map[string]interface{}{
-		"Version":        s.staticVersion,
+		"staticVersion":  s.staticVersion,
 		"TaskTypes":      taskTypes,
 		"TaskTypeLabels": taskTypeLabels,
 	}) {
