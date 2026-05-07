@@ -58,6 +58,13 @@ func isBrowserRequest(r *http.Request) bool {
 		strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
+// isScreenshotBridgePath returns true for paths under the screenshot bridge API.
+// Bridge routes have their own auth (loopback + bearer token) and need to bypass
+// CORS restrictions for browser extension access.
+func isScreenshotBridgePath(path string) bool {
+	return strings.HasPrefix(path, "/api/screenshot/bridge/")
+}
+
 // isPublicPath returns true for paths that do not require authentication.
 func (s *Server) isPublicPath(path string) bool {
 	publicPrefixes := []string{
