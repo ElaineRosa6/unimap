@@ -455,5 +455,5 @@ func (m *mockScreenshotCDPProvider) OpenSearchEngineResult(ctx context.Context, 
 	return "https://mock.engine/result?q=" + query, nil
 }
 func (m *mockScreenshotCDPProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
-	return []CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query, Title: "Mock Result", Timestamp: 0}}, nil
+	return []CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query, Title: "Mock Result", Timestamp: 0, Assets: nil}}, nil
 }

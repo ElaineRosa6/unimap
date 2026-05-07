@@ -58,18 +58,22 @@ func TestWebOnlyAdapterBase_Name(t *testing.T) {
 }
 
 func TestWebOnlyAdapterBase_Translate(t *testing.T) {
-	base := NewWebOnlyAdapterBase(&mockAdapter{}, "test")
-	_, err := base.Translate(&model.UQLAST{})
-	if err == nil {
-		t.Error("expected error, got nil")
+	adapter := &mockAdapter{name: "fofa", translate: "country=CN"}
+	base := NewWebOnlyAdapterBase(adapter, "fofa-web")
+	got, err := base.Translate(&model.UQLAST{})
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if got != "country=CN" {
+		t.Errorf("Translate() = %q, want %q", got, "country=CN")
 	}
 }
 
-func TestWebOnlyAdapterBase_Search(t *testing.T) {
+func TestWebOnlyAdapterBase_Search_NoBackend(t *testing.T) {
 	base := NewWebOnlyAdapterBase(&mockAdapter{}, "test")
 	_, err := base.Search("test", 1, 10)
 	if err == nil {
-		t.Error("expected error, got nil")
+		t.Error("expected error when no browser backend configured")
 	}
 }
 

@@ -53,6 +53,18 @@ type managedConn struct {
 	writeMu sync.Mutex
 }
 
+// browserBackendAdapter adapts screenshot.Provider to adapter.BrowserQueryBackend.
+type browserBackendAdapter struct {
+	provider screenshot.Provider
+}
+
+func (a *browserBackendAdapter) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]screenshot.CollectResult, error) {
+	if a.provider == nil {
+		return nil, fmt.Errorf("browser backend not initialized")
+	}
+	return a.provider.CollectSearchEngineResult(ctx, engine, query, queryID)
+}
+
 // WebSocket连接管理器
 type ConnectionManager struct {
 	connections map[string]*managedConn
@@ -391,6 +403,12 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		router.Start(shutdownCtx)
 		srv.screenshotRouter = router
 
+		// Wire browser backend to WebOnly adapters so engines without API keys
+		// can collect structured results via browser DOM extraction.
+		if unifiedSvc != nil && srv.screenshotRouter != nil {
+			unifiedSvc.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: srv.screenshotRouter})
+		}
+
 		logger.Infof("Screenshot router initialized: mode=auto, priority=%s, fallback=%v", priority, fallback)
 	} else if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Screenshot.Engine), "extension") {
 		// 传统 extension 单模式
@@ -400,6 +418,12 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		srv.bridge.Mock = mockClient
 		srv.bridge.Service = bridgeSvc
 		screenshotApp.SetBridgeService(bridgeSvc)
+
+		// Wire browser backend for WebOnly adapters in extension-only mode
+		if unifiedSvc != nil && screenshotMgr != nil {
+			extProvider := screenshot.NewExtensionProvider(bridgeSvc, screenshotMgr)
+			unifiedSvc.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: extProvider})
+		}
 	}
 
 	return srv, nil
