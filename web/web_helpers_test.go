@@ -13,8 +13,10 @@ import (
 // ============================================================
 
 func TestIsOriginAllowed_EmptyOrigin(t *testing.T) {
-	if !isOriginAllowed("", "example.com", []string{"https://other.com"}) {
-		t.Fatal("expected empty origin to be allowed")
+	// Empty origin should NOT be allowed (security fix)
+	result := isOriginAllowed("", "localhost:8448", nil)
+	if result {
+		t.Error("expected empty origin to be rejected")
 	}
 }
 

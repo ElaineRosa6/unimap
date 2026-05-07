@@ -184,7 +184,7 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 		// 发送查询错误消息
 		if err := writeJSON(map[string]interface{}{
 			"type":  "query_error",
-			"error": "No engines configured/registered. Please set API keys in configs/config.yaml and enable at least one engine.",
+			"error": "no engines configured/registered. Please set API keys in configs/config.yaml and enable at least one engine.",
 		}); err != nil {
 			logger.Errorf("WebSocket write error: %v", err)
 		}
@@ -221,9 +221,16 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 		logger.Errorf("WebSocket write error: %v", err)
 	}
 
-	// 异步执行查询
+	// 异步执行查询，带有独立的超时上下文
 	go func() {
-		browserQueryCh := s.runBrowserQueryAsync(ctx, query, engines, browserQuery, browserAction, queryID)
+		// 为查询创建带超时的上下文（默认 60 秒查询超时）
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		queryCtx, queryCancel := context.WithTimeout(ctx, 60*time.Second)
+		defer queryCancel()
+
+		browserQueryCh := s.runBrowserQueryAsync(queryCtx, query, engines, browserQuery, browserAction, queryID)
 
 		// 执行查询
 		req := service.QueryRequest{
@@ -233,11 +240,21 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 			ProcessData: true,
 		}
 
-		resp, queryErr := s.service.Query(ctx, req)
+		resp, queryErr := s.service.Query(queryCtx, req)
 		var browserOutcome browserQueryOutcome
 		if browserQueryCh != nil {
-			browserOutcome = <-browserQueryCh
+			select {
+			case browserOutcome = <-browserQueryCh:
+			case <-queryCtx.Done():
+				// Timeout while waiting for browser query
+			}
 		}
+
+		// Check if query timed out
+		if queryErr == nil && queryCtx.Err() != nil {
+			queryErr = fmt.Errorf("query timeout after 60s: %v", queryCtx.Err())
+		}
+
 		endTime := time.Now()
 
 		// 更新查询状态（在锁内修改，避免并发读写竞态）

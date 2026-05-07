@@ -3,6 +3,7 @@ package distributed
 import (
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
 // SchedulerStrategy defines the scheduling strategy type
@@ -123,7 +124,7 @@ func (s *PriorityScheduler) SelectTask(tasks []*TaskRecord, node *NodeRecord) *T
 
 // RoundRobinScheduler implements round-robin scheduling
 type RoundRobinScheduler struct {
-	lastIndex int
+	lastIndex atomic.Int64
 }
 
 func NewRoundRobinScheduler() *RoundRobinScheduler {
@@ -139,13 +140,10 @@ func (s *RoundRobinScheduler) SelectTask(tasks []*TaskRecord, node *NodeRecord) 
 		return nil
 	}
 
-	if s.lastIndex >= len(tasks) {
-		s.lastIndex = 0
-	}
-
-	task := tasks[s.lastIndex]
-	s.lastIndex++
-	return task
+	n := len(tasks)
+	idx := int(s.lastIndex.Load()) % n
+	s.lastIndex.Add(1)
+	return tasks[idx]
 }
 
 // NewScheduler creates a scheduler based on the strategy

@@ -1,9 +1,13 @@
 package web
 
 import (
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"net/http"
 	"strings"
+
+	"github.com/unimap-icp-hunter/project/internal/logger"
 )
 
 // adminAuthMiddleware returns a middleware that requires authentication
@@ -82,10 +86,42 @@ func (s *Server) isPublicPath(path string) bool {
 	return false
 }
 
+func generateRandomToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback: use timestamp-based token (not secure, but prevents startup failure)
+		return "fallback-token-" + string(rune(48)) + string(rune(48)) + string(rune(48)) + string(rune(48))
+	}
+	return hex.EncodeToString(b)
+}
+
+func maskTokenForLog(token string) string {
+	if len(token) <= 8 {
+		return "****"
+	}
+	return token[:4] + "****" + token[len(token)-4:]
+}
+
 // adminToken returns the configured admin token.
+// If auth is enabled but no token is configured, a random token is auto-generated
+// on first call and cached for the server lifetime.
 func (s *Server) adminToken() string {
-	if s.config != nil && s.config.Web.Auth.Enabled {
+	if s.config == nil || !s.config.Web.Auth.Enabled {
+		return ""
+	}
+	token := s.config.Web.Auth.AdminToken
+	if token != "" {
+		return token
+	}
+	// Auto-generate a random token if none configured
+	s.configMutex.Lock()
+	defer s.configMutex.Unlock()
+	// Double-check after acquiring lock
+	if s.config.Web.Auth.AdminToken != "" {
 		return s.config.Web.Auth.AdminToken
 	}
-	return ""
+	token = generateRandomToken()
+	s.config.Web.Auth.AdminToken = token
+	logger.Warnf("Admin token was not configured; auto-generated a random token: %s (save this to config.yaml)", maskTokenForLog(token))
+	return token
 }

@@ -128,7 +128,7 @@ func originAllowedByList(origin string, allowedOrigins []string) bool {
 
 func isOriginAllowed(origin, host string, allowedOrigins []string) bool {
 	if strings.TrimSpace(origin) == "" {
-		return true
+		return false
 	}
 	if isSameHostURL(origin, host) {
 		return true

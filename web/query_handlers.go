@@ -188,7 +188,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(engines) == 0 {
 		if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "error.html", map[string]interface{}{
-			"error": "No engines configured/registered. Please set API keys in configs/config.yaml and enable at least one engine.",
+			"error": "no engines configured/registered. Please set API keys in configs/config.yaml and enable at least one engine.",
 		}) {
 			return
 		}
