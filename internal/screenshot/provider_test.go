@@ -255,6 +255,51 @@ func TestExtensionProvider_CollectSearchEngineResult_BridgeStructuredData(t *tes
 	}
 }
 
+func TestExtensionProvider_OpenSearchEngineResult_UsesOpenAction(t *testing.T) {
+	client := &mockBridgeClient{
+		awaitResult: BridgeResult{Success: true},
+	}
+	svc := NewBridgeService(client, 5, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	p := NewExtensionProvider(svc, nil)
+	got, err := p.OpenSearchEngineResult(context.Background(), "fofa", "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(got, "https://fofa.info/result?qbase64=") {
+		t.Fatalf("unexpected search URL: %q", got)
+	}
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.submitCalls) != 1 {
+		t.Fatalf("expected one bridge task, got %d", len(client.submitCalls))
+	}
+	if client.submitCalls[0].Action != "open" {
+		t.Fatalf("expected open action, got %q", client.submitCalls[0].Action)
+	}
+}
+
+func TestExtensionProvider_OpenSearchEngineResult_BridgeFailure(t *testing.T) {
+	client := &mockBridgeClient{
+		awaitResult: BridgeResult{Success: false, Error: "login required"},
+	}
+	svc := NewBridgeService(client, 5, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	p := NewExtensionProvider(svc, nil)
+	_, err := p.OpenSearchEngineResult(context.Background(), "fofa", "test")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "login required") {
+		t.Fatalf("expected bridge error, got %v", err)
+	}
+}
+
 func TestExtensionProvider_CaptureTargetWebsite_BridgeSuccess(t *testing.T) {
 	client := &mockBridgeClient{
 		awaitResult: BridgeResult{Success: true, ImagePath: "/tmp/target.png"},

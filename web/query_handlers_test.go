@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/unimap-icp-hunter/project/internal/adapter"
+	"github.com/unimap-icp-hunter/project/internal/model"
 	"github.com/unimap-icp-hunter/project/internal/screenshot"
 	"github.com/unimap-icp-hunter/project/internal/service"
 )
@@ -264,6 +265,45 @@ func TestBuildQueryAPIPayload_CombinesErrors(t *testing.T) {
 	}
 	if len(errors) < 2 {
 		t.Fatalf("expected at least 2 errors, got %d", len(errors))
+	}
+}
+
+func TestBuildQueryAPIPayload_MergesBrowserCollectedAssets(t *testing.T) {
+	payload := buildQueryAPIPayload(
+		"test",
+		[]string{"fofa"},
+		&service.QueryResponse{
+			Assets:      []model.UnifiedAsset{{URL: "https://api.example.test", Source: "api"}},
+			TotalCount:  1,
+			EngineStats: nil,
+		},
+		browserQueryOutcome{
+			Enabled: true,
+			CollectedResults: []screenshot.CollectResult{{
+				Engine: "fofa",
+				Assets: []model.UnifiedAsset{{URL: "https://browser.example.test", Source: "browser"}},
+				Total:  1,
+			}},
+		},
+		"collect",
+	)
+
+	assets, ok := payload["assets"].([]model.UnifiedAsset)
+	if !ok {
+		t.Fatal("expected assets to be []model.UnifiedAsset")
+	}
+	if len(assets) != 2 {
+		t.Fatalf("expected 2 merged assets, got %#v", assets)
+	}
+	if payload["totalCount"] != 2 {
+		t.Fatalf("expected totalCount 2, got %v", payload["totalCount"])
+	}
+	engineStats, ok := payload["engineStats"].(map[string]int)
+	if !ok {
+		t.Fatal("expected engineStats to be map[string]int")
+	}
+	if engineStats["fofa"] != 1 {
+		t.Fatalf("expected fofa browser stat 1, got %#v", engineStats)
 	}
 }
 
