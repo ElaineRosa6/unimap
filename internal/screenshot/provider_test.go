@@ -212,6 +212,49 @@ func TestExtensionProvider_CaptureSearchEngineResult_UnsupportedEngine(t *testin
 	}
 }
 
+func TestExtensionProvider_CollectSearchEngineResult_BridgeStructuredData(t *testing.T) {
+	client := &mockBridgeClient{
+		awaitResult: BridgeResult{
+			Success: true,
+			StructuredCollectedData: map[string]interface{}{
+				"total":    float64(1),
+				"has_more": false,
+				"items": []interface{}{
+					map[string]interface{}{
+						"ip":       "1.2.3.4",
+						"port":     float64(443),
+						"protocol": "https",
+						"host":     "example.com",
+						"title":    "Example",
+					},
+				},
+			},
+		},
+	}
+	svc := NewBridgeService(client, 5, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	p := NewExtensionProvider(svc, nil)
+	got, err := p.CollectSearchEngineResult(context.Background(), "fofa", "test", "q1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected one collect result, got %d", len(got))
+	}
+	if got[0].Total != 1 || got[0].HasMore {
+		t.Fatalf("unexpected pagination metadata: total=%d hasMore=%v", got[0].Total, got[0].HasMore)
+	}
+	if len(got[0].Assets) != 1 {
+		t.Fatalf("expected one asset, got %d", len(got[0].Assets))
+	}
+	asset := got[0].Assets[0]
+	if asset.IP != "1.2.3.4" || asset.Port != 443 || asset.Source != "fofa" {
+		t.Fatalf("unexpected asset: %#v", asset)
+	}
+}
+
 func TestExtensionProvider_CaptureTargetWebsite_BridgeSuccess(t *testing.T) {
 	client := &mockBridgeClient{
 		awaitResult: BridgeResult{Success: true, ImagePath: "/tmp/target.png"},

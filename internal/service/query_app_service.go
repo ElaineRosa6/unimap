@@ -16,6 +16,7 @@ import (
 type BrowserQueryOutcome struct {
 	Enabled            bool
 	OpenedEngines      []string
+	CollectedResults   []screenshot.CollectResult
 	Errors             []string
 	AutoCaptureEnabled bool
 	AutoCaptureQueryID string
@@ -93,7 +94,7 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 		defer close(resultCh)
 		outcome := BrowserQueryOutcome{Enabled: true}
 
-		if autoCaptureEnabled && action == "capture" {
+		if autoCaptureEnabled && (action == "capture" || action == "collect") {
 			if strings.TrimSpace(queryID) == "" {
 				queryID = fmt.Sprintf("query_%d", time.Now().UnixNano())
 			}
@@ -147,14 +148,30 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 				}
 
 			case "collect":
-				// Open + collect structured DOM data
+				// Open + collect structured DOM data, then capture evidence when enabled.
 				if browserRouter != nil {
 					collected, err := browserRouter.CollectSearchEngineResult(ctx, engine, query, queryID)
 					if err != nil {
 						outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser collect failed for %s: %v", engine, err))
+					} else {
+						outcome.CollectedResults = append(outcome.CollectedResults, collected...)
+					}
+				}
+				if outcome.AutoCaptureEnabled && captureAvailable {
+					path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, query, outcome.AutoCaptureQueryID)
+					if err != nil {
+						outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture failed for %s: %v", engine, err))
 						continue
 					}
-					_ = collected // TODO: wire collected data into response payload
+					if previewURLBuilder == nil {
+						continue
+					}
+					previewURL := previewURLBuilder(path)
+					if previewURL == "" {
+						outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture preview unavailable for %s", engine))
+						continue
+					}
+					outcome.AutoCapturedPaths[engine] = previewURL
 				}
 			}
 		}
