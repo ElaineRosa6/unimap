@@ -27,7 +27,6 @@ async function pollTaskOnce(token) {
 }
 
 async function reportTaskResult(result, token) {
-  // Day 5/6 local mock callback endpoint.
   await apiPostBridgeSigned("/api/screenshot/bridge/mock/result", result, token);
 }
 
@@ -42,7 +41,7 @@ async function waitForCaptureSlot() {
 async function handleTask(task, token) {
   const startedAt = Date.now();
   const requestId = task.request_id;
-  const action = task.action || "screenshot"; // Anti-corruption: default to screenshot
+  const action = task.action || "screenshot";
   let tabId = null;
 
   async function captureWithFocus(tid, windowId) {
@@ -75,7 +74,15 @@ async function handleTask(task, token) {
 
   try {
     tabId = await ensureTab(task.url);
-    await waitForPageReady(tabId, task.wait_strategy || "load", task.timeout_ms || 15000);
+
+    // Choose wait strategy based on action type
+    let waitStrategy = task.wait_strategy || "load";
+    if (action === "collect") {
+      // Collect needs extra time for SPA rendering
+      waitStrategy = "spa";
+    }
+
+    await waitForPageReady(tabId, waitStrategy, task.timeout_ms || 15000);
 
     if (action === "open") {
       // Only open the page, no screenshot or data collection
@@ -90,23 +97,55 @@ async function handleTask(task, token) {
     } else if (action === "collect") {
       // Extract structured DOM data from the page
       const assets = await extractEngineAssets(tabId);
-      const result = normalizeCollectPayload(
-        assets.items,
-        assets.title,
-        requestId,
-        startedAt
-      );
-      // Override total and has_more from extraction result
-      if (result.structured_collected_data) {
-        result.structured_collected_data.total = assets.total || assets.items.length;
-        result.structured_collected_data.has_more = assets.has_more || false;
-        if (assets.error) {
+
+      // Handle login wall detection
+      if (assets.is_login_wall) {
+        const durationMs = Math.max(1, Date.now() - startedAt);
+        await reportResult({
+          request_id: requestId,
+          success: false,
+          image_path: "",
+          image_data: "",
+          duration_ms: durationMs,
+          error_code: "login_required",
+          error: `login wall detected on ${assets.engine || "unknown"}`,
+          collected_data: "",
+          structured_collected_data: {
+            title: assets.title || "",
+            items: [],
+            total: 0,
+            has_more: false,
+            is_login_wall: true,
+            engine: assets.engine
+          }
+        });
+      } else {
+        const result = normalizeCollectPayload(
+          assets.items,
+          assets.title,
+          requestId,
+          startedAt
+        );
+
+        // Override total and has_more from extraction result
+        if (result.structured_collected_data) {
+          result.structured_collected_data.total = assets.total || assets.items.length;
+          result.structured_collected_data.has_more = assets.has_more || false;
+          result.structured_collected_data.engine = assets.engine || "unknown";
+          if (assets.error) {
+            result.structured_collected_data.extraction_error = assets.error;
+          }
+        }
+
+        // Include raw error info if extraction failed but didn't login wall
+        if (assets.error && assets.items.length === 0) {
           result.structured_collected_data.extraction_error = assets.error;
         }
+
+        await reportResult(result);
       }
-      await reportResult(result);
     } else {
-      // "screenshot" or unknown action — capture screenshot (anti-corruption fallback)
+      // "screenshot" or unknown action — capture screenshot
       await waitForCaptureSlot();
       const tab = await chrome.tabs.get(tabId);
       let dataUrl;
