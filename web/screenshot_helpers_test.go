@@ -117,6 +117,7 @@ func TestHandleScreenshotFile_ForbiddenOrigin(t *testing.T) {
 func TestHandleScreenshotFile_PathTraversal(t *testing.T) {
 	s := &Server{}
 	req := httptest.NewRequest(http.MethodGet, "/screenshots/../../etc/passwd", nil)
+	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleScreenshotFile(w, req)
 
@@ -131,6 +132,7 @@ func TestHandleScreenshotFile_PathTraversal(t *testing.T) {
 func TestHandleScreenshotFile_UnsupportedFileType(t *testing.T) {
 	s := &Server{}
 	req := httptest.NewRequest(http.MethodGet, "/screenshots/test.gif", nil)
+	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleScreenshotFile(w, req)
 
@@ -145,6 +147,7 @@ func TestHandleScreenshotFile_UnsupportedFileType(t *testing.T) {
 func TestHandleScreenshotFile_NotFound(t *testing.T) {
 	s := &Server{}
 	req := httptest.NewRequest(http.MethodGet, "/screenshots/nonexistent.png", nil)
+	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleScreenshotFile(w, req)
 
@@ -156,6 +159,7 @@ func TestHandleScreenshotFile_NotFound(t *testing.T) {
 func TestHandleScreenshotFile_TrailingSlash(t *testing.T) {
 	s := &Server{}
 	req := httptest.NewRequest(http.MethodGet, "/screenshots/", nil)
+	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleScreenshotFile(w, req)
 
@@ -168,6 +172,7 @@ func TestHandleScreenshotFile_AcceptedImageTypes(t *testing.T) {
 	s := &Server{}
 	for _, ext := range []string{".png", ".jpg", ".jpeg", ".webp"} {
 		req := httptest.NewRequest(http.MethodGet, "/screenshots/test"+ext, nil)
+		req.Header.Set("Origin", "http://localhost:8448")
 		w := httptest.NewRecorder()
 		s.handleScreenshotFile(w, req)
 

@@ -562,7 +562,7 @@ func (s *Server) Start() error {
 
 	allowedOrigins := allowedOriginsFromConfig(s.config)
 	allowedMethods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
-	allowedHeaders := []string{"Content-Type", "Authorization", "X-Admin-Token", "X-Requested-With", "X-WebSocket-Token", requestid.HeaderName}
+	allowedHeaders := []string{"Content-Type", "Authorization", "X-Admin-Token", "X-Requested-With", "X-WebSocket-Token", "X-Bridge-Timestamp", "X-Bridge-Nonce", "X-Bridge-Signature", requestid.HeaderName}
 	exposedHeaders := []string{requestid.HeaderName}
 	allowCredentials := true
 	maxAge := 600
