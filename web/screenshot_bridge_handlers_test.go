@@ -95,6 +95,35 @@ func TestBridgeMockResultAcceptsValidSignature(t *testing.T) {
 	}
 }
 
+func TestBridgeMockResultForwardsCollectedData(t *testing.T) {
+	s := newBridgeTestServer(false)
+	body := `{"request_id":"req-collect","success":true,"collected_data":"raw title","structured_collected_data":{"total":1,"items":[{"ip":"1.2.3.4","port":443}]}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/mock/result", strings.NewReader(body))
+	setLoopbackBridgeRequest(req)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer tok-test")
+
+	w := httptest.NewRecorder()
+	s.handleScreenshotBridgeMockResult(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	result, err := s.bridge.Mock.AwaitResult(req.Context(), "req-collect")
+	if err != nil {
+		t.Fatalf("await result failed: %v", err)
+	}
+	if result.CollectedData != "raw title" {
+		t.Fatalf("expected collected data to be forwarded, got %q", result.CollectedData)
+	}
+	if result.StructuredCollectedData == nil {
+		t.Fatal("expected structured collected data to be forwarded")
+	}
+	if total, _ := result.StructuredCollectedData["total"].(float64); total != 1 {
+		t.Fatalf("expected total 1, got %v", result.StructuredCollectedData["total"])
+	}
+}
+
 func TestBridgeMockResultRejectsReplayNonce(t *testing.T) {
 	s := newBridgeTestServer(true)
 	body := []byte(`{"request_id":"req-3","success":true,"image_path":"c:/tmp/x.png"}`)

@@ -63,6 +63,7 @@ func buildQueryAPIPayload(query string, engines []string, resp *service.QueryRes
 		"browserQuery":         browserOutcome.Enabled,
 		"browserAction":        browserAction,
 		"browserOpenedEngines": browserOutcome.OpenedEngines,
+		"browserCollectedData": browserOutcome.CollectedResults,
 		"browserQueryErrors":   browserOutcome.Errors,
 		"autoCapture":          browserOutcome.AutoCaptureEnabled,
 		"autoCaptureQueryID":   browserOutcome.AutoCaptureQueryID,
