@@ -41,3 +41,13 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
   - 对 bridge 路径直接返回 `Access-Control-Allow-Origin: *`，允许任意 origin（包括 `chrome-extension://`）
   - 辅助函数 `isScreenshotBridgePath()` 定义在 `web/middleware_auth.go` 中，用于判断路径是否属于 bridge API
   - `isOriginAllowed()` 函数也额外允许了 `chrome-extension://` 前缀的 origin，但此逻辑不应用于 bridge 路由（bridge 路由完全绕过 CORS 检查）
+
+### 空间搜索引擎默认启用机制
+- Date: 2026-05-07
+- Context: Agent 在修复"未加载空间引擎导致查询失败"问题时发现
+- Category: 代码结构
+- Instructions:
+  - 在 `internal/config/config.go` 的 `applyDefaults` 函数中设置所有搜索引擎 `Enabled = true`
+  - FOFA 同时设置 `UseWebAPI = true` 作为默认值，允许在没有 API Key 时仍能使用 Web 模式
+  - 验证函数保持完整性，仅在 `UseWebAPI = false` 时才要求提供 API Key
+  - 所有引擎：Quake、ZoomEye、Hunter、FOFA、Shodan
