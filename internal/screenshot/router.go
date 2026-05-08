@@ -510,10 +510,21 @@ func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, 
 		RequestID:    fmt.Sprintf("router_open_%d", time.Now().UnixNano()),
 		URL:          searchURL,
 		WaitStrategy: "load",
+		Action:       "open",
 	}
-	_, err := p.bridge.Submit(ctx, task)
+	result, err := p.bridge.Submit(ctx, task)
 	if err != nil {
 		return "", fmt.Errorf("extension bridge open failed: %w", err)
+	}
+	if !result.Success {
+		errMsg := strings.TrimSpace(result.Error)
+		if errMsg == "" {
+			errMsg = strings.TrimSpace(result.ErrorCode)
+		}
+		if errMsg == "" {
+			errMsg = "unknown bridge error"
+		}
+		return "", fmt.Errorf("extension bridge open failed: %s", errMsg)
 	}
 	return searchURL, nil
 }
@@ -686,6 +697,8 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 		}
 		if v, ok := item["port"].(float64); ok {
 			asset.Port = int(v)
+		} else if v, ok := item["port"].(int); ok {
+			asset.Port = v
 		}
 		if v, ok := item["protocol"].(string); ok {
 			asset.Protocol = v
