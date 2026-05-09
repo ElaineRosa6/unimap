@@ -97,7 +97,7 @@ type Config struct {
 			TokenTTLSeconds              int    `yaml:"token_ttl_seconds"`
 			TaskTimeoutSeconds           int    `yaml:"task_timeout_seconds"`
 			MaxConcurrency               int    `yaml:"max_concurrency"`
-			CallbackSignatureRequired    bool   `yaml:"callback_signature_required"`
+			CallbackSignatureRequired    bool   `yaml:"callback_signature_required"` // default: true for signature verification
 			CallbackSignatureSkewSeconds int    `yaml:"callback_signature_skew_seconds"`
 			CallbackNonceTTLSeconds      int    `yaml:"callback_nonce_ttl_seconds"`
 			FallbackToCDP                bool   `yaml:"fallback_to_cdp"`
@@ -630,6 +630,10 @@ func (m *Manager) applyDefaults(config *Config) {
 	}
 	if config.Screenshot.Extension.CallbackNonceTTLSeconds == 0 {
 		config.Screenshot.Extension.CallbackNonceTTLSeconds = 600
+	}
+	// 默认启用回调签名验证
+	if !config.Screenshot.Extension.CallbackSignatureRequired {
+		config.Screenshot.Extension.CallbackSignatureRequired = true
 	}
 	if config.Screenshot.Timeout == 0 {
 		config.Screenshot.Timeout = 30
