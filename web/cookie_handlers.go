@@ -416,9 +416,11 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 			results = append(results, item)
 		}
 	} else if extPaired {
-		// Extension paired → report connection status without opening engine pages.
-		// Opening pages for login check would interfere with the user's browsing
-		// session and cause unwanted screenshots every poll interval.
+		// Extension paired → bridge is connected but login state is unknown.
+		// Do NOT assume logged_in=true; the extension being paired only means
+		// the bridge has active clients, not that the user has valid sessions
+		// on each search engine. Opening pages for verification would interfere
+		// with the user's browsing session and cause unwanted side effects.
 		for _, engine := range engines {
 			loginURL := ""
 			if s.screenshotMgr != nil {
@@ -426,8 +428,8 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 			}
 			item := map[string]interface{}{
 				"engine":        engine,
-				"logged_in":     true,
-				"reason":        "browser_session",
+				"logged_in":     false,
+				"reason":        "extension_paired_session_unverified",
 				"title":         "",
 				"login_url":     loginURL,
 				"cdp_connected": cdpConnected,

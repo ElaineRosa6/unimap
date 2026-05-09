@@ -2,6 +2,7 @@ package screenshot
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -175,6 +176,95 @@ func TestRouterHealthCheck_Callback(t *testing.T) {
 	// Should have been called twice (cdp + extension)
 	if checks.Load() != 2 {
 		t.Fatalf("expected 2 health check callbacks, got %d", checks.Load())
+	}
+}
+
+// ===== ExtensionProvider open failure =====
+
+type failOpenBridgeClient struct {
+	mockBridgeClient
+}
+
+func (f *failOpenBridgeClient) SubmitTask(ctx context.Context, task BridgeTask) error {
+	f.mu.Lock()
+	f.submitCalls = append(f.submitCalls, task)
+	f.mu.Unlock()
+	return nil
+}
+
+func (f *failOpenBridgeClient) AwaitResult(ctx context.Context, requestID string) (BridgeResult, error) {
+	return BridgeResult{
+		RequestID: requestID,
+		Success:   false,
+		Error:     "extension tab crashed",
+	}, nil
+}
+
+func TestExtensionProvider_OpenSearchEngineResult_BridgeFailure(t *testing.T) {
+	client := &failOpenBridgeClient{}
+	svc := NewBridgeService(client, 1, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	provider := NewExtensionProvider(svc, nil)
+	_, err := provider.OpenSearchEngineResult(context.Background(), "fofa", `country="CN"`)
+	if err == nil {
+		t.Fatal("expected error when bridge reports open failure")
+	}
+	if got := err.Error(); !strings.Contains(got, "extension open failed") {
+		t.Errorf("expected 'extension open failed' in error, got: %s", got)
+	}
+}
+
+// ===== ExtensionProvider collect login wall =====
+
+type loginWallBridgeClient struct {
+	mockBridgeClient
+}
+
+func (l *loginWallBridgeClient) SubmitTask(ctx context.Context, task BridgeTask) error {
+	l.mu.Lock()
+	l.submitCalls = append(l.submitCalls, task)
+	l.mu.Unlock()
+	return nil
+}
+
+func (l *loginWallBridgeClient) AwaitResult(ctx context.Context, requestID string) (BridgeResult, error) {
+	return BridgeResult{
+		RequestID: requestID,
+		Success:   true,
+		StructuredCollectedData: map[string]interface{}{
+			"items":         []interface{}{},
+			"total":         float64(0),
+			"has_more":      false,
+			"title":         "Login Required",
+			"is_login_wall": true,
+		},
+	}, nil
+}
+
+func TestExtensionProvider_CollectSearchEngineResult_LoginWall(t *testing.T) {
+	client := &loginWallBridgeClient{}
+	svc := NewBridgeService(client, 1, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	provider := NewExtensionProvider(svc, nil)
+	results, err := provider.CollectSearchEngineResult(context.Background(), "fofa", `country="CN"`, "q1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].IsLoginWall {
+		t.Error("expected IsLoginWall=true")
+	}
+	if !results[0].LoginRequired {
+		t.Error("expected LoginRequired=true")
+	}
+	if results[0].Title != "Login Required" {
+		t.Errorf("expected title 'Login Required', got %q", results[0].Title)
 	}
 }
 

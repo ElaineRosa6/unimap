@@ -510,10 +510,18 @@ func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, 
 		RequestID:    fmt.Sprintf("router_open_%d", time.Now().UnixNano()),
 		URL:          searchURL,
 		WaitStrategy: "load",
+		Action:       "open",
 	}
-	_, err := p.bridge.Submit(ctx, task)
+	result, err := p.bridge.Submit(ctx, task)
 	if err != nil {
 		return "", fmt.Errorf("extension bridge open failed: %w", err)
+	}
+	if !result.Success {
+		errMsg := strings.TrimSpace(result.Error)
+		if errMsg == "" {
+			errMsg = "extension reported open failure"
+		}
+		return "", fmt.Errorf("extension open failed for %s: %s", engine, errMsg)
 	}
 	return searchURL, nil
 }
@@ -567,6 +575,10 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 		collectResult.Assets, collectResult.Total, collectResult.HasMore = parseStructuredCollectedData(result.StructuredCollectedData, engine)
 		if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
 			collectResult.Title = title
+		}
+		if lw, ok := result.StructuredCollectedData["is_login_wall"].(bool); ok && lw {
+			collectResult.IsLoginWall = true
+			collectResult.LoginRequired = true
 		}
 	} else if result.CollectedData != "" {
 		collectResult.Title = result.CollectedData
