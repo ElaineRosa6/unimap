@@ -78,6 +78,9 @@ func (s *Server) handleImportURLs(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
 
 	// 解析multipart表单
 	maxMultipartMemory := int64(10 << 20)
@@ -146,6 +149,9 @@ func (s *Server) handleURLReachability(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
 
 	var req struct {
 		URLs        []string `json:"urls"`
@@ -194,6 +200,9 @@ func (s *Server) handleURLReachability(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
 		return
 	}
 

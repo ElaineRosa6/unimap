@@ -37,6 +37,7 @@ func TestHandleCreateBackup_NoConfig(t *testing.T) {
 	s := &Server{config: nil}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/backup/create", nil)
+	req.Header.Set("Origin", "http://localhost:8448")
 	rec := httptest.NewRecorder()
 
 	s.handleCreateBackup(rec, req)
@@ -56,6 +57,7 @@ func TestHandleCreateBackup_WithSources(t *testing.T) {
 	s := setupBackupServer(t, tmpDir)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/backup/create", nil)
+	req.Header.Set("Origin", "http://localhost:8448")
 	rec := httptest.NewRecorder()
 
 	s.handleCreateBackup(rec, req)
@@ -96,6 +98,7 @@ func TestHandleListBackups_AfterCreate(t *testing.T) {
 
 	// 先创建一个备份
 	createReq := httptest.NewRequest(http.MethodPost, "/api/backup/create", nil)
+	createReq.Header.Set("Origin", "http://localhost:8448")
 	createRec := httptest.NewRecorder()
 	s.handleCreateBackup(createRec, createReq)
 

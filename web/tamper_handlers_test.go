@@ -49,6 +49,7 @@ func TestHandleTamperHistoryDelete(t *testing.T) {
 	s := &Server{tamperApp: service.NewTamperAppService("./hash_store", nil)}
 
 	missingReq := httptest.NewRequest(http.MethodDelete, "/api/tamper/history/delete", nil)
+	missingReq.Header.Set("Origin", "http://localhost:8448")
 	missingW := httptest.NewRecorder()
 	s.handleTamperHistoryDelete(missingW, missingReq)
 	if missingW.Code != http.StatusBadRequest {
@@ -56,6 +57,7 @@ func TestHandleTamperHistoryDelete(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/tamper/history/delete?url=https://example.com", nil)
+	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleTamperHistoryDelete(w, req)
 	if w.Code != http.StatusOK {
@@ -116,6 +118,7 @@ func TestHandleTamperBaselineDeleteByQueryParam(t *testing.T) {
 	s := &Server{tamperApp: service.NewTamperAppService("./hash_store", nil)}
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/tamper/baseline/delete?url=https://example.com", nil)
+	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleTamperBaselineDelete(w, req)
 
@@ -148,6 +151,7 @@ func TestHandleTamperCheck_WrongMethod(t *testing.T) {
 func TestHandleTamperCheck_InvalidJSON(t *testing.T) {
 	s := &Server{}
 	req := httptest.NewRequest(http.MethodPost, "/api/tamper/check", strings.NewReader("not-json"))
+	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleTamperCheck(w, req)
 
@@ -160,6 +164,7 @@ func TestHandleTamperCheck_EmptyURLs(t *testing.T) {
 	s := &Server{}
 	body := strings.NewReader(`{"urls":[]}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tamper/check", body)
+	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleTamperCheck(w, req)
 
@@ -190,6 +195,7 @@ func TestHandleTamperBaseline_EmptyURLs(t *testing.T) {
 	s := &Server{tamperApp: service.NewTamperAppService("./hash_store", nil)}
 	body := strings.NewReader(`{"urls":[]}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tamper/baseline", body)
+	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleTamperBaseline(w, req)
 

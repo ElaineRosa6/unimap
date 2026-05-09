@@ -122,11 +122,16 @@ func (p *Pool) Start() {
 		}
 
 		// 启动负载监控和动态调整线程
+		p.wg.Add(1)
 		go p.startLoadMonitoring()
 	}
 }
 
 func (p *Pool) Stop() {
+	p.StopWithTimeout(30 * time.Second)
+}
+
+func (p *Pool) StopWithTimeout(timeout time.Duration) {
 	if atomic.LoadInt32(&p.running) == 0 {
 		return
 	}
@@ -134,7 +139,20 @@ func (p *Pool) Stop() {
 	if atomic.CompareAndSwapInt32(&p.running, 1, 0) {
 		close(p.tasks)
 		close(p.exitCh)
-		p.wg.Wait()
+
+		done := make(chan struct{})
+		go func() {
+			p.wg.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			// 所有 worker 正常退出
+		case <-time.After(timeout):
+			// 超时，记录日志并继续
+		}
+
 		close(p.results)
 	}
 }
@@ -186,6 +204,7 @@ func (p *Pool) Wait() {
 
 // startLoadMonitoring 启动负载监控和动态调整
 func (p *Pool) startLoadMonitoring() {
+	defer p.wg.Done()
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 

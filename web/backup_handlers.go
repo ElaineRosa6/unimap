@@ -14,6 +14,9 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use POST", nil)
 		return
 	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
 
 	// 从配置读取备份目录
 	backupDir := "./backups"

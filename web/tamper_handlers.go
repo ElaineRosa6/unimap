@@ -50,6 +50,9 @@ func (s *Server) handleTamperCheck(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
 
 	var req struct {
 		URLs        []string `json:"urls"`
@@ -101,6 +104,9 @@ func (s *Server) handleTamperCheck(w http.ResponseWriter, r *http.Request) {
 // handleTamperBaseline 处理基线设置请求
 func (s *Server) handleTamperBaseline(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
 		return
 	}
 
@@ -173,6 +179,9 @@ func (s *Server) handleTamperBaselineDelete(w http.ResponseWriter, r *http.Reque
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
 
 	urlValue := strings.TrimSpace(r.URL.Query().Get("url"))
 	if urlValue == "" {
@@ -235,6 +244,9 @@ func (s *Server) handleTamperHistory(w http.ResponseWriter, r *http.Request) {
 // handleTamperHistoryDelete 处理删除指定URL的检测历史请求
 func (s *Server) handleTamperHistoryDelete(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodDelete) {
+		return
+	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
 		return
 	}
 

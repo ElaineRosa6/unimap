@@ -35,6 +35,7 @@ func TestHandleAPIQuery_EmptyQuery_Returns400(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/query", nil)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -50,6 +51,7 @@ func TestHandleAPIQuery_NoEngines_Returns503(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/query?query=country%3D%22CN%22", nil)
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
@@ -417,6 +419,7 @@ func TestHandleAPIQuery_WhitespaceQuery_Returns400(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/query", strings.NewReader("query=   "))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -434,6 +437,7 @@ func TestHandleAPIQuery_PageSizeParsing(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/query?query=country%3D%22CN%22&page_size=abc", nil)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)
 
 	// page_size 无效时应该回退到默认值，最终因为无引擎返回 503

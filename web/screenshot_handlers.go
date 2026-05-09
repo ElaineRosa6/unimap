@@ -646,6 +646,9 @@ func (s *Server) handleScreenshotBatchDelete(w http.ResponseWriter, r *http.Requ
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
 
 	batch := strings.TrimSpace(r.URL.Query().Get("batch"))
 	if batch == "" {
@@ -674,6 +677,9 @@ func (s *Server) handleScreenshotBatchDelete(w http.ResponseWriter, r *http.Requ
 
 func (s *Server) handleScreenshotFileDelete(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodDelete) {
+		return
+	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
 		return
 	}
 
@@ -746,6 +752,9 @@ func (s *Server) handleScreenshotRouterStatus(w http.ResponseWriter, r *http.Req
 func (s *Server) handleSetScreenshotMode(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
 		return
 	}
 

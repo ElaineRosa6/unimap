@@ -45,6 +45,7 @@ func TestHandleCreateTask_NoScheduler_Returns503(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleCreateTask(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
@@ -83,6 +84,7 @@ func TestHandleCreateTask_EmptyName_Returns400(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleCreateTask(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -105,6 +107,7 @@ func TestHandleCreateTask_EmptyCron_Returns400(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleCreateTask(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -126,6 +129,7 @@ func TestHandleCreateTask_Success(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleCreateTask(rec, req)
 
 	if rec.Code != http.StatusCreated {
@@ -211,6 +215,7 @@ func TestHandleUpdateTask_NoScheduler_Returns503(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/update", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleUpdateTask(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
@@ -232,6 +237,7 @@ func TestHandleUpdateTask_MissingID_Returns400(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/update", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleUpdateTask(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -254,6 +260,7 @@ func TestHandleUpdateTask_NotFound_Returns404(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/update", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleUpdateTask(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -267,6 +274,7 @@ func TestHandleRunTaskNow_NoScheduler_Returns503(t *testing.T) {
 	body, _ := json.Marshal(map[string]interface{}{"id": "some-id"})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/run", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleRunTaskNow(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
@@ -285,6 +293,7 @@ func TestHandleRunTaskNow_MissingID_Returns400(t *testing.T) {
 	body, _ := json.Marshal(map[string]interface{}{})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/run", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleRunTaskNow(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -303,6 +312,7 @@ func TestHandleRunTaskNow_NotFound_Returns404(t *testing.T) {
 	body, _ := json.Marshal(map[string]interface{}{"id": "nonexistent"})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/run", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleRunTaskNow(rec, req)
 
 	if rec.Code != http.StatusNotFound {
@@ -328,6 +338,7 @@ func TestHandleRunTaskNow_Success(t *testing.T) {
 	body, _ := json.Marshal(map[string]interface{}{"id": task.ID})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/run", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleRunTaskNow(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -347,6 +358,7 @@ func TestHandleDeleteTask_NoScheduler_Returns503(t *testing.T) {
 	body, _ := json.Marshal(map[string]interface{}{"id": "some-id"})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/delete", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleDeleteTask(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
@@ -387,6 +399,7 @@ func TestHandleEnableTask_NoScheduler_Returns503(t *testing.T) {
 	body, _ := json.Marshal(map[string]interface{}{"id": "some-id"})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/enable", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleEnableTask(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
@@ -400,6 +413,7 @@ func TestHandleDisableTask_NoScheduler_Returns503(t *testing.T) {
 	body, _ := json.Marshal(map[string]interface{}{"id": "some-id"})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/disable", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleDisableTask(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
@@ -453,6 +467,7 @@ func TestHandleCreateTask_BadJSON_Returns400(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks", bytes.NewReader([]byte("not json")))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleCreateTask(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -528,6 +543,7 @@ func TestCreateTask_InvalidCronExpression(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleCreateTask(rec, req)
 
 	// 无效 cron 应被拒绝

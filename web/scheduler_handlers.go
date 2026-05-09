@@ -75,6 +75,9 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
 
 	var req struct {
 		Name       string                 `json:"name"`
@@ -170,6 +173,9 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
 
 	var req struct {
 		ID         string                 `json:"id"`
@@ -225,6 +231,9 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
 
 	var req struct {
 		ID string `json:"id"`
@@ -255,6 +264,9 @@ func (s *Server) handleRunTaskNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !requireMethod(w, r, "POST") {
+		return
+	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
 		return
 	}
 
@@ -288,6 +300,9 @@ func (s *Server) handleEnableTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
 
 	var req struct {
 		ID string `json:"id"`
@@ -317,6 +332,9 @@ func (s *Server) handleDisableTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !requireMethod(w, r, "POST") {
+		return
+	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
 		return
 	}
 
