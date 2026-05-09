@@ -190,10 +190,8 @@ go run -tags gui ./cmd/unimap-gui
 无
 
 ### Medium (后续迭代修复)
-1. Goroutine 泄漏风险: `pool.Stop()` 无超时，4 处 `wg.Wait()→pool.Stop()→close(chan)` 模式
-2. **L-04** `requireTrustedRequest` 未覆盖 ~20 个 POST/PUT/DELETE handler
-3. 10 个文件超 800 行 (最大 `monitor_native.go` 2150 行)
-4. 34 个函数超 50 行 (最大 `createMonitorTab` 390 行)
+1. 10 个文件超 800 行 (最大 `monitor_native.go` 2150 行)
+2. 34 个函数超 50 行 (最大 `createMonitorTab` 390 行)
 
 ### Low (后续迭代修复)
 7. **L-01** 错误消息大写 (23 处，多数为缩写词可接受)

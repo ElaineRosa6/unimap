@@ -110,6 +110,7 @@ func TestHandleScreenshotDeleteSafety(t *testing.T) {
 	s := buildTestServerWithScreenshotBase(baseDir)
 
 	badReq := httptest.NewRequest(http.MethodDelete, "/api/screenshot/file/delete?batch=../evil&file=a.png", nil)
+	badReq.Header.Set("Origin", "http://localhost:8448")
 	badW := httptest.NewRecorder()
 	s.handleScreenshotFileDelete(badW, badReq)
 	if badW.Code != http.StatusBadRequest {
@@ -117,6 +118,7 @@ func TestHandleScreenshotDeleteSafety(t *testing.T) {
 	}
 
 	okReq := httptest.NewRequest(http.MethodDelete, "/api/screenshot/file/delete?batch=batch-z&file=a.png", nil)
+	okReq.Header.Set("Origin", "http://localhost:8448")
 	okW := httptest.NewRecorder()
 	s.handleScreenshotFileDelete(okW, okReq)
 	if okW.Code != http.StatusOK {
