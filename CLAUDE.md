@@ -183,18 +183,17 @@ go run -tags gui ./cmd/unimap-gui
 
 ### ✅ 已全部修复
 - C-01 ~ C-04 (Critical)、H-01 ~ H-05 (High) — 全部闭环
-- M-02 ~ M-04, M-06, M-08, M-09 (Medium) — 全部闭环
-- L-02 (Low) — CORS 死代码已清理
+- M-02 ~ M-06, M-08, M-09 (Medium) — 全部闭环
+- L-02, L-03 (Low) — CORS 死代码已清理、Scheduler CSP nonce 已添加
 
 ### High (建议合并前修复)
-1. **M-05** `config.go:100`: Bridge 签名 `CallbackSignatureRequired` 默认 `false` → 回调无签名验证
-2. **L-03** `templates/scheduler.html:194`: 内联 `<script>` 缺 CSP nonce → 浏览器阻断执行
+无
 
 ### Medium (后续迭代修复)
-3. Goroutine 泄漏风险: `pool.Stop()` 无超时，4 处 `wg.Wait()→pool.Stop()→close(chan)` 模式
-4. **L-04** `requireTrustedRequest` 未覆盖 ~20 个 POST/PUT/DELETE handler
-5. 10 个文件超 800 行 (最大 `monitor_native.go` 2150 行)
-6. 34 个函数超 50 行 (最大 `createMonitorTab` 390 行)
+1. Goroutine 泄漏风险: `pool.Stop()` 无超时，4 处 `wg.Wait()→pool.Stop()→close(chan)` 模式
+2. **L-04** `requireTrustedRequest` 未覆盖 ~20 个 POST/PUT/DELETE handler
+3. 10 个文件超 800 行 (最大 `monitor_native.go` 2150 行)
+4. 34 个函数超 50 行 (最大 `createMonitorTab` 390 行)
 
 ### Low (后续迭代修复)
 7. **L-01** 错误消息大写 (23 处，多数为缩写词可接受)
