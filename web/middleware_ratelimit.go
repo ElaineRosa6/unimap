@@ -3,8 +3,10 @@ package web
 import (
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/unimap-icp-hunter/project/internal/metrics"
@@ -134,8 +136,12 @@ func (r *RateLimiter) cleanup() {
 var (
 	globalLimiter     *RateLimiter
 	globalLimiterOnce sync.Once
-	rateLimitEnabled  = true
+	rateLimitEnabled  atomic.Bool
 )
+
+func init() {
+	rateLimitEnabled.Store(true)
+}
 
 // getGlobalLimiter 获取全局限流器（懒加载）
 func getGlobalLimiter() *RateLimiter {
@@ -151,7 +157,7 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 	limiter := getGlobalLimiter()
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !rateLimitEnabled {
+		if !rateLimitEnabled.Load() {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -165,10 +171,10 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 		if !limiter.Allow(clientID) {
 			metrics.IncRateLimitRejected(r.URL.Path)
 			// 设置限流响应头
-			w.Header().Set("X-RateLimit-Limit", stringInt(int64(limiter.rate)))
+			w.Header().Set("X-RateLimit-Limit", strconv.FormatInt(int64(limiter.rate), 10))
 			w.Header().Set("X-RateLimit-Remaining", "0")
-			w.Header().Set("X-RateLimit-Reset", stringInt(unixMillis(resetAt)))
-			w.Header().Set("Retry-After", stringInt(int64(time.Until(resetAt).Seconds()+0.5)))
+			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetAt.UnixMilli(), 10))
+			w.Header().Set("Retry-After", strconv.FormatInt(int64(time.Until(resetAt).Seconds()+0.5), 10))
 			writeAPIError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "too many requests", map[string]int64{
 				"retry_after": int64(time.Until(resetAt).Seconds()) + 1,
 			})
@@ -176,42 +182,18 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 		}
 
 		// 请求允许，设置响应头
-		w.Header().Set("X-RateLimit-Limit", stringInt(int64(limiter.rate)))
+		w.Header().Set("X-RateLimit-Limit", strconv.FormatInt(int64(limiter.rate), 10))
 		rem := int64(remaining) - 1
 		if rem < 0 {
 			rem = 0
 		}
-		w.Header().Set("X-RateLimit-Remaining", stringInt(rem))
-		w.Header().Set("X-RateLimit-Reset", stringInt(unixMillis(resetAt)))
+		w.Header().Set("X-RateLimit-Remaining", strconv.FormatInt(rem, 10))
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetAt.UnixMilli(), 10))
 
 		next.ServeHTTP(w, r)
 	})
 }
 
-func unixMillis(t time.Time) int64 {
-	return t.UnixMilli()
-}
-
-func stringInt(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	s := ""
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	for n > 0 {
-		s = string(rune('0'+n%10)) + s
-		n /= 10
-	}
-	if neg {
-		s = "-" + s
-	}
-	return s
-}
-
-// getClientIP 获取客户端真实 IP
 func getClientIP(r *http.Request) string {
 	// Only trust X-Forwarded-For when the immediate connection is a known proxy
 	if isPrivateOrInternalHost(r.Context(), r.RemoteAddr) {
@@ -258,5 +240,5 @@ func SetRateLimitConfig(rate int, window time.Duration) {
 
 // SetRateLimitEnabled 设置是否启用限流
 func SetRateLimitEnabled(enabled bool) {
-	rateLimitEnabled = enabled
+	rateLimitEnabled.Store(enabled)
 }

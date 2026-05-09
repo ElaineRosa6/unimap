@@ -1,16 +1,5 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>UniMap - 多引擎网络资产查询</title>
-	<link rel="stylesheet" href="/static/css/style.css?v={{.staticVersion}}">
-</head>
-<body>
-	<header>
-		<h1>UniMap - 多引擎网络资产查询</h1>
-		<p>支持 FOFA、Hunter、ZoomEye、Quake 等多个搜索引擎的统一查询接口</p>
-	</header>
+{{template "head" .}}
+{{template "header" (dict "ActiveNav" "index" "staticVersion" .staticVersion)}}
 
 	<main>
 		<section class="query-form">
@@ -19,7 +8,7 @@
 				<div class="form-group">
 					<label for="query">UQL 查询语句</label>
 					<div class="code-editor">
-						<textarea id="query" name="query" rows="4" placeholder="例如：country=\"CN\" && port=\"80\" && protocol=\"http\"" required></textarea>
+						<textarea id="query" name="query" rows="4" placeholder="例如：country=&quot;CN&quot; && port=&quot;80&quot; && protocol=&quot;http&quot;" required></textarea>
 						<div class="editor-toolbar">
 							<button type="button" class="toolbar-btn" data-action="clear">清空</button>
 							<button type="button" class="toolbar-btn" data-action="format">格式化</button>
@@ -36,7 +25,7 @@
 							<div class="engine-option">
 								<input type="checkbox" id="engine-{{.}}" name="engines" value="{{.}}" checked>
 								<label for="engine-{{.}}">{{.}}</label>
-								<span class="engine-status" id="status-{{.}}">✓</span>
+								<span class="engine-status" id="status-{{.}}">&#10003;</span>
 							</div>
 						{{end}}
 					</div>
@@ -44,12 +33,10 @@
 
 				<div class="form-group">
 					<label>Cookie (用于搜索引擎网页截图，可选)</label>
-					<!-- 登录状态总览 -->
 					<div class="login-status-bar" id="login-status-bar">
 						<span class="status-indicator" id="status-cdp">CDP: 检测中</span>
 						<span class="status-indicator" id="status-ext">扩展: 检测中</span>
 					</div>
-					<!-- 各引擎登录状态 -->
 					<div class="engine-login-status" id="engine-login-status">
 						<div class="engine-status-row" data-engine="fofa">
 							<span class="engine-label">FOFA</span>
@@ -72,23 +59,30 @@
 							<a class="btn btn-sm btn-login" id="btn-login-quake" href="https://quake.360.cn/" target="_blank" style="display:none;">点击登录</a>
 						</div>
 					</div>
-					<!-- 可折叠的 cookie 填写区域 -->
 					<div class="cookie-input-section" id="cookie-input-section">
 						<button type="button" class="btn-toggle-cookie" id="btn-toggle-cookie" title="展开/折叠 Cookie 填写">
-							<span class="toggle-arrow">▶</span> Headless 模式备用 Cookie 填写
+							<span class="toggle-arrow">&#9654;</span>
+							<span>Headless 模式备用 Cookie</span>
+							<span class="toggle-hint">用于截图时绕过登录验证</span>
 						</button>
 						<div class="cookie-input-content" id="cookie-input-content" style="display:none;">
-							<div class="query-options">
-								<label class="option-label" for="cookie-fofa">FOFA</label>
+							<div class="cookie-engine-row">
+								<span class="engine-label">FOFA</span>
 								<span class="cookie-status {{if .cookieHasFofa}}cookie-status--on{{else}}cookie-status--off{{end}}" id="cookie-status-fofa">{{if .cookieHasFofa}}已配置{{else}}未配置{{end}}</span>
 								<input type="text" id="cookie-fofa" name="cookie_fofa" placeholder="session=xxx; token=yyy" value="{{.cookieFofa}}">
-								<label class="option-label" for="cookie-hunter">Hunter</label>
+							</div>
+							<div class="cookie-engine-row">
+								<span class="engine-label">Hunter</span>
 								<span class="cookie-status {{if .cookieHasHunter}}cookie-status--on{{else}}cookie-status--off{{end}}" id="cookie-status-hunter">{{if .cookieHasHunter}}已配置{{else}}未配置{{end}}</span>
 								<input type="text" id="cookie-hunter" name="cookie_hunter" placeholder="session=xxx; token=yyy" value="{{.cookieHunter}}">
-								<label class="option-label" for="cookie-zoomeye">ZoomEye</label>
+							</div>
+							<div class="cookie-engine-row">
+								<span class="engine-label">ZoomEye</span>
 								<span class="cookie-status {{if .cookieHasZoomeye}}cookie-status--on{{else}}cookie-status--off{{end}}" id="cookie-status-zoomeye">{{if .cookieHasZoomeye}}已配置{{else}}未配置{{end}}</span>
 								<input type="text" id="cookie-zoomeye" name="cookie_zoomeye" placeholder="session=xxx; token=yyy" value="{{.cookieZoomeye}}">
-								<label class="option-label" for="cookie-quake">Quake</label>
+							</div>
+							<div class="cookie-engine-row">
+								<span class="engine-label">Quake</span>
 								<span class="cookie-status {{if .cookieHasQuake}}cookie-status--on{{else}}cookie-status--off{{end}}" id="cookie-status-quake">{{if .cookieHasQuake}}已配置{{else}}未配置{{end}}</span>
 								<input type="text" id="cookie-quake" name="cookie_quake" placeholder="session=xxx; token=yyy" value="{{.cookieQuake}}">
 							</div>
@@ -124,14 +118,44 @@
 						<button type="button" class="btn btn-secondary" id="btn-connect-cdp">连接 CDP</button>
 						<span class="cookie-status cookie-status--off" id="bridge-status">扩展检测中</span>
 						<button type="button" class="btn btn-secondary" id="btn-refresh-bridge-status">刷新扩展</button>
-						<label class="option-label">
-							<input type="checkbox" id="browser-query-mode" name="browser_query" value="true">
-							查询时同步在浏览器打开结果页
-						</label>
+					</div>
+					<div class="query-options mode-row">
+						<label class="option-label">浏览器执行模式</label>
+						<div class="mode-selector">
+							<label class="mode-option">
+								<input type="radio" name="screenshot-mode" value="cdp" id="mode-cdp">
+								<span>CDP</span>
+							</label>
+							<label class="mode-option">
+								<input type="radio" name="screenshot-mode" value="extension" id="mode-extension">
+								<span>扩展</span>
+							</label>
+							<label class="mode-option">
+								<input type="radio" name="screenshot-mode" value="auto" id="mode-auto" checked>
+								<span>自动</span>
+							</label>
+						</div>
+							<div class="browser-action-group">
+								<span class="option-label">浏览器动作</span>
+								<div class="browser-action-selector">
+									<label class="action-option">
+										<input type="radio" name="browser-action" value="open" id="browser-action-open">
+										<span>仅打开结果页</span>
+									</label>
+									<label class="action-option">
+										<input type="radio" name="browser-action" value="capture" id="browser-action-capture" checked>
+										<span>打开并截图</span>
+									</label>
+									<label class="action-option">
+										<input type="radio" name="browser-action" value="collect" id="browser-action-collect">
+										<span>打开并采集结构化结果</span>
+									</label>
+								</div>
+							</div>
 						<span class="form-text" id="cdp-status-info"></span>
 						<span class="form-text" id="bridge-status-info"></span>
 					</div>
-					<small class="form-text">默认检测 127.0.0.1:9222。开启后会保留现有 API 查询，同时通过已连接的 CDP 浏览器打开所选引擎结果页</small>
+					<small class="form-text">默认检测 127.0.0.1:9222。开启后会保留现有 API 查询，同时通过当前选择的浏览器执行模式打开所选引擎结果页</small>
 				</div>
 
 				<div class="form-group">
@@ -148,24 +172,23 @@
 				</div>
 
 				<div class="form-group action-buttons">
-					<button type="submit" class="btn">🔍 执行查询</button>
-					<button type="button" class="btn" id="btn-save-query">💾 保存查询</button>
-					<a href="/monitor" class="btn">🌐 网页监控</a>
-					<a href="/scheduler" class="btn">⏰ 定时任务</a>
-					<a href="/batch-screenshot" class="btn">📷 批量截图</a>
-					<a href="/quota" class="btn">📊 查看配额</a>
+					<button type="submit" class="btn">&#128269; 执行查询</button>
+					<button type="button" class="btn" id="btn-save-query">&#128190; 保存查询</button>
+					<a href="/monitor" class="btn">&#127760; 网页监控</a>
+					<a href="/scheduler" class="btn">&#9200; 定时任务</a>
+					<a href="/batch-screenshot" class="btn">&#128247; 批量截图</a>
+					<a href="/quota" class="btn">&#128202; 查看配额</a>
 				</div>
 				<div class="form-group cookie-actions">
-					<button type="button" class="btn btn-sm" id="btn-refresh-login-status">🔄 刷新登录状态</button>
-					<button type="button" class="btn btn-sm" id="btn-save-cookies">🍪 保存Cookie</button>
-					<button type="button" class="btn btn-sm" id="btn-verify-cookies">✅ 验证Cookie</button>
-					<button type="button" class="btn btn-sm" id="btn-clear-cookies">🗑️ 清空Cookie</button>
+					<button type="button" class="btn btn-sm" id="btn-refresh-login-status">&#128260; 刷新登录状态</button>
+					<button type="button" class="btn btn-sm" id="btn-save-cookies">&#127850; 保存Cookie</button>
+					<button type="button" class="btn btn-sm" id="btn-verify-cookies">&#9989; 验证Cookie</button>
+					<button type="button" class="btn btn-sm" id="btn-clear-cookies">&#128465; 清空Cookie</button>
 				</div>
 				<div class="cookie-verify-result" id="cookie-verify-result"></div>
 			</form>
 		</section>
 
-		<!-- 查询历史记录 -->
 		<div id="query-history" class="modal">
 			<div class="modal-content">
 				<div class="modal-header">
@@ -201,10 +224,4 @@
 		</section>
 	</main>
 
-	<footer>
-		<p>&copy; 2026 UniMap - 多引擎网络资产查询系统</p>
-	</footer>
-
-	<script src="/static/js/main.js?v={{.staticVersion}}"></script>
-</body>
-</html>
+{{template "footer" .}}

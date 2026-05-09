@@ -11,6 +11,7 @@ import (
 	"github.com/unimap-icp-hunter/project/internal/adapter"
 	"github.com/unimap-icp-hunter/project/internal/config"
 	"github.com/unimap-icp-hunter/project/internal/distributed"
+	"github.com/unimap-icp-hunter/project/internal/screenshot"
 )
 
 // ============================================================
@@ -239,6 +240,58 @@ func TestHandleSaveCookies_ExtensionMode(t *testing.T) {
 	}
 	if resp["engine"] != "extension" {
 		t.Fatalf("expected engine=extension, got %v", resp["engine"])
+	}
+}
+
+func TestLoginRequiredFromBridgeResult(t *testing.T) {
+	result := screenshot.BridgeResult{
+		Success: true,
+		StructuredCollectedData: map[string]interface{}{
+			"title":          "FOFA - 请先登录",
+			"login_required": true,
+		},
+	}
+
+	if !loginRequiredFromBridgeResult(result) {
+		t.Fatal("expected login required")
+	}
+}
+
+func TestLoginRequiredFromBridgeResult_TextMarkers(t *testing.T) {
+	result := screenshot.BridgeResult{
+		Success:   false,
+		ErrorCode: "unauthorized",
+		StructuredCollectedData: map[string]interface{}{
+			"title": "Hunter",
+		},
+	}
+
+	if !loginRequiredFromBridgeResult(result) {
+		t.Fatal("expected login required from error markers")
+	}
+}
+
+func TestHasCollectedAssets(t *testing.T) {
+	withItems := screenshot.BridgeResult{StructuredCollectedData: map[string]interface{}{
+		"items": []interface{}{map[string]interface{}{"url": "https://example.test"}},
+	}}
+	if !hasCollectedAssets(withItems) {
+		t.Fatal("expected items to count as collected assets")
+	}
+
+	withTotal := screenshot.BridgeResult{StructuredCollectedData: map[string]interface{}{
+		"total": float64(2),
+	}}
+	if !hasCollectedAssets(withTotal) {
+		t.Fatal("expected total to count as collected assets")
+	}
+
+	empty := screenshot.BridgeResult{StructuredCollectedData: map[string]interface{}{
+		"items": []interface{}{},
+		"total": float64(0),
+	}}
+	if hasCollectedAssets(empty) {
+		t.Fatal("expected empty result to have no collected assets")
 	}
 }
 

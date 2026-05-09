@@ -1,5 +1,5 @@
 import { apiGet, apiPostBridgeSigned, bridgeRotateToken } from "./api.js";
-import { ensureTab, waitForPageReady, captureVisible, normalizeImagePayload, releaseTab, cleanupTabPool } from "./capture.js";
+import { ensureTab, waitForPageReady, captureVisible, normalizeImagePayload, releaseTab, cleanupTabPool, normalizeCollectPayload, extractEngineAssets } from "./capture.js";
 import { loadSessionToken, isTokenExpired, saveSessionToken, saveRuntimeState, saveLastError } from "./storage.js";
 import { pairAndStore } from "./pairing.js";
 
@@ -42,6 +42,7 @@ async function waitForCaptureSlot() {
 async function handleTask(task, token) {
   const startedAt = Date.now();
   const requestId = task.request_id;
+  const action = task.action || "screenshot"; // Anti-corruption: default to screenshot
   let tabId = null;
 
   async function captureWithFocus(tid, windowId) {
@@ -52,46 +53,83 @@ async function handleTask(task, token) {
     return captureVisible();
   }
 
-  try {
-    tabId = await ensureTab(task.url);
-    const tab = await chrome.tabs.get(tabId);
-    await waitForPageReady(tabId, task.wait_strategy || "load", task.timeout_ms || 15000);
-    let dataUrl;
-    try {
-      dataUrl = await captureWithFocus(tabId, tab.windowId);
-    } catch (captureErr) {
-      await waitForCaptureSlot();
-      dataUrl = await captureWithFocus(tabId, tab.windowId);
-    }
-    const result = normalizeImagePayload(dataUrl, requestId, startedAt);
+  async function reportResult(result) {
     result.batch_id = task.batch_id || "";
     result.url = task.url || "";
     await reportTaskResult(result, token);
+  }
+
+  async function reportFailure(err) {
+    const durationMs = Math.max(1, Date.now() - startedAt);
+    const errorText = String(err || "plugin_task_failed");
+    await reportResult({
+      request_id: requestId,
+      success: false,
+      image_path: "",
+      image_data: "",
+      duration_ms: durationMs,
+      error_code: "plugin_task_failed",
+      error: errorText
+    });
+  }
+
+  try {
+    tabId = await ensureTab(task.url);
+    await waitForPageReady(tabId, task.wait_strategy || "load", task.timeout_ms || 15000);
+
+    if (action === "open") {
+      // Only open the page, no screenshot or data collection
+      const durationMs = Math.max(1, Date.now() - startedAt);
+      await reportResult({
+        request_id: requestId,
+        success: true,
+        image_path: "",
+        image_data: "",
+        duration_ms: durationMs
+      });
+    } else if (action === "collect") {
+      // Extract structured DOM data from the page
+      const assets = await extractEngineAssets(tabId);
+      const result = normalizeCollectPayload(
+        assets.items,
+        assets.title,
+        requestId,
+        startedAt
+      );
+      // Override total and has_more from extraction result
+      if (result.structured_collected_data) {
+        result.structured_collected_data.total = assets.total || assets.items.length;
+        result.structured_collected_data.has_more = assets.has_more || false;
+        if (assets.error) {
+          result.structured_collected_data.extraction_error = assets.error;
+        }
+      }
+      await reportResult(result);
+    } else {
+      // "screenshot" or unknown action — capture screenshot (anti-corruption fallback)
+      await waitForCaptureSlot();
+      const tab = await chrome.tabs.get(tabId);
+      let dataUrl;
+      try {
+        dataUrl = await captureWithFocus(tabId, tab.windowId);
+      } catch (captureErr) {
+        await waitForCaptureSlot();
+        dataUrl = await captureWithFocus(tabId, tab.windowId);
+      }
+      const result = normalizeImagePayload(dataUrl, requestId, startedAt);
+      await reportResult(result);
+    }
+
     await saveRuntimeState({
       last_task_id: requestId,
       last_success_at: Date.now()
     });
 
-    // Release tab after successful capture (reuse or close)
+    // Release tab after successful task
     await releaseTab(tabId);
     tabId = null;
   } catch (err) {
-    const durationMs = Math.max(1, Date.now() - startedAt);
-    const errorText = String(err || "plugin_capture_failed");
-    await reportTaskResult(
-      {
-        request_id: requestId,
-        success: false,
-        image_path: "",
-        image_data: "",
-        duration_ms: durationMs,
-        batch_id: task.batch_id || "",
-        url: task.url || "",
-        error_code: "plugin_capture_failed",
-        error: errorText
-      },
-      token
-    );
+    await reportFailure(err);
 
     // Release tab after error
     if (tabId) {

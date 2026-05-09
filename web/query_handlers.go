@@ -14,7 +14,7 @@ import (
 	"github.com/unimap-icp-hunter/project/internal/service"
 )
 
-func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, queryID string) <-chan browserQueryOutcome {
+func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, action string, queryID string, progress func(done, total int, engine string, err error)) <-chan browserQueryOutcome {
 	autoCaptureEnabled := false
 	if s.config != nil {
 		autoCaptureEnabled = s.config.Screenshot.AutoCapture.Enabled && s.config.Screenshot.AutoCapture.CaptureSearchResults
@@ -25,15 +25,18 @@ func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines
 		query,
 		engines,
 		enabled,
+		action,
 		queryID,
 		autoCaptureEnabled,
 		s.screenshotApp,
 		s.screenshotMgr,
 		s.screenshotPathToPreviewURL,
+		s.screenshotRouter,
+		progress,
 	)
 }
 
-func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, explicitErrors ...string) map[string]interface{} {
+func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string, explicitErrors ...string) map[string]interface{} {
 	combinedErrors := []string{}
 	if resp != nil {
 		combinedErrors = append(combinedErrors, resp.Errors...)
@@ -48,7 +51,20 @@ func buildQueryAPIPayload(query string, engines []string, resp *service.QueryRes
 	if resp != nil {
 		assets = resp.Assets
 		totalCount = resp.TotalCount
-		engineStats = resp.EngineStats
+		if resp.EngineStats != nil {
+			engineStats = resp.EngineStats
+		}
+	}
+	for _, collected := range browserOutcome.CollectedResults {
+		assets = append(assets, collected.Assets...)
+		if collected.Total > 0 {
+			totalCount += collected.Total
+		} else {
+			totalCount += len(collected.Assets)
+		}
+		if len(collected.Assets) > 0 {
+			engineStats[collected.Engine] += len(collected.Assets)
+		}
 	}
 
 	return map[string]interface{}{
@@ -59,7 +75,9 @@ func buildQueryAPIPayload(query string, engines []string, resp *service.QueryRes
 		"engineStats":          engineStats,
 		"errors":               combinedErrors,
 		"browserQuery":         browserOutcome.Enabled,
+		"browserAction":        browserAction,
 		"browserOpenedEngines": browserOutcome.OpenedEngines,
+		"browserCollectedData": browserOutcome.CollectedResults,
 		"browserQueryErrors":   browserOutcome.Errors,
 		"autoCapture":          browserOutcome.AutoCaptureEnabled,
 		"autoCaptureQueryID":   browserOutcome.AutoCaptureQueryID,
@@ -100,7 +118,8 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	browserQueryID := fmt.Sprintf("query_%d", time.Now().UnixNano())
-	browserQueryCh := s.runBrowserQueryAsync(r.Context(), query, engines, parseBoolValue(r.FormValue("browser_query")), browserQueryID)
+	browserAction := strings.TrimSpace(r.FormValue("browser_action"))
+	browserQueryCh := s.runBrowserQueryAsync(r.Context(), query, engines, parseBoolValue(r.FormValue("browser_query")), browserAction, browserQueryID, nil)
 
 	resp, err := s.queryApp.ExecuteQuery(r.Context(), query, engines, pageSize)
 	var browserOutcome browserQueryOutcome
@@ -113,14 +132,14 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 			http.StatusBadGateway,
 			"query_execution_failed",
 			fmt.Sprintf("query failed: %v", err),
-			buildQueryAPIPayload(query, engines, nil, browserOutcome, fmt.Sprintf("Query failed: %v", err)),
+			buildQueryAPIPayload(query, engines, nil, browserOutcome, browserAction, fmt.Sprintf("Query failed: %v", err)),
 		)
 		return
 	}
 
 	// 返回JSON结果
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(buildQueryAPIPayload(query, engines, resp, browserOutcome))
+	json.NewEncoder(w).Encode(buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction))
 }
 
 // handleIndex 处理首页请求
@@ -184,7 +203,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(engines) == 0 {
 		if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "error.html", map[string]interface{}{
-			"error": "No engines configured/registered. Please set API keys in configs/config.yaml and enable at least one engine.",
+			"error": "no engines configured/registered. Please set API keys in configs/config.yaml and enable at least one engine.",
 		}) {
 			return
 		}

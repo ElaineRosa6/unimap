@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -213,18 +214,18 @@ func TestStringInt(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if got := stringInt(tt.n); got != tt.want {
-			t.Errorf("stringInt(%d) = %q, want %q", tt.n, got, tt.want)
+		if got := strconv.FormatInt(tt.n, 10); got != tt.want {
+			t.Errorf("strconv.FormatInt(%d) = %q, want %q", tt.n, got, tt.want)
 		}
 	}
 }
 
 func TestSetRateLimitConfig(t *testing.T) {
 	oldLimiter := globalLimiter
-	oldEnabled := rateLimitEnabled
+	oldEnabled := rateLimitEnabled.Load()
 	defer func() {
 		globalLimiter = oldLimiter
-		rateLimitEnabled = oldEnabled
+		rateLimitEnabled.Store(oldEnabled)
 	}()
 
 	// 设置自定义限流配置
@@ -265,16 +266,16 @@ func TestSetRateLimitConfig_InvalidValues(t *testing.T) {
 }
 
 func TestSetRateLimitEnabled(t *testing.T) {
-	oldEnabled := rateLimitEnabled
-	defer func() { rateLimitEnabled = oldEnabled }()
+	oldEnabled := rateLimitEnabled.Load()
+	defer func() { rateLimitEnabled.Store(oldEnabled) }()
 
 	SetRateLimitEnabled(false)
-	if rateLimitEnabled {
+	if rateLimitEnabled.Load() {
 		t.Error("expected rateLimitEnabled to be false")
 	}
 
 	SetRateLimitEnabled(true)
-	if !rateLimitEnabled {
+	if !rateLimitEnabled.Load() {
 		t.Error("expected rateLimitEnabled to be true")
 	}
 }

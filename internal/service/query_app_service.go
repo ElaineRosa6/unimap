@@ -16,6 +16,7 @@ import (
 type BrowserQueryOutcome struct {
 	Enabled            bool
 	OpenedEngines      []string
+	CollectedResults   []screenshot.CollectResult
 	Errors             []string
 	AutoCaptureEnabled bool
 	AutoCaptureQueryID string
@@ -64,20 +65,29 @@ func (s *QueryAppService) ExecuteQuery(ctx context.Context, query string, engine
 	})
 }
 
-// RunBrowserQueryAsync 执行可选浏览器联动（打开结果页、自动截图）。
+// RunBrowserQueryAsync 执行可选浏览器联动（打开结果页、截图、采集结构化结果）。
 func (s *QueryAppService) RunBrowserQueryAsync(
 	ctx context.Context,
 	query string,
 	engines []string,
 	enabled bool,
+	action string,
 	queryID string,
 	autoCaptureEnabled bool,
 	screenshotApp *ScreenshotAppService,
 	screenshotMgr *screenshot.Manager,
 	previewURLBuilder func(string) string,
+	browserRouter BrowserRouter,
+	progress func(done, total int, engine string, err error),
 ) <-chan BrowserQueryOutcome {
 	if !enabled {
 		return nil
+	}
+
+	// Anti-corruption: old clients send browser_query=true without browser_action;
+	// fallback to "capture" semantics (the previous default behavior).
+	if action == "" {
+		action = "capture"
 	}
 
 	resultCh := make(chan BrowserQueryOutcome, 1)
@@ -85,7 +95,7 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 		defer close(resultCh)
 		outcome := BrowserQueryOutcome{Enabled: true}
 
-		if autoCaptureEnabled {
+		if autoCaptureEnabled && (action == "capture" || action == "collect") {
 			if strings.TrimSpace(queryID) == "" {
 				queryID = fmt.Sprintf("query_%d", time.Now().UnixNano())
 			}
@@ -99,37 +109,102 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 			outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, "auto capture unavailable: screenshot engine not initialized")
 		}
 
+		total := len(engines)
+		completed := 0
 		for _, engine := range engines {
-			if screenshotMgr == nil {
-				outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open skipped for %s: screenshot manager not initialized", engine))
-			} else if _, err := screenshotMgr.OpenSearchEngineResult(ctx, engine, query); err != nil {
-				outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
-			} else {
-				outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
-			}
+			func(engine string) {
+				var engineErr error
+				defer func() {
+					completed++
+					if progress != nil {
+						progress(completed, total, engine, engineErr)
+					}
+				}()
 
-			if outcome.AutoCaptureEnabled && captureAvailable {
-				path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, query, outcome.AutoCaptureQueryID)
-				if err != nil {
-					outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture failed for %s: %v", engine, err))
-					continue
+				// Open search engine result page (always done for all actions)
+				if browserRouter != nil {
+					if _, err := browserRouter.OpenSearchEngineResult(ctx, engine, query); err != nil {
+						engineErr = err
+						outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
+						return
+					}
+					outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
+				} else if screenshotMgr == nil {
+					outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open skipped for %s: no browser provider", engine))
+					engineErr = fmt.Errorf("no browser provider")
+					return
+				} else if _, err := screenshotMgr.OpenSearchEngineResult(ctx, engine, query); err != nil {
+					engineErr = err
+					outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
+					return
+				} else {
+					outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
 				}
-				if previewURLBuilder == nil {
-					continue
+
+				// Action-specific follow-up
+				switch action {
+				case "capture":
+					// Open + screenshot (existing behavior)
+					if outcome.AutoCaptureEnabled && captureAvailable {
+						path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, query, outcome.AutoCaptureQueryID)
+						if err != nil {
+							engineErr = err
+							outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture failed for %s: %v", engine, err))
+							return
+						}
+						if previewURLBuilder == nil {
+							return
+						}
+						previewURL := previewURLBuilder(path)
+						if previewURL == "" {
+							outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture preview unavailable for %s", engine))
+							return
+						}
+						outcome.AutoCapturedPaths[engine] = previewURL
+					}
+
+				case "collect":
+					// Open + collect structured DOM data, then capture evidence when enabled.
+					if browserRouter != nil {
+						collected, err := browserRouter.CollectSearchEngineResult(ctx, engine, query, queryID)
+						if err != nil {
+							engineErr = err
+							outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser collect failed for %s: %v", engine, err))
+						} else {
+							outcome.CollectedResults = append(outcome.CollectedResults, collected...)
+						}
+					}
+					if outcome.AutoCaptureEnabled && captureAvailable {
+						path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, query, outcome.AutoCaptureQueryID)
+						if err != nil {
+							engineErr = err
+							outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture failed for %s: %v", engine, err))
+							return
+						}
+						if previewURLBuilder == nil {
+							return
+						}
+						previewURL := previewURLBuilder(path)
+						if previewURL == "" {
+							outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture preview unavailable for %s", engine))
+							return
+						}
+						outcome.AutoCapturedPaths[engine] = previewURL
+					}
 				}
-				previewURL := previewURLBuilder(path)
-				if previewURL == "" {
-					outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture preview unavailable for %s", engine))
-					continue
-				}
-				outcome.AutoCapturedPaths[engine] = previewURL
-			}
+			}(engine)
 		}
 
 		resultCh <- outcome
 	}()
 
 	return resultCh
+}
+
+// BrowserRouter is the minimal interface needed for browser query operations.
+type BrowserRouter interface {
+	OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error)
+	CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]screenshot.CollectResult, error)
 }
 
 func checkCDPStatus(ctx context.Context, baseURL string) (bool, map[string]interface{}, error) {

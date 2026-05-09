@@ -157,6 +157,11 @@ func (s *UnifiedService) GetOrchestrator() *adapter.EngineOrchestrator {
 	return s.orchestrator
 }
 
+// SetWebOnlyBrowserBackend wires a browser query backend into all WebOnly adapters.
+func (s *UnifiedService) SetWebOnlyBrowserBackend(backend adapter.BrowserQueryBackend) {
+	s.orchestrator.SetWebOnlyBrowserBackend(backend)
+}
+
 // QueryRequest 查询请求
 type QueryRequest struct {
 	Query       string   // UQL 查询语句

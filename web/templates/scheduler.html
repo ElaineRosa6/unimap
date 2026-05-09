@@ -1,104 +1,7 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>定时任务 - UniMap</title>
-	<link rel="stylesheet" href="/static/css/style.css?v={{.Version}}">
-	<style>
-		.nav-links { margin-bottom: 20px; }
-		.nav-links a { margin-right: 15px; text-decoration: none; color: #007bff; }
-		.nav-links a:hover { text-decoration: underline; }
+{{template "head" .}}
+{{template "header" (dict "ActiveNav" "scheduler" "staticVersion" .staticVersion)}}
 
-		.tabs { display: flex; gap: 4px; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
-		.tab-btn {
-			padding: 8px 16px; border: none; background: none; cursor: pointer;
-			font-size: 14px; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px;
-		}
-		.tab-btn.active { color: #007bff; border-bottom-color: #007bff; font-weight: 600; }
-		.tab-content { display: none; }
-		.tab-content.active { display: block; }
-
-		.summary-cards { display: flex; gap: 16px; margin-bottom: 20px; }
-		.summary-card {
-			flex: 1; padding: 16px; background: #f8f9fa; border-radius: 6px; text-align: center;
-		}
-		.summary-card .count { font-size: 28px; font-weight: 700; color: #333; }
-		.summary-card .label { font-size: 12px; color: #666; margin-top: 4px; }
-
-		.create-form { margin-bottom: 20px; }
-		.create-form summary { cursor: pointer; padding: 10px; background: #f0f4f8; border-radius: 4px; font-weight: 600; }
-		.create-form .form-inner { padding: 16px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 4px 4px; }
-
-		.form-row { display: flex; gap: 12px; margin-bottom: 12px; }
-		.form-row .form-group { flex: 1; margin-bottom: 0; }
-
-		table { width: 100%; border-collapse: collapse; }
-		th, td { padding: 8px 12px; border-bottom: 1px solid #eee; text-align: left; font-size: 13px; }
-		th { background: #f8f9fa; font-weight: 600; }
-		td { vertical-align: middle; }
-
-		.status-badge {
-			display: inline-block; padding: 2px 8px; border-radius: 10px;
-			font-size: 11px; font-weight: 600;
-		}
-		.status-enabled { background: #d4edda; color: #155724; }
-		.status-disabled { background: #f8d7da; color: #721c24; }
-		.status-success { background: #d4edda; color: #155724; }
-		.status-failed { background: #f8d7da; color: #721c24; }
-		.status-timeout { background: #fff3cd; color: #856404; }
-		.status-skipped { background: #e2e3e5; color: #383d41; }
-
-		.btn-sm {
-			padding: 3px 8px; font-size: 12px; border-radius: 3px;
-			border: 1px solid #ddd; background: #fff; cursor: pointer;
-		}
-		.btn-sm:hover { background: #f0f0f0; }
-		.btn-sm.btn-danger { color: #dc3545; border-color: #dc3545; }
-		.btn-sm.btn-danger:hover { background: #dc3545; color: #fff; }
-		.btn-sm.btn-primary { color: #007bff; border-color: #007bff; }
-		.btn-sm.btn-primary:hover { background: #007bff; color: #fff; }
-		.btn-sm.btn-warning { color: #ffc107; border-color: #ffc107; }
-		.btn-sm.btn-warning:hover { background: #ffc107; color: #fff; }
-
-		.modal-overlay {
-			position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-			background: rgba(0,0,0,0.5); z-index: 9998; display: none;
-		}
-		.modal-overlay.active { display: block; }
-		.modal {
-			position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-			background: #fff; border-radius: 8px; padding: 24px; width: 90%; max-width: 600px;
-			z-index: 9999; display: none; max-height: 90vh; overflow-y: auto;
-		}
-		.modal.active { display: block; }
-		.modal h3 { margin: 0 0 16px; }
-		.modal .form-row { display: flex; gap: 12px; margin-bottom: 12px; }
-		.modal .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-
-		.toast {
-			position: fixed; top: 20px; right: 20px; padding: 12px 20px;
-			border-radius: 6px; color: #fff; z-index: 9999; display: none;
-		}
-		.toast.success { background: #28a745; }
-		.toast.error { background: #dc3545; }
-
-		.payload-preview {
-			max-width: 200px; overflow: hidden; text-overflow: ellipsis;
-			white-space: nowrap; font-family: monospace; font-size: 11px; color: #666;
-		}
-	</style>
-</head>
-<body>
-	<div class="container">
-		<h1>⏰ 定时任务管理</h1>
-
-		<div class="nav-links">
-			<a href="/">← 返回首页</a>
-			<a href="/monitor">网页监控</a>
-			<a href="/batch-screenshot">批量截图</a>
-		</div>
-
+	<main>
 		<div class="summary-cards">
 			<div class="summary-card">
 				<div class="count" id="total-count">0</div>
@@ -192,7 +95,7 @@
 
 		<!-- 执行历史 -->
 		<div class="tab-content" id="tab-history">
-			<div class="form-row" style="margin-bottom: 16px;">
+			<div class="form-row mb-sm">
 				<div class="form-group">
 					<select id="history-type-filter" class="form-control" onchange="loadHistory()">
 						<option value="">全部类型</option>
@@ -289,19 +192,6 @@
 	</div>
 
 	<script>
-	// Admin token management
-	function getAdminToken() {
-		return sessionStorage.getItem('admin_token') || '';
-	}
-	function authHeaders() {
-		const t = getAdminToken();
-		return t ? {'X-Admin-Token': t} : {};
-	}
-	function authQuery() {
-		const t = getAdminToken();
-		return t ? '&admin_token=' + encodeURIComponent(t) : '';
-	}
-
 	// Tab switching
 	document.querySelectorAll('.tab-btn').forEach(btn => {
 		btn.addEventListener('click', () => {
@@ -322,7 +212,7 @@
 
 	async function loadTasks() {
 		try {
-			const res = await fetch('/api/scheduler/tasks' + authQuery());
+			const res = await fetch('/api/scheduler/tasks' );
 			const tasks = await res.json();
 			const tbody = document.getElementById('task-list');
 			tbody.innerHTML = '';
@@ -379,7 +269,7 @@
 		if (limit) params.set('limit', limit);
 
 		try {
-			const res = await fetch('/api/scheduler/history?' + params.toString() + authQuery());
+			const res = await fetch('/api/scheduler/history?' + params.toString() );
 			const records = await res.json();
 			const tbody = document.getElementById('history-list');
 			tbody.innerHTML = '';
@@ -397,7 +287,7 @@
 					<td>${duration}</td>
 					<td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
 					<td>${escHtml(r.result || '-')}</td>
-					<td style="color:#c00">${escHtml(r.error || '')}</td>
+					<td class="text-danger">${escHtml(r.error || '')}</td>
 				`;
 				tbody.appendChild(tr);
 			});
@@ -427,7 +317,7 @@
 
 		const res = await fetch('/api/scheduler/tasks/create', {
 			method: 'POST',
-			headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({name, type: taskType, enabled, cron_expr: cronExpr, payload, timeout_seconds: timeout, max_retries: retries})
 		});
 
@@ -446,9 +336,9 @@
 
 	async function deleteTask(id) {
 		if (!confirm('确定删除此任务？')) return;
-		const res = await fetch('/api/scheduler/tasks/delete' + authQuery(), {
+		const res = await fetch('/api/scheduler/tasks/delete' , {
 			method: 'POST',
-			headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({id})
 		});
 		const data = await res.json();
@@ -461,9 +351,9 @@
 	}
 
 	async function runTask(id) {
-		const res = await fetch('/api/scheduler/tasks/run' + authQuery(), {
+		const res = await fetch('/api/scheduler/tasks/run' , {
 			method: 'POST',
-			headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({id})
 		});
 		const data = await res.json();
@@ -476,9 +366,9 @@
 
 	async function toggleTask(id, enable) {
 		const endpoint = enable ? '/api/scheduler/tasks/enable' : '/api/scheduler/tasks/disable';
-		const res = await fetch(endpoint + authQuery(), {
+		const res = await fetch(endpoint , {
 			method: 'POST',
-			headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({id})
 		});
 		const data = await res.json();
@@ -509,7 +399,7 @@
 // --- Edit task modal ---
 async function editTask(id) {
 	try {
-		const res = await fetch('/api/scheduler/tasks/get?id=' + encodeURIComponent(id) + authQuery());
+		const res = await fetch('/api/scheduler/tasks/get?id=' + encodeURIComponent(id) );
 		if (!res.ok) { showToast('获取任务失败', 'error'); return; }
 		const task = await res.json();
 
@@ -556,7 +446,7 @@ async function saveTask() {
 
 	const res = await fetch('/api/scheduler/tasks/update', {
 		method: 'POST',
-		headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+		headers: {'Content-Type': 'application/json'},
 		body: JSON.stringify({id, name, type: taskType, enabled, cron_expr: cronExpr, payload, timeout_seconds: timeout, max_retries: retries})
 	});
 
@@ -572,21 +462,6 @@ async function saveTask() {
 }
 
 document.getElementById('btn-save-task').addEventListener('click', saveTask);
-
-	// Intercept 401 responses and prompt for token
-	const origFetch = window.fetch;
-	window.fetch = async function(...args) {
-		const res = await origFetch.apply(this, args);
-		if (res.status === 401) {
-			const token = prompt('Admin token required. Enter your admin token:');
-			if (token) {
-				sessionStorage.setItem('admin_token', token);
-				loadTasks();
-				loadHistory();
-			}
-		}
-		return res;
-	};
 
 	document.getElementById('btn-create-task').addEventListener('click', createTask);
 	</script>

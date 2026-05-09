@@ -212,6 +212,94 @@ func TestExtensionProvider_CaptureSearchEngineResult_UnsupportedEngine(t *testin
 	}
 }
 
+func TestExtensionProvider_CollectSearchEngineResult_BridgeStructuredData(t *testing.T) {
+	client := &mockBridgeClient{
+		awaitResult: BridgeResult{
+			Success: true,
+			StructuredCollectedData: map[string]interface{}{
+				"total":    float64(1),
+				"has_more": false,
+				"items": []interface{}{
+					map[string]interface{}{
+						"ip":       "1.2.3.4",
+						"port":     float64(443),
+						"protocol": "https",
+						"host":     "example.com",
+						"title":    "Example",
+					},
+				},
+			},
+		},
+	}
+	svc := NewBridgeService(client, 5, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	p := NewExtensionProvider(svc, nil)
+	got, err := p.CollectSearchEngineResult(context.Background(), "fofa", "test", "q1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected one collect result, got %d", len(got))
+	}
+	if got[0].Total != 1 || got[0].HasMore {
+		t.Fatalf("unexpected pagination metadata: total=%d hasMore=%v", got[0].Total, got[0].HasMore)
+	}
+	if len(got[0].Assets) != 1 {
+		t.Fatalf("expected one asset, got %d", len(got[0].Assets))
+	}
+	asset := got[0].Assets[0]
+	if asset.IP != "1.2.3.4" || asset.Port != 443 || asset.Source != "fofa" {
+		t.Fatalf("unexpected asset: %#v", asset)
+	}
+}
+
+func TestExtensionProvider_OpenSearchEngineResult_UsesOpenAction(t *testing.T) {
+	client := &mockBridgeClient{
+		awaitResult: BridgeResult{Success: true},
+	}
+	svc := NewBridgeService(client, 5, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	p := NewExtensionProvider(svc, nil)
+	got, err := p.OpenSearchEngineResult(context.Background(), "fofa", "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(got, "https://fofa.info/result?qbase64=") {
+		t.Fatalf("unexpected search URL: %q", got)
+	}
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.submitCalls) != 1 {
+		t.Fatalf("expected one bridge task, got %d", len(client.submitCalls))
+	}
+	if client.submitCalls[0].Action != "open" {
+		t.Fatalf("expected open action, got %q", client.submitCalls[0].Action)
+	}
+}
+
+func TestExtensionProvider_OpenSearchEngineResult_BridgeFailure(t *testing.T) {
+	client := &mockBridgeClient{
+		awaitResult: BridgeResult{Success: false, Error: "login required"},
+	}
+	svc := NewBridgeService(client, 5, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	p := NewExtensionProvider(svc, nil)
+	_, err := p.OpenSearchEngineResult(context.Background(), "fofa", "test")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "login required") {
+		t.Fatalf("expected bridge error, got %v", err)
+	}
+}
+
 func TestExtensionProvider_CaptureTargetWebsite_BridgeSuccess(t *testing.T) {
 	client := &mockBridgeClient{
 		awaitResult: BridgeResult{Success: true, ImagePath: "/tmp/target.png"},
@@ -451,3 +539,9 @@ func (m *mockScreenshotCDPProvider) CaptureBatchURLs(ctx context.Context, urls [
 	return results, nil
 }
 func (m *mockScreenshotCDPProvider) GetScreenshotDirectory() string { return "/mock/screenshots" }
+func (m *mockScreenshotCDPProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
+	return "https://mock.engine/result?q=" + query, nil
+}
+func (m *mockScreenshotCDPProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
+	return []CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query, Title: "Mock Result", Timestamp: 0, Assets: nil}}, nil
+}

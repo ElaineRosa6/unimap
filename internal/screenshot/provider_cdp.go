@@ -55,3 +55,17 @@ func (p *CDPProvider) GetScreenshotDirectory() string {
 	}
 	return p.mgr.GetScreenshotDirectory()
 }
+
+func (p *CDPProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
+	if p == nil || p.mgr == nil {
+		return "", fmt.Errorf("screenshot manager not initialized")
+	}
+	return p.mgr.OpenSearchEngineResult(ctx, engine, query)
+}
+
+func (p *CDPProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
+	if p == nil || p.mgr == nil {
+		return nil, fmt.Errorf("screenshot manager not initialized")
+	}
+	return p.mgr.CollectSearchEngineResult(ctx, engine, query, queryID)
+}

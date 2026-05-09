@@ -19,7 +19,17 @@
       "Bash(xargs -I {} taskkill //F //PID {})",
       "Bash(go tool:*)",
       "Bash(sort -t: -k2 -n)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Read(//mnt/d/Project/Go_project/**)",
+      "Read(//d//**)",
+      "Bash(taskkill *)",
+      "Bash(go run *)",
+      "Bash(curl -s http://localhost:8448)",
+      "Bash(pkill -f unimap-web)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8448/)",
+      "mcp__chrome__chrome_read_page",
+      "mcp__chrome__chrome_screenshot",
+      "Bash(node -e ' *)"
     ]
   }
 }
