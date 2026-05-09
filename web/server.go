@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"text/template"
+	"html/template"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -51,6 +51,18 @@ type browserQueryOutcome = service.BrowserQueryOutcome
 type managedConn struct {
 	conn    *websocket.Conn
 	writeMu sync.Mutex
+}
+
+// browserBackendAdapter adapts screenshot.Provider to adapter.BrowserQueryBackend.
+type browserBackendAdapter struct {
+	provider screenshot.Provider
+}
+
+func (a *browserBackendAdapter) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]screenshot.CollectResult, error) {
+	if a.provider == nil {
+		return nil, fmt.Errorf("browser backend not initialized")
+	}
+	return a.provider.CollectSearchEngineResult(ctx, engine, query, queryID)
 }
 
 // WebSocket连接管理器
@@ -111,6 +123,20 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		},
 		"join": func(elems []string, sep string) string {
 			return strings.Join(elems, sep)
+		},
+		"dict": func(values ...interface{}) (map[string]interface{}, error) {
+			if len(values)%2 != 0 {
+				return nil, fmt.Errorf("invalid dict call: odd number of arguments")
+			}
+			dict := make(map[string]interface{}, len(values)/2)
+			for i := 0; i < len(values); i += 2 {
+				key, ok := values[i].(string)
+				if !ok {
+					return nil, fmt.Errorf("dict keys must be strings, got %T", values[i])
+				}
+				dict[key] = values[i+1]
+			}
+			return dict, nil
 		},
 	}
 
@@ -391,6 +417,12 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		router.Start(shutdownCtx)
 		srv.screenshotRouter = router
 
+		// Wire browser backend to WebOnly adapters so engines without API keys
+		// can collect structured results via browser DOM extraction.
+		if unifiedSvc != nil && srv.screenshotRouter != nil {
+			unifiedSvc.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: srv.screenshotRouter})
+		}
+
 		logger.Infof("Screenshot router initialized: mode=auto, priority=%s, fallback=%v", priority, fallback)
 	} else if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Screenshot.Engine), "extension") {
 		// 传统 extension 单模式
@@ -400,6 +432,12 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		srv.bridge.Mock = mockClient
 		srv.bridge.Service = bridgeSvc
 		screenshotApp.SetBridgeService(bridgeSvc)
+
+		// Wire browser backend for WebOnly adapters in extension-only mode
+		if unifiedSvc != nil && screenshotMgr != nil {
+			extProvider := screenshot.NewExtensionProvider(bridgeSvc, screenshotMgr)
+			unifiedSvc.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: extProvider})
+		}
 	}
 
 	return srv, nil
@@ -494,7 +532,7 @@ func securityMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		w.Header().Set("Content-Security-Policy",
-			fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s' 'unsafe-hashes' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;", nonce))
+			fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s' 'unsafe-hashes'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;", nonce))
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 
@@ -524,7 +562,7 @@ func (s *Server) Start() error {
 
 	allowedOrigins := allowedOriginsFromConfig(s.config)
 	allowedMethods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
-	allowedHeaders := []string{"Content-Type", "Authorization", "X-Admin-Token", "X-Requested-With", "X-WebSocket-Token", requestid.HeaderName}
+	allowedHeaders := []string{"Content-Type", "Authorization", "X-Admin-Token", "X-Requested-With", "X-WebSocket-Token", "X-Bridge-Timestamp", "X-Bridge-Nonce", "X-Bridge-Signature", requestid.HeaderName}
 	exposedHeaders := []string{requestid.HeaderName}
 	allowCredentials := true
 	maxAge := 600
@@ -549,12 +587,11 @@ func (s *Server) Start() error {
 	handler = requestSizeLimitMiddleware(maxBodyBytes)(handler)
 	handler = corsMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeaders, allowCredentials, maxAge)(handler)
 
-	// Auth middleware — always enabled (auto-generated token if not configured)
-	if s.config != nil && s.config.Web.Auth.Enabled && s.config.Web.Auth.AdminToken != "" {
+	// Auth middleware — always enabled when auth.enabled is true (auto-generates token if needed)
+	if s.config != nil && s.config.Web.Auth.Enabled {
 		handler = s.adminAuthMiddleware()(handler)
 		logger.Infof("Web auth enabled: admin token authentication active")
 	} else {
-		// Fallback: should not be reached with default config (auth is auto-enabled)
 		bindAddr := s.bindAddr()
 		if bindAddr != "127.0.0.1" && bindAddr != "localhost" {
 			logger.Warnf("⚠️  WARNING: Admin auth is DISABLED and server is bound to %s (non-loopback). All API endpoints are publicly accessible!", bindAddr)
@@ -569,9 +606,15 @@ func (s *Server) Start() error {
 			strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 
 		if isWebSocket && r.URL.Path == "/api/ws" {
-			// WebSocket must pass admin auth (same middleware chain as regular requests)
+			// WebSocket auth: cookie → query param → header
 			if s.adminToken() != "" && !s.isPublicPath(r.URL.Path) {
-				token := r.Header.Get("X-Admin-Token")
+				token := s.getSessionToken(r)
+				if token == "" {
+					token = r.URL.Query().Get("token")
+				}
+				if token == "" {
+					token = r.Header.Get("X-Admin-Token")
+				}
 				if token == "" {
 					token = extractBearerToken(r.Header.Get("Authorization"))
 				}
@@ -861,10 +904,10 @@ func parseWSInt(val interface{}, defaultValue int) int {
 
 func validateQueryInput(query string) error {
 	if strings.TrimSpace(query) == "" {
-		return fmt.Errorf("Query cannot be empty")
+		return fmt.Errorf("query cannot be empty")
 	}
 	if len(query) > 1000 {
-		return fmt.Errorf("Query is too long (maximum 1000 characters)")
+		return fmt.Errorf("query is too long (maximum 1000 characters)")
 	}
 	for _, r := range query {
 		if r < 32 && r != '\t' && r != '\n' && r != '\r' {

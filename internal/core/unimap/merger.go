@@ -26,6 +26,7 @@ var enginePriorities = map[string]int{
 	"hunter":  2,
 	"zoomeye": 3,
 	"quake":   4,
+	"shodan":  5,
 }
 
 // NewResultMerger 创建归并器

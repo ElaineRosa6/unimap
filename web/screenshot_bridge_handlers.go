@@ -84,6 +84,9 @@ func (s *Server) handleScreenshotBridgePair(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	s.clearBridgeLastError()
+	s.bridge.mu.Lock()
+	s.bridge.LastPairAt = time.Now().Unix()
+	s.bridge.mu.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":    true,
@@ -183,14 +186,16 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 	s.touchBridgeToken(token)
 
 	var req struct {
-		RequestID string `json:"request_id"`
-		Success   bool   `json:"success"`
-		ImagePath string `json:"image_path"`
-		ImageData string `json:"image_data"`
-		BatchID   string `json:"batch_id"`
-		URL       string `json:"url"`
-		ErrorCode string `json:"error_code"`
-		Error     string `json:"error"`
+		RequestID               string                 `json:"request_id"`
+		Success                 bool                   `json:"success"`
+		ImagePath               string                 `json:"image_path"`
+		ImageData               string                 `json:"image_data"`
+		BatchID                 string                 `json:"batch_id"`
+		URL                     string                 `json:"url"`
+		CollectedData           string                 `json:"collected_data"`
+		StructuredCollectedData map[string]interface{} `json:"structured_collected_data"`
+		ErrorCode               string                 `json:"error_code"`
+		Error                   string                 `json:"error"`
 	}
 	if err := json.NewDecoder(bytes.NewReader(rawBody)).Decode(&req); err != nil {
 		s.setBridgeLastError("invalid_bridge_result: invalid bridge result payload")
@@ -224,14 +229,19 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 	}
 
 	s.bridge.Mock.PushResult(screenshot.BridgeResult{
-		RequestID:  strings.TrimSpace(req.RequestID),
-		Success:    req.Success,
-		ImagePath:  resolvedPath,
-		ErrorCode:  strings.TrimSpace(req.ErrorCode),
-		Error:      strings.TrimSpace(req.Error),
-		DurationMS: 1,
+		RequestID:               strings.TrimSpace(req.RequestID),
+		Success:                 req.Success,
+		ImagePath:               resolvedPath,
+		CollectedData:           strings.TrimSpace(req.CollectedData),
+		StructuredCollectedData: req.StructuredCollectedData,
+		ErrorCode:               strings.TrimSpace(req.ErrorCode),
+		Error:                   strings.TrimSpace(req.Error),
+		DurationMS:              1,
 	})
 	s.clearBridgeLastError()
+	s.bridge.mu.Lock()
+	s.bridge.LastCallbackAt = time.Now().Unix()
+	s.bridge.mu.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":       true,
@@ -274,6 +284,10 @@ func (s *Server) handleScreenshotBridgeTaskNext(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	s.bridge.mu.Lock()
+	s.bridge.LastTaskPullAt = time.Now().Unix()
+	s.bridge.mu.Unlock()
+
 	timeoutMS := int(task.Timeout / time.Millisecond)
 	if timeoutMS <= 0 {
 		timeoutMS = 15000
@@ -289,6 +303,7 @@ func (s *Server) handleScreenshotBridgeTaskNext(w http.ResponseWriter, r *http.R
 			"timeout_ms":      timeoutMS,
 			"viewport_width":  task.ViewportWidth,
 			"viewport_height": task.ViewportHeight,
+			"action":          task.Action,
 		},
 	})
 	s.clearBridgeLastError()
@@ -754,25 +769,31 @@ func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
 	s.bridge.mu.Lock()
 	lastErr := s.bridge.LastErr
 	lastAt := s.bridge.LastAt
+	lastPairAt := s.bridge.LastPairAt
+	lastTaskPullAt := s.bridge.LastTaskPullAt
+	lastCallbackAt := s.bridge.LastCallbackAt
 	s.bridge.mu.Unlock()
 
 	return map[string]interface{}{
-		"engine":            engine,
-		"extension_enabled": enabled,
-		"pairing_required":  pairingRequired,
-		"listen_addr":       listenAddr,
-		"ready":             ready,
-		"bridge_connected":  bridgeConnected,
-		"paired_clients":    s.activeBridgeTokens(),
-		"live_clients":      s.activeBridgeLiveTokens(),
-		"pending_tasks":     pending,
-		"awaiting_results":  waiters,
-		"in_flight_tasks":   inFlight,
-		"queue_len":         queueLen,
-		"worker_count":      workers,
-		"last_error":        lastErr,
-		"last_error_at":     lastAt,
-		"router_mode":       s.screenshotRouterMode(),
+		"engine":             engine,
+		"extension_enabled":  enabled,
+		"pairing_required":   pairingRequired,
+		"listen_addr":        listenAddr,
+		"ready":              ready,
+		"bridge_connected":   bridgeConnected,
+		"paired_clients":     s.activeBridgeTokens(),
+		"live_clients":       s.activeBridgeLiveTokens(),
+		"pending_tasks":      pending,
+		"awaiting_results":   waiters,
+		"in_flight_tasks":    inFlight,
+		"queue_len":          queueLen,
+		"worker_count":       workers,
+		"last_error":         lastErr,
+		"last_error_at":      lastAt,
+		"last_pair_at":       lastPairAt,
+		"last_task_pull_at":  lastTaskPullAt,
+		"last_callback_at":   lastCallbackAt,
+		"router_mode":        s.screenshotRouterMode(),
 		"router_cdp_healthy": s.screenshotRouterCDPHealthy(),
 		"router_ext_healthy": s.screenshotRouterExtHealthy(),
 	}

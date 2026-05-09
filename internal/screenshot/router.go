@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/unimap-icp-hunter/project/internal/model"
 )
 
 // ScreenshotMode represents the active screenshot capture mode.
@@ -17,6 +19,7 @@ type ScreenshotMode string
 const (
 	ModeCDP       ScreenshotMode = "cdp"
 	ModeExtension ScreenshotMode = "extension"
+	ModeAuto      ScreenshotMode = "auto"
 )
 
 // RouterConfig holds the routing configuration.
@@ -171,6 +174,21 @@ func (r *ScreenshotRouter) runProbes(ctx context.Context) {
 }
 
 func (r *ScreenshotRouter) determineBestMode(current ScreenshotMode, cdpOK, extOK bool) ScreenshotMode {
+	// Auto mode: pick the healthiest provider
+	if current == ModeAuto {
+		if cdpOK && extOK {
+			return ModeCDP // prefer CDP when both healthy
+		}
+		if cdpOK {
+			return ModeCDP
+		}
+		if extOK {
+			return ModeExtension
+		}
+		return ModeAuto // neither healthy, stay auto
+	}
+
+	// Forced mode: respect the configured mode, fall back only if configured
 	switch current {
 	case ModeCDP:
 		if cdpOK {
@@ -207,9 +225,32 @@ func (r *ScreenshotRouter) Config() RouterConfig {
 	return r.cfg
 }
 
+// SetMode sets the active screenshot execution mode.
+// ModeAuto delegates to the health probe loop to pick the best mode.
+// ModeCDP and ModeExtension are forced modes — they will not auto-switch
+// unless fallback is enabled and the forced provider is unhealthy.
+func (r *ScreenshotRouter) SetMode(mode ScreenshotMode) {
+	if mode != ModeCDP && mode != ModeExtension && mode != ModeAuto {
+		return
+	}
+	old := r.currentMode.Load().(ScreenshotMode)
+	if old == mode {
+		return
+	}
+	r.currentMode.Store(mode)
+	if r.onModeSwitch != nil {
+		r.onModeSwitch(old, mode)
+	}
+}
+
+// CurrentMode returns the active screenshot execution mode.
+func (r *ScreenshotRouter) CurrentMode() ScreenshotMode {
+	return r.currentMode.Load().(ScreenshotMode)
+}
+
 // CaptureSearchEngineResult captures a search engine result using the active mode.
 func (r *ScreenshotRouter) CaptureSearchEngineResult(ctx context.Context, engine, query, queryID string) (string, error) {
-	provider, err := r.resolveProvider(ModeCDP)
+	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
 	if err != nil {
 		return "", err
 	}
@@ -218,7 +259,7 @@ func (r *ScreenshotRouter) CaptureSearchEngineResult(ctx context.Context, engine
 
 // CaptureTargetWebsite captures a target website using the active mode.
 func (r *ScreenshotRouter) CaptureTargetWebsite(ctx context.Context, targetURL, ip, port, protocol, queryID string) (string, error) {
-	provider, err := r.resolveProvider(ModeCDP)
+	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
 	if err != nil {
 		return "", err
 	}
@@ -227,7 +268,7 @@ func (r *ScreenshotRouter) CaptureTargetWebsite(ctx context.Context, targetURL, 
 
 // CaptureBatchURLs captures a batch of URLs using the active mode.
 func (r *ScreenshotRouter) CaptureBatchURLs(ctx context.Context, urls []string, batchID string, concurrency int) ([]BatchScreenshotResult, error) {
-	provider, err := r.resolveProvider(ModeCDP)
+	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
 	if err != nil {
 		return nil, err
 	}
@@ -240,6 +281,24 @@ func (r *ScreenshotRouter) GetScreenshotDirectory() string {
 		return r.mgr.GetScreenshotDirectory()
 	}
 	return ""
+}
+
+// OpenSearchEngineResult opens a search engine result page using the active mode.
+func (r *ScreenshotRouter) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
+	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
+	if err != nil {
+		return "", err
+	}
+	return provider.OpenSearchEngineResult(ctx, engine, query)
+}
+
+// CollectSearchEngineResult collects structured data from a search engine result using the active mode.
+func (r *ScreenshotRouter) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
+	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
+	if err != nil {
+		return nil, err
+	}
+	return provider.CollectSearchEngineResult(ctx, engine, query, queryID)
 }
 
 // resolveProvider returns the best available Provider based on current health and fallback config.
@@ -432,6 +491,101 @@ func (p *ExtensionProvider) GetScreenshotDirectory() string {
 	return ""
 }
 
+func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
+	if p == nil || p.bridge == nil {
+		return "", fmt.Errorf("extension provider not initialized")
+	}
+	searchURL := ""
+	if p.mgr != nil {
+		searchURL = strings.TrimSpace(p.mgr.BuildSearchEngineURL(engine, query))
+	}
+	if searchURL == "" {
+		searchURL = buildSearchEngineURL(engine, query)
+	}
+	if searchURL == "" {
+		return "", fmt.Errorf("unsupported engine: %s", engine)
+	}
+
+	task := BridgeTask{
+		RequestID:    fmt.Sprintf("router_open_%d", time.Now().UnixNano()),
+		URL:          searchURL,
+		WaitStrategy: "load",
+		Action:       "open",
+	}
+	result, err := p.bridge.Submit(ctx, task)
+	if err != nil {
+		return "", fmt.Errorf("extension bridge open failed: %w", err)
+	}
+	if !result.Success {
+		errMsg := strings.TrimSpace(result.Error)
+		if errMsg == "" {
+			errMsg = strings.TrimSpace(result.ErrorCode)
+		}
+		if errMsg == "" {
+			errMsg = "unknown bridge error"
+		}
+		return "", fmt.Errorf("extension bridge open failed: %s", errMsg)
+	}
+	return searchURL, nil
+}
+
+func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
+	if p == nil || p.bridge == nil {
+		return nil, fmt.Errorf("extension provider not initialized")
+	}
+	searchURL := ""
+	if p.mgr != nil {
+		searchURL = strings.TrimSpace(p.mgr.BuildSearchEngineURL(engine, query))
+	}
+	if searchURL == "" {
+		searchURL = buildSearchEngineURL(engine, query)
+	}
+	if searchURL == "" {
+		return nil, fmt.Errorf("unsupported engine: %s", engine)
+	}
+
+	task := BridgeTask{
+		RequestID:    fmt.Sprintf("router_collect_%d", time.Now().UnixNano()),
+		URL:          searchURL,
+		BatchID:      queryID,
+		WaitStrategy: "load",
+		Action:       "collect",
+	}
+	result, err := p.bridge.Submit(ctx, task)
+	if err != nil {
+		return nil, fmt.Errorf("extension bridge collect failed: %w", err)
+	}
+	if !result.Success {
+		errMsg := strings.TrimSpace(result.Error)
+		if errMsg == "" {
+			errMsg = strings.TrimSpace(result.ErrorCode)
+		}
+		if errMsg == "" {
+			errMsg = "unknown bridge error"
+		}
+		return nil, fmt.Errorf("extension bridge collect failed: %s", errMsg)
+	}
+
+	collectResult := CollectResult{
+		Engine:    engine,
+		Query:     query,
+		RawURL:    searchURL,
+		Timestamp: time.Now().Unix(),
+	}
+
+	// Anti-corruption: prefer structured data, fall back to string payload.
+	if len(result.StructuredCollectedData) > 0 {
+		collectResult.Assets, collectResult.Total, collectResult.HasMore = parseStructuredCollectedData(result.StructuredCollectedData, engine)
+		if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
+			collectResult.Title = title
+		}
+	} else if result.CollectedData != "" {
+		collectResult.Title = result.CollectedData
+	}
+
+	return []CollectResult{collectResult}, nil
+}
+
 // buildSearchEngineURL builds a search engine result URL for bridge capture.
 func buildSearchEngineURL(engine, query string) string {
 	switch strings.ToLower(strings.TrimSpace(engine)) {
@@ -497,4 +651,106 @@ func isMockBridgeClient(svc *BridgeService) bool {
 // urlBase64 encodes a string as URL-safe base64.
 func urlBase64(s string) string {
 	return url.QueryEscape(base64.StdEncoding.EncodeToString([]byte(s)))
+}
+
+// parseStructuredCollectedData extracts assets, total count, and has_more from
+// the extension's structured collect payload. Anti-corruption: gracefully handles
+// missing or malformed fields.
+func parseStructuredCollectedData(data map[string]interface{}, engine string) ([]model.UnifiedAsset, int, bool) {
+	assets := []model.UnifiedAsset{}
+	total := 0
+	hasMore := false
+
+	if t, ok := data["total"].(float64); ok {
+		total = int(t)
+	}
+	if hm, ok := data["has_more"].(bool); ok {
+		hasMore = hm
+	}
+
+	rawItems, ok := data["items"]
+	if !ok {
+		return assets, total, hasMore
+	}
+
+	items, ok := rawItems.([]interface{})
+	if !ok {
+		return assets, total, hasMore
+	}
+
+	for _, raw := range items {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		asset := model.UnifiedAsset{
+			Source: engine,
+		}
+		if v, ok := item["url"].(string); ok {
+			asset.URL = v
+		}
+		if v, ok := item["title"].(string); ok {
+			asset.Title = v
+		}
+		if v, ok := item["ip"].(string); ok {
+			asset.IP = v
+		}
+		if v, ok := item["port"].(float64); ok {
+			asset.Port = int(v)
+		} else if v, ok := item["port"].(int); ok {
+			asset.Port = v
+		}
+		if v, ok := item["protocol"].(string); ok {
+			asset.Protocol = v
+		}
+		if v, ok := item["host"].(string); ok {
+			asset.Host = v
+		}
+		if v, ok := item["body_snippet"].(string); ok {
+			asset.BodySnippet = v
+		}
+		if v, ok := item["server"].(string); ok {
+			asset.Server = v
+		}
+		if v, ok := item["status_code"].(float64); ok {
+			asset.StatusCode = int(v)
+		}
+		if v, ok := item["country_code"].(string); ok {
+			asset.CountryCode = v
+		}
+		if v, ok := item["region"].(string); ok {
+			asset.Region = v
+		}
+		if v, ok := item["city"].(string); ok {
+			asset.City = v
+		}
+		if v, ok := item["asn"].(string); ok {
+			asset.ASN = v
+		}
+		if v, ok := item["org"].(string); ok {
+			asset.Org = v
+		}
+		if v, ok := item["isp"].(string); ok {
+			asset.ISP = v
+		}
+		// Store unrecognized engine-specific fields in Extra
+		extra := make(map[string]interface{})
+		known := map[string]bool{
+			"url": true, "title": true, "ip": true, "port": true,
+			"protocol": true, "host": true, "body_snippet": true,
+			"server": true, "status_code": true, "country_code": true,
+			"region": true, "city": true, "asn": true, "org": true, "isp": true,
+		}
+		for k, v := range item {
+			if !known[k] {
+				extra[k] = v
+			}
+		}
+		if len(extra) > 0 {
+			asset.Extra = extra
+		}
+		assets = append(assets, asset)
+	}
+
+	return assets, total, hasMore
 }

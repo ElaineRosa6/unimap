@@ -293,3 +293,9 @@ func (m *mockScreenshotProvider) CaptureBatchURLs(ctx context.Context, urls []st
 	return nil, nil
 }
 func (m *mockScreenshotProvider) GetScreenshotDirectory() string { return "/mock/screenshots" }
+func (m *mockScreenshotProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
+	return "/mock/open", nil
+}
+func (m *mockScreenshotProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]screenshot.CollectResult, error) {
+	return []screenshot.CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query}}, nil
+}

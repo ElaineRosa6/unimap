@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -122,32 +121,29 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 // validateWebSocketRequest 验证WebSocket连接请求
 func (s *Server) validateWebSocketRequest(r *http.Request) bool {
-	// 从请求头获取令牌
-	token := r.Header.Get("X-WebSocket-Token")
+	adminToken := s.adminToken()
+	if adminToken == "" {
+		return true // auth not configured
+	}
 
-	// 从查询参数获取令牌
+	// 1. Session cookie (browser sends automatically)
+	token := s.getSessionToken(r)
+	// 2. Query parameter (fallback for non-browser clients)
 	if token == "" {
 		token = r.URL.Query().Get("token")
 	}
-
-	// 检查是否有配置的令牌
-	configToken := os.Getenv("UNIMAP_WS_TOKEN")
-	if configToken != "" {
-		// 生产环境：强制要求令牌验证
-		if token == "" {
-			logger.Warn("WebSocket connection rejected: missing token")
-			return false
-		}
-		if subtle.ConstantTimeCompare([]byte(token), []byte(configToken)) != 1 {
-			logger.Warn("WebSocket connection rejected: invalid token")
-			return false
-		}
-		return true
+	// 3. Header
+	if token == "" {
+		token = r.Header.Get("X-WebSocket-Token")
 	}
 
-	// 开发环境：允许无令牌连接，但记录警告
 	if token == "" {
-		logger.Warn("WebSocket connection without token (development mode)")
+		logger.Warn("WebSocket connection rejected: missing token")
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(token), []byte(adminToken)) != 1 {
+		logger.Warn("WebSocket connection rejected: invalid token")
+		return false
 	}
 	return true
 }
@@ -170,6 +166,10 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 
 	pageSize := parseWSInt(message["page_size"], 50)
 	browserQuery := parseWSBool(message["browser_query"])
+	browserAction := ""
+	if ba, ok := message["browser_action"].(string); ok {
+		browserAction = strings.TrimSpace(ba)
+	}
 
 	engines := parseWSStringList(message["engines"])
 	if len(engines) == 0 {
@@ -184,7 +184,7 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 		// 发送查询错误消息
 		if err := writeJSON(map[string]interface{}{
 			"type":  "query_error",
-			"error": "No engines configured/registered. Please set API keys in configs/config.yaml and enable at least one engine.",
+			"error": "no engines configured/registered. Please set API keys in configs/config.yaml and enable at least one engine.",
 		}); err != nil {
 			logger.Errorf("WebSocket write error: %v", err)
 		}
@@ -221,9 +221,28 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 		logger.Errorf("WebSocket write error: %v", err)
 	}
 
-	// 异步执行查询
+	// 异步执行查询，带有独立的超时上下文
 	go func() {
-		browserQueryCh := s.runBrowserQueryAsync(ctx, query, engines, browserQuery, queryID)
+		// 为查询创建带超时的上下文（默认 60 秒查询超时）
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		queryCtx, queryCancel := context.WithTimeout(ctx, 60*time.Second)
+		defer queryCancel()
+
+		if browserQuery {
+			s.updateQueryProgress(queryID, 5)
+		}
+		browserQueryCh := s.runBrowserQueryAsync(queryCtx, query, engines, browserQuery, browserAction, queryID, func(done, total int, engine string, err error) {
+			if total <= 0 {
+				return
+			}
+			progress := 5 + (float64(done)/float64(total))*45
+			if progress > 50 {
+				progress = 50
+			}
+			s.updateQueryProgress(queryID, progress)
+		})
 
 		// 执行查询
 		req := service.QueryRequest{
@@ -233,11 +252,21 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 			ProcessData: true,
 		}
 
-		resp, queryErr := s.service.Query(ctx, req)
+		resp, queryErr := s.service.Query(queryCtx, req)
 		var browserOutcome browserQueryOutcome
 		if browserQueryCh != nil {
-			browserOutcome = <-browserQueryCh
+			select {
+			case browserOutcome = <-browserQueryCh:
+			case <-queryCtx.Done():
+				// Timeout while waiting for browser query
+			}
 		}
+
+		// Check if query timed out
+		if queryErr == nil && queryCtx.Err() != nil {
+			queryErr = fmt.Errorf("query timeout after 60s: %v", queryCtx.Err())
+		}
+
 		endTime := time.Now()
 
 		// 更新查询状态（在锁内修改，避免并发读写竞态）
@@ -246,11 +275,26 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 		if st != nil {
 			if queryErr != nil {
 				st.Errors = append(st.Errors, fmt.Sprintf("Query failed: %v", queryErr))
+				st.Errors = appendUniqueStrings(st.Errors, browserOutcome.Errors)
+				st.Errors = appendUniqueStrings(st.Errors, browserOutcome.AutoCaptureErrors)
 				st.Status = "error"
 			} else {
-				st.Results = resp.Assets
-				st.TotalCount = resp.TotalCount
-				st.Errors = resp.Errors
+				payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction)
+				if assets, ok := payload["assets"].([]model.UnifiedAsset); ok {
+					st.Results = assets
+				} else {
+					st.Results = resp.Assets
+				}
+				if totalCount, ok := payload["totalCount"].(int); ok {
+					st.TotalCount = totalCount
+				} else {
+					st.TotalCount = resp.TotalCount
+				}
+				if errors, ok := payload["errors"].([]string); ok {
+					st.Errors = errors
+				} else {
+					st.Errors = resp.Errors
+				}
 				st.Status = "completed"
 			}
 			st.Progress = 100
@@ -295,7 +339,9 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 				"errors":               combinedErrors,
 				"error":                errMsg,
 				"browserQuery":         browserOutcome.Enabled,
+				"browserAction":        browserAction,
 				"browserOpenedEngines": browserOutcome.OpenedEngines,
+				"browserCollectedData": browserOutcome.CollectedResults,
 				"browserQueryErrors":   browserOutcome.Errors,
 				"autoCapture":          browserOutcome.AutoCaptureEnabled,
 				"autoCaptureQueryID":   browserOutcome.AutoCaptureQueryID,
@@ -313,7 +359,9 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 				"engineStats":          resp.EngineStats,
 				"errors":               combinedErrors,
 				"browserQuery":         browserOutcome.Enabled,
+				"browserAction":        browserAction,
 				"browserOpenedEngines": browserOutcome.OpenedEngines,
+				"browserCollectedData": browserOutcome.CollectedResults,
 				"browserQueryErrors":   browserOutcome.Errors,
 				"autoCapture":          browserOutcome.AutoCaptureEnabled,
 				"autoCaptureQueryID":   browserOutcome.AutoCaptureQueryID,
@@ -354,6 +402,9 @@ func (s *Server) updateQueryProgress(queryID string, progress float64) {
 
 	s.queryMutex.Lock()
 	if status, exists := s.queryStatus[queryID]; exists {
+		if progress < status.Progress {
+			progress = status.Progress
+		}
 		status.Progress = progress
 		s.queryStatus[queryID] = status
 		shouldBroadcast = true

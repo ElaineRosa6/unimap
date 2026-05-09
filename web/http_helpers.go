@@ -128,9 +128,13 @@ func originAllowedByList(origin string, allowedOrigins []string) bool {
 
 func isOriginAllowed(origin, host string, allowedOrigins []string) bool {
 	if strings.TrimSpace(origin) == "" {
-		return true
+		return false
 	}
 	if isSameHostURL(origin, host) {
+		return true
+	}
+	// Allow Chrome extension origins (chrome-extension://<id>)
+	if strings.HasPrefix(origin, "chrome-extension://") {
 		return true
 	}
 	return originAllowedByList(origin, allowedOrigins)
@@ -244,15 +248,25 @@ func corsMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeade
 	headerHeader := strings.Join(allowedHeaders, ", ")
 	exposedHeader := strings.Join(exposedHeaders, ", ")
 
-	return func(next http.Handler) http.Handler {
+		return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Bridge routes have their own auth (loopback + bearer token),
+			// skip CORS restrictions for them (needed for browser extensions).
+			if isScreenshotBridgePath(r.URL.Path) {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Access-Control-Allow-Methods", methodHeader)
+				w.Header().Set("Access-Control-Allow-Headers", headerHeader)
+				if r.Method == http.MethodOptions {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			origin := strings.TrimSpace(r.Header.Get("Origin"))
 			if origin != "" && isOriginAllowed(origin, r.Host, allowedOrigins) {
-				if originAllowedByList(origin, allowedOrigins) {
-					w.Header().Set("Access-Control-Allow-Origin", origin)
-				} else {
-					w.Header().Set("Access-Control-Allow-Origin", origin)
-				}
+				w.Header().Set("Access-Control-Allow-Origin", origin)
 				if allowCredentials {
 					w.Header().Set("Access-Control-Allow-Credentials", "true")
 				}
@@ -267,8 +281,14 @@ func corsMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeade
 					writeAPIError(w, http.StatusForbidden, "forbidden_origin", "origin not allowed", nil)
 					return
 				}
+				// Ensure CORS headers are set on the preflight response itself
+				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Methods", methodHeader)
 				w.Header().Set("Access-Control-Allow-Headers", headerHeader)
+				if allowCredentials {
+					w.Header().Set("Access-Control-Allow-Credentials", "true")
+				}
+				w.Header().Set("Vary", "Origin")
 				if maxAge > 0 {
 					w.Header().Set("Access-Control-Max-Age", strconv.Itoa(maxAge))
 				}

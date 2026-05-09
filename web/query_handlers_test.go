@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/unimap-icp-hunter/project/internal/adapter"
+	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap-icp-hunter/project/internal/screenshot"
 	"github.com/unimap-icp-hunter/project/internal/service"
 )
 
@@ -43,7 +45,7 @@ func TestHandleAPIQuery_EmptyQuery_Returns400(t *testing.T) {
 func TestHandleAPIQuery_NoEngines_Returns503(t *testing.T) {
 	orch := adapter.NewEngineOrchestrator()
 	s := &Server{
-		queryApp:   service.NewQueryAppService(nil, orch),
+		queryApp:     service.NewQueryAppService(nil, orch),
 		orchestrator: orch,
 	}
 	rec := httptest.NewRecorder()
@@ -222,7 +224,12 @@ func TestBuildQueryAPIPayload(t *testing.T) {
 		nil,
 		browserQueryOutcome{
 			Enabled: true,
+			CollectedResults: []screenshot.CollectResult{{
+				Engine: "quake",
+				Query:  "test",
+			}},
 		},
+		"capture",
 	)
 
 	if payload["query"] != "test" {
@@ -230,6 +237,13 @@ func TestBuildQueryAPIPayload(t *testing.T) {
 	}
 	if payload["browserQuery"] != true {
 		t.Fatalf("expected browserQuery true, got %v", payload["browserQuery"])
+	}
+	collected, ok := payload["browserCollectedData"].([]screenshot.CollectResult)
+	if !ok {
+		t.Fatal("expected browserCollectedData to be []screenshot.CollectResult")
+	}
+	if len(collected) != 1 || collected[0].Engine != "quake" {
+		t.Fatalf("unexpected browserCollectedData: %#v", collected)
 	}
 }
 
@@ -241,6 +255,7 @@ func TestBuildQueryAPIPayload_CombinesErrors(t *testing.T) {
 		browserQueryOutcome{
 			Errors: []string{"browser error"},
 		},
+		"",
 		"explicit error",
 	)
 
@@ -250,6 +265,45 @@ func TestBuildQueryAPIPayload_CombinesErrors(t *testing.T) {
 	}
 	if len(errors) < 2 {
 		t.Fatalf("expected at least 2 errors, got %d", len(errors))
+	}
+}
+
+func TestBuildQueryAPIPayload_MergesBrowserCollectedAssets(t *testing.T) {
+	payload := buildQueryAPIPayload(
+		"test",
+		[]string{"fofa"},
+		&service.QueryResponse{
+			Assets:      []model.UnifiedAsset{{URL: "https://api.example.test", Source: "api"}},
+			TotalCount:  1,
+			EngineStats: nil,
+		},
+		browserQueryOutcome{
+			Enabled: true,
+			CollectedResults: []screenshot.CollectResult{{
+				Engine: "fofa",
+				Assets: []model.UnifiedAsset{{URL: "https://browser.example.test", Source: "browser"}},
+				Total:  1,
+			}},
+		},
+		"collect",
+	)
+
+	assets, ok := payload["assets"].([]model.UnifiedAsset)
+	if !ok {
+		t.Fatal("expected assets to be []model.UnifiedAsset")
+	}
+	if len(assets) != 2 {
+		t.Fatalf("expected 2 merged assets, got %#v", assets)
+	}
+	if payload["totalCount"] != 2 {
+		t.Fatalf("expected totalCount 2, got %v", payload["totalCount"])
+	}
+	engineStats, ok := payload["engineStats"].(map[string]int)
+	if !ok {
+		t.Fatal("expected engineStats to be map[string]int")
+	}
+	if engineStats["fofa"] != 1 {
+		t.Fatalf("expected fofa browser stat 1, got %#v", engineStats)
 	}
 }
 
@@ -369,7 +423,7 @@ func TestHandleAPIQuery_WhitespaceQuery_Returns400(t *testing.T) {
 func TestHandleAPIQuery_PageSizeParsing(t *testing.T) {
 	orch := adapter.NewEngineOrchestrator()
 	s := &Server{
-		queryApp:   service.NewQueryAppService(nil, orch),
+		queryApp:     service.NewQueryAppService(nil, orch),
 		orchestrator: orch,
 	}
 	// 有效 query 但无引擎 -> 503

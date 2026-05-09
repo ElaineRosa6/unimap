@@ -160,6 +160,59 @@ func TestCORSMiddleware_ExposedHeaders(t *testing.T) {
 	}
 }
 
+func TestCORSMiddleware_BridgePathBypass(t *testing.T) {
+	// Restrictive origins — only localhost allowed
+	mw := corsMiddleware([]string{"http://localhost:8448"}, nil, nil, nil, false, 0)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Preflight from chrome-extension should be allowed on bridge paths
+	req := httptest.NewRequest(http.MethodOptions, "/api/screenshot/bridge/pair", nil)
+	req.Header.Set("Origin", "chrome-extension://abc123")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "Content-Type")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for bridge preflight, got %d", rec.Code)
+	}
+	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatalf("expected * origin for bridge, got %q", rec.Header().Get("Access-Control-Allow-Origin"))
+	}
+
+	// Non-bridge path with non-matching origin should be denied
+	// Note: isOriginAllowed also allows chrome-extension:// origin, so test with a different origin
+	req2 := httptest.NewRequest(http.MethodOptions, "/api/some/other/path", nil)
+	req2.Header.Set("Origin", "https://evil.com")
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-bridge preflight with disallowed origin, got %d", rec2.Code)
+	}
+}
+
+func TestCORSMiddleware_BridgeNormalRequest(t *testing.T) {
+	mw := corsMiddleware([]string{"http://localhost:8448"}, nil, nil, nil, false, 0)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/tasks/next", nil)
+	req.Header.Set("Origin", "chrome-extension://abc123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for bridge GET, got %d and body: %s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatalf("expected * origin for bridge, got %q", rec.Header().Get("Access-Control-Allow-Origin"))
+	}
+}
+
 func TestDecodeJSONBody_TooLarge(t *testing.T) {
 	// Verify that a very large body results in an error (may be 400 or 413
 	// depending on how the decoder encounters the limit)

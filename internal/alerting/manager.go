@@ -15,6 +15,9 @@ type Manager struct {
 	config       AlertConfig
 	alertRecords map[string]*AlertRecord
 	mutex        sync.RWMutex
+	wg           sync.WaitGroup
+	stopCh       chan struct{}
+	closeOnce    sync.Once
 }
 
 // NewManager 创建告警管理器
@@ -22,6 +25,7 @@ func NewManager() *Manager {
 	return &Manager{
 		channels:     make([]AlertChannel, 0),
 		alertRecords: make(map[string]*AlertRecord),
+		stopCh:       make(chan struct{}),
 		config: AlertConfig{
 			Thresholds: []AlertThreshold{
 				{Type: "tamper_segments", Value: 1, WindowSize: 300, Enabled: true},
@@ -106,7 +110,9 @@ func (m *Manager) SendAlert(level AlertLevel, alertType AlertType, title, messag
 			continue
 		}
 
+		m.wg.Add(1)
 		go func(ch AlertChannel) {
+			defer m.wg.Done()
 			if err := ch.Send(alert); err != nil {
 				logger.Errorf("Failed to send alert to channel %s: %v", ch.Name(), err)
 			}
@@ -136,14 +142,20 @@ func (m *Manager) SendCritical(alertType AlertType, title, message string, detai
 
 // Close 关闭所有告警渠道
 func (m *Manager) Close() {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
+	m.closeOnce.Do(func() {
+		close(m.stopCh)
+	})
 
+	m.mutex.Lock()
 	for _, channel := range m.channels {
 		if err := channel.Close(); err != nil {
 			logger.Errorf("Failed to close alert channel %s: %v", channel.Name(), err)
 		}
 	}
+	m.mutex.Unlock()
+
+	// Wait for in-flight alert goroutines to complete
+	m.wg.Wait()
 }
 
 // shouldSendAlert 检查是否应该发送告警

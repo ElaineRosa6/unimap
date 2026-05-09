@@ -2,6 +2,40 @@
 
 ---
 
+## [2026-05-07] 引擎加载问题修复 — 空间搜索引擎默认启用
+
+> **变更类型**: Bug 修复
+> **涉及模块**: config、cmd/unimap-web
+
+### 问题描述
+当用户输入查询语句执行查询时，由于未加载空间引擎，无法执行查询。
+
+### 问题根源
+在 `internal/config/config.go` 中的 `applyDefaults` 函数未设置引擎的 `Enabled` 字段默认值，导致所有引擎默认都是禁用状态。
+
+### 修复方案
+修改 `internal/config/config.go` 中的 `applyDefaults` 函数：
+- **默认启用所有搜索引擎** — Quake、ZoomEye、Hunter、FOFA、Shodan
+- **设置 FOFA 为 Web 模式为默认** — `UseWebAPI = true`，即使没有 API Key 也能使用 Web 模式
+- **保持验证函数的完整性** — 非 Web 模式下仍需验证 API Key
+
+### 修改的关键代码
+```go
+// 默认启用所有引擎
+config.Engines.Quake.Enabled = true
+config.Engines.Zoomeye.Enabled = true
+config.Engines.Hunter.Enabled = true
+config.Engines.Fofa.Enabled = true
+config.Engines.Shodan.Enabled = true
+config.Engines.Fofa.UseWebAPI = true
+```
+
+### 验证结果
+- `go build ./...` — 构建成功
+- `go test -v ./internal/config/...` — 所有测试通过（0 failures）
+
+---
+
 ## [2026-04-29] 第三轮安全修复 — 24 项 Code Review 剩余问题修复
 
 > **分支**: `release/major-upgrade-vNEXT`

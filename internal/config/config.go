@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 )
 
@@ -77,19 +78,19 @@ type Config struct {
 
 	// 截图配置
 	Screenshot struct {
-		Enabled              bool   `yaml:"enabled"`
-		Engine               string `yaml:"engine"`                // legacy: "cdp" or "extension"
-		Mode                 string `yaml:"mode"`                  // new: "auto"|"cdp"|"extension"
-		Priority             string `yaml:"priority"`              // new: "cdp"|"extension" (for auto mode)
-		Fallback             *bool  `yaml:"fallback"`              // new: explicit fallback toggle
-		BaseDir              string `yaml:"base_dir"`
-		ChromePath           string `yaml:"chrome_path"`
-		ProxyServer          string `yaml:"proxy_server"`
-		ChromeUserDataDir    string `yaml:"chrome_user_data_dir"`
-		ChromeProfileDir     string `yaml:"chrome_profile_dir"`
-		ChromeRemoteDebugURL    string `yaml:"chrome_remote_debug_url"`
+		Enabled                  bool   `yaml:"enabled"`
+		Engine                   string `yaml:"engine"`   // legacy: "cdp" or "extension"
+		Mode                     string `yaml:"mode"`     // new: "auto"|"cdp"|"extension"
+		Priority                 string `yaml:"priority"` // new: "cdp"|"extension" (for auto mode)
+		Fallback                 *bool  `yaml:"fallback"` // new: explicit fallback toggle
+		BaseDir                  string `yaml:"base_dir"`
+		ChromePath               string `yaml:"chrome_path"`
+		ProxyServer              string `yaml:"proxy_server"`
+		ChromeUserDataDir        string `yaml:"chrome_user_data_dir"`
+		ChromeProfileDir         string `yaml:"chrome_profile_dir"`
+		ChromeRemoteDebugURL     string `yaml:"chrome_remote_debug_url"`
 		ChromeRemoteDebugAddress string `yaml:"chrome_remote_debug_address"`
-		Extension            struct {
+		Extension                struct {
 			Enabled                      bool   `yaml:"enabled"`
 			ListenAddr                   string `yaml:"listen_addr"`
 			PairingRequired              bool   `yaml:"pairing_required"`
@@ -118,7 +119,7 @@ type Config struct {
 	Web struct {
 		Port        int    `yaml:"port"`         // 监听端口
 		BindAddress string `yaml:"bind_address"` // 监听地址
-		CORS struct {
+		CORS        struct {
 			AllowedOrigins   []string `yaml:"allowed_origins"`
 			AllowedMethods   []string `yaml:"allowed_methods"`
 			AllowedHeaders   []string `yaml:"allowed_headers"`
@@ -136,9 +137,11 @@ type Config struct {
 			MaxMultipartMemory int64 `yaml:"max_multipart_memory_bytes"`
 		} `yaml:"request_limits"`
 		Auth struct {
-			Enabled     bool   `yaml:"enabled"`      // 是否启用 Web 鉴权
-			AdminToken  string `yaml:"admin_token"`  // 管理端点 token
-			APIKeyStore string `yaml:"api_key_store"` // API Key 文件路径
+			Enabled      bool   `yaml:"enabled"`       // 是否启用 Web 鉴权
+			AdminToken   string `yaml:"admin_token"`   // 管理端点 token
+			Username     string `yaml:"username"`      // 登录用户名
+			PasswordHash string `yaml:"password_hash"` // 登录密码 bcrypt 哈希
+			APIKeyStore  string `yaml:"api_key_store"` // API Key 文件路径
 		} `yaml:"auth"`
 	} `yaml:"web"`
 
@@ -175,18 +178,18 @@ type Config struct {
 		} `yaml:"webhook"`
 		ErrorAlerting struct {
 			Enabled       bool `yaml:"enabled"`
-			Threshold     int  `yaml:"threshold"`     // 窗口内 ERROR 数量阈值
+			Threshold     int  `yaml:"threshold"`      // 窗口内 ERROR 数量阈值
 			WindowSeconds int  `yaml:"window_seconds"` // 滑动窗口大小（秒）
 		} `yaml:"error_alerting"`
 	} `yaml:"alerting"`
 
 	// Backup 数据备份配置
 	Backup struct {
-		Enabled    bool   `yaml:"enabled"`
-		OutputDir  string `yaml:"output_dir"`  // 备份输出目录
-		Prefix     string `yaml:"prefix"`      // 备份文件名前缀
-		MaxBackups int    `yaml:"max_backups"` // 最大保留备份数，0=不限制
-		Sources    []string `yaml:"sources"`   // 要备份的目录/文件列表
+		Enabled    bool     `yaml:"enabled"`
+		OutputDir  string   `yaml:"output_dir"`  // 备份输出目录
+		Prefix     string   `yaml:"prefix"`      // 备份文件名前缀
+		MaxBackups int      `yaml:"max_backups"` // 最大保留备份数，0=不限制
+		Sources    []string `yaml:"sources"`     // 要备份的目录/文件列表
 	} `yaml:"backup"`
 
 	// Scheduler 定时任务配置
@@ -467,6 +470,14 @@ func (m *Manager) GetConfig() *Config {
 
 // applyDefaults 应用默认值
 func (m *Manager) applyDefaults(config *Config) {
+	// 默认启用所有引擎
+	config.Engines.Quake.Enabled = true
+	config.Engines.Zoomeye.Enabled = true
+	config.Engines.Hunter.Enabled = true
+	config.Engines.Fofa.Enabled = true
+	config.Engines.Shodan.Enabled = true
+	config.Engines.Fofa.UseWebAPI = true
+
 	// 默认引擎配置
 	if config.Engines.Quake.BaseURL == "" {
 		config.Engines.Quake.BaseURL = "https://quake.360.net/api"
@@ -706,6 +717,21 @@ func (m *Manager) applyDefaults(config *Config) {
 		}
 	} else if !config.Web.Auth.Enabled {
 		config.Web.Auth.Enabled = true
+	}
+
+	// 默认登录凭据：如果未配置 username/password_hash，生成默认 admin/admin
+	if strings.TrimSpace(config.Web.Auth.Username) == "" {
+		config.Web.Auth.Username = "admin"
+	}
+	if strings.TrimSpace(config.Web.Auth.PasswordHash) == "" {
+		hash, err := HashPassword("admin")
+		if err != nil {
+			fmt.Printf("[config] WARNING: failed to hash default password: %v\n", err)
+		} else {
+			config.Web.Auth.PasswordHash = hash
+			fmt.Printf("[config] Generated default login credentials: admin/admin\n")
+			fmt.Printf("[config] CHANGE THESE CREDENTIALS: set 'username' and 'password_hash' in your config file.\n")
+		}
 	}
 
 	// 默认定时任务配置
@@ -1162,4 +1188,18 @@ func generateSecureToken(length int) string {
 		token[i] = charset[n.Int64()]
 	}
 	return string(token)
+}
+
+// HashPassword hashes a password using bcrypt with default cost.
+func HashPassword(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("hash password: %w", err)
+	}
+	return string(hash), nil
+}
+
+// CheckPassword compares a password against a bcrypt hash.
+func CheckPassword(password, hash string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }

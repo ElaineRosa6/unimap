@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -15,6 +16,53 @@ import (
 
 // 预编译正则表达式，避免每次调用时重新编译
 var reURLPattern = regexp.MustCompile(`^(https?://)?([\w.-]+)(:\d+)?(/.*)?$`)
+
+// allowedUploadMIME maps file extensions to their expected MIME types
+var allowedUploadMIME = map[string][]string{
+	".xlsx": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/zip", "application/octet-stream"},
+	".xls":  {"application/vnd.ms-excel", "application/octet-stream"},
+	".csv":  {"text/csv", "application/csv", "text/plain", "text/comma-separated-values", "application/octet-stream"},
+	".txt":  {"text/plain", "application/octet-stream"},
+}
+
+// sanitizeFilename removes path components and dangerous characters from filenames
+func sanitizeFilename(name string) string {
+	// Strip directory components
+	name = filepath.Base(name)
+	// Replace path separators and null bytes
+	name = strings.ReplaceAll(name, "\x00", "")
+	// Only allow: alphanumeric, dots, hyphens, underscores
+	sanitized := strings.Builder{}
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_' {
+			sanitized.WriteRune(r)
+		}
+	}
+	return sanitized.String()
+}
+
+// validateUploadMIME checks the file's Content-Type against allowed types for the extension
+func validateUploadMIME(filename string, headerContentType string) error {
+	ext := strings.ToLower(filepath.Ext(filename))
+	allowed, ok := allowedUploadMIME[ext]
+	if !ok {
+		return fmt.Errorf("unsupported file format: %s", ext)
+	}
+	if headerContentType == "" {
+		return nil // No MIME header provided, skip validation
+	}
+	ct := strings.ToLower(strings.TrimSpace(headerContentType))
+	// Strip parameters (e.g. "text/csv; charset=utf-8" → "text/csv")
+	if idx := strings.IndexByte(ct, ';'); idx != -1 {
+		ct = ct[:idx]
+	}
+	for _, a := range allowed {
+		if ct == a {
+			return nil
+		}
+	}
+	return fmt.Errorf("mime type mismatch: got %q, expected one of %v for extension %s", ct, allowed, ext)
+}
 
 // handleScreenshot 处理截图请求
 func (s *Server) handleMonitorPage(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +97,18 @@ func (s *Server) handleImportURLs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	fileName := strings.ToLower(header.Filename)
+	safeName := sanitizeFilename(header.Filename)
+	if safeName == "" {
+		writeAPIError(w, http.StatusBadRequest, "invalid_filename", "filename contains no valid characters", nil)
+		return
+	}
+
+	if err := validateUploadMIME(safeName, header.Header.Get("Content-Type")); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "mime_mismatch", err.Error(), nil)
+		return
+	}
+
+	fileName := strings.ToLower(safeName)
 	var urls []string
 
 	if strings.HasSuffix(fileName, ".xlsx") || strings.HasSuffix(fileName, ".xls") {

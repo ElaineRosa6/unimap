@@ -1,19 +1,5 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>查询结果 - UniMap</title>
-	<link rel="stylesheet" href="/static/css/style.css?v={{.staticVersion}}">
-</head>
-<body>
-	<header>
-		<h1>UniMap - 多引擎网络资产查询</h1>
-		<nav>
-			<a href="/">首页</a>
-			<a href="/quota">查看配额</a>
-		</nav>
-	</header>
+{{template "head-plain" (dict "Title" "查询结果 - UniMap" "staticVersion" .staticVersion)}}
+{{template "header" (dict "ActiveNav" "index" "staticVersion" .staticVersion)}}
 
 	<main>
 		<section class="query-info">
@@ -171,12 +157,6 @@
 				</div>
 			</div>
 		</div>
-	</main>
+</main>
 
-	<footer>
-		<p>&copy; 2026 UniMap - 多引擎网络资产查询系统</p>
-	</footer>
-
-	<script src="/static/js/main.js?v={{.staticVersion}}"></script>
-</body>
-</html>
+{{template "footer" .}}

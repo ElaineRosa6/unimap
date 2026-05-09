@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"text/template"
+	"html/template"
 )
 
 func TestRenderTemplate_TemplateNotFound(t *testing.T) {

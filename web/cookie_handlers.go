@@ -293,6 +293,8 @@ func (s *Server) verifyEngineSession(ctx context.Context, engineMode, engine, qu
 			URL:          searchURL,
 			BatchID:      "cookie_verify",
 			WaitStrategy: "load",
+			Action:       "collect",
+			Timeout:      20 * time.Second,
 		})
 		if err != nil {
 			return false, "", "extension_session_required", err
@@ -307,7 +309,13 @@ func (s *Server) verifyEngineSession(ctx context.Context, engineMode, engine, qu
 			return false, "", "extension_session_required", fmt.Errorf("extension verification failed")
 		}
 
-		return true, "extension_session_ok", "ok", nil
+		if loginRequiredFromBridgeResult(result) {
+			return false, titleFromBridgeResult(result), "login_required", nil
+		}
+		if hasCollectedAssets(result) {
+			return true, titleFromBridgeResult(result), "ok", nil
+		}
+		return false, titleFromBridgeResult(result), "no_results_or_login_required", nil
 	}
 
 	if s.screenshotMgr == nil {
@@ -315,6 +323,43 @@ func (s *Server) verifyEngineSession(ctx context.Context, engineMode, engine, qu
 	}
 	cookies := s.screenshotMgr.GetCookies(engine)
 	return s.screenshotMgr.ValidateSearchEngineResult(ctx, engine, query, cookies)
+}
+
+func titleFromBridgeResult(result screenshot.BridgeResult) string {
+	if title, ok := result.StructuredCollectedData["title"].(string); ok {
+		return strings.TrimSpace(title)
+	}
+	return strings.TrimSpace(result.CollectedData)
+}
+
+func hasCollectedAssets(result screenshot.BridgeResult) bool {
+	items, ok := result.StructuredCollectedData["items"].([]interface{})
+	if ok && len(items) > 0 {
+		return true
+	}
+	if total, ok := result.StructuredCollectedData["total"].(float64); ok && total > 0 {
+		return true
+	}
+	return false
+}
+
+func loginRequiredFromBridgeResult(result screenshot.BridgeResult) bool {
+	data := result.StructuredCollectedData
+	if required, ok := data["login_required"].(bool); ok && required {
+		return true
+	}
+	textParts := []string{titleFromBridgeResult(result), strings.TrimSpace(result.Error), strings.TrimSpace(result.ErrorCode)}
+	if v, ok := data["extraction_error"].(string); ok {
+		textParts = append(textParts, v)
+	}
+	joined := strings.ToLower(strings.Join(textParts, " "))
+	markers := []string{"login", "sign in", "signin", "登录", "登陆", "请先登录", "unauthorized", "未登录"}
+	for _, marker := range markers {
+		if strings.Contains(joined, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func cookiesToHeader(cookies []config.Cookie) string {
@@ -353,11 +398,20 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 		query = `protocol="http"`
 	}
 
-	// Detect CDP connection status
-	cdpConnected := s.screenshotMgr != nil && s.screenshotMgr.RemoteDebugURL() != ""
+	// Detect CDP connection status — actual HTTP probe to /json/version
+	cdpConnected := false
+	if s.screenshotMgr != nil && s.screenshotMgr.RemoteDebugURL() != "" {
+		baseURL := s.resolveCDPURL()
+		if online, _, _ := s.checkCDPStatus(r.Context(), baseURL); online {
+			cdpConnected = true
+		}
+	}
 
-	// Detect Extension pairing status (non-mock)
-	extPaired := s.bridge != nil && s.bridge.Service != nil
+	// Detect Extension pairing status — check for live clients (seen in last 15s)
+	extPaired := false
+	if s.bridge != nil && s.bridge.Service != nil {
+		extPaired = s.activeBridgeLiveTokens() > 0
+	}
 
 	// Check per-engine login status
 	engines := []string{"fofa", "hunter", "zoomeye", "quake"}
@@ -407,54 +461,27 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 			results = append(results, item)
 		}
 	} else if extPaired {
-		// Extension paired → use bridge to open each engine page
+		// Extension paired means the bridge is reachable, not that every engine is logged in.
+		// Verify each engine through a collect task so the UI can distinguish pairing from session state.
 		for _, engine := range engines {
-			searchURL := ""
-			if s.screenshotMgr != nil {
-				searchURL = s.screenshotMgr.BuildSearchEngineURL(engine, query)
-			}
 			loginURL := ""
 			if s.screenshotMgr != nil {
 				loginURL = s.screenshotMgr.EngineLoginURL(engine)
 			}
-
+			checkCtx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+			ok, title, reason, err := s.verifyEngineSession(checkCtx, "extension", engine, query)
+			cancel()
 			item := map[string]interface{}{
-				"engine":     engine,
+				"engine":        engine,
+				"logged_in":     ok,
+				"reason":        reason,
+				"title":         title,
+				"login_url":     loginURL,
 				"cdp_connected": cdpConnected,
-				"ext_paired": extPaired,
-				"login_url":  loginURL,
+				"ext_paired":    extPaired,
 			}
-
-			if searchURL != "" {
-				ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-				result, err := s.bridge.Service.Submit(ctx, screenshot.BridgeTask{
-					RequestID:    fmt.Sprintf("login_check_%s_%d", engine, time.Now().UnixNano()),
-					URL:          searchURL,
-					BatchID:      "login_status",
-					WaitStrategy: "load",
-				})
-				cancel()
-
-				if err != nil {
-					item["logged_in"] = false
-					item["reason"] = "bridge_failed"
-					item["error"] = err.Error()
-				} else if result.Success {
-					item["logged_in"] = true
-					item["reason"] = "browser_session"
-					item["title"] = result.ImagePath
-				} else {
-					errMsg := strings.TrimSpace(result.Error)
-					if errMsg == "" {
-						errMsg = strings.TrimSpace(result.ErrorCode)
-					}
-					item["logged_in"] = false
-					item["reason"] = "bridge_check_failed"
-					item["error"] = errMsg
-				}
-			} else {
-				item["logged_in"] = false
-				item["reason"] = "unsupported_engine"
+			if err != nil {
+				item["error"] = err.Error()
 			}
 			results = append(results, item)
 		}
@@ -483,12 +510,12 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 					reason = "cookie_configured"
 				}
 				results = append(results, map[string]interface{}{
-					"engine":     engine,
-					"logged_in":  false,
-					"reason":     reason,
-					"login_url":  loginURL,
+					"engine":        engine,
+					"logged_in":     false,
+					"reason":        reason,
+					"login_url":     loginURL,
 					"cdp_connected": cdpConnected,
-					"ext_paired": extPaired,
+					"ext_paired":    extPaired,
 				})
 			}
 			s.configMutex.Unlock()
