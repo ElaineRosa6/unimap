@@ -36,6 +36,15 @@
 - **2026-05-07 修复进展**: 已修复 13 项（C-01/C-02/C-03/C-04/H-01/H-04/M-02/M-03/M-06/M-08/M-09/L-01 + H-05 已默认开启），全部通过 `go build` 和 `go test -race`
 - **仍剩余 5 项未修复**: H-02(WebSocket token 已修复但需验证)、H-05(rate_limit 配置已默认true无需代码改动)、M-04(分布式节点token)、M-05(Bridge签名)、L-02(CORS重复)、L-03(nonce fallback)、L-05(强类型)
 
+### Extension 模式问题清单 (2026-05-09)
+
+- 4 个问题记录于 `docs/ISSUES_EXTENSION_MODE_2026-05-09.md`
+- **P0**: UQL 未翻译直接发送到搜索引擎（BuildSearchEngineURL 绕过 Translate）
+- **P0**: 结构化数据无法返回（UQL 问题连锁 + CDP 新浏览器实例 + Bridge 超时）
+- **P1**: 查询进度卡在 0%（handleWebSocketQuery 从未调用 updateQueryProgress）
+- **P1**: 登录状态同步不准确（扩展配对后所有引擎直接报 logged_in=true）
+- 修复依赖：问题1 → 问题3，问题2 可独立修复，问题4 需扩展端配合
+
 ### 遗留低优先级事项
 
 | # | 项目 | 严重度 | 说明 |
@@ -44,3 +53,25 @@
 | 2 | 测试覆盖率提升 | 中 | 当前65.1%，Phase 1已超额完成（目标55%），待继续Phase 2/3达到80%标准 |
 | 3 | 数据竞争修复 | ✅ 已完成 | CircuitBreaker添加mutex保护，测试atomic计数器 |
 | 4 | Phase 1 剩余模块 | 低 | adapter/screenshot/service 已有基础测试，mock层待完善 |
+
+### 扩展结构化数据提取升级 (2026-05-09)
+
+- **commit**: `4584e9d` — feat(extension): upgrade capture.js with card-based selectors and extraction fallbacks
+- **核心问题**: FOFA 已从 table 布局迁移到卡片布局，原有选择器全部失效
+- **已完成**:
+  - FOFA 选择器从 4 个扩展到 12 个（卡片+混合+表格回退）
+  - Hunter/ZoomEye/Quake 增加 .el-table 和通用 div 回退
+  - 新增 cardBasedExtraction() 兜底提取（IP 模式匹配 + 链接分组）
+  - 新增 href 模式匹配：`a[href*='qbase64=aXA9']` 等用于可靠识别 IP/端口/协议
+  - 新增 4 个测试工具：test_extract_console.js（控制台）、test_extraction_node.js（Node.js）、dom_inspector.js（DOM分析）、test_collect.js（已同步更新）
+- **验证结果**:
+  - Chrome MCP 连接正常
+  - FOFA 搜索结果页正常显示（`country="CN" && port="80"` 返回 65,947,250 条匹配）
+  - Go 后端构建通过，`go test -race ./...` 全通过
+  - Bridge 配对成功（获取 token）
+  - 所有 JS 文件通过 `node -c` 语法检查
+- **待验证（明天继续）**:
+  - 在 Chrome 中加载扩展（developer mode load unpacked）
+  - 在各搜索引擎已登录的搜索结果页运行 test_extract_console.js
+  - 确认 items_count > 0，或根据 debug 输出调整选择器
+  - Bridge 端到端 collect 模式测试（Go 下发任务 → 扩展执行 → 返回结构化数据）

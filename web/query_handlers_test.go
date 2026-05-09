@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/unimap-icp-hunter/project/internal/adapter"
+	"github.com/unimap-icp-hunter/project/internal/model"
 	"github.com/unimap-icp-hunter/project/internal/screenshot"
 	"github.com/unimap-icp-hunter/project/internal/service"
 )
@@ -264,6 +265,49 @@ func TestBuildQueryAPIPayload_CombinesErrors(t *testing.T) {
 	}
 	if len(errors) < 2 {
 		t.Fatalf("expected at least 2 errors, got %d", len(errors))
+	}
+}
+
+func TestBuildQueryAPIPayload_MergesCollectedAssets(t *testing.T) {
+	resp := &service.QueryResponse{
+		Assets:     []model.UnifiedAsset{{IP: "1.1.1.1"}},
+		TotalCount: 1,
+		EngineStats: map[string]int{"fofa": 1},
+	}
+	browserOutcome := browserQueryOutcome{
+		Enabled: true,
+		CollectedResults: []screenshot.CollectResult{
+			{
+				Engine: "hunter",
+				Assets: []model.UnifiedAsset{{IP: "2.2.2.2"}, {IP: "3.3.3.3"}},
+				Total:  2,
+			},
+			{
+				Engine: "quake",
+				Assets: []model.UnifiedAsset{{IP: "4.4.4.4"}},
+			},
+		},
+	}
+
+	payload := buildQueryAPIPayload("test", []string{"fofa", "hunter", "quake"}, resp, browserOutcome, "collect")
+
+	assets := payload["assets"].([]model.UnifiedAsset)
+	if len(assets) != 4 {
+		t.Fatalf("expected 4 assets (1 query + 3 collected), got %d", len(assets))
+	}
+	total := payload["totalCount"].(int)
+	if total != 4 {
+		t.Fatalf("expected totalCount 4, got %d", total)
+	}
+	stats := payload["engineStats"].(map[string]int)
+	if stats["fofa"] != 1 {
+		t.Errorf("expected fofa=1, got %d", stats["fofa"])
+	}
+	if stats["hunter"] != 2 {
+		t.Errorf("expected hunter=2, got %d", stats["hunter"])
+	}
+	if stats["quake"] != 1 {
+		t.Errorf("expected quake=1, got %d", stats["quake"])
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 	"github.com/unimap-icp-hunter/project/internal/service"
 )
 
-func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, action string, queryID string) <-chan browserQueryOutcome {
+func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, action string, queryID string, progressCallback func(float64)) <-chan browserQueryOutcome {
 	autoCaptureEnabled := false
 	if s.config != nil {
 		autoCaptureEnabled = s.config.Screenshot.AutoCapture.Enabled && s.config.Screenshot.AutoCapture.CaptureSearchResults
@@ -32,6 +32,7 @@ func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines
 		s.screenshotMgr,
 		s.screenshotPathToPreviewURL,
 		s.screenshotRouter,
+		progressCallback,
 	)
 }
 
@@ -50,7 +51,20 @@ func buildQueryAPIPayload(query string, engines []string, resp *service.QueryRes
 	if resp != nil {
 		assets = resp.Assets
 		totalCount = resp.TotalCount
-		engineStats = resp.EngineStats
+		if resp.EngineStats != nil {
+			engineStats = resp.EngineStats
+		}
+	}
+	for _, collected := range browserOutcome.CollectedResults {
+		assets = append(assets, collected.Assets...)
+		if collected.Total > 0 {
+			totalCount += collected.Total
+		} else {
+			totalCount += len(collected.Assets)
+		}
+		if len(collected.Assets) > 0 {
+			engineStats[collected.Engine] += len(collected.Assets)
+		}
 	}
 
 	return map[string]interface{}{
@@ -105,7 +119,7 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 
 	browserQueryID := fmt.Sprintf("query_%d", time.Now().UnixNano())
 	browserAction := strings.TrimSpace(r.FormValue("browser_action"))
-	browserQueryCh := s.runBrowserQueryAsync(r.Context(), query, engines, parseBoolValue(r.FormValue("browser_query")), browserAction, browserQueryID)
+	browserQueryCh := s.runBrowserQueryAsync(r.Context(), query, engines, parseBoolValue(r.FormValue("browser_query")), browserAction, browserQueryID, nil)
 
 	resp, err := s.queryApp.ExecuteQuery(r.Context(), query, engines, pageSize)
 	var browserOutcome browserQueryOutcome

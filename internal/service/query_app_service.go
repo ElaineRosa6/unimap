@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/unimap-icp-hunter/project/internal/adapter"
+	"github.com/unimap-icp-hunter/project/internal/core/unimap"
 	"github.com/unimap-icp-hunter/project/internal/screenshot"
 )
 
@@ -65,7 +66,30 @@ func (s *QueryAppService) ExecuteQuery(ctx context.Context, query string, engine
 	})
 }
 
+func (s *QueryAppService) translateBrowserQuery(query, engine string) (string, error) {
+	if s.orchestrator == nil {
+		return query, nil
+	}
+	adapter, ok := s.orchestrator.GetAdapter(engine)
+	if !ok {
+		return "", fmt.Errorf("adapter %s not found", engine)
+	}
+	ast, err := unimap.NewUQLParser().Parse(query)
+	if err != nil {
+		return "", fmt.Errorf("parse browser query for %s: %w", engine, err)
+	}
+	translated, err := adapter.Translate(ast)
+	if err != nil {
+		return "", fmt.Errorf("translate browser query for %s: %w", engine, err)
+	}
+	if strings.TrimSpace(translated) == "" {
+		return "", fmt.Errorf("translate browser query for %s returned empty query", engine)
+	}
+	return translated, nil
+}
+
 // RunBrowserQueryAsync 执行可选浏览器联动（打开结果页、截图、采集结构化结果）。
+// progressCallback 在每个引擎阶段推进时被调用（progress 范围 0~100），可为 nil。
 func (s *QueryAppService) RunBrowserQueryAsync(
 	ctx context.Context,
 	query string,
@@ -78,6 +102,7 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 	screenshotMgr *screenshot.Manager,
 	previewURLBuilder func(string) string,
 	browserRouter BrowserRouter,
+	progressCallback func(progress float64),
 ) <-chan BrowserQueryOutcome {
 	if !enabled {
 		return nil
@@ -108,10 +133,21 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 			outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, "auto capture unavailable: screenshot engine not initialized")
 		}
 
-		for _, engine := range engines {
+		engineCount := len(engines)
+		for i, engine := range engines {
+			if progressCallback != nil {
+				progressCallback(5 + 45*float64(i)/float64(engineCount))
+			}
+
+			browserQuery, err := s.translateBrowserQuery(query, engine)
+			if err != nil {
+				outcome.Errors = append(outcome.Errors, err.Error())
+				continue
+			}
+
 			// Open search engine result page (always done for all actions)
 			if browserRouter != nil {
-				if _, err := browserRouter.OpenSearchEngineResult(ctx, engine, query); err != nil {
+				if _, err := browserRouter.OpenSearchEngineResult(ctx, engine, browserQuery); err != nil {
 					outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
 					continue
 				}
@@ -119,7 +155,7 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 			} else if screenshotMgr == nil {
 				outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open skipped for %s: no browser provider", engine))
 				continue
-			} else if _, err := screenshotMgr.OpenSearchEngineResult(ctx, engine, query); err != nil {
+			} else if _, err := screenshotMgr.OpenSearchEngineResult(ctx, engine, browserQuery); err != nil {
 				outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
 				continue
 			} else {
@@ -131,7 +167,7 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 			case "capture":
 				// Open + screenshot (existing behavior)
 				if outcome.AutoCaptureEnabled && captureAvailable {
-					path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, query, outcome.AutoCaptureQueryID)
+					path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, browserQuery, outcome.AutoCaptureQueryID)
 					if err != nil {
 						outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture failed for %s: %v", engine, err))
 						continue
@@ -150,7 +186,7 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 			case "collect":
 				// Open + collect structured DOM data, then capture evidence when enabled.
 				if browserRouter != nil {
-					collected, err := browserRouter.CollectSearchEngineResult(ctx, engine, query, queryID)
+					collected, err := browserRouter.CollectSearchEngineResult(ctx, engine, browserQuery, queryID)
 					if err != nil {
 						outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser collect failed for %s: %v", engine, err))
 					} else {
@@ -158,7 +194,7 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 					}
 				}
 				if outcome.AutoCaptureEnabled && captureAvailable {
-					path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, query, outcome.AutoCaptureQueryID)
+					path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, browserQuery, outcome.AutoCaptureQueryID)
 					if err != nil {
 						outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture failed for %s: %v", engine, err))
 						continue
@@ -176,6 +212,9 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 			}
 		}
 
+		if progressCallback != nil {
+			progressCallback(50)
+		}
 		resultCh <- outcome
 	}()
 
