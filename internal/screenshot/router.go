@@ -519,7 +519,10 @@ func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, 
 	if !result.Success {
 		errMsg := strings.TrimSpace(result.Error)
 		if errMsg == "" {
-			errMsg = strings.TrimSpace(result.ErrorCode)
+			errorCode := strings.TrimSpace(result.ErrorCode)
+			if errorCode != "" {
+				errMsg = fmt.Sprintf("error code: %s", errorCode)
+			}
 		}
 		if errMsg == "" {
 			errMsg = "extension reported open failure"
