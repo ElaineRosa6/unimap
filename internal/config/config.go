@@ -393,6 +393,12 @@ func (m *Manager) Load() error {
 		return fmt.Errorf("invalid config: %w", err)
 	}
 
+	// 验证敏感字段是否包含未解析的环境变量占位符
+	if err := m.validateEnvResolved(&config); err != nil {
+		// 环境变量未设置时拒绝启动
+		return fmt.Errorf("configuration error: %w", err)
+	}
+
 	m.config = &config
 	return nil
 }
@@ -1206,4 +1212,30 @@ func HashPassword(password string) (string, error) {
 // CheckPassword compares a password against a bcrypt hash.
 func CheckPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+}
+
+// validateEnvResolved 检查敏感配置字段是否仍包含未解析的环境变量占位符
+func (m *Manager) validateEnvResolved(config *Config) error {
+	sensitiveFields := []struct {
+		name  string
+		value string
+	}{
+		{"Engines.Quake.APIKey", config.Engines.Quake.APIKey},
+		{"Engines.Zoomeye.APIKey", config.Engines.Zoomeye.APIKey},
+		{"Engines.Hunter.APIKey", config.Engines.Hunter.APIKey},
+		{"Engines.Fofa.APIKey", config.Engines.Fofa.APIKey},
+		{"Engines.Fofa.Email", config.Engines.Fofa.Email},
+		{"Engines.Shodan.APIKey", config.Engines.Shodan.APIKey},
+		{"Web.Auth.AdminToken", config.Web.Auth.AdminToken},
+		{"Web.Auth.PasswordHash", config.Web.Auth.PasswordHash},
+		{"Distributed.AdminToken", config.Distributed.AdminToken},
+	}
+
+	for _, field := range sensitiveFields {
+		if strings.HasPrefix(field.value, "${") && strings.HasSuffix(field.value, "}") {
+			return fmt.Errorf("environment variable %s is not set for configuration field %s", 
+				strings.TrimSuffix(strings.TrimPrefix(field.value, "${"), "}"), field.name)
+		}
+	}
+	return nil
 }
