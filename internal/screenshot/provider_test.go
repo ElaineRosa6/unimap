@@ -282,7 +282,7 @@ func TestExtensionProvider_OpenSearchEngineResult_UsesOpenAction(t *testing.T) {
 	}
 }
 
-func TestExtensionProvider_OpenSearchEngineResult_BridgeFailure(t *testing.T) {
+func TestExtensionProvider_OpenSearchEngineResult_BridgeFailure_ProviderSuite(t *testing.T) {
 	client := &mockBridgeClient{
 		awaitResult: BridgeResult{Success: false, Error: "login required"},
 	}

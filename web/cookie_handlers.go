@@ -461,27 +461,24 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 			results = append(results, item)
 		}
 	} else if extPaired {
-		// Extension paired means the bridge is reachable, not that every engine is logged in.
-		// Verify each engine through a collect task so the UI can distinguish pairing from session state.
+		// Extension paired → bridge is connected but login state is unknown.
+		// Do NOT assume logged_in=true; the extension being paired only means
+		// the bridge has active clients, not that the user has valid sessions
+		// on each search engine. Opening pages for verification would interfere
+		// with the user's browsing session and cause unwanted side effects.
 		for _, engine := range engines {
 			loginURL := ""
 			if s.screenshotMgr != nil {
 				loginURL = s.screenshotMgr.EngineLoginURL(engine)
 			}
-			checkCtx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-			ok, title, reason, err := s.verifyEngineSession(checkCtx, "extension", engine, query)
-			cancel()
 			item := map[string]interface{}{
 				"engine":        engine,
-				"logged_in":     ok,
-				"reason":        reason,
-				"title":         title,
+				"logged_in":     false,
+				"reason":        "extension_paired_session_unverified",
+				"title":         "",
 				"login_url":     loginURL,
 				"cdp_connected": cdpConnected,
 				"ext_paired":    extPaired,
-			}
-			if err != nil {
-				item["error"] = err.Error()
 			}
 			results = append(results, item)
 		}

@@ -322,52 +322,13 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 		}()
 
 		// 发送查询完成消息（发副本，避免边编码边被修改）
-		var resultsPayload map[string]interface{}
-		if queryErr != nil || resp == nil {
-			errMsg := ""
-			if queryErr != nil {
-				errMsg = fmt.Sprintf("Query failed: %v", queryErr)
-			}
-			combinedErrors := appendUniqueStrings([]string{errMsg}, browserOutcome.Errors)
-			combinedErrors = appendUniqueStrings(combinedErrors, browserOutcome.AutoCaptureErrors)
-			resultsPayload = map[string]interface{}{
-				"query":                query,
-				"engines":              engines,
-				"assets":               []model.UnifiedAsset{},
-				"totalCount":           0,
-				"engineStats":          map[string]int{},
-				"errors":               combinedErrors,
-				"error":                errMsg,
-				"browserQuery":         browserOutcome.Enabled,
-				"browserAction":        browserAction,
-				"browserOpenedEngines": browserOutcome.OpenedEngines,
-				"browserCollectedData": browserOutcome.CollectedResults,
-				"browserQueryErrors":   browserOutcome.Errors,
-				"autoCapture":          browserOutcome.AutoCaptureEnabled,
-				"autoCaptureQueryID":   browserOutcome.AutoCaptureQueryID,
-				"autoCapturedPaths":    browserOutcome.AutoCapturedPaths,
-				"autoCaptureErrors":    browserOutcome.AutoCaptureErrors,
-			}
-		} else {
-			combinedErrors := appendUniqueStrings(resp.Errors, browserOutcome.Errors)
-			combinedErrors = appendUniqueStrings(combinedErrors, browserOutcome.AutoCaptureErrors)
-			resultsPayload = map[string]interface{}{
-				"query":                query,
-				"engines":              engines,
-				"assets":               resp.Assets,
-				"totalCount":           resp.TotalCount,
-				"engineStats":          resp.EngineStats,
-				"errors":               combinedErrors,
-				"browserQuery":         browserOutcome.Enabled,
-				"browserAction":        browserAction,
-				"browserOpenedEngines": browserOutcome.OpenedEngines,
-				"browserCollectedData": browserOutcome.CollectedResults,
-				"browserQueryErrors":   browserOutcome.Errors,
-				"autoCapture":          browserOutcome.AutoCaptureEnabled,
-				"autoCaptureQueryID":   browserOutcome.AutoCaptureQueryID,
-				"autoCapturedPaths":    browserOutcome.AutoCapturedPaths,
-				"autoCaptureErrors":    browserOutcome.AutoCaptureErrors,
-			}
+		var errMsg string
+		if queryErr != nil {
+			errMsg = fmt.Sprintf("Query failed: %v", queryErr)
+		}
+		resultsPayload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, errMsg)
+		if errMsg != "" {
+			resultsPayload["error"] = errMsg
 		}
 
 		if err := writeJSON(map[string]interface{}{

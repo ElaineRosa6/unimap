@@ -522,9 +522,9 @@ func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, 
 			errMsg = strings.TrimSpace(result.ErrorCode)
 		}
 		if errMsg == "" {
-			errMsg = "unknown bridge error"
+			errMsg = "extension reported open failure"
 		}
-		return "", fmt.Errorf("extension bridge open failed: %s", errMsg)
+		return "", fmt.Errorf("extension open failed for %s: %s", engine, errMsg)
 	}
 	return searchURL, nil
 }
@@ -578,6 +578,10 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 		collectResult.Assets, collectResult.Total, collectResult.HasMore = parseStructuredCollectedData(result.StructuredCollectedData, engine)
 		if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
 			collectResult.Title = title
+		}
+		if lw, ok := result.StructuredCollectedData["is_login_wall"].(bool); ok && lw {
+			collectResult.IsLoginWall = true
+			collectResult.LoginRequired = true
 		}
 	} else if result.CollectedData != "" {
 		collectResult.Title = result.CollectedData

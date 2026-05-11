@@ -78,6 +78,83 @@ func TestExecuteQuery_DefaultPageSize(t *testing.T) {
 	// the unified service Query validation tests.
 }
 
+func TestRunBrowserQueryAsync_UsesTranslatedQuery(t *testing.T) {
+	orch := adapter.NewEngineOrchestrator()
+	orch.RegisterAdapter(&mockEngineAdapter{name: "fofa", translate: `country="CN" && port="80"`})
+	provider := &mockScreenshotProvider{}
+	svc := NewQueryAppService(nil, orch)
+
+	ch := svc.RunBrowserQueryAsync(
+		context.Background(),
+		`country="CN" && port="80"`,
+		[]string{"fofa"},
+		true,
+		"collect",
+		"q1",
+		false,
+		nil,
+		nil,
+		nil,
+		provider,
+		nil,
+	)
+	outcome := <-ch
+
+	if len(outcome.Errors) != 0 {
+		t.Fatalf("unexpected browser errors: %#v", outcome.Errors)
+	}
+	if len(provider.openedQueries) != 1 || provider.openedQueries[0] != `country="CN" && port="80"` {
+		t.Fatalf("expected translated open query, got %#v", provider.openedQueries)
+	}
+	if len(provider.collectedQueries) != 1 || provider.collectedQueries[0] != `country="CN" && port="80"` {
+		t.Fatalf("expected translated collect query, got %#v", provider.collectedQueries)
+	}
+}
+
+func TestRunBrowserQueryAsync_ProgressCallback(t *testing.T) {
+	orch := adapter.NewEngineOrchestrator()
+	orch.RegisterAdapter(&mockEngineAdapter{name: "fofa", translate: `country="CN"`})
+	orch.RegisterAdapter(&mockEngineAdapter{name: "hunter", translate: `ip="1.2.3.4"`})
+	provider := &mockScreenshotProvider{}
+	svc := NewQueryAppService(nil, orch)
+
+	var doneCalls []int
+	var totals []int
+	ch := svc.RunBrowserQueryAsync(
+		context.Background(),
+		`country="CN"`,
+		[]string{"fofa", "hunter"},
+		true,
+		"collect",
+		"q2",
+		false,
+		nil,
+		nil,
+		nil,
+		provider,
+		func(done, total int, _ string, _ error) {
+			doneCalls = append(doneCalls, done)
+			totals = append(totals, total)
+		},
+	)
+	outcome := <-ch
+
+	if len(outcome.Errors) != 0 {
+		t.Fatalf("unexpected browser errors: %#v", outcome.Errors)
+	}
+	if len(doneCalls) != 2 {
+		t.Fatalf("expected 2 progress callbacks (one per engine), got %d: %v", len(doneCalls), doneCalls)
+	}
+	if doneCalls[0] != 1 || doneCalls[1] != 2 {
+		t.Fatalf("unexpected progress done sequence: %v", doneCalls)
+	}
+	for i := range totals {
+		if totals[i] != 2 {
+			t.Fatalf("expected total=2 for callback %d, got %d", i, totals[i])
+		}
+	}
+}
+
 // ===== normalizeCDPBaseURL =====
 
 func TestNormalizeCDPBaseURL(t *testing.T) {
@@ -259,23 +336,32 @@ func TestClassifyReachabilityDNS(t *testing.T) {
 // ===== mockEngineAdapter =====
 
 type mockEngineAdapter struct {
-	name string
+	name      string
+	translate string
 }
 
-func (m *mockEngineAdapter) Name() string                                       { return m.name }
-func (m *mockEngineAdapter) Translate(ast *model.UQLAST) (string, error)        { return "", nil }
+func (m *mockEngineAdapter) Name() string { return m.name }
+func (m *mockEngineAdapter) Translate(ast *model.UQLAST) (string, error) {
+	if m.translate != "" {
+		return m.translate, nil
+	}
+	return "translated", nil
+}
 func (m *mockEngineAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
 	return nil, nil
 }
 func (m *mockEngineAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
 	return nil, nil
 }
-func (m *mockEngineAdapter) GetQuota() (*model.QuotaInfo, error)               { return nil, nil }
-func (m *mockEngineAdapter) IsWebOnly() bool                                   { return false }
+func (m *mockEngineAdapter) GetQuota() (*model.QuotaInfo, error) { return nil, nil }
+func (m *mockEngineAdapter) IsWebOnly() bool                     { return false }
 
 // ===== mockScreenshotProvider =====
 
-type mockScreenshotProvider struct{}
+type mockScreenshotProvider struct {
+	openedQueries    []string
+	collectedQueries []string
+}
 
 func (m *mockScreenshotProvider) CaptureSearchEngineResult(ctx context.Context, engine, query, queryID string) (string, error) {
 	return "/mock/path.png", nil
@@ -294,8 +380,10 @@ func (m *mockScreenshotProvider) CaptureBatchURLs(ctx context.Context, urls []st
 }
 func (m *mockScreenshotProvider) GetScreenshotDirectory() string { return "/mock/screenshots" }
 func (m *mockScreenshotProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
+	m.openedQueries = append(m.openedQueries, query)
 	return "/mock/open", nil
 }
 func (m *mockScreenshotProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]screenshot.CollectResult, error) {
+	m.collectedQueries = append(m.collectedQueries, query)
 	return []screenshot.CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query}}, nil
 }

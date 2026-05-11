@@ -35,6 +35,7 @@ func TestHandleAPIQuery_EmptyQuery_Returns400(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/query", nil)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -50,6 +51,7 @@ func TestHandleAPIQuery_NoEngines_Returns503(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/query?query=country%3D%22CN%22", nil)
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
@@ -268,6 +270,49 @@ func TestBuildQueryAPIPayload_CombinesErrors(t *testing.T) {
 	}
 }
 
+func TestBuildQueryAPIPayload_MergesCollectedAssets(t *testing.T) {
+	resp := &service.QueryResponse{
+		Assets:      []model.UnifiedAsset{{IP: "1.1.1.1"}},
+		TotalCount:  1,
+		EngineStats: map[string]int{"fofa": 1},
+	}
+	browserOutcome := browserQueryOutcome{
+		Enabled: true,
+		CollectedResults: []screenshot.CollectResult{
+			{
+				Engine: "hunter",
+				Assets: []model.UnifiedAsset{{IP: "2.2.2.2"}, {IP: "3.3.3.3"}},
+				Total:  2,
+			},
+			{
+				Engine: "quake",
+				Assets: []model.UnifiedAsset{{IP: "4.4.4.4"}},
+			},
+		},
+	}
+
+	payload := buildQueryAPIPayload("test", []string{"fofa", "hunter", "quake"}, resp, browserOutcome, "collect")
+
+	assets := payload["assets"].([]model.UnifiedAsset)
+	if len(assets) != 4 {
+		t.Fatalf("expected 4 assets (1 query + 3 collected), got %d", len(assets))
+	}
+	total := payload["totalCount"].(int)
+	if total != 4 {
+		t.Fatalf("expected totalCount 4, got %d", total)
+	}
+	stats := payload["engineStats"].(map[string]int)
+	if stats["fofa"] != 1 {
+		t.Errorf("expected fofa=1, got %d", stats["fofa"])
+	}
+	if stats["hunter"] != 2 {
+		t.Errorf("expected hunter=2, got %d", stats["hunter"])
+	}
+	if stats["quake"] != 1 {
+		t.Errorf("expected quake=1, got %d", stats["quake"])
+	}
+}
+
 func TestBuildQueryAPIPayload_MergesBrowserCollectedAssets(t *testing.T) {
 	payload := buildQueryAPIPayload(
 		"test",
@@ -413,6 +458,7 @@ func TestHandleAPIQuery_WhitespaceQuery_Returns400(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/query", strings.NewReader("query=   "))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -430,6 +476,7 @@ func TestHandleAPIQuery_PageSizeParsing(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/query?query=country%3D%22CN%22&page_size=abc", nil)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)
 
 	// page_size 无效时应该回退到默认值，最终因为无引擎返回 503

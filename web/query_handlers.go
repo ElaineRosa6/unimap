@@ -91,6 +91,9 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
 
 	query := strings.TrimSpace(r.FormValue("query"))
 	if err := validateQueryInput(query); err != nil {

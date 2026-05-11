@@ -174,33 +174,28 @@ go run -tags gui ./cmd/unimap-gui
 - 禁止硬编码密钥 — 使用环境变量或 `config.yaml`
 - 所有用户输入必须验证
 - SQL 参数化查询
-- HTML 使用 `html/template` (⚠️ 当前仍用 `text/template`，待修复)
-- CSP 配置，避免 `'unsafe-eval'` (⚠️ 当前仍包含，待修复)
+- HTML 使用 `html/template` ✅
+- CSP 配置，避免 `'unsafe-eval'` ✅
 
-## 已知待修复事项 (release/major-upgrade-vNEXT 合并前)
+## 已知待修复事项
 
-> 来源：第三轮 code review (2026-04-29)，详见 `memory/project_deep_review_verification_2026-04-29.md`
+> 来源：2026-05-09 全量代码扫描，详见 `memory/project_remaining_issues_2026-05-09.md`
 
-### Critical (合并前必须修复)
-1. **C-01** `configs/config.yaml`: auth.enabled=false + bind 0.0.0.0 + admin_token="" → 全接口裸奔
-2. **C-02** `web/server.go`: 仍用 `text/template` 而非 `html/template` → XSS 注入
-3. **C-03** `internal/distributed/scheduler.go`: RoundRobinScheduler.lastIndex 无 atomic → 数据竞争
-4. **C-04** `web/middleware_ratelimit.go`: globalLimiter/rateLimitEnabled 无 atomic → 数据竞争
+### ✅ 已全部修复
+- C-01 ~ C-04 (Critical)、H-01 ~ H-05 (High) — 全部闭环
+- M-02 ~ M-06, M-08, M-09 (Medium) — 全部闭环
+- L-02, L-03 (Low) — CORS 死代码已清理、Scheduler CSP nonce 已添加
 
-### High (合并前应修复)
-5. **H-01** `web/server.go`: CSP 仍含 `'unsafe-eval'`
-6. **H-02** `web/websocket_handlers.go`: 无 token 时 validateWebSocketRequest 返回 true → WebSocket 裸奔
-7. **H-04** `internal/alerting/manager.go`: 告警 goroutine 无 WaitGroup → 关闭时丢失
-8. **H-05** `configs/config.yaml`: rate_limit.enabled 仍为 false
+### High (建议合并前修复)
+无
 
-### Medium (两周内修复)
-- M-02 文件上传 MIME 校验、M-03 文件名消毒、M-04 分布式节点 token 必填
-- M-05 Bridge 签名默认关闭、M-06 stringInt → strconv.Itoa
-- M-08 isOriginAllowed 空 Origin 返回 true、M-09 WebSocket 查询超时
+### Medium (后续迭代修复)
+1. 10 个文件超 800 行 (最大 `monitor_native.go` 2150 行)
+2. 34 个函数超 50 行 (最大 `createMonitorTab` 390 行)
 
 ### Low (后续迭代修复)
-- L-01 错误消息大写、L-02 CORS 重复死代码、L-03 nonce fallback
-- L-04 requireTrustedRequest 未全端点调用、L-05 map 强类型
+7. **L-01** 错误消息大写 (23 处，多数为缩写词可接受)
+8. **L-05** `map[string]interface{}` 强类型 (插件接口等广泛使用，渐进重构)
 
 ## 常用命令
 
