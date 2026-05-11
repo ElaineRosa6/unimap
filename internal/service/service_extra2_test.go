@@ -143,6 +143,9 @@ func TestRunBrowserQueryAsync_ProgressCallback(t *testing.T) {
 	if len(progressValues) == 0 {
 		t.Fatal("expected progress callback to be called")
 	}
+	if progressValues[0] != 5 {
+		t.Fatalf("expected initial progress 5, got %v", progressValues)
+	}
 	if progressValues[len(progressValues)-1] != 50 {
 		t.Fatalf("expected final progress 50, got %v", progressValues)
 	}
