@@ -51,3 +51,14 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
   - FOFA 同时设置 `UseWebAPI = true` 作为默认值，允许在没有 API Key 时仍能使用 Web 模式
   - 验证函数保持完整性，仅在 `UseWebAPI = false` 时才要求提供 API Key
   - 所有引擎：Quake、ZoomEye、Hunter、FOFA、Shodan
+
+### 扩展浏览器查询进度与登录状态判定机制
+- Date: 2026-05-08
+- Context: Agent 在修复浏览器插件空间搜索查询卡在 running/0% 与登录状态同步问题时发现
+- Category: 代码模式
+- Instructions:
+  - `RunBrowserQueryAsync` 通过 progress callback 将每个 engine 的完成或失败回传给 WebSocket 查询状态，避免浏览器联动查询长期停留在 0%
+  - WebSocket 查询完成时复用 `buildQueryAPIPayload` 合并 API 查询结果与 browser collect 的结构化资产，保证 HTTP 和 WebSocket 结果一致
+  - `updateQueryProgress` 不允许进度回退，避免异步 browser progress 覆盖更高进度
+  - 扩展模式的 `OpenSearchEngineResult` 必须设置 `BridgeTask.Action = "open"`，否则扩展端默认会按 screenshot 任务处理
+  - 扩展已配对只表示 bridge 在线，不能等同于搜索引擎已登录；登录状态需通过 collect 结果中的 `login_required`、登录关键词、`items` 或 `total` 判定

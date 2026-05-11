@@ -14,7 +14,7 @@ import (
 	"github.com/unimap-icp-hunter/project/internal/service"
 )
 
-func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, action string, queryID string, progressCallback func(float64)) <-chan browserQueryOutcome {
+func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, action string, queryID string, progress func(done, total int, engine string, err error)) <-chan browserQueryOutcome {
 	autoCaptureEnabled := false
 	if s.config != nil {
 		autoCaptureEnabled = s.config.Screenshot.AutoCapture.Enabled && s.config.Screenshot.AutoCapture.CaptureSearchResults
@@ -32,7 +32,7 @@ func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines
 		s.screenshotMgr,
 		s.screenshotPathToPreviewURL,
 		s.screenshotRouter,
-		progressCallback,
+		progress,
 	)
 }
 

@@ -230,7 +230,17 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 		queryCtx, queryCancel := context.WithTimeout(ctx, 60*time.Second)
 		defer queryCancel()
 
-		browserQueryCh := s.runBrowserQueryAsync(queryCtx, query, engines, browserQuery, browserAction, queryID, func(progress float64) {
+		if browserQuery {
+			s.updateQueryProgress(queryID, 5)
+		}
+		browserQueryCh := s.runBrowserQueryAsync(queryCtx, query, engines, browserQuery, browserAction, queryID, func(done, total int, engine string, err error) {
+			if total <= 0 {
+				return
+			}
+			progress := 5 + (float64(done)/float64(total))*45
+			if progress > 50 {
+				progress = 50
+			}
 			s.updateQueryProgress(queryID, progress)
 		})
 
@@ -265,11 +275,26 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 		if st != nil {
 			if queryErr != nil {
 				st.Errors = append(st.Errors, fmt.Sprintf("Query failed: %v", queryErr))
+				st.Errors = appendUniqueStrings(st.Errors, browserOutcome.Errors)
+				st.Errors = appendUniqueStrings(st.Errors, browserOutcome.AutoCaptureErrors)
 				st.Status = "error"
 			} else {
-				st.Results = resp.Assets
-				st.TotalCount = resp.TotalCount
-				st.Errors = resp.Errors
+				payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction)
+				if assets, ok := payload["assets"].([]model.UnifiedAsset); ok {
+					st.Results = assets
+				} else {
+					st.Results = resp.Assets
+				}
+				if totalCount, ok := payload["totalCount"].(int); ok {
+					st.TotalCount = totalCount
+				} else {
+					st.TotalCount = resp.TotalCount
+				}
+				if errors, ok := payload["errors"].([]string); ok {
+					st.Errors = errors
+				} else {
+					st.Errors = resp.Errors
+				}
 				st.Status = "completed"
 			}
 			st.Progress = 100
@@ -338,6 +363,9 @@ func (s *Server) updateQueryProgress(queryID string, progress float64) {
 
 	s.queryMutex.Lock()
 	if status, exists := s.queryStatus[queryID]; exists {
+		if progress < status.Progress {
+			progress = status.Progress
+		}
 		status.Progress = progress
 		s.queryStatus[queryID] = status
 		shouldBroadcast = true

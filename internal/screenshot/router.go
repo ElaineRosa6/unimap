@@ -519,6 +519,9 @@ func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, 
 	if !result.Success {
 		errMsg := strings.TrimSpace(result.Error)
 		if errMsg == "" {
+			errMsg = strings.TrimSpace(result.ErrorCode)
+		}
+		if errMsg == "" {
 			errMsg = "extension reported open failure"
 		}
 		return "", fmt.Errorf("extension open failed for %s: %s", engine, errMsg)
@@ -698,6 +701,8 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 		}
 		if v, ok := item["port"].(float64); ok {
 			asset.Port = int(v)
+		} else if v, ok := item["port"].(int); ok {
+			asset.Port = v
 		}
 		if v, ok := item["protocol"].(string); ok {
 			asset.Protocol = v
