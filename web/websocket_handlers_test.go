@@ -204,6 +204,31 @@ func TestUpdateQueryProgress_NonExistentQuery_NoChange(t *testing.T) {
 	}
 }
 
+func TestUpdateQueryProgress_DoesNotMoveBackward(t *testing.T) {
+	s := &Server{
+		connManager: &ConnectionManager{connections: make(map[string]*managedConn)},
+		queryStatus: map[string]*QueryStatus{
+			"q1": {
+				ID:       "q1",
+				Query:    "test",
+				Engines:  []string{"quake"},
+				Status:   "running",
+				Progress: 75,
+			},
+		},
+	}
+
+	s.updateQueryProgress("q1", 25)
+
+	s.queryMutex.RLock()
+	progress := s.queryStatus["q1"].Progress
+	s.queryMutex.RUnlock()
+
+	if progress != 75 {
+		t.Fatalf("expected progress to stay at 75, got %v", progress)
+	}
+}
+
 func TestValidateWebSocketRequest_NoToken_DevelopmentMode(t *testing.T) {
 	oldToken := os.Getenv("UNIMAP_WS_TOKEN")
 	os.Unsetenv("UNIMAP_WS_TOKEN")

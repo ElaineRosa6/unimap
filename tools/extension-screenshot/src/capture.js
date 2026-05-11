@@ -391,6 +391,8 @@ export async function extractEngineAssets(tabId) {
         let total = 0;
         let hasMore = false;
         const title = document.title || "";
+        const bodyText = (document.body?.innerText || "").toLowerCase();
+        const loginRequired = /登录|登陆|请先登录|login|sign in|signin|unauthorized/.test(bodyText + " " + title.toLowerCase());
 
         // Check for login wall first
         if (isLoginWallFn(document)) {
@@ -594,6 +596,15 @@ export async function extractEngineAssets(tabId) {
 
           return { items: cardItems, total: 0, has_more: false, title, engine: eng, is_login_wall: false, extraction_method: "card_based" };
         }
+        return {
+          items,
+          total,
+          has_more: hasMore,
+          title,
+          engine: eng,
+          is_login_wall: false,
+          login_required: loginRequired && items.length === 0
+        };
       },
       args: [engine, ENGINE_SELECTORS]
     });
@@ -601,8 +612,9 @@ export async function extractEngineAssets(tabId) {
     if (results && results[0] && results[0].result) {
       return results[0].result;
     }
-    return { items: [], total: 0, has_more: false, title: "", engine };
+    return { items: [], total: 0, has_more: false, title: "", engine, login_required: false };
   } catch (err) {
-    return { items: [], total: 0, has_more: false, title: "", engine, error: String(err) };
+    // DOM extraction failed — return empty result, let caller handle
+    return { items: [], total: 0, has_more: false, title: "", engine, login_required: false, error: String(err) };
   }
 }
