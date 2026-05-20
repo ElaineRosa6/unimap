@@ -26,6 +26,7 @@ func (h *mockHandler) Execute(ctx context.Context, payload map[string]interface{
 func TestSchedulerE2E_CreateTriggerAndHistory(t *testing.T) {
 	// Test: create a task with a very short cron -> wait for trigger -> verify history
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	var mu sync.Mutex
@@ -82,6 +83,7 @@ func TestSchedulerE2E_CreateTriggerAndHistory(t *testing.T) {
 
 func TestSchedulerE2E_EnableDisableControl(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	var mu sync.Mutex
@@ -177,6 +179,7 @@ func TestSchedulerE2E_Persistence(t *testing.T) {
 
 	// Create scheduler and add a task
 	s1 := NewScheduler(taskPath, historyPath, 100)
+	s1.Start()
 
 	handler := &mockHandler{typ: TaskType("e2e_persist")}
 	s1.RegisterHandler(handler)
@@ -202,6 +205,7 @@ func TestSchedulerE2E_Persistence(t *testing.T) {
 
 	// Create new scheduler and load
 	s2 := NewScheduler(taskPath, historyPath, 100)
+	s2.Start()
 	s2.RegisterHandler(handler)
 
 	if err := s2.Load(); err != nil {
@@ -230,6 +234,7 @@ func TestSchedulerE2E_Persistence(t *testing.T) {
 
 func TestSchedulerE2E_RunTaskNow(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	var mu sync.Mutex
@@ -285,6 +290,7 @@ func TestSchedulerE2E_RunTaskNow(t *testing.T) {
 
 func TestSchedulerE2E_TaskFailureAndRetry(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	var mu sync.Mutex
@@ -360,6 +366,7 @@ func TestSchedulerE2E_TaskFailureAndRetry(t *testing.T) {
 
 func TestSchedulerE2E_TaskTypeValidation(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	// Register only one handler
