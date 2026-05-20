@@ -23,6 +23,7 @@ func setupScheduler(t *testing.T) *scheduler.Scheduler {
 		os.RemoveAll(tmpDir)
 	})
 	sched := scheduler.NewScheduler(tmpDir+"/tasks.json", tmpDir+"/history.json", 500)
+	sched.Start()
 	sched.RegisterHandler(&mockQueryHandler{})
 	return sched
 }
@@ -57,6 +58,7 @@ func TestHandleCreateTask_GetMethod_Returns405(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -73,6 +75,7 @@ func TestHandleCreateTask_EmptyName_Returns400(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -96,6 +99,7 @@ func TestHandleCreateTask_EmptyCron_Returns400(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -161,6 +165,7 @@ func TestHandleListTasks_Empty(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -227,6 +232,7 @@ func TestHandleUpdateTask_MissingID_Returns400(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -249,6 +255,7 @@ func TestHandleUpdateTask_NotFound_Returns404(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -286,6 +293,7 @@ func TestHandleRunTaskNow_MissingID_Returns400(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -305,6 +313,7 @@ func TestHandleRunTaskNow_NotFound_Returns404(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -381,6 +390,7 @@ func TestHandleTaskHistory_Empty(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -445,6 +455,7 @@ func TestHandleGetTask_MissingID_Returns400(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -461,6 +472,7 @@ func TestHandleCreateTask_BadJSON_Returns400(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -504,6 +516,7 @@ func TestHandleTaskHistory_WithLimit(t *testing.T) {
 	storePath := tmpDir + "/tasks.json"
 	historyPath := tmpDir + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -522,6 +535,7 @@ func TestScheduler_CleanupOnClose(t *testing.T) {
 	storePath := tmpDir + "/tasks.json"
 	historyPath := tmpDir + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	sched.Stop()
 
 	// 再次调用 Stop 不应 panic
@@ -532,6 +546,7 @@ func TestCreateTask_InvalidCronExpression(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}
@@ -556,6 +571,7 @@ func TestHandleRunTaskNow_GetMethod_Returns405(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
 	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
 	defer sched.Stop()
 
 	s := &Server{scheduler: sched}

@@ -284,7 +284,8 @@ type Scheduler struct {
 // persisted to that JSON file.
 func NewScheduler(storePath string, historyPath string, maxHistory int) *Scheduler {
 	c := cron.New(cron.WithSeconds())
-	c.Start()
+	// Delay cron start until caller registers handlers and tasks.
+	// Call s.Start() after setup is complete.
 
 	if maxHistory <= 0 {
 		maxHistory = 500
@@ -305,6 +306,12 @@ func NewScheduler(storePath string, historyPath string, maxHistory int) *Schedul
 	}
 
 	return s
+}
+
+// Start begins the internal cron scheduler. Call this after registering
+// handlers and loading persisted tasks.
+func (s *Scheduler) Start() {
+	s.cron.Start()
 }
 
 // Load persists loads tasks and history from disk.
@@ -1132,8 +1139,8 @@ func (s *Scheduler) GetTaskExecutionStats(taskID string) *TaskExecutionStats {
 	}
 
 	stats := &TaskExecutionStats{
-		TaskID:   taskID,
-		MinDurationMs: -1,
+		TaskID:        taskID,
+		MinDurationMs: 0,
 	}
 	if task != nil {
 		stats.TaskName = task.Name

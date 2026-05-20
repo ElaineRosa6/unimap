@@ -581,6 +581,15 @@ func (s *UnifiedService) releaseQueryLock() {
 	}
 }
 
+// runWithQueryLock 在查询并发锁保护下执行函数，panic 时确保计数器回退
+func (s *UnifiedService) runWithQueryLock(fn func() error) error {
+	if !s.acquireQueryLock() {
+		return fmt.Errorf("query concurrency limit reached")
+	}
+	defer s.releaseQueryLock()
+	return fn()
+}
+
 // HealthCheck 健康检查
 func (s *UnifiedService) HealthCheck() map[string]plugin.HealthStatus {
 	return s.pluginManager.HealthCheck()
