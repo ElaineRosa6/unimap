@@ -53,6 +53,9 @@ screenshot:
         enabled: false
         listen_addr: "127.0.0.1:19451"
         pairing_required: true
+        # 可选配对码，配置后仅持有相同 pair_code 的 Extension 可配对
+        # 留空表示不校验 pair_code（仅依赖 loopback 限制）
+        pair_code: ""
         token_ttl_seconds: 600
         task_timeout_seconds: 30
         max_concurrency: 5

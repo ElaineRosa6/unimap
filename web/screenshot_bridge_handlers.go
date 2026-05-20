@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -62,15 +63,22 @@ func (s *Server) handleScreenshotBridgePair(w http.ResponseWriter, r *http.Reque
 		ClientID string `json:"client_id"`
 		PairCode string `json:"pair_code"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if !decodeJSONBody(w, r, &req) {
 		s.setBridgeLastError("invalid_pair_request: invalid pair request")
-		writeAPIError(w, http.StatusBadRequest, "invalid_pair_request", "invalid pair request", nil)
 		return
 	}
 	if strings.TrimSpace(req.ClientID) == "" || strings.TrimSpace(req.PairCode) == "" {
 		s.setBridgeLastError("invalid_pair_request: client_id and pair_code are required")
 		writeAPIError(w, http.StatusBadRequest, "invalid_pair_request", "client_id and pair_code are required", nil)
 		return
+	}
+
+	if s.config != nil && s.config.Screenshot.Extension.PairCode != "" {
+		if subtle.ConstantTimeCompare([]byte(s.config.Screenshot.Extension.PairCode), []byte(req.PairCode)) != 1 {
+			s.setBridgeLastError("invalid_pair_code: pair_code mismatch")
+			writeAPIError(w, http.StatusForbidden, "invalid_pair_code", "pair_code mismatch", nil)
+			return
+		}
 	}
 
 	ttl := 600
@@ -115,7 +123,9 @@ func (s *Server) handleScreenshotBridgeRotateToken(w http.ResponseWriter, r *htt
 	var req struct {
 		RevokeOld bool `json:"revoke_old"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil && err != io.EOF {
 		s.setBridgeLastError("invalid_rotate_request: invalid rotate request payload")
 		writeAPIError(w, http.StatusBadRequest, "invalid_rotate_request", "invalid rotate request payload", nil)
 		return
@@ -194,10 +204,11 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		URL                     string                 `json:"url"`
 		CollectedData           string                 `json:"collected_data"`
 		StructuredCollectedData map[string]interface{} `json:"structured_collected_data"`
-		ErrorCode               string                 `json:"error_code"`
 		Error                   string                 `json:"error"`
+		ErrorCode               string                 `json:"error_code"`
+		DurationMs              int64                  `json:"duration_ms"`
 	}
-	if err := json.NewDecoder(bytes.NewReader(rawBody)).Decode(&req); err != nil {
+	if err := decodeJSONReader(bytes.NewReader(rawBody), &req); err != nil {
 		s.setBridgeLastError("invalid_bridge_result: invalid bridge result payload")
 		writeAPIError(w, http.StatusBadRequest, "invalid_bridge_result", "invalid bridge result payload", nil)
 		return

@@ -331,6 +331,32 @@ var (
 		},
 		[]string{"task_type"},
 	)
+
+	// ICP 查询指标
+	icpQueriesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unimap_icp_queries_total",
+			Help: "Total number of ICP queries by type and status.",
+		},
+		[]string{"type", "status"},
+	)
+
+	icpQueryDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "unimap_icp_query_duration_seconds",
+			Help:    "ICP query duration in seconds.",
+			Buckets: queryDurationBuckets,
+		},
+		[]string{"type"},
+	)
+
+	icpCaptchaFailuresTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unimap_icp_captcha_failures_total",
+			Help: "Total number of ICP captcha failures by type.",
+		},
+		[]string{"type"},
+	)
 )
 
 func init() {
@@ -396,6 +422,11 @@ func init() {
 	prometheus.MustRegister(schedulerTasksRegisteredGauge)
 	prometheus.MustRegister(schedulerTasksEnabledGauge)
 	prometheus.MustRegister(schedulerTaskRetriesTotal)
+
+	// ICP 指标
+	prometheus.MustRegister(icpQueriesTotal)
+	prometheus.MustRegister(icpQueryDuration)
+	prometheus.MustRegister(icpCaptchaFailuresTotal)
 }
 
 // HTTP 指标函数
@@ -624,5 +655,29 @@ func IncSchedulerTaskRetry(taskType string) {
 		taskType = "unknown"
 	}
 	schedulerTaskRetriesTotal.WithLabelValues(taskType).Inc()
+}
+
+func IncICPQuery(queryType, status string) {
+	if queryType == "" {
+		queryType = "unknown"
+	}
+	if status == "" {
+		status = "unknown"
+	}
+	icpQueriesTotal.WithLabelValues(queryType, status).Inc()
+}
+
+func ObserveICPQueryDuration(queryType string, duration time.Duration) {
+	if queryType == "" {
+		queryType = "unknown"
+	}
+	icpQueryDuration.WithLabelValues(queryType).Observe(duration.Seconds())
+}
+
+func IncICPCaptchaFailure(queryType string) {
+	if queryType == "" {
+		queryType = "unknown"
+	}
+	icpCaptchaFailuresTotal.WithLabelValues(queryType).Inc()
 }
 

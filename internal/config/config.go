@@ -94,6 +94,7 @@ type Config struct {
 			Enabled                      bool   `yaml:"enabled"`
 			ListenAddr                   string `yaml:"listen_addr"`
 			PairingRequired              bool   `yaml:"pairing_required"`
+			PairCode                    string `yaml:"pair_code"` // optional, if set pairing must provide matching pair_code
 			TokenTTLSeconds              int    `yaml:"token_ttl_seconds"`
 			TaskTimeoutSeconds           int    `yaml:"task_timeout_seconds"`
 			MaxConcurrency               int    `yaml:"max_concurrency"`
