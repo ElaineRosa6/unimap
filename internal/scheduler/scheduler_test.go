@@ -11,6 +11,7 @@ import (
 
 func TestNewScheduler(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	if s == nil {
 		t.Fatal("expected non-nil scheduler")
 	}
@@ -26,6 +27,7 @@ func TestNewScheduler(t *testing.T) {
 
 func TestAddTaskInvalidCron(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	// Register a dummy handler so task type validation passes
@@ -44,6 +46,7 @@ func TestAddTaskInvalidCron(t *testing.T) {
 
 func TestAddTaskUnknownType(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	err := s.AddTask(&ScheduledTask{
@@ -59,6 +62,7 @@ func TestAddTaskUnknownType(t *testing.T) {
 
 func TestAddAndGetTask(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	s.RegisterHandler(&testHandler{typ: TaskQuery})
@@ -97,6 +101,7 @@ func TestAddAndGetTask(t *testing.T) {
 
 func TestListTasks(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	s.RegisterHandler(&testHandler{typ: TaskQuery})
@@ -114,6 +119,7 @@ func TestListTasks(t *testing.T) {
 
 func TestDeleteTask(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	s.RegisterHandler(&testHandler{typ: TaskQuery})
@@ -132,6 +138,7 @@ func TestDeleteTask(t *testing.T) {
 
 func TestEnableDisableTask(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	s.RegisterHandler(&testHandler{typ: TaskQuery})
@@ -158,6 +165,7 @@ func TestEnableDisableTask(t *testing.T) {
 
 func TestRunTaskNow(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	h := &testHandler{typ: TaskQuery}
@@ -180,6 +188,7 @@ func TestRunTaskNow(t *testing.T) {
 
 func TestGetHistory(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	h := &testHandler{typ: TaskQuery}
@@ -209,6 +218,7 @@ func TestGetHistory(t *testing.T) {
 
 func TestGetHistoryFilter(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	s.RegisterHandler(&testHandler{typ: TaskQuery})
@@ -248,6 +258,7 @@ func TestStorePersist(t *testing.T) {
 	historyPath := filepath.Join(dir, "history.json")
 
 	s1 := NewScheduler(taskPath, historyPath, 100)
+	s1.Start()
 	s1.RegisterHandler(&testHandler{typ: TaskQuery})
 
 	task := &ScheduledTask{
@@ -268,6 +279,7 @@ func TestStorePersist(t *testing.T) {
 
 	// Create new scheduler and load
 	s2 := NewScheduler(taskPath, historyPath, 100)
+	s2.Start()
 	s2.RegisterHandler(&testHandler{typ: TaskQuery})
 
 	if err := s2.Load(); err != nil {
@@ -306,6 +318,7 @@ func TestLoadRebuildsIDCounter(t *testing.T) {
 	historyPath := filepath.Join(dir, "history.json")
 
 	s1 := NewScheduler(taskPath, historyPath, 100)
+	s1.Start()
 	s1.RegisterHandler(&testHandler{typ: TaskQuery})
 
 	persisted := &ScheduledTask{
@@ -325,6 +338,7 @@ func TestLoadRebuildsIDCounter(t *testing.T) {
 	s1.Stop()
 
 	s2 := NewScheduler(taskPath, historyPath, 100)
+	s2.Start()
 	s2.RegisterHandler(&testHandler{typ: TaskQuery})
 	if err := s2.Load(); err != nil {
 		t.Fatalf("Load failed: %v", err)
@@ -352,6 +366,7 @@ func TestLoadRebuildsIDCounter(t *testing.T) {
 
 func TestMaxHistoryTrim(t *testing.T) {
 	s := NewScheduler("", "", 3)
+	s.Start()
 	defer s.Stop()
 
 	s.RegisterHandler(&testHandler{typ: TaskQuery})
@@ -393,6 +408,7 @@ func TestTaskTypeLabels(t *testing.T) {
 
 func TestUpdateTask(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	s.RegisterHandler(&testHandler{typ: TaskQuery})
@@ -414,6 +430,7 @@ func TestUpdateTask(t *testing.T) {
 
 func TestUpdateTaskNotFound(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	s.RegisterHandler(&testHandler{typ: TaskQuery})
@@ -426,6 +443,7 @@ func TestUpdateTaskNotFound(t *testing.T) {
 
 func TestDeleteTaskNotFound(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	err := s.DeleteTask("nonexistent")
@@ -436,6 +454,7 @@ func TestDeleteTaskNotFound(t *testing.T) {
 
 func TestRunTaskNowNotFound(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	err := s.RunTaskNow("nonexistent")
@@ -446,6 +465,7 @@ func TestRunTaskNowNotFound(t *testing.T) {
 
 func TestEnableTaskNotFound(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	err := s.EnableTask("nonexistent")
@@ -456,6 +476,7 @@ func TestEnableTaskNotFound(t *testing.T) {
 
 func TestDisableTaskNotFound(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	err := s.DisableTask("nonexistent")
@@ -466,6 +487,7 @@ func TestDisableTaskNotFound(t *testing.T) {
 
 func TestTimeoutExecution(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	h := &testHandler{typ: TaskQuery, sleepFor: 5 * time.Second}
@@ -551,6 +573,7 @@ func TestExecutionWindow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := NewScheduler("", "", 100)
+	s.Start()
 			defer s.Stop()
 
 			if tt.window != nil {
@@ -568,6 +591,7 @@ func TestTaskTemplates(t *testing.T) {
 	}
 
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	s.RegisterHandler(&testHandler{typ: TaskTamperCheck})
@@ -596,6 +620,7 @@ func TestTaskTemplates(t *testing.T) {
 
 func TestTaskDependencyChain(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	handler := &testHandler{typ: TaskQuery}
@@ -629,6 +654,7 @@ func TestTaskDependencyChain(t *testing.T) {
 
 func TestExecutionStats(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	handler := &testHandler{typ: TaskQuery}
@@ -665,6 +691,7 @@ func TestExecutionStats(t *testing.T) {
 
 func TestRecentExecutions(t *testing.T) {
 	s := NewScheduler("", "", 100)
+	s.Start()
 	defer s.Stop()
 
 	handler := &testHandler{typ: TaskQuery}

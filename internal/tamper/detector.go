@@ -500,7 +500,7 @@ func (d *Detector) computeHashWithHTTP(ctx context.Context, targetURL string) (*
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("HTTP error: %d", resp.StatusCode)
 	}
 
@@ -624,6 +624,11 @@ func (d *Detector) computeSegmentHashes(doc *goquery.Document, html string) []Se
 		wg.Add(1)
 		go func(t segmentTask) {
 			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Errorf("computeSegmentHashes task %s panicked: %v", t.name, r)
+				}
+			}()
 			resultChan <- t.hashFunc()
 		}(task)
 	}
