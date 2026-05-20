@@ -440,7 +440,11 @@ func (t *SearchTask) Execute() error {
 	}
 
 	// 生成缓存键
-	cacheKey := utils.GenerateCacheKey(t.query.EngineName, t.query.Query, 1, t.pageSize)
+	page := t.query.Page
+	if page <= 0 {
+		page = 1
+	}
+	cacheKey := utils.GenerateCacheKey(t.query.EngineName, t.query.Query, page, t.pageSize)
 
 	// 检查缓存中是否存在结果
 	if cachedResults, found := t.orchestrator.cache.Get(cacheKey); found {
@@ -479,7 +483,11 @@ func (t *SearchTask) Execute() error {
 
 	// 执行搜索，带重试机制
 	for attempt := 0; attempt <= retryCount; attempt++ {
-		result, err = adapter.Search(t.query.Query, 1, t.pageSize)
+		page := t.query.Page
+		if page <= 0 {
+			page = 1
+		}
+		result, err = adapter.Search(t.query.Query, page, t.pageSize)
 		if err == nil {
 			break
 		}

@@ -353,6 +353,9 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		logger.Warnf("Failed to load scheduled tasks: %v", err)
 	}
 
+	// 所有 handler 注册完毕且数据加载完成后再启动 cron
+	sched.Start()
+
 	srv.scheduler = sched
 
 	// 截图模式初始化
