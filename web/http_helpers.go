@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -60,11 +61,24 @@ func requireTrustedRequest(w http.ResponseWriter, r *http.Request, allowedOrigin
 	return true
 }
 
-func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
+// decodeJSONReader decodes JSON from an io.Reader with strict validation:
+// unknown fields are rejected, trailing garbage is rejected.
+// Returns the raw error; callers should classify and report it appropriately.
+func decodeJSONReader(r io.Reader, dst interface{}) error {
+	dec := json.NewDecoder(r)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+	var extra interface{}
+	if err := dec.Decode(&extra); err != io.EOF {
+		return fmt.Errorf("request body must contain only one JSON object")
+	}
+	return nil
+}
 
-	if err := decoder.Decode(dst); err != nil {
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
+	if err := decodeJSONReader(r.Body, dst); err != nil {
 		if errors.Is(err, io.EOF) {
 			writeAPIError(w, http.StatusBadRequest, "invalid_request_body", "request body is required", nil)
 			return false
@@ -76,13 +90,6 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) boo
 		writeAPIError(w, http.StatusBadRequest, "invalid_request_body", "invalid JSON request body", err.Error())
 		return false
 	}
-
-	var extra interface{}
-	if err := decoder.Decode(&extra); err != io.EOF {
-		writeAPIError(w, http.StatusBadRequest, "invalid_request_body", "request body must contain only one JSON object", nil)
-		return false
-	}
-
 	return true
 }
 
