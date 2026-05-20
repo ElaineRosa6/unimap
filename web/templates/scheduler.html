@@ -186,8 +186,8 @@
 		<div class="form-group"><label>任务参数（JSON）</label><textarea id="edit-task-payload" rows="4" class="form-control"></textarea></div>
 		<div class="form-group"><label><input type="checkbox" id="edit-task-enabled"> 启用</label></div>
 		<div class="modal-actions">
-			<button class="btn-sm" onclick="closeEditModal()">取消</button>
-			<button class="btn-sm btn-primary" id="btn-save-task">保存</button>
+			<button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+			<button class="btn btn-primary" id="btn-save-task">保存</button>
 		</div>
 	</div>
 
@@ -237,13 +237,13 @@
 					<td>${escHtml(nextRun)}</td>
 					<td><span class="payload-preview" title="${escHtml(JSON.stringify(t.payload || {}))}">${escHtml(payloadStr)}</span></td>
 					<td>
-						<button class="btn-sm btn-warning" onclick="editTask('${t.id}')" title="编辑">✎</button>
-						<button class="btn-sm btn-primary" onclick="runTask('${t.id}')" title="立即执行">▶</button>
+						<button class="btn-sm btn-outline-primary" onclick="editTask('${t.id}')" title="编辑">编辑</button>
+						<button class="btn-sm btn-outline-success" onclick="runTask('${t.id}')" title="立即执行">执行</button>
 						${t.enabled
-							? `<button class="btn-sm" onclick="toggleTask('${t.id}', false)" title="禁用">⏸</button>`
-							: `<button class="btn-sm" onclick="toggleTask('${t.id}', true)" title="启用">▶️</button>`
+							? `<button class="btn-sm btn-outline-warning" onclick="toggleTask('${t.id}', false)" title="禁用">禁用</button>`
+							: `<button class="btn-sm btn-outline-warning" onclick="toggleTask('${t.id}', true)" title="启用">启用</button>`
 						}
-						<button class="btn-sm btn-danger" onclick="deleteTask('${t.id}')" title="删除">✕</button>
+						<button class="btn-sm btn-outline-danger" onclick="deleteTask('${t.id}')" title="删除">删除</button>
 					</td>
 				`;
 				tbody.appendChild(tr);

@@ -1,0 +1,703 @@
+{{template "head" .}}
+{{template "header" (dict "ActiveNav" "settings" "staticVersion" .staticVersion)}}
+
+<style>
+	/* Settings page — split control-panel layout */
+	.ctrl {
+		display: grid;
+		grid-template-columns: 200px 1fr;
+		gap: 0;
+		max-width: 1200px;
+		margin: 0 auto;
+		min-height: calc(100vh - 120px);
+	}
+
+	/* Left sidebar */
+	.ctrl-nav {
+		background: var(--color-header-bg);
+		padding: 24px 0;
+		border-right: 1px solid var(--color-header-border);
+	}
+	.ctrl-nav-title {
+		padding: 0 20px;
+		font-size: var(--text-xs);
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-header-text-dim);
+		margin-bottom: 16px;
+		font-weight: 600;
+	}
+	.ctrl-nav-item {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 10px 20px;
+		cursor: pointer;
+		color: var(--color-header-text-dim);
+		font-size: var(--text-sm);
+		font-weight: 500;
+		transition: all var(--duration-fast) var(--ease-out);
+		border: none;
+		background: none;
+		width: 100%;
+		text-align: left;
+		font-family: var(--font-sans);
+		border-left: 3px solid transparent;
+	}
+	.ctrl-nav-item:hover {
+		color: var(--color-header-text);
+		background: rgba(255,255,255,0.04);
+	}
+	.ctrl-nav-item.active {
+		color: #fff;
+		background: rgba(255,255,255,0.08);
+		border-left-color: var(--color-brand-light);
+	}
+	.ctrl-nav-icon {
+		width: 18px;
+		height: 18px;
+		opacity: 0.6;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 14px;
+	}
+	.ctrl-nav-item.active .ctrl-nav-icon {
+		opacity: 1;
+	}
+
+	/* Right content */
+	.ctrl-body {
+		padding: 28px 32px 60px;
+		background:
+			radial-gradient(ellipse at 0 0, rgba(13,148,136,0.04) 0%, transparent 60%),
+			var(--color-body-bg);
+	}
+
+	.ctrl-panel {
+		display: none;
+	}
+	.ctrl-panel.active {
+		display: block;
+	}
+
+	/* Panel header */
+	.ctrl-hdr {
+		margin-bottom: 24px;
+		padding-bottom: 16px;
+		border-bottom: 1px solid var(--color-border);
+	}
+	.ctrl-hdr h2 {
+		font-size: var(--text-xl);
+		font-weight: 700;
+		color: var(--color-text);
+		margin: 0 0 6px;
+		letter-spacing: -0.02em;
+	}
+	.ctrl-hdr h2::before { display: none; }
+	.ctrl-hdr p {
+		font-size: var(--text-sm);
+		color: var(--color-text-secondary);
+		margin: 0;
+	}
+
+	/* Config group — dense key-value rows */
+	.cfg-group {
+		background: var(--color-surface-raised);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		overflow: hidden;
+		margin-bottom: 16px;
+		box-shadow: var(--shadow-sm);
+	}
+	.cfg-group-title {
+		padding: 12px 16px;
+		font-size: var(--text-sm);
+		font-weight: 600;
+		color: var(--color-text);
+		background: var(--color-surface-alt);
+		border-bottom: 1px solid var(--color-border);
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.cfg-group-title .dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		display: inline-block;
+	}
+	.cfg-group-title .dot.on { background: var(--color-success); }
+	.cfg-group-title .dot.off { background: var(--color-text-muted); }
+
+	.cfg-row {
+		display: grid;
+		grid-template-columns: 160px 1fr;
+		align-items: center;
+		padding: 10px 16px;
+		border-bottom: 1px solid var(--color-border);
+		gap: 16px;
+	}
+	.cfg-row:last-child { border-bottom: none; }
+	.cfg-row.toggle-row {
+		grid-template-columns: 160px auto;
+	}
+
+	.cfg-key {
+		font-family: var(--font-mono);
+		font-size: var(--text-xs);
+		color: var(--color-text-secondary);
+		font-weight: 500;
+		letter-spacing: 0.02em;
+	}
+	.cfg-val input,
+	.cfg-val select {
+		width: 100%;
+		max-width: 360px;
+		padding: 6px 10px;
+		border: 1px solid var(--color-border-strong);
+		border-radius: var(--radius-sm);
+		font-size: var(--text-sm);
+		font-family: var(--font-sans);
+		background: var(--color-surface);
+		color: var(--color-text);
+		transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+	}
+	.cfg-val input:focus,
+	.cfg-val select:focus {
+		outline: none;
+		border-color: var(--color-brand);
+		box-shadow: 0 0 0 2px var(--color-brand-subtle);
+	}
+	.cfg-val input[type="password"] {
+		font-family: var(--font-mono);
+		letter-spacing: 0.1em;
+	}
+	.cfg-val .hint {
+		font-size: 0.7rem;
+		color: var(--color-text-muted);
+		margin-top: 3px;
+	}
+
+	/* Toggle in settings */
+	.cfg-toggle {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.cfg-switch {
+		position: relative;
+		width: 40px;
+		height: 20px;
+	}
+	.cfg-switch input {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+	.cfg-slider {
+		position: absolute;
+		inset: 0;
+		background: var(--color-border-strong);
+		border-radius: 20px;
+		transition: 0.2s;
+		cursor: pointer;
+	}
+	.cfg-slider::before {
+		content: "";
+		position: absolute;
+		height: 14px;
+		width: 14px;
+		left: 3px;
+		bottom: 3px;
+		background: #fff;
+		border-radius: 50%;
+		transition: 0.2s;
+	}
+	.cfg-switch input:checked + .cfg-slider {
+		background: var(--color-success);
+	}
+	.cfg-switch input:checked + .cfg-slider::before {
+		transform: translateX(20px);
+	}
+	.cfg-toggle-label {
+		font-size: var(--text-xs);
+		color: var(--color-text-muted);
+	}
+
+	/* Save bar */
+	.cfg-actions {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-top: 20px;
+		padding: 14px 16px;
+		background: var(--color-surface-raised);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		box-shadow: var(--shadow-sm);
+	}
+	.cfg-btn {
+		padding: 8px 20px;
+		border: none;
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		font-size: var(--text-sm);
+		font-weight: 600;
+		font-family: var(--font-sans);
+		transition: background var(--duration-fast);
+	}
+	.cfg-btn-save {
+		background: var(--color-brand);
+		color: #fff;
+	}
+	.cfg-btn-save:hover {
+		background: var(--color-brand-dark);
+	}
+	.cfg-btn-test {
+		background: transparent;
+		color: var(--color-success);
+		border: 1px solid var(--color-success);
+	}
+	.cfg-btn-test:hover {
+		background: rgba(16,185,129,0.08);
+	}
+
+	/* Result toast inline */
+	.cfg-result {
+		font-size: var(--text-xs);
+		padding: 4px 10px;
+		border-radius: var(--radius-sm);
+		display: none;
+	}
+	.cfg-result.ok {
+		background: rgba(16,185,129,0.1);
+		color: var(--color-success-dark);
+	}
+	.cfg-result.fail {
+		background: rgba(239,68,68,0.1);
+		color: var(--color-danger-dark);
+	}
+
+	/* Responsive */
+	@media (max-width: 768px) {
+		.ctrl {
+			grid-template-columns: 1fr;
+		}
+		.ctrl-nav {
+			display: flex;
+			overflow-x: auto;
+			padding: 0;
+			gap: 0;
+		}
+		.ctrl-nav-title { display: none; }
+		.ctrl-nav-item {
+			padding: 12px 16px;
+			white-space: nowrap;
+			border-left: none;
+			border-bottom: 3px solid transparent;
+		}
+		.ctrl-nav-item.active {
+			border-left-color: transparent;
+			border-bottom-color: var(--color-brand-light);
+		}
+		.cfg-row {
+			grid-template-columns: 1fr;
+			gap: 6px;
+		}
+		.cfg-val input,
+		.cfg-val select {
+			max-width: 100%;
+		}
+	}
+</style>
+
+	<div class="ctrl">
+		<!-- Left sidebar navigation -->
+		<nav class="ctrl-nav">
+			<div class="ctrl-nav-title">配置</div>
+			<button class="ctrl-nav-item active" data-panel="engines">
+				<span class="ctrl-nav-icon">&#9881;</span> 搜索引擎
+			</button>
+			<button class="ctrl-nav-item" data-panel="icp">
+				<span class="ctrl-nav-icon">&#127760;</span> ICP 备案
+			</button>
+			<button class="ctrl-nav-item" data-panel="screenshot">
+				<span class="ctrl-nav-icon">&#128247;</span> 截图服务
+			</button>
+			<button class="ctrl-nav-item" data-panel="system">
+				<span class="ctrl-nav-icon">&#9889;</span> 系统设置
+			</button>
+		</nav>
+
+		<!-- Right config area -->
+		<div class="ctrl-body">
+
+			<!-- 搜索引擎 -->
+			<div id="panel-engines" class="ctrl-panel active">
+				<div class="ctrl-hdr">
+					<h2>搜索引擎 API</h2>
+					<p>配置各引擎的 API Key、连接参数与状态。Key 加密存储。</p>
+				</div>
+
+				<!-- FOFA -->
+				<div class="cfg-group" data-engine="fofa">
+					<div class="cfg-group-title"><span class="dot" id="fofa-dot"></span> FOFA</div>
+					<div class="cfg-row toggle-row">
+						<span class="cfg-key">enabled</span>
+						<div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="fofa-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div>
+					</div>
+					<div class="cfg-row"><span class="cfg-key">email</span><div class="cfg-val"><input type="email" id="fofa-email" placeholder="your@email.com"></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="fofa-api-key" placeholder="输入 API Key" autocomplete="off"></div></div>
+					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="fofa-base-url" placeholder="https://fofa.info/api"></div></div>
+					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="fofa-qps" min="1" max="100" value="10"></div></div>
+				</div>
+
+				<!-- Hunter -->
+				<div class="cfg-group" data-engine="hunter">
+					<div class="cfg-group-title"><span class="dot" id="hunter-dot"></span> Hunter</div>
+					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="hunter-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="hunter-api-key" placeholder="输入 API Key" autocomplete="off"></div></div>
+					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="hunter-base-url" placeholder="https://hunter.qianxin.com/api"></div></div>
+					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="hunter-qps" min="1" max="100" value="10"></div></div>
+					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="hunter-timeout" min="5" max="300" value="30"></div></div>
+				</div>
+
+				<!-- ZoomEye -->
+				<div class="cfg-group" data-engine="zoomeye">
+					<div class="cfg-group-title"><span class="dot" id="zoomeye-dot"></span> ZoomEye</div>
+					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="zoomeye-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="zoomeye-api-key" placeholder="输入 API Key" autocomplete="off"></div></div>
+					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="zoomeye-base-url" placeholder="https://api.zoomeye.org"></div></div>
+					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="zoomeye-qps" min="1" max="100" value="10"></div></div>
+					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="zoomeye-timeout" min="5" max="300" value="30"></div></div>
+				</div>
+
+				<!-- Quake -->
+				<div class="cfg-group" data-engine="quake">
+					<div class="cfg-group-title"><span class="dot" id="quake-dot"></span> Quake</div>
+					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="quake-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="quake-api-key" placeholder="输入 API Key" autocomplete="off"></div></div>
+					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="quake-base-url" placeholder="https://quake.360.net/api/v1"></div></div>
+					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="quake-qps" min="1" max="100" value="10"></div></div>
+					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="quake-timeout" min="5" max="300" value="30"></div></div>
+				</div>
+
+				<!-- Shodan -->
+				<div class="cfg-group" data-engine="shodan">
+					<div class="cfg-group-title"><span class="dot" id="shodan-dot"></span> Shodan</div>
+					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="shodan-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="shodan-api-key" placeholder="输入 API Key" autocomplete="off"></div></div>
+					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="shodan-base-url" placeholder="https://api.shodan.io"></div></div>
+					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="shodan-qps" min="1" max="100" value="10"></div></div>
+				</div>
+
+				<div class="cfg-actions" id="engines-actions">
+					<button class="cfg-btn cfg-btn-save" onclick="saveAllEngines()">保存全部</button>
+					<span class="cfg-result" id="engines-result"></span>
+				</div>
+			</div>
+
+			<!-- ICP 备案 -->
+			<div id="panel-icp" class="ctrl-panel">
+				<div class="ctrl-hdr">
+					<h2>ICP 备案查询</h2>
+					<p>Sidecar 服务连接配置。通常部署在本地或内网。</p>
+				</div>
+
+				<div class="cfg-group">
+					<div class="cfg-group-title">ICP Query Sidecar</div>
+					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="icp-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用 ICP 查询</span></label></div></div>
+					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="icp-base-url" placeholder="http://localhost:16181"><div class="hint">默认 localhost:16181</div></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="icp-api-key" placeholder="输入 API Key" autocomplete="off"><div class="hint">加密存储</div></div></div>
+					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="icp-timeout" min="5" max="300" value="30"></div></div>
+					<div class="cfg-row"><span class="cfg-key">default_type</span><div class="cfg-val">
+						<select id="icp-default-type">
+							<option value="web">网站备案</option>
+							<option value="app">APP备案</option>
+							<option value="mapp">小程序备案</option>
+							<option value="kapp">快应用备案</option>
+						</select>
+					</div></div>
+				</div>
+
+				<div class="cfg-actions">
+					<button class="cfg-btn cfg-btn-save" onclick="saveICP()">保存配置</button>
+					<span class="cfg-result" id="icp-result"></span>
+				</div>
+			</div>
+
+			<!-- 截图服务 -->
+			<div id="panel-screenshot" class="ctrl-panel">
+				<div class="ctrl-hdr">
+					<h2>截图服务</h2>
+					<p>截图引擎模式选择与超时配置。</p>
+				</div>
+
+				<div class="cfg-group">
+					<div class="cfg-group-title">Screenshot Router</div>
+					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="screenshot-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用截图服务</span></label></div></div>
+					<div class="cfg-row"><span class="cfg-key">mode</span><div class="cfg-val">
+						<select id="screenshot-mode">
+							<option value="auto">自动选择</option>
+							<option value="cdp">CDP</option>
+							<option value="extension">浏览器扩展</option>
+						</select>
+					</div></div>
+					<div class="cfg-row"><span class="cfg-key">engine</span><div class="cfg-val">
+						<select id="screenshot-engine">
+							<option value="cdp">CDP</option>
+							<option value="extension">Extension</option>
+						</select>
+					</div></div>
+					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="screenshot-timeout" min="5" max="300" value="30"></div></div>
+				</div>
+
+				<div class="cfg-actions">
+					<button class="cfg-btn cfg-btn-save" onclick="saveScreenshot()">保存配置</button>
+					<span class="cfg-result" id="screenshot-result"></span>
+				</div>
+			</div>
+
+			<!-- 系统设置 -->
+			<div id="panel-system" class="ctrl-panel">
+				<div class="ctrl-hdr">
+					<h2>系统设置</h2>
+					<p>并发、缓存等全局参数。</p>
+				</div>
+
+				<div class="cfg-group">
+					<div class="cfg-group-title">Runtime</div>
+					<div class="cfg-row"><span class="cfg-key">max_concurrent</span><div class="cfg-val"><input type="number" id="max-concurrent" min="1" max="100" value="10"><div class="hint">同时进行的最大任务数</div></div></div>
+					<div class="cfg-row"><span class="cfg-key">cache_ttl_s</span><div class="cfg-val"><input type="number" id="cache-ttl" min="0" max="86400" value="3600"><div class="hint">查询结果缓存时间，0 表示禁用</div></div></div>
+					<div class="cfg-row"><span class="cfg-key">cache_max_entries</span><div class="cfg-val"><input type="number" id="cache-max-size" min="0" max="100000" value="1000"></div></div>
+				</div>
+
+				<div class="cfg-actions">
+					<button class="cfg-btn cfg-btn-save" onclick="saveSystem()">保存配置</button>
+					<span class="cfg-result" id="system-result"></span>
+				</div>
+			</div>
+
+		</div>
+	</div>
+
+{{template "footer" .}}
+
+<script nonce="{{.CSPNonce}}">
+(function() {
+	// Sidebar navigation
+	document.querySelectorAll('.ctrl-nav-item').forEach(function(btn) {
+		btn.addEventListener('click', function() {
+			document.querySelectorAll('.ctrl-nav-item').forEach(function(b) { b.classList.remove('active'); });
+			document.querySelectorAll('.ctrl-panel').forEach(function(p) { p.classList.remove('active'); });
+			btn.classList.add('active');
+			var panel = document.getElementById('panel-' + btn.getAttribute('data-panel'));
+			if (panel) panel.classList.add('active');
+		});
+	});
+
+	// Load config on page load
+	document.addEventListener('DOMContentLoaded', function() { loadConfig(); });
+
+	async function loadConfig() {
+		try {
+			var resp = await fetch('/api/config', { headers: { 'Authorization': 'Bearer ' + tok() } });
+			if (!resp.ok) throw new Error('Failed to load config');
+			var data = await resp.json();
+
+			if (data.engines) {
+				Object.keys(data.engines).forEach(function(eng) {
+					var c = data.engines[eng];
+					var el = document.getElementById(eng + '-enabled');
+					if (el) el.checked = c.enabled;
+					var u = document.getElementById(eng + '-base-url');
+					if (u) u.value = c.base_url || '';
+					var q = document.getElementById(eng + '-qps');
+					if (q) q.value = c.qps || 10;
+					var t = document.getElementById(eng + '-timeout');
+					if (t) t.value = c.timeout || 30;
+					var e = document.getElementById(eng + '-email');
+					if (e) e.value = c.email || '';
+					var d = document.getElementById(eng + '-dot');
+					if (d) d.className = 'dot ' + (c.enabled ? 'on' : 'off');
+				});
+			}
+			if (data.icp) {
+				var el = document.getElementById('icp-enabled');
+				if (el) el.checked = data.icp.enabled;
+				var u = document.getElementById('icp-base-url');
+				if (u) u.value = data.icp.base_url || '';
+				var t = document.getElementById('icp-timeout');
+				if (t) t.value = data.icp.timeout || 30;
+				var tp = document.getElementById('icp-default-type');
+				if (tp) tp.value = data.icp.default_type || 'web';
+			}
+			if (data.screenshot) {
+				var el = document.getElementById('screenshot-enabled');
+				if (el) el.checked = data.screenshot.enabled;
+				var m = document.getElementById('screenshot-mode');
+				if (m) m.value = data.screenshot.mode || 'auto';
+				var e = document.getElementById('screenshot-engine');
+				if (e) e.value = data.screenshot.engine || 'cdp';
+				var t = document.getElementById('screenshot-timeout');
+				if (t) t.value = data.screenshot.timeout || 30;
+			}
+			if (data.system) {
+				var mc = document.getElementById('max-concurrent');
+				if (mc) mc.value = data.system.max_concurrent || 10;
+				var ct = document.getElementById('cache-ttl');
+				if (ct) ct.value = data.system.cache_ttl || 3600;
+				var cs = document.getElementById('cache-max-size');
+				if (cs) cs.value = data.system.cache_max_size || 1000;
+			}
+		} catch (e) { console.error('Config load error:', e); }
+	}
+
+	// Save all engines at once
+	window.saveAllEngines = async function() {
+		var engines = ['fofa', 'hunter', 'zoomeye', 'quake', 'shodan'];
+		var data = {};
+		engines.forEach(function(eng) {
+			data[eng] = {
+				enabled: document.getElementById(eng + '-enabled').checked,
+				base_url: document.getElementById(eng + '-base-url').value,
+				qps: parseInt(document.getElementById(eng + '-qps').value),
+				timeout: parseInt(document.getElementById(eng + '-timeout').value)
+			};
+			var ak = document.getElementById(eng + '-api-key');
+			if (ak && ak.value) data[eng].api_key = ak.value;
+			var em = document.getElementById(eng + '-email');
+			if (em && em.value) data[eng].email = em.value;
+		});
+
+		try {
+			var resp = await fetch('/api/config', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
+				body: JSON.stringify({ section: 'engines', data: data })
+			});
+			var result = await resp.json();
+			showResult('engines-result', result.success ? 'ok' : 'fail', result.message || (result.success ? '全部保存成功' : '保存失败'));
+			// Update dots
+			Object.keys(data).forEach(function(eng) {
+				var d = document.getElementById(eng + '-dot');
+				if (d) d.className = 'dot ' + (data[eng].enabled ? 'on' : 'off');
+			});
+		} catch (e) {
+			showResult('engines-result', 'fail', '保存失败: ' + e.message);
+		}
+	};
+
+	// Save single engine (for backward compat with per-engine save buttons if any)
+	window.saveEngine = async function(eng) {
+		var data = {};
+		data[eng] = {
+			enabled: document.getElementById(eng + '-enabled').checked,
+			base_url: document.getElementById(eng + '-base-url').value,
+			qps: parseInt(document.getElementById(eng + '-qps').value),
+			timeout: parseInt(document.getElementById(eng + '-timeout').value)
+		};
+		var ak = document.getElementById(eng + '-api-key');
+		if (ak && ak.value) data[eng].api_key = ak.value;
+		var em = document.getElementById(eng + '-email');
+		if (em && em.value) data[eng].email = em.value;
+
+		try {
+			var resp = await fetch('/api/config', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
+				body: JSON.stringify({ section: 'engines', data: data })
+			});
+			var result = await resp.json();
+			var d = document.getElementById(eng + '-dot');
+			if (d) d.className = 'dot ' + (data[eng].enabled ? 'on' : 'off');
+			var testEl = document.getElementById(eng + '-test');
+			if (testEl) {
+				testEl.textContent = result.success ? '保存成功' : '保存失败';
+				testEl.className = 's-test ' + (result.success ? 'ok' : 'fail');
+				testEl.style.display = 'block';
+				setTimeout(function() { testEl.style.display = 'none'; }, 3000);
+			}
+		} catch (e) { console.error('Save engine error:', e); }
+	};
+
+	window.testEngine = async function(eng) {
+		var ak = document.getElementById(eng + '-api-key');
+		if (!ak || !ak.value) { showResult(eng + '-result', 'fail', '请先输入 API Key'); return; }
+		try {
+			var resp = await fetch('/api/config/validate-key', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
+				body: JSON.stringify({ engine: eng, api_key: ak.value })
+			});
+			var result = await resp.json();
+			showResult(eng + '-result', result.valid ? 'ok' : 'fail', result.valid ? 'API Key 有效' : ('无效: ' + result.message));
+		} catch (e) { showResult(eng + '-result', 'fail', '测试失败: ' + e.message); }
+	};
+
+	window.saveICP = async function() {
+		try {
+			var resp = await fetch('/api/config', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
+				body: JSON.stringify({ section: 'icp', data: {
+					enabled: document.getElementById('icp-enabled').checked,
+					base_url: document.getElementById('icp-base-url').value,
+					api_key: document.getElementById('icp-api-key').value,
+					timeout: parseInt(document.getElementById('icp-timeout').value),
+					default_type: document.getElementById('icp-default-type').value
+				}})
+			});
+			var result = await resp.json();
+			showResult('icp-result', result.success ? 'ok' : 'fail', result.message || (result.success ? '保存成功' : '保存失败'));
+		} catch (e) { showResult('icp-result', 'fail', '保存失败: ' + e.message); }
+	};
+
+	window.saveScreenshot = async function() {
+		try {
+			var resp = await fetch('/api/config', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
+				body: JSON.stringify({ section: 'screenshot', data: {
+					enabled: document.getElementById('screenshot-enabled').checked,
+					mode: document.getElementById('screenshot-mode').value,
+					engine: document.getElementById('screenshot-engine').value,
+					timeout: parseInt(document.getElementById('screenshot-timeout').value)
+				}})
+			});
+			var result = await resp.json();
+			showResult('screenshot-result', result.success ? 'ok' : 'fail', result.message || (result.success ? '保存成功' : '保存失败'));
+		} catch (e) { showResult('screenshot-result', 'fail', '保存失败: ' + e.message); }
+	};
+
+	window.saveSystem = async function() {
+		try {
+			var resp = await fetch('/api/config', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
+				body: JSON.stringify({ section: 'system', data: {
+					max_concurrent: parseInt(document.getElementById('max-concurrent').value),
+					cache_ttl: parseInt(document.getElementById('cache-ttl').value),
+					cache_max_size: parseInt(document.getElementById('cache-max-size').value)
+				}})
+			});
+			var result = await resp.json();
+			showResult('system-result', result.success ? 'ok' : 'fail', result.message || (result.success ? '保存成功' : '保存失败'));
+		} catch (e) { showResult('system-result', 'fail', '保存失败: ' + e.message); }
+	};
+
+	function showResult(id, type, msg) {
+		var el = document.getElementById(id);
+		if (!el) return;
+		el.textContent = msg;
+		el.className = 'cfg-result ' + type;
+		el.style.display = 'inline-block';
+		setTimeout(function() { el.style.display = 'none'; }, 5000);
+	}
+
+	function tok() {
+		return sessionStorage.getItem('authToken') || localStorage.getItem('authToken') || '';
+	}
+})();
+</script>

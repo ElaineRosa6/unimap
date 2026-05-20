@@ -141,12 +141,13 @@ func (r *Router) RegisterRoutes() http.Handler {
 		// API key auth — optional, enriches context with key info if valid key provided
 		handler = r.server.apiAuth.OptionalAPIKey()(handler)
 
-		mux.Handle(route.Pattern, handler)
+		// Go 1.22+ ServeMux requires method-prefixed patterns for same-path routes
+		mux.Handle(route.Method+" "+route.Pattern, handler)
 	}
 
 	// 静态文件服务
 	staticDir := filepath.Join(r.server.webRoot, "static")
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
 
 	return mux
 }
