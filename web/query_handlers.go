@@ -272,12 +272,15 @@ func (s *Server) handleQuota(w http.ResponseWriter, r *http.Request) {
 	quotaInfo := make(map[string]*model.QuotaInfo)
 	errorInfo := make(map[string]string)
 
-	// Fetch quota concurrently for all engines
+	// Fetch quota concurrently for all engines with timeout
 	type result struct {
 		engine string
 		quota  *model.QuotaInfo
 		err    error
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	ch := make(chan result, len(engines))
 	for _, engine := range engines {
@@ -288,26 +291,51 @@ func (s *Server) handleQuota(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			quota, err := adapter.GetQuota()
-			ch <- result{engine: e, quota: quota, err: err}
+			select {
+			case ch <- result{engine: e, quota: quota, err: err}:
+			case <-ctx.Done():
+			}
 		}(engine)
 	}
 
-	// Collect results
-	for range engines {
-		r := <-ch
-		if r.err != nil {
-			msg := strings.TrimSpace(r.err.Error())
-			if msg == "" {
-				msg = "failed to fetch quota"
+	// Collect results with timeout
+	done := make(chan struct{})
+	go func() {
+		for _, engine := range engines {
+			var res result
+			select {
+			case res = <-ch:
+			case <-ctx.Done():
+				errorInfo[engine] = "timeout: failed to fetch quota"
+				continue
 			}
-			errorInfo[r.engine] = msg
-			continue
+			if res.err != nil {
+				msg := strings.TrimSpace(res.err.Error())
+				if msg == "" {
+					msg = "failed to fetch quota"
+				} else if len(msg) > 120 {
+					lines := strings.SplitN(msg, "\n", 2)
+					short := strings.TrimSpace(lines[0])
+					if len(short) > 120 {
+						short = short[:120] + "..."
+					}
+					msg = short
+				}
+				errorInfo[engine] = msg
+				continue
+			}
+			if res.quota == nil {
+				errorInfo[engine] = "quota not available"
+				continue
+			}
+			quotaInfo[engine] = res.quota
 		}
-		if r.quota == nil {
-			errorInfo[r.engine] = "quota not available"
-			continue
-		}
-		quotaInfo[r.engine] = r.quota
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
 	}
 
 	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "quota.html", map[string]interface{}{
