@@ -185,31 +185,27 @@
 					<div class="cookie-input-section">
 						<button type="button" class="btn-toggle-cookie" id="btn-toggle-cookie" title="展开/折叠 Cookie 填写">
 							<span class="toggle-arrow">&#9654;</span>
-							<span>Headless 模式备用 Cookie</span>
-							<span class="toggle-hint">用于截图时绕过登录验证</span>
+							<span>备用 Cookie</span>
+							<span class="toggle-hint">Headless 模式截图时使用</span>
 						</button>
 						<div class="cookie-input-content" id="cookie-input-content" style="display:none;">
 							<div class="cookie-engine-row">
 								<span class="engine-label">FOFA</span>
-								<span class="cookie-status {{if .cookieHasFofa}}cookie-status--on{{else}}cookie-status--off{{end}}" id="cookie-status-fofa">{{if .cookieHasFofa}}已配置{{else}}未配置{{end}}</span>
 								<input type="text" id="cookie-fofa" name="cookie_fofa" placeholder="session=xxx; token=yyy" value="{{.cookieFofa}}">
 							</div>
 							<div class="cookie-engine-row">
 								<span class="engine-label">Hunter</span>
-								<span class="cookie-status {{if .cookieHasHunter}}cookie-status--on{{else}}cookie-status--off{{end}}" id="cookie-status-hunter">{{if .cookieHasHunter}}已配置{{else}}未配置{{end}}</span>
 								<input type="text" id="cookie-hunter" name="cookie_hunter" placeholder="session=xxx; token=yyy" value="{{.cookieHunter}}">
 							</div>
 							<div class="cookie-engine-row">
 								<span class="engine-label">ZoomEye</span>
-								<span class="cookie-status {{if .cookieHasZoomeye}}cookie-status--on{{else}}cookie-status--off{{end}}" id="cookie-status-zoomeye">{{if .cookieHasZoomeye}}已配置{{else}}未配置{{end}}</span>
 								<input type="text" id="cookie-zoomeye" name="cookie_zoomeye" placeholder="session=xxx; token=yyy" value="{{.cookieZoomeye}}">
 							</div>
 							<div class="cookie-engine-row">
 								<span class="engine-label">Quake</span>
-								<span class="cookie-status {{if .cookieHasQuake}}cookie-status--on{{else}}cookie-status--off{{end}}" id="cookie-status-quake">{{if .cookieHasQuake}}已配置{{else}}未配置{{end}}</span>
 								<input type="text" id="cookie-quake" name="cookie_quake" placeholder="session=xxx; token=yyy" value="{{.cookieQuake}}">
 							</div>
-							<small class="form-text">格式示例：name=value; name2=value2（仅在无头 Chrome 模式需要）</small>
+							<small class="form-text">格式：name=value; name2=value2（仅 Headless 模式需要）</small>
 						</div>
 					</div>
 
