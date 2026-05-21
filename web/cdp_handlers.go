@@ -255,10 +255,19 @@ func (s *Server) getCDPCookies(ctx context.Context, domain string) ([]*network.C
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	defer browserCancel()
 
+	// CDP's Network.getCookies expects fully-qualified URLs in the urls parameter.
+	// Bare domains like "hunter.qianxin.com" are not valid URLs and will be
+	// rejected by GURL parsing on the browser side, causing zero cookies to
+	// be matched. Always prefix with scheme.
+	cookieURL := domain
+	if !strings.HasPrefix(cookieURL, "http://") && !strings.HasPrefix(cookieURL, "https://") {
+		cookieURL = "https://" + cookieURL
+	}
+
 	var cookies []*network.Cookie
 	action := chromedp.ActionFunc(func(ctx context.Context) error {
 		var err error
-		cookies, err = network.GetCookies().WithURLs([]string{domain}).Do(ctx)
+		cookies, err = network.GetCookies().WithURLs([]string{cookieURL}).Do(ctx)
 		return err
 	})
 

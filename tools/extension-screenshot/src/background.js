@@ -73,6 +73,22 @@ async function handleTask(task, token) {
   }
 
   try {
+    // Cookie-read tasks don't need a tab — read directly via chrome.cookies API.
+    if (action === "get_cookies") {
+      const cookies = await chrome.cookies.getAll({ domain: task.url });
+      const durationMs = Math.max(1, Date.now() - startedAt);
+      await reportResult({
+        request_id: requestId,
+        success: true,
+        image_path: "",
+        image_data: "",
+        collected_data: JSON.stringify(cookies),
+        structured_collected_data: { cookies: cookies },
+        duration_ms: durationMs
+      });
+      return;
+    }
+
     tabId = await ensureTab(task.url);
 
     // Choose wait strategy based on action type

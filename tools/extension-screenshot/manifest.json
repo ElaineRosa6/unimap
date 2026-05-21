@@ -20,7 +20,8 @@
     "tabCapture",
     "scripting",
     "storage",
-    "activeTab"
+    "activeTab",
+    "cookies"
   ],
   "host_permissions": [
     "<all_urls>"
