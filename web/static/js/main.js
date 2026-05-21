@@ -266,6 +266,22 @@ function refreshBridgeStatus(statusBadge, statusInfo) {
 						? cdpHealthy
 						: liveClients > 0;
 
+			// Sync extension login status to avoid "在线" vs "未配对" contradiction
+			const extLoginEl = document.getElementById('status-ext');
+			if (extLoginEl) {
+				if (extHealthy && pairedClients > 0) {
+					extLoginEl.textContent = '扩展: 已配对';
+					extLoginEl.className = 'status-indicator connected';
+				} else if (bridgeConnected && pairedClients === 0) {
+					extLoginEl.textContent = '扩展: 桥接就绪';
+					extLoginEl.className = 'status-indicator';
+					extLoginEl.style.color = 'var(--warning)';
+				} else {
+					extLoginEl.textContent = '扩展: 未连接';
+					extLoginEl.className = 'status-indicator disconnected';
+				}
+			}
+
 			updateBridgeBadge(statusBadge, isConnected);
 			if (!statusInfo) {
 				return;

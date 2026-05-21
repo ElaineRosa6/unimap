@@ -727,11 +727,10 @@ footer {
 }
 
 .cookie-engine-row {
-	display: grid;
-	grid-template-columns: 80px 60px 1fr;
+	display: flex;
 	gap: var(--space-3);
 	align-items: center;
-	padding: var(--space-3);
+	padding: var(--space-3) var(--space-4);
 	margin-bottom: var(--space-2);
 	background: var(--bg-elevated);
 	border: 1px solid var(--border);
@@ -740,15 +739,38 @@ footer {
 
 .cookie-engine-row:last-child { margin-bottom: 0; }
 
+.cookie-engine-row .engine-label {
+	font-weight: 600;
+	min-width: 60px;
+	flex-shrink: 0;
+	font-size: 13px;
+}
+
+.cookie-engine-row .cookie-status {
+	flex-shrink: 0;
+}
+
 .cookie-engine-row input[type="text"] {
+	flex: 1;
 	margin: 0;
+	min-width: 0;
 }
 
 .cookie-import {
-	display: grid;
-	grid-template-columns: 120px 1fr auto;
+	display: flex;
 	gap: var(--space-3);
 	align-items: start;
+	flex-wrap: wrap;
+}
+
+.cookie-import select {
+	min-width: 100px;
+	flex-shrink: 0;
+}
+
+.cookie-import textarea {
+	flex: 1;
+	min-width: 200px;
 }
 
 .cookie-actions {

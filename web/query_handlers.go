@@ -272,24 +272,42 @@ func (s *Server) handleQuota(w http.ResponseWriter, r *http.Request) {
 	quotaInfo := make(map[string]*model.QuotaInfo)
 	errorInfo := make(map[string]string)
 
+	// Fetch quota concurrently for all engines
+	type result struct {
+		engine string
+		quota  *model.QuotaInfo
+		err    error
+	}
+
+	ch := make(chan result, len(engines))
 	for _, engine := range engines {
-		adapter, exists := s.orchestrator.GetAdapter(engine)
-		if exists {
+		go func(e string) {
+			adapter, exists := s.orchestrator.GetAdapter(e)
+			if !exists {
+				ch <- result{engine: e, err: fmt.Errorf("adapter not found")}
+				return
+			}
 			quota, err := adapter.GetQuota()
-			if err != nil {
-				msg := strings.TrimSpace(err.Error())
-				if msg == "" {
-					msg = "failed to fetch quota"
-				}
-				errorInfo[engine] = msg
-				continue
+			ch <- result{engine: e, quota: quota, err: err}
+		}(engine)
+	}
+
+	// Collect results
+	for range engines {
+		r := <-ch
+		if r.err != nil {
+			msg := strings.TrimSpace(r.err.Error())
+			if msg == "" {
+				msg = "failed to fetch quota"
 			}
-			if quota == nil {
-				errorInfo[engine] = "quota not available"
-				continue
-			}
-			quotaInfo[engine] = quota
+			errorInfo[r.engine] = msg
+			continue
 		}
+		if r.quota == nil {
+			errorInfo[r.engine] = "quota not available"
+			continue
+		}
+		quotaInfo[r.engine] = r.quota
 	}
 
 	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "quota.html", map[string]interface{}{
