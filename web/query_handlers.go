@@ -301,11 +301,21 @@ func (s *Server) handleQuota(w http.ResponseWriter, r *http.Request) {
 	// Collect results with timeout
 	done := make(chan struct{})
 	go func() {
-		for _, engine := range engines {
+		// Map engine name to channel result
+		results := make(map[string]result)
+		for i := 0; i < len(engines); i++ {
 			var res result
 			select {
 			case res = <-ch:
 			case <-ctx.Done():
+				break
+			}
+			results[res.engine] = res
+		}
+		// Assign in engine declaration order
+		for _, engine := range engines {
+			res, ok := results[engine]
+			if !ok {
 				errorInfo[engine] = "timeout: failed to fetch quota"
 				continue
 			}
@@ -373,4 +383,70 @@ func (s *Server) handleQueryStatus(w http.ResponseWriter, r *http.Request) {
 	// 返回JSON结果
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(statusCopy)
+}
+
+// handleAccountPage renders the account management page (GET /account).
+func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
+	username := ""
+	tokenPrefix := ""
+	if s.config != nil {
+		username = s.config.Web.Auth.Username
+		token := s.adminToken()
+		if len(token) >= 8 {
+			tokenPrefix = token[:8]
+		}
+	}
+	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "account-page", map[string]interface{}{
+		"username":      username,
+		"tokenPrefix":   tokenPrefix,
+		"staticVersion": s.staticVersion,
+	}) {
+		return
+	}
+}
+
+// handleChangePassword handles POST /api/account/change-password.
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if s.config == nil || s.configManager == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server configuration error"})
+		return
+	}
+
+	currentHash := s.config.Web.Auth.PasswordHash
+	if currentHash == "" || !config.CheckPassword(req.CurrentPassword, currentHash) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current password is incorrect"})
+		return
+	}
+
+	if len(req.NewPassword) < 8 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "new password must be at least 8 characters"})
+		return
+	}
+
+	newHash, err := config.HashPassword(req.NewPassword)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to process password"})
+		return
+	}
+
+	s.configMutex.Lock()
+	s.config.Web.Auth.PasswordHash = newHash
+	s.configManager.Save()
+	s.configMutex.Unlock()
+
+	writeJSON(w, http.StatusOK, map[string]string{"success": "password updated"})
 }

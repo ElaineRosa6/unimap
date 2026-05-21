@@ -1,0 +1,111 @@
+{{define "account-page"}}
+{{template "head" .}}
+{{template "header" (dict "ActiveNav" "account" "staticVersion" .staticVersion)}}
+
+			<main>
+				<section class="account-section">
+					<h2>账号管理</h2>
+
+					<div class="tabs" role="tablist">
+						<button class="tab-btn active" data-tab="tab-password" role="tab" aria-selected="true">修改密码</button>
+						<button class="tab-btn" data-tab="tab-user" role="tab" aria-selected="false">当前用户</button>
+					</div>
+
+					<div class="tab-content active" id="tab-password" role="tabpanel">
+						<form id="change-password-form">
+							<div class="form-group">
+								<label for="current-password">当前密码</label>
+								<input type="password" id="current-password" name="current_password" required autocomplete="current-password">
+							</div>
+							<div class="form-group">
+								<label for="new-password">新密码</label>
+								<input type="password" id="new-password" name="new_password" required minlength="8" autocomplete="new-password">
+								<small class="form-text">至少 8 个字符</small>
+							</div>
+							<div class="form-group">
+								<label for="confirm-password">确认新密码</label>
+								<input type="password" id="confirm-password" name="confirm_password" required minlength="8" autocomplete="new-password">
+							</div>
+							<div class="form-group action-buttons">
+								<button type="submit" class="btn btn-primary">保存密码</button>
+							</div>
+						</form>
+					</div>
+
+					<div class="tab-content" id="tab-user" role="tabpanel">
+						<div class="account-info">
+							<div class="account-info-row">
+								<span class="label">用户名</span>
+								<span class="value">{{.username}}</span>
+							</div>
+							<div class="account-info-row">
+								<span class="label">管理员 Token</span>
+								<span class="value">{{.tokenPrefix}}••••</span>
+							</div>
+						</div>
+					</div>
+				</section>
+
+				<div class="toast" id="toast"></div>
+			</main>
+
+			<script nonce="{{.CSPNonce}}">
+			function showToast(msg, type) {
+				const t = document.getElementById('toast');
+				t.textContent = msg;
+				t.className = 'toast ' + type;
+				t.style.display = 'block';
+				setTimeout(() => t.style.display = 'none', 3000);
+			}
+
+			// Tab switching
+			document.querySelectorAll('.tab-btn').forEach(function(btn) {
+				btn.addEventListener('click', function() {
+					document.querySelectorAll('.tab-btn').forEach(function(b) {
+						b.classList.remove('active');
+						b.setAttribute('aria-selected', 'false');
+					});
+					document.querySelectorAll('.tab-content').forEach(function(c) {
+						c.classList.remove('active');
+					});
+					this.classList.add('active');
+					this.setAttribute('aria-selected', 'true');
+					document.getElementById(this.dataset.tab).classList.add('active');
+				});
+			});
+
+			document.getElementById('change-password-form').addEventListener('submit', async (e) => {
+				e.preventDefault();
+				const current = document.getElementById('current-password').value;
+				const newPwd = document.getElementById('new-password').value;
+				const confirm = document.getElementById('confirm-password').value;
+
+				if (newPwd.length < 8) {
+					showToast('新密码至少 8 个字符', 'error');
+					return;
+				}
+				if (newPwd !== confirm) {
+					showToast('两次输入的新密码不一致', 'error');
+					return;
+				}
+
+				try {
+					const res = await fetch('/api/account/change-password', {
+						method: 'POST',
+						headers: {'Content-Type': 'application/json'},
+						body: JSON.stringify({current_password: current, new_password: newPwd})
+					});
+					const data = await res.json();
+					if (!res.ok) {
+						showToast(data.error || '修改失败', 'error');
+						return;
+					}
+					showToast('密码已更新', 'success');
+					e.target.reset();
+				} catch(err) {
+					showToast('请求失败: ' + err.message, 'error');
+				}
+			});
+			</script>
+	{{template "footer" .}}
+{{end}}

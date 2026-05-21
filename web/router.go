@@ -34,6 +34,7 @@ func (r *Router) RegisterRoutes() http.Handler {
 	r.addRoute("index", "GET", "/", r.server.handleIndex, false)
 	r.addRoute("results", "GET", "/results", r.server.handleResults, false)
 	r.addRoute("quota", "GET", "/quota", r.server.handleQuota, false)
+	r.addRoute("account", "GET", "/account", r.server.handleAccountPage, false)
 	r.addRoute("batch-screenshot", "GET", "/batch-screenshot", r.server.handleBatchScreenshotPage, false)
 	r.addRoute("monitor", "GET", "/monitor", r.server.handleMonitorPage, false)
 	r.addRoute("scheduler", "GET", "/scheduler", r.server.handleSchedulerPage, false)
@@ -125,6 +126,9 @@ func (r *Router) RegisterRoutes() http.Handler {
 	// API 路由 - 数据备份
 	r.addRoute("backup-create", "POST", "/api/backup/create", r.server.handleCreateBackup, false)
 	r.addRoute("backup-list", "GET", "/api/backup/list", r.server.handleListBackups, false)
+
+	// API 路由 - 账号管理
+	r.addRoute("account-change-password", "POST", "/api/account/change-password", r.server.handleChangePassword, false)
 
 	// 创建 mux
 	mux := http.NewServeMux()
