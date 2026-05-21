@@ -798,6 +798,118 @@ footer {
 }
 
 /* ============================================================
+   Query hero — primary area on index page
+   ============================================================ */
+.query-hero {
+	background: linear-gradient(135deg, var(--bg-surface) 0%, var(--accent-subtle) 100%);
+	border: 1px solid var(--accent-border);
+	border-left: 4px solid var(--accent);
+	border-radius: var(--radius-lg);
+	padding: var(--space-8) var(--space-8) var(--space-6);
+	margin-bottom: var(--space-8);
+	box-shadow: var(--shadow-md);
+	position: relative;
+}
+
+.query-hero-header {
+	margin-bottom: var(--space-6);
+}
+
+.query-hero-title {
+	font-size: 1.5rem;
+	font-weight: 700;
+	letter-spacing: -0.5px;
+	color: var(--text-primary);
+	margin-bottom: var(--space-2);
+	background: linear-gradient(135deg, var(--text-primary), var(--accent));
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+	background-clip: text;
+}
+
+.query-hero-desc {
+	font-size: 13px;
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.code-editor--large textarea {
+	min-height: 120px;
+	font-size: 14px;
+}
+
+/* ============================================================
+   Config grid — secondary cards below hero
+   ============================================================ */
+.config-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+	gap: var(--space-6);
+	margin-bottom: var(--space-8);
+}
+
+.config-card {
+	background: var(--bg-surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	padding: var(--space-5);
+	box-shadow: var(--shadow-sm);
+	transition: box-shadow var(--duration-normal);
+}
+
+.config-card:hover {
+	box-shadow: var(--shadow-md);
+}
+
+.config-card-title {
+	font-size: 0.8rem;
+	font-weight: 600;
+	color: var(--accent);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	margin-bottom: var(--space-4);
+	padding-bottom: var(--space-3);
+	border-bottom: 1px solid var(--accent-subtle);
+}
+
+/* ============================================================
+   Primary action buttons — more prominent
+   ============================================================ */
+.action-buttons--primary {
+	margin-top: var(--space-6);
+	padding-top: var(--space-5);
+	border-top: 1px solid var(--border);
+}
+
+.btn-lg {
+	padding: var(--space-3) var(--space-6);
+	font-size: 14px;
+	font-weight: 600;
+	letter-spacing: 0.01em;
+	box-shadow: 0 2px 8px rgba(91, 140, 142, 0.3);
+	transition: all var(--duration-normal) var(--ease);
+}
+
+.btn-lg:hover {
+	box-shadow: 0 4px 16px rgba(91, 140, 142, 0.4);
+	transform: translateY(-1px);
+}
+
+/* ============================================================
+   Compact inputs in config cards
+   ============================================================ */
+.input-sm {
+	padding: var(--space-1) var(--space-2) !important;
+	font-size: 12px !important;
+}
+
+.query-options--stacked {
+	flex-direction: column;
+	gap: var(--space-3);
+	align-items: flex-start;
+}
+
+/* ============================================================
    Examples section
    ============================================================ */
 .examples {
