@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/chromedp"
 	"github.com/unimap-icp-hunter/project/internal/logger"
 )
 
@@ -235,6 +237,36 @@ func (s *Server) waitForCDP(ctx context.Context, baseURL string, timeout time.Du
 		lastErr = fmt.Errorf("cdp not available")
 	}
 	return false, nil, lastErr
+}
+
+// getCDPCookies reads cookies for a given domain directly via CDP without opening any pages.
+// This is fast and non-intrusive — it just queries the browser's cookie store.
+func (s *Server) getCDPCookies(ctx context.Context, domain string) ([]*network.Cookie, error) {
+	if s.screenshotMgr == nil {
+		return nil, fmt.Errorf("screenshot manager not initialized")
+	}
+
+	allocCtx, allocCancel, err := s.screenshotMgr.NewAllocator(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("cdp allocator failed: %w", err)
+	}
+	defer allocCancel()
+
+	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+	defer browserCancel()
+
+	var cookies []*network.Cookie
+	action := chromedp.ActionFunc(func(ctx context.Context) error {
+		var err error
+		cookies, err = network.GetCookies().WithURLs([]string{domain}).Do(ctx)
+		return err
+	})
+
+	if err := chromedp.Run(browserCtx, action); err != nil {
+		return nil, fmt.Errorf("cdp get cookies failed: %w", err)
+	}
+
+	return cookies, nil
 }
 
 func (s *Server) startCDPChrome(baseURL string) error {
