@@ -418,16 +418,18 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 	results := make([]map[string]interface{}, 0, len(engines))
 
 	if cdpConnected {
-		// CDP connected → do NOT open pages in the user's browser to avoid
-		// interfering with their browsing session. Just report connection status
-		// and whether cookies are configured.
+		// CDP connected → check per-engine login status via CDP cookie reading.
+		// No page opening needed — we directly read cookies from the browser session.
+		cdpCtx, cdpCancel := context.WithTimeout(r.Context(), 8*time.Second)
+		defer cdpCancel()
+
 		for _, engine := range engines {
 			loginURL := ""
 			if s.screenshotMgr != nil {
 				loginURL = s.screenshotMgr.EngineLoginURL(engine)
 			}
 
-			// Check if cookies are configured for this engine
+			// Check if cookies are configured for this engine (config-level fallback)
 			var cookieSet bool
 			if s.config != nil {
 				s.configMutex.Lock()
@@ -444,34 +446,172 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 				s.configMutex.Unlock()
 			}
 
+			// Try to detect actual login status via CDP cookie reading.
+			// Logic: compare key cookies — logged-in sessions have more keys
+			// and specific marker cookies (e.g., "user" for FOFA, "next" for Hunter).
 			reason := "no_session"
-			if cookieSet {
-				reason = "cookie_configured"
+			loggedIn := false
+
+			if s.screenshotMgr != nil {
+				switch engine {
+				case "hunter":
+					// Hunter: "next" cookie indicates login state.
+					// When logged in, "next" cookie exists with value containing
+					// "https://hunter.qianxin.com/api/uLogin". Missing → not logged in.
+					const hunterDomain = "hunter.qianxin.com"
+					cookies, err := s.getCDPCookies(cdpCtx, hunterDomain)
+					if err != nil {
+						// CDP read failed — fall back to config check
+						if cookieSet {
+							reason = "cookie_configured"
+						}
+						break
+					}
+					hasNext := false
+					for _, c := range cookies {
+						if c.Name == "next" {
+							hasNext = true
+							// Has "next" key → logged in (value is the redirect target after login)
+							loggedIn = true
+							reason = "browser_session"
+							break
+						}
+					}
+					if !hasNext && len(cookies) == 0 {
+						// No cookies at all for this domain
+						if cookieSet {
+							reason = "cookie_configured"
+						}
+					}
+
+				case "fofa":
+					// FOFA: "user" cookie indicates logged-in state.
+					// If "user" key exists → logged in. Missing → not logged in.
+					const fofaDomain = "fofa.info"
+					cookies, err := s.getCDPCookies(cdpCtx, fofaDomain)
+					if err != nil {
+						if cookieSet {
+							reason = "cookie_configured"
+						}
+						break
+					}
+					for _, c := range cookies {
+						if strings.ToLower(c.Name) == "user" {
+							loggedIn = true
+							reason = "browser_session"
+							break
+						}
+					}
+					if !loggedIn && len(cookies) == 0 {
+						if cookieSet {
+							reason = "cookie_configured"
+						}
+					}
+
+				case "quake":
+					// Quake: "Q" and "T" cookies with non-empty values indicate logged-in state.
+					// Both must have non-empty values → logged in. Either empty or missing → not logged in.
+					const quakeDomain = "quake.360.cn"
+					cookies, err := s.getCDPCookies(cdpCtx, quakeDomain)
+					if err != nil {
+						if cookieSet {
+							reason = "cookie_configured"
+						}
+						break
+					}
+					var qVal, tVal string
+					for _, c := range cookies {
+						if c.Name == "Q" {
+							qVal = c.Value
+						}
+						if c.Name == "T" {
+							tVal = c.Value
+						}
+					}
+					if qVal != "" && tVal != "" {
+						loggedIn = true
+						reason = "browser_session"
+					} else if len(cookies) == 0 {
+						if cookieSet {
+							reason = "cookie_configured"
+						}
+					}
+
+				default:
+					// Other engines: config-level check only
+					if cookieSet {
+						reason = "cookie_configured"
+					}
+				}
+			} else {
+				// screenshotMgr not available, config-level check
+				if cookieSet {
+					reason = "cookie_configured"
+				}
 			}
 
-			item := map[string]interface{}{
+			results = append(results, map[string]interface{}{
 				"engine":        engine,
-				"logged_in":     false,
+				"logged_in":     loggedIn,
 				"reason":        reason,
 				"title":         "",
 				"login_url":     loginURL,
 				"cdp_connected": cdpConnected,
 				"ext_paired":    extPaired,
-			}
-			results = append(results, item)
+			})
 		}
-	} else if extPaired {
-		// Extension paired → bridge is connected but login state is unknown.
-		// Do NOT assume logged_in=true; the extension being paired only means
-		// the bridge has active clients, not that the user has valid sessions
-		// on each search engine. Opening pages for verification would interfere
-		// with the user's browsing session and cause unwanted side effects.
+	} else if extPaired && s.screenshotRouter != nil {
+		// Extension paired → use bridge to collect from each engine page.
+		// The extension's capture.js detects login walls via keywords
+		// ("请登录", "请先登录", "login required", etc.) and returns
+		// is_login_wall / login_required flags in structured data.
+		collectCtx, collectCancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer collectCancel()
+
 		for _, engine := range engines {
 			loginURL := ""
 			if s.screenshotMgr != nil {
 				loginURL = s.screenshotMgr.EngineLoginURL(engine)
 			}
-			item := map[string]interface{}{
+
+			collectResults, err := s.screenshotRouter.CollectSearchEngineResult(collectCtx, engine, query, fmt.Sprintf("logincheck_%s_%d", engine, time.Now().UnixNano()))
+			if err != nil {
+				logger.Warnf("login status collect failed for %s: %v", engine, err)
+				collectResults = []screenshot.CollectResult{{Engine: engine, IsLoginWall: false}}
+			}
+
+			var loggedIn, isLoginWall bool
+			if len(collectResults) > 0 {
+				isLoginWall = collectResults[0].IsLoginWall || collectResults[0].LoginRequired
+				loggedIn = len(collectResults[0].Assets) > 0 || collectResults[0].Total > 0
+			}
+
+			reason := "no_session"
+			if isLoginWall {
+				reason = "login_required"
+				loggedIn = false
+			} else if loggedIn {
+				reason = "browser_session"
+			}
+
+			results = append(results, map[string]interface{}{
+				"engine":        engine,
+				"logged_in":     loggedIn,
+				"reason":        reason,
+				"title":         "",
+				"login_url":     loginURL,
+				"cdp_connected": cdpConnected,
+				"ext_paired":    extPaired,
+			})
+		}
+	} else if extPaired {
+		// Extension paired but no router → fall back to unverified
+		for _, engine := range engines {
+			loginURL := ""
+			if s.screenshotMgr != nil {
+				loginURL = s.screenshotMgr.EngineLoginURL(engine)
+			}
+			results = append(results, map[string]interface{}{
 				"engine":        engine,
 				"logged_in":     false,
 				"reason":        "extension_paired_session_unverified",
@@ -479,8 +619,7 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 				"login_url":     loginURL,
 				"cdp_connected": cdpConnected,
 				"ext_paired":    extPaired,
-			}
-			results = append(results, item)
+			})
 		}
 	} else {
 		// No browser session → just check if cookies are configured

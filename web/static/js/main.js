@@ -847,6 +847,10 @@ function updateEngineLoginStatus(engines) {
 						loginBtn.style.display = 'inline-block';
 					}
 					break;
+				case 'browser_session':
+					statusEl.textContent = '✓ 已登录';
+					statusEl.className = 'engine-status-text logged-in';
+					break;
 				case 'page_too_short':
 					statusEl.textContent = '页面加载异常';
 					statusEl.className = 'engine-status-text not-logged-in';
@@ -854,6 +858,10 @@ function updateEngineLoginStatus(engines) {
 						loginBtn.href = engine.login_url || '#';
 						loginBtn.style.display = 'inline-block';
 					}
+					break;
+				case 'extension_paired_session_unverified':
+					statusEl.textContent = '扩展已配对（登录未验证）';
+					statusEl.className = 'engine-status-text not-logged-in';
 					break;
 				default:
 					statusEl.textContent = engine.error || '状态未知';
