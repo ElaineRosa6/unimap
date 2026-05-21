@@ -4,7 +4,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>{{if .Title}}{{.Title}}{{else}}UniMap{{end}} - 多引擎网络资产查询</title>
+	<title>{{if .Title}}{{.Title}}{{else}}UniMap{{end}}</title>
 	<link rel="stylesheet" href="/static/css/style.css?v={{.staticVersion}}">
 </head>
 {{end}}
@@ -23,14 +23,16 @@
 {{define "header"}}
 <body>
 	<header>
-		<h1>UniMap - 多引擎网络资产查询</h1>
-		<p>支持 FOFA、Hunter、ZoomEye、Quake 等多个搜索引擎的统一查询接口</p>
+		<a href="/" class="logo">
+			<span class="logo-mark">U</span>
+			<span class="logo-text">UniMap</span>
+		</a>
 		<nav class="nav-bar">
-			<a href="/"{{if eq .ActiveNav "index"}} class="active"{{end}}>首页</a>
+			<a href="/"{{if eq .ActiveNav "index"}} class="active"{{end}}>查询</a>
 			<a href="/quota"{{if eq .ActiveNav "quota"}} class="active"{{end}}>配额</a>
-			<a href="/batch-screenshot"{{if eq .ActiveNav "batch"}} class="active"{{end}}>批量截图</a>
+			<a href="/batch-screenshot"{{if eq .ActiveNav "batch"}} class="active"{{end}}>截图</a>
 			<a href="/monitor"{{if eq .ActiveNav "monitor"}} class="active"{{end}}>监控</a>
-			<a href="/scheduler"{{if eq .ActiveNav "scheduler"}} class="active"{{end}}>定时任务</a>
+			<a href="/scheduler"{{if eq .ActiveNav "scheduler"}} class="active"{{end}}>任务</a>
 			<form method="POST" action="/api/logout" class="logout-form">
 				<button type="submit" class="btn-logout">退出</button>
 			</form>
@@ -40,7 +42,7 @@
 
 {{define "footer"}}
 	<footer>
-		<p>&copy; 2026 UniMap - 多引擎网络资产查询系统</p>
+		<p>&copy; 2026 UniMap</p>
 	</footer>
 
 	<script src="/static/js/main.js?v={{.staticVersion}}"></script>

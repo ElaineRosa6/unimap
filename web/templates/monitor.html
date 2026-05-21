@@ -1,31 +1,30 @@
 {{template "head-plain" (dict "Title" "网页监控 - UniMap" "staticVersion" .staticVersion)}}
 {{template "header" (dict "ActiveNav" "monitor" "staticVersion" .staticVersion)}}
 		<section class="query-form">
-			<h2>URL列表</h2>
 			<div class="url-list-container">
 				<div class="url-input-area">
-					<textarea id="url-list" placeholder="请输入URL列表，每行一个&#10;例如：&#10;https://www.example.com&#10;https://www.google.com&#10;example.org"></textarea>
+					<textarea id="url-list" placeholder="请输入URL列表，每行一个&#10;例如：&#10;https://www.example.com&#10;https://www.google.com"></textarea>
 				</div>
 				<div class="url-stats">
 					<h4>统计信息</h4>
 					<div class="stat-item">
-						<span>总URL数:</span>
+						<span>总URL数</span>
 						<span class="stat-value" id="total-urls">0</span>
 					</div>
 					<div class="stat-item">
-						<span>格式合法URL:</span>
+						<span>合法URL</span>
 						<span class="stat-value" id="valid-urls">0</span>
 					</div>
 					<div class="stat-item">
-						<span>格式非法URL:</span>
+						<span>非法URL</span>
 						<span class="stat-value" id="invalid-urls">0</span>
 					</div>
 					<div class="stat-item">
-						<span>可达URL:</span>
+						<span>可达URL</span>
 						<span class="stat-value" id="reachable-urls">0</span>
 					</div>
 					<div class="stat-item">
-						<span>不可达URL:</span>
+						<span>不可达URL</span>
 						<span class="stat-value" id="unreachable-urls">0</span>
 					</div>
 				</div>
@@ -33,36 +32,36 @@
 
 			<div class="options-group">
 				<div class="form-group">
-					<label for="concurrency">并发数 (1-10)</label>
+					<label for="concurrency">并发数</label>
 					<input type="number" id="concurrency" min="1" max="10" value="5">
 				</div>
 				<div class="form-group">
 					<label for="tamper-mode">判定模式</label>
 					<select id="tamper-mode">
-						<option value="relaxed" selected>宽松模式（推荐）</option>
-						<option value="balanced">平衡模式</option>
-						<option value="security">安全模式</option>
-						<option value="precise">精确模式</option>
-						<option value="strict">严格模式</option>
+						<option value="relaxed" selected>宽松（推荐）</option>
+						<option value="balanced">平衡</option>
+						<option value="security">安全</option>
+						<option value="precise">精确</option>
+						<option value="strict">严格</option>
 					</select>
 				</div>
 				<div class="form-group">
-					<label for="batch-id">批次ID (可选)</label>
+					<label for="batch-id">批次ID（可选）</label>
 					<input type="text" id="batch-id" placeholder="自动生成">
 				</div>
 			</div>
 
 			<div class="action-buttons">
-					<button type="button" class="btn" id="btn-tamper-check">🔍 篡改检测</button>
-					<button type="button" class="btn" id="btn-set-baseline">📌 设置基线</button>
-					<button type="button" class="btn" id="btn-batch-screenshot">📷 批量截图</button>
-					<button type="button" class="btn" id="btn-export-json">📄 导出JSON</button>
-					<button type="button" class="btn" id="btn-export-excel">📊 导出Excel</button>
-					<button type="button" class="btn" id="btn-clear">🗑️ 清空</button>
-					<button type="button" class="btn" id="btn-load-example">📝 加载示例</button>
-					<button type="button" class="btn" id="btn-import-file">📁 导入文件</button>
-					<input type="file" id="file-input" accept=".txt,.csv" class="hidden-input">
-				</div>
+				<button type="button" class="btn btn-primary" id="btn-tamper-check">篡改检测</button>
+				<button type="button" class="btn btn-secondary" id="btn-set-baseline">设置基线</button>
+				<button type="button" class="btn btn-secondary" id="btn-batch-screenshot">批量截图</button>
+				<button type="button" class="btn btn-secondary" id="btn-export-json">导出JSON</button>
+				<button type="button" class="btn btn-secondary" id="btn-export-excel">导出Excel</button>
+				<button type="button" class="btn btn-secondary" id="btn-clear">清空</button>
+				<button type="button" class="btn btn-secondary" id="btn-load-example">加载示例</button>
+				<button type="button" class="btn btn-secondary" id="btn-import-file">导入文件</button>
+				<input type="file" id="file-input" accept=".txt,.csv" class="hidden-input">
+			</div>
 
 			<div class="progress-container" id="progress-container">
 				<div class="progress-bar">
@@ -71,15 +70,13 @@
 				<div class="progress-text" id="progress-text">准备中...</div>
 			</div>
 
-			<!-- 结果区域 -->
 			<div class="results-section hidden" id="results-section">
 				<div class="tabs">
-					<button class="tab active" data-tab="tamper">篡改检测结果</button>
+					<button class="tab active" data-tab="tamper">篡改检测</button>
 					<button class="tab" data-tab="screenshot">截图结果</button>
 					<button class="tab" data-tab="history">历史记录</button>
 				</div>
 
-				<!-- 篡改检测结果 -->
 				<div class="tab-content active" id="tamper-tab">
 					<div class="summary-cards hidden" id="tamper-summary">
 						<div class="summary-card">
@@ -106,7 +103,6 @@
 					<div id="tamper-results"></div>
 				</div>
 
-				<!-- 截图结果 -->
 				<div class="tab-content" id="screenshot-tab">
 					<div class="summary-cards hidden" id="screenshot-summary">
 						<div class="summary-card">
@@ -125,35 +121,34 @@
 					<div id="screenshot-results"></div>
 				</div>
 
-				<!-- 历史记录 -->
 				<div class="tab-content" id="history-tab">
 					<div class="history-controls">
-							<input type="text" id="history-query" placeholder="按URL/状态查询">
-							<select id="history-url-filter">
-								<option value="">全部URL</option>
-							</select>
-							<select id="history-type-filter">
-								<option value="">全部类型</option>
-								<option value="first_check">首次检测</option>
-								<option value="normal">正常</option>
-								<option value="tampered">篡改</option>
-							</select>
-							<select id="history-mode-filter">
-								<option value="">全部模式</option>
-								<option value="relaxed">宽松</option>
-								<option value="balanced">平衡</option>
-								<option value="security">安全</option>
-								<option value="precise">精确</option>
-								<option value="strict">严格</option>
-							</select>
-							<input type="datetime-local" id="history-start-time" placeholder="开始时间">
-							<input type="datetime-local" id="history-end-time" placeholder="结束时间">
-							<button type="button" class="btn btn-secondary" id="btn-refresh-history">刷新</button>
-						</div>
+						<input type="text" id="history-query" placeholder="按URL/状态查询">
+						<select id="history-url-filter">
+							<option value="">全部URL</option>
+						</select>
+						<select id="history-type-filter">
+							<option value="">全部类型</option>
+							<option value="first_check">首次检测</option>
+							<option value="normal">正常</option>
+							<option value="tampered">篡改</option>
+						</select>
+						<select id="history-mode-filter">
+							<option value="">全部模式</option>
+							<option value="relaxed">宽松</option>
+							<option value="balanced">平衡</option>
+							<option value="security">安全</option>
+							<option value="precise">精确</option>
+							<option value="strict">严格</option>
+						</select>
+						<input type="datetime-local" id="history-start-time">
+						<input type="datetime-local" id="history-end-time">
+						<button type="button" class="btn btn-secondary" id="btn-refresh-history">刷新</button>
+					</div>
 					<div id="history-results"></div>
 				</div>
 			</div>
 		</section>
-</main>
+	</main>
 
 {{template "footer" .}}

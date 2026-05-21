@@ -3,10 +3,9 @@
 
 	<main>
 		<section class="query-info">
-			<h2>查询信息</h2>
-			<p><strong>查询语句：</strong>{{.query}}</p>
-			<p><strong>使用引擎：</strong>{{join .engines ", "}}</p>
-			<p><strong>总结果数：</strong>{{.totalCount}}</p>
+			<p><strong>查询：</strong><code>{{.query}}</code></p>
+			<p><strong>引擎：</strong>{{join .engines ", "}}</p>
+			<p><strong>结果：</strong>{{.totalCount}}</p>
 		</section>
 
 		{{if .errors}}
@@ -21,7 +20,6 @@
 		{{end}}
 
 		<section class="engine-stats">
-			<h3>引擎统计</h3>
 			<div class="stats-grid">
 				{{range $engine, $count := .engineStats}}
 					<div class="stat-item">
@@ -33,28 +31,24 @@
 		</section>
 
 		<section class="results">
-			<h2>查询结果</h2>
-			
-			<!-- 导出选项 -->
-			<div class="export-options">
-				<button type="button" class="btn" id="btn-export-csv">导出CSV</button>
-				<button type="button" class="btn" id="btn-export-json">导出JSON</button>
-				<button type="button" class="btn" id="btn-export-excel">导出Excel</button>
-				<a href="/" class="btn">返回首页</a>
+			<div class="export-options action-buttons">
+				<button type="button" class="btn btn-secondary" id="btn-export-csv">导出CSV</button>
+				<button type="button" class="btn btn-secondary" id="btn-export-json">导出JSON</button>
+				<button type="button" class="btn btn-secondary" id="btn-export-excel">导出Excel</button>
+				<a href="/" class="btn btn-secondary">返回查询</a>
 			</div>
-			
-			<!-- 筛选选项 -->
+
 			<div class="filter-options">
 				<div class="filter-group">
-					<label for="filter-ip">IP筛选：</label>
-					<input type="text" id="filter-ip" placeholder="输入IP地址">
+					<label for="filter-ip">IP</label>
+					<input type="text" id="filter-ip" placeholder="输入IP">
 				</div>
 				<div class="filter-group">
-					<label for="filter-port">端口筛选：</label>
-					<input type="text" id="filter-port" placeholder="输入端口号">
+					<label for="filter-port">端口</label>
+					<input type="text" id="filter-port" placeholder="输入端口">
 				</div>
 				<div class="filter-group">
-					<label for="filter-protocol">协议筛选：</label>
+					<label for="filter-protocol">协议</label>
 					<select id="filter-protocol">
 						<option value="">全部</option>
 						<option value="http">HTTP</option>
@@ -67,7 +61,7 @@
 					</select>
 				</div>
 				<div class="filter-group">
-					<label for="filter-source">来源筛选：</label>
+					<label for="filter-source">来源</label>
 					<select id="filter-source">
 						<option value="">全部</option>
 						<option value="fofa">FOFA</option>
@@ -77,58 +71,58 @@
 					</select>
 				</div>
 				<div class="filter-group">
-					<button type="button" class="btn" id="btn-apply-filter">应用筛选</button>
-					<button type="button" class="btn" id="btn-reset-filter">重置筛选</button>
+					<button type="button" class="btn btn-sm btn-secondary" id="btn-apply-filter">应用</button>
+					<button type="button" class="btn btn-sm btn-secondary" id="btn-reset-filter">重置</button>
 				</div>
 			</div>
-			
-			<!-- 结果统计 -->
+
 			<div class="results-stats">
-				<p>显示 <span id="displayed-count">{{len .assets}}</span> 条结果，共 <span id="total-count">{{.totalCount}}</span> 条</p>
+				<p>显示 <span id="displayed-count">{{len .assets}}</span> / <span id="total-count">{{.totalCount}}</span></p>
 			</div>
-			
+
 			{{if .assets}}
-			<table class="results-table">
-				<thead>
-					<tr>
-						<th>IP</th>
-						<th>端口</th>
-						<th>协议</th>
-						<th>主机</th>
-						<th>标题</th>
-						<th>服务器</th>
-						<th>状态码</th>
-						<th>来源</th>
-						<th>操作</th>
-					</tr>
-				</thead>
-				<tbody id="results-body">
-					{{range .assets}}
-					<tr>
-						<td>{{.IP}}</td>
-						<td>{{.Port}}</td>
-						<td>{{.Protocol}}</td>
-						<td>{{.Host}}</td>
-						<td>{{.Title}}</td>
-						<td>{{.Server}}</td>
-						<td>{{.StatusCode}}</td>
-						<td>{{.Source}}</td>
-						<td>
-							<button type="button" class="btn-sm btn-outline-primary" data-ip="{{.IP}}" data-port="{{.Port}}">详情</button>
-							<button type="button" class="btn-sm btn-outline-success" data-ip="{{.IP}}">复制IP</button>
-						</td>
-					</tr>
-					{{end}}
-				</tbody>
-			</table>
-			
-			<!-- 分页控件 -->
+			<div class="results-table-container">
+				<table class="results-table">
+					<thead>
+						<tr>
+							<th>IP</th>
+							<th>端口</th>
+							<th>协议</th>
+							<th>主机</th>
+							<th>标题</th>
+							<th>服务器</th>
+							<th>状态</th>
+							<th>来源</th>
+							<th>操作</th>
+						</tr>
+					</thead>
+					<tbody id="results-body">
+						{{range .assets}}
+						<tr>
+							<td>{{.IP}}</td>
+							<td>{{.Port}}</td>
+							<td>{{.Protocol}}</td>
+							<td>{{.Host}}</td>
+							<td>{{.Title}}</td>
+							<td>{{.Server}}</td>
+							<td>{{.StatusCode}}</td>
+							<td>{{.Source}}</td>
+							<td>
+								<button type="button" class="btn-sm btn-outline-primary" data-ip="{{.IP}}" data-port="{{.Port}}">详情</button>
+								<button type="button" class="btn-sm btn-outline-secondary" data-ip="{{.IP}}">复制</button>
+							</td>
+						</tr>
+						{{end}}
+					</tbody>
+				</table>
+			</div>
+
 			<div class="pagination">
-				<button type="button" class="btn btn-outline-primary" id="btn-prev-page" disabled>上一页</button>
-				<span class="page-info">第 <span id="current-page">1</span> 页，共 <span id="total-pages">1</span> 页</span>
-				<button type="button" class="btn btn-outline-primary" id="btn-next-page" disabled>下一页</button>
+				<button type="button" class="btn btn-sm btn-secondary" id="btn-prev-page" disabled>上一页</button>
+				<span class="page-info">第 <span id="current-page">1</span> / <span id="total-pages">1</span> 页</span>
+				<button type="button" class="btn btn-sm btn-secondary" id="btn-next-page" disabled>下一页</button>
 				<div class="page-size-selector">
-					<label for="page-size">每页显示：</label>
+					<label for="page-size">每页</label>
 					<select id="page-size">
 						<option value="20">20</option>
 						<option value="50" selected>50</option>
@@ -142,7 +136,6 @@
 			{{end}}
 		</section>
 
-		<!-- 资产详情模态框 -->
 		<div id="asset-detail" class="modal">
 			<div class="modal-content">
 				<div class="modal-header">
@@ -153,10 +146,10 @@
 					<div id="asset-detail-content"></div>
 				</div>
 				<div class="modal-footer">
-					<button type="button" class="btn btn-outline-secondary">关闭</button>
+					<button type="button" class="btn btn-secondary">关闭</button>
 				</div>
 			</div>
 		</div>
-</main>
+	</main>
 
 {{template "footer" .}}
