@@ -5,7 +5,7 @@
 		<div class="summary-cards">
 			<div class="summary-card">
 				<div class="count" id="total-count">0</div>
-				<div class="label">总任务数</div>
+				<div class="label">总任务</div>
 			</div>
 			<div class="summary-card">
 				<div class="count" id="enabled-count">0</div>
@@ -72,7 +72,7 @@
 							<label><input type="checkbox" id="task-enabled" checked> 启用</label>
 						</div>
 					</div>
-					<button class="btn" id="btn-create-task">创建任务</button>
+					<button class="btn btn-primary" id="btn-create-task">创建</button>
 				</div>
 			</details>
 
@@ -240,8 +240,8 @@
 						<button class="btn-sm btn-outline-primary" onclick="editTask('${t.id}')" title="编辑">编辑</button>
 						<button class="btn-sm btn-outline-success" onclick="runTask('${t.id}')" title="立即执行">执行</button>
 						${t.enabled
-							? `<button class="btn-sm btn-outline-warning" onclick="toggleTask('${t.id}', false)" title="禁用">禁用</button>`
-							: `<button class="btn-sm btn-outline-warning" onclick="toggleTask('${t.id}', true)" title="启用">启用</button>`
+							? `<button class="btn-sm btn-outline-secondary" onclick="toggleTask('${t.id}', false)" title="禁用">禁用</button>`
+							: `<button class="btn-sm btn-outline-secondary" onclick="toggleTask('${t.id}', true)" title="启用">启用</button>`
 						}
 						<button class="btn-sm btn-outline-danger" onclick="deleteTask('${t.id}')" title="删除">删除</button>
 					</td>

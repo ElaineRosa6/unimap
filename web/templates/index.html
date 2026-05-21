@@ -3,12 +3,11 @@
 
 	<main>
 		<section class="query-form">
-			<h2>查询表单</h2>
 			<form action="/query" method="POST">
 				<div class="form-group">
-					<label for="query">UQL 查询语句</label>
+					<label for="query">查询语句</label>
 					<div class="code-editor">
-						<textarea id="query" name="query" rows="4" placeholder="例如：country=&quot;CN&quot; && port=&quot;80&quot; && protocol=&quot;http&quot;" required></textarea>
+						<textarea id="query" name="query" rows="4" placeholder='例如：country="CN" && port="80" && protocol="http"' required></textarea>
 						<div class="editor-toolbar">
 							<button type="button" class="toolbar-btn" data-action="clear">清空</button>
 							<button type="button" class="toolbar-btn" data-action="format">格式化</button>
@@ -19,7 +18,7 @@
 				</div>
 
 				<div class="form-group">
-					<label>选择引擎 (支持多选)</label>
+					<label>引擎</label>
 					<div class="engine-selector">
 						{{range .engines}}
 							<div class="engine-option">
@@ -52,13 +51,12 @@
 							<option value="bkapp">快应用黑名单</option>
 						</select>
 						<input type="text" id="icp-search-input" placeholder="域名 / 公司名 / 许可证号">
-						<button type="button" class="btn btn-secondary" id="btn-icp-search">ICP查询</button>
+						<button type="button" class="btn btn-secondary" id="btn-icp-search">查询</button>
 					</div>
 					<small class="form-text">独立ICP查询，不与UQL引擎混合</small>
 				</div>
 
 				<div id="icp-search-results" style="display:none;">
-					<h3>ICP备案查询结果</h3>
 					<div class="table-wrapper">
 						<table class="results-table" id="icp-results-table">
 							<thead>
@@ -79,7 +77,7 @@
 				</div>
 
 				<div class="form-group">
-					<label>Cookie (用于搜索引擎网页截图，可选)</label>
+					<label>Cookie（用于搜索引擎截图，可选）</label>
 					<div class="login-status-bar" id="login-status-bar">
 						<span class="status-indicator" id="status-cdp">CDP: 检测中</span>
 						<span class="status-indicator" id="status-ext">扩展: 检测中</span>
@@ -88,22 +86,22 @@
 						<div class="engine-status-row" data-engine="fofa">
 							<span class="engine-label">FOFA</span>
 							<span class="engine-status-text" id="engine-status-fofa">检测中</span>
-							<a class="btn-sm btn-outline-primary" id="btn-login-fofa" href="https://fofa.info/" target="_blank" style="display:none;">点击登录</a>
+							<a class="btn-sm btn-outline-primary" id="btn-login-fofa" href="https://fofa.info/" target="_blank" style="display:none;">登录</a>
 						</div>
 						<div class="engine-status-row" data-engine="hunter">
 							<span class="engine-label">Hunter</span>
 							<span class="engine-status-text" id="engine-status-hunter">检测中</span>
-							<a class="btn-sm btn-outline-primary" id="btn-login-hunter" href="https://hunter.qianxin.com/" target="_blank" style="display:none;">点击登录</a>
+							<a class="btn-sm btn-outline-primary" id="btn-login-hunter" href="https://hunter.qianxin.com/" target="_blank" style="display:none;">登录</a>
 						</div>
 						<div class="engine-status-row" data-engine="zoomeye">
 							<span class="engine-label">ZoomEye</span>
 							<span class="engine-status-text" id="engine-status-zoomeye">检测中</span>
-							<a class="btn-sm btn-outline-primary" id="btn-login-zoomeye" href="https://www.zoomeye.org/" target="_blank" style="display:none;">点击登录</a>
+							<a class="btn-sm btn-outline-primary" id="btn-login-zoomeye" href="https://www.zoomeye.org/" target="_blank" style="display:none;">登录</a>
 						</div>
 						<div class="engine-status-row" data-engine="quake">
 							<span class="engine-label">Quake</span>
 							<span class="engine-status-text" id="engine-status-quake">检测中</span>
-							<a class="btn-sm btn-outline-primary" id="btn-login-quake" href="https://quake.360.cn/" target="_blank" style="display:none;">点击登录</a>
+							<a class="btn-sm btn-outline-primary" id="btn-login-quake" href="https://quake.360.cn/" target="_blank" style="display:none;">登录</a>
 						</div>
 					</div>
 					<div class="cookie-input-section" id="cookie-input-section">
@@ -149,7 +147,7 @@
 								<option value="quake">Quake</option>
 							</select>
 							<textarea id="cookie-json" rows="3" placeholder='[{"name":"session","value":"xxx","domain":".fofa.info","path":"/","httpOnly":true,"secure":true}]'></textarea>
-							<button type="button" class="btn btn-secondary" id="btn-import-cookie-json">导入 JSON</button>
+							<button type="button" class="btn btn-secondary" id="btn-import-cookie-json">导入</button>
 						</div>
 						<small class="form-text">支持浏览器导出的 JSON 数组</small>
 					</div>
@@ -160,11 +158,11 @@
 					<div class="query-options">
 						<label class="option-label" for="proxy-server">浏览器代理</label>
 						<input type="text" id="proxy-server" name="proxy_server" placeholder="http://127.0.0.1:7890 或 socks5://127.0.0.1:7891" value="{{.proxyServer}}">
-						<button type="button" class="btn btn-secondary" id="btn-save-proxy">保存代理</button>
+						<button type="button" class="btn btn-secondary" id="btn-save-proxy">保存</button>
 						<span class="cookie-status cookie-status--off" id="cdp-status">检测中</span>
-						<button type="button" class="btn btn-secondary" id="btn-connect-cdp">连接 CDP</button>
+						<button type="button" class="btn btn-secondary" id="btn-connect-cdp">连接</button>
 						<span class="cookie-status cookie-status--off" id="bridge-status">扩展检测中</span>
-						<button type="button" class="btn btn-secondary" id="btn-refresh-bridge-status">刷新扩展</button>
+						<button type="button" class="btn btn-secondary" id="btn-refresh-bridge-status">刷新</button>
 					</div>
 					<div class="query-options mode-row">
 						<label class="option-label">浏览器执行模式</label>
@@ -187,22 +185,22 @@
 								<div class="browser-action-selector">
 									<label class="action-option">
 										<input type="radio" name="browser-action" value="open" id="browser-action-open">
-										<span>仅打开结果页</span>
+										<span>仅打开</span>
 									</label>
 									<label class="action-option">
 										<input type="radio" name="browser-action" value="capture" id="browser-action-capture" checked>
-										<span>打开并截图</span>
+										<span>截图</span>
 									</label>
 									<label class="action-option">
 										<input type="radio" name="browser-action" value="collect" id="browser-action-collect">
-										<span>打开并采集结构化结果</span>
+										<span>采集</span>
 									</label>
 								</div>
 							</div>
 						<span class="form-text" id="cdp-status-info"></span>
 						<span class="form-text" id="bridge-status-info"></span>
 					</div>
-					<small class="form-text">默认检测 127.0.0.1:9222。开启后会保留现有 API 查询，同时通过当前选择的浏览器执行模式打开所选引擎结果页</small>
+					<small class="form-text">默认检测 127.0.0.1:9222</small>
 				</div>
 
 				<div class="form-group">
@@ -220,14 +218,14 @@
 
 				<div class="form-group action-buttons">
 					<button type="submit" class="btn btn-primary">执行查询</button>
-					<button type="button" class="btn btn-outline-primary" id="btn-save-query">保存查询</button>
-					<a href="/monitor" class="btn btn-outline-primary">网页监控</a>
-					<a href="/scheduler" class="btn btn-outline-primary">定时任务</a>
-					<a href="/batch-screenshot" class="btn btn-outline-primary">批量截图</a>
-					<a href="/quota" class="btn btn-outline-primary">查看配额</a>
+					<button type="button" class="btn btn-secondary" id="btn-save-query">保存</button>
+					<a href="/monitor" class="btn btn-secondary">监控</a>
+					<a href="/scheduler" class="btn btn-secondary">任务</a>
+					<a href="/batch-screenshot" class="btn btn-secondary">截图</a>
+					<a href="/quota" class="btn btn-secondary">配额</a>
 				</div>
 				<div class="form-group cookie-actions">
-					<button type="button" class="btn-sm btn-outline-secondary" id="btn-refresh-login-status">刷新登录状态</button>
+					<button type="button" class="btn-sm btn-outline-secondary" id="btn-refresh-login-status">刷新状态</button>
 					<button type="button" class="btn-sm btn-outline-secondary" id="btn-save-cookies">保存Cookie</button>
 					<button type="button" class="btn-sm btn-outline-secondary" id="btn-verify-cookies">验证Cookie</button>
 					<button type="button" class="btn-sm btn-outline-danger" id="btn-clear-cookies">清空Cookie</button>
@@ -247,13 +245,12 @@
 				</div>
 				<div class="modal-footer">
 					<button type="button" class="btn btn-secondary close-btn">关闭</button>
-					<button type="button" class="btn btn-danger" id="btn-clear-history">清空历史</button>
+					<button type="button" class="btn btn-danger" id="btn-clear-history">清空</button>
 				</div>
 			</div>
 		</div>
 
 		<section class="examples">
-			<h2>查询示例</h2>
 			<div class="example-list">
 				<div class="example-item">
 					<code>country="CN" && port="80" && protocol="http"</code>

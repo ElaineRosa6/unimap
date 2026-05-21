@@ -8,30 +8,31 @@
 </head>
 <body>
 	<header>
-		<h1>UniMap - 多引擎网络资产查询</h1>
-		<p>支持 FOFA、Hunter、ZoomEye、Quake 等多个搜索引擎的统一查询接口</p>
+		<a href="/" class="logo">
+			<span class="logo-mark">U</span>
+			<span class="logo-text">UniMap</span>
+		</a>
 		<nav class="nav-bar">
-			<a href="/">首页</a>
+			<a href="/">查询</a>
 			<a href="/quota">配额</a>
-			<a href="/batch-screenshot">批量截图</a>
+			<a href="/batch-screenshot">截图</a>
 			<a href="/monitor">监控</a>
-			<a href="/scheduler">定时任务</a>
+			<a href="/scheduler">任务</a>
 		</nav>
 	</header>
 
 	<main>
 		<section class="error-message">
-			<h2>错误信息</h2>
 			<div class="error-box">
 				<p>{{.error}}</p>
 				<a href="/" class="btn btn-primary">返回首页</a>
-				<a href="javascript:history.back()" class="btn btn-outline-secondary">⬅️ 返回上一页</a>
+				<a href="javascript:history.back()" class="btn btn-secondary">返回上一页</a>
 			</div>
 		</section>
 	</main>
 
 	<footer>
-		<p>&copy; 2026 UniMap - 多引擎网络资产查询系统</p>
+		<p>&copy; 2026 UniMap</p>
 	</footer>
 
 	<script src="/static/js/main.js?v={{.staticVersion}}"></script>

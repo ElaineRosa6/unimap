@@ -3,44 +3,38 @@
 
 	<main>
 		<section class="quota-info">
-			<h2>引擎配额</h2>
 			<div class="quota-actions">
-				<button type="button" class="btn btn-outline-primary" id="btn-refresh-quota">刷新配额</button>
-				<button type="button" class="btn btn-outline-primary" id="btn-export-quota">导出配额</button>
-				<button type="button" class="btn btn-outline-primary" id="btn-quota-settings">配额设置</button>
-				<a href="/" class="btn btn-outline-primary">返回首页</a>
+				<button type="button" class="btn btn-secondary" id="btn-refresh-quota">刷新</button>
+				<button type="button" class="btn btn-secondary" id="btn-export-quota">导出</button>
+				<button type="button" class="btn btn-secondary" id="btn-quota-settings">设置</button>
 			</div>
-			
-			<!-- 配额概览 -->
+
 			<div class="quota-overview">
 				<div class="overview-item">
-					<span class="overview-label">总剩余配额：</span>
+					<span class="overview-label">总剩余</span>
 					<span class="overview-value" id="total-remaining">--</span>
 				</div>
 				<div class="overview-item">
-					<span class="overview-label">总已用配额：</span>
+					<span class="overview-label">总已用</span>
 					<span class="overview-value" id="total-used">--</span>
 				</div>
 				<div class="overview-item">
-					<span class="overview-label">总配额：</span>
+					<span class="overview-label">总配额</span>
 					<span class="overview-value" id="total-quota">--</span>
 				</div>
 				<div class="overview-item">
-					<span class="overview-label">整体使用率：</span>
+					<span class="overview-label">使用率</span>
 					<span class="overview-value" id="total-usage-rate">--</span>
 				</div>
 			</div>
-			
-			<!-- 配额使用趋势 -->
+
 			<div class="quota-trend">
-				<h3>配额使用趋势</h3>
+				<h3>使用趋势</h3>
 				<div class="trend-chart" id="quota-trend-chart">
-					<!-- 这里将通过JavaScript渲染趋势图 -->
 					<div class="chart-placeholder">加载趋势图中...</div>
 				</div>
 			</div>
-			
-			<!-- 引擎配额详情 -->
+
 			<div class="quota-grid">
 				{{range .engines}}
 					{{$engine := .}}
@@ -54,24 +48,24 @@
 						{{with $quota}}
 							<div class="quota-details">
 								<div class="quota-row">
-									<span class="label">剩余配额：</span>
+									<span class="label">剩余</span>
 									<span class="value">{{.Remaining}} {{.Unit}}</span>
 								</div>
 								<div class="quota-row">
-									<span class="label">已用配额：</span>
+									<span class="label">已用</span>
 									<span class="value">{{.Used}} {{.Unit}}</span>
 								</div>
 								<div class="quota-row">
-									<span class="label">总配额：</span>
+									<span class="label">总计</span>
 									<span class="value">{{.Total}} {{.Unit}}</span>
 								</div>
 								<div class="quota-row">
-									<span class="label">使用率：</span>
+									<span class="label">使用率</span>
 									<span class="value">{{if gt .Total 0}}{{printf "%.1f" (div (float .Used) (float .Total) | mul 100)}}{{else}}0{{end}}%</span>
 								</div>
 								{{if .Expiry}}
 								<div class="quota-row">
-									<span class="label">过期时间：</span>
+									<span class="label">过期</span>
 									<span class="value">{{.Expiry}}</span>
 								</div>
 								{{end}}
@@ -81,9 +75,9 @@
 								<div class="quota-alert">
 									<label class="alert-label">
 										<input type="checkbox" name="quota-alert" value="{{$engine}}">
-										启用配额预警
+										启用预警
 									</label>
-									<input type="number" name="alert-threshold" placeholder="预警阈值（%）" min="1" max="99" value="80">
+									<input type="number" name="alert-threshold" placeholder="阈值" min="1" max="99" value="80">
 								</div>
 							</div>
 						{{else}}
@@ -97,20 +91,18 @@
 		</section>
 
 		<section class="quota-tips">
-			<h2>配额使用提示</h2>
+			<h3>提示</h3>
 			<ul>
 				<li>FOFA：使用F点作为配额单位，查询消耗F点</li>
 				<li>Hunter：使用积分作为配额单位，查询消耗积分</li>
 				<li>ZoomEye：需要验证手机号并充值积分</li>
 				<li>Quake：提供免费配额，超出后需要付费</li>
-				<li>建议合理设置查询条件，避免过度消耗配额</li>
-				<li>使用缓存功能可以减少重复查询的配额消耗</li>
-				<li>定期检查配额使用情况，避免配额耗尽影响正常使用</li>
-				<li>设置配额预警，及时了解配额使用状态</li>
+				<li>合理设置查询条件，避免过度消耗配额</li>
+				<li>使用缓存减少重复查询消耗</li>
+				<li>设置预警及时了解配额状态</li>
 			</ul>
 		</section>
 
-		<!-- 配额设置模态框 -->
 		<div id="quota-settings-modal" class="modal">
 			<div class="modal-content">
 				<div class="modal-header">
@@ -119,17 +111,17 @@
 				</div>
 				<div class="modal-body">
 					<div class="setting-group">
-						<label class="setting-label">自动刷新间隔：</label>
+						<label class="setting-label">自动刷新间隔</label>
 						<select name="refresh-interval">
 							<option value="30000">30秒</option>
 							<option value="60000" selected>1分钟</option>
 							<option value="300000">5分钟</option>
 							<option value="600000">10分钟</option>
-							<option value="0">关闭自动刷新</option>
+							<option value="0">关闭</option>
 						</select>
 					</div>
 					<div class="setting-group">
-						<label class="setting-label">默认预警阈值：</label>
+						<label class="setting-label">默认预警阈值</label>
 						<input type="number" name="default-threshold" min="1" max="99" value="80">
 					</div>
 					<div class="setting-group">
@@ -139,16 +131,16 @@
 						</label>
 					</div>
 					<div class="setting-group">
-						<label class="setting-label">预警邮件：</label>
-						<input type="email" name="alert-email" placeholder="输入预警邮件地址">
+						<label class="setting-label">预警邮件</label>
+						<input type="email" name="alert-email" placeholder="输入邮箱地址">
 					</div>
 				</div>
 				<div class="modal-footer">
-					<button type="button" class="btn btn-primary" id="btn-save-settings">保存设置</button>
+					<button type="button" class="btn btn-primary" id="btn-save-settings">保存</button>
 					<button type="button" class="btn btn-secondary close-btn">取消</button>
 				</div>
 			</div>
 		</div>
-</main>
+	</main>
 
 {{template "footer" .}}

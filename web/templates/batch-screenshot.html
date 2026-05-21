@@ -2,9 +2,7 @@
 {{template "header" (dict "ActiveNav" "batch" "staticVersion" .staticVersion)}}
 
 	<main>
-
 		<section class="query-form">
-			<h2>URL列表</h2>
 			<div class="url-list-container">
 				<div class="url-input-area">
 					<textarea id="url-list" placeholder="请输入URL列表，每行一个&#10;例如：&#10;https://www.example.com&#10;https://www.google.com&#10;example.org&#10;192.168.1.1:8080"></textarea>
@@ -12,15 +10,15 @@
 				<div class="url-stats">
 					<h4>统计信息</h4>
 					<div class="stat-item">
-						<span>总URL数:</span>
+						<span>总URL数</span>
 						<span class="stat-value" id="total-urls">0</span>
 					</div>
 					<div class="stat-item">
-						<span>有效URL:</span>
+						<span>有效URL</span>
 						<span class="stat-value" id="valid-urls">0</span>
 					</div>
 					<div class="stat-item">
-						<span>无效URL:</span>
+						<span>无效URL</span>
 						<span class="stat-value" id="invalid-urls">0</span>
 					</div>
 				</div>
@@ -28,20 +26,20 @@
 
 			<div class="options-group">
 				<div class="form-group">
-					<label for="concurrency">并发数 (1-10)</label>
+					<label for="concurrency">并发数</label>
 					<input type="number" id="concurrency" min="1" max="10" value="5">
 				</div>
 				<div class="form-group">
-					<label for="batch-id">批次ID (可选)</label>
+					<label for="batch-id">批次ID（可选）</label>
 					<input type="text" id="batch-id" placeholder="自动生成">
 				</div>
 			</div>
 
-			<div class="form-group">
-				<button type="button" class="btn btn-outline-primary" id="btn-start-batch">开始批量截图</button>
-				<button type="button" class="btn btn-outline-primary" id="btn-clear-urls">清空列表</button>
-				<button type="button" class="btn btn-outline-primary" id="btn-load-example">加载示例</button>
-				<button type="button" class="btn btn-outline-primary" id="btn-import-file">导入文件</button>
+			<div class="form-group action-buttons">
+				<button type="button" class="btn btn-primary" id="btn-start-batch">开始截图</button>
+				<button type="button" class="btn btn-secondary" id="btn-clear-urls">清空</button>
+				<button type="button" class="btn btn-secondary" id="btn-load-example">加载示例</button>
+				<button type="button" class="btn btn-secondary" id="btn-import-file">导入文件</button>
 				<input type="file" id="file-input" accept=".txt,.csv,.xlsx,.xls" class="hidden-input">
 			</div>
 
@@ -53,7 +51,6 @@
 			</div>
 
 			<div class="results-container hidden" id="results-container">
-				<h3>截图结果</h3>
 				<div id="results-list"></div>
 			</div>
 		</section>
