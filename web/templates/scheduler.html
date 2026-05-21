@@ -164,11 +164,12 @@
 				</table>
 			</div>
 	</div>
+	</main>
 
 	<div class="toast" id="toast"></div>
 
 
-	<div class="modal-overlay" id="edit-modal-overlay" onclick="closeEditModal()"></div>
+	<div class="modal-overlay" id="edit-modal-overlay"></div>
 	<div class="modal" id="edit-modal">
 		<h3>编辑任务</h3>
 		<input type="hidden" id="edit-task-id">
@@ -186,7 +187,7 @@
 		<div class="form-group"><label>任务参数（JSON）</label><textarea id="edit-task-payload" rows="4" class="form-control"></textarea></div>
 		<div class="form-group"><label><input type="checkbox" id="edit-task-enabled"> 启用</label></div>
 		<div class="modal-actions">
-			<button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+			<button class="btn btn-secondary" id="btn-cancel-edit">取消</button>
 			<button class="btn btn-primary" id="btn-save-task">保存</button>
 		</div>
 	</div>
@@ -237,13 +238,13 @@
 					<td>${escHtml(nextRun)}</td>
 					<td><span class="payload-preview" title="${escHtml(JSON.stringify(t.payload || {}))}">${escHtml(payloadStr)}</span></td>
 					<td>
-						<button class="btn-sm btn-outline-primary" onclick="editTask('${t.id}')" title="编辑">编辑</button>
-						<button class="btn-sm btn-outline-success" onclick="runTask('${t.id}')" title="立即执行">执行</button>
+						<button class="btn-sm btn-outline-primary" data-action="edit" data-task-id="${t.id}" title="编辑">编辑</button>
+						<button class="btn-sm btn-outline-success" data-action="run" data-task-id="${t.id}" title="立即执行">执行</button>
 						${t.enabled
-							? `<button class="btn-sm btn-outline-secondary" onclick="toggleTask('${t.id}', false)" title="禁用">禁用</button>`
-							: `<button class="btn-sm btn-outline-secondary" onclick="toggleTask('${t.id}', true)" title="启用">启用</button>`
+							? `<button class="btn-sm btn-outline-secondary" data-action="toggle" data-task-id="${t.id}" data-enable="false" title="禁用">禁用</button>`
+							: `<button class="btn-sm btn-outline-secondary" data-action="toggle" data-task-id="${t.id}" data-enable="true" title="启用">启用</button>`
 						}
-						<button class="btn-sm btn-outline-danger" onclick="deleteTask('${t.id}')" title="删除">删除</button>
+						<button class="btn-sm btn-outline-danger" data-action="delete" data-task-id="${t.id}" title="删除">删除</button>
 					</td>
 				`;
 				tbody.appendChild(tr);
@@ -396,6 +397,20 @@
 	setInterval(() => { loadHistory(); }, 60000);
 
 
+// Event delegation for task action buttons
+document.getElementById('task-list').addEventListener('click', (e) => {
+	const btn = e.target.closest('[data-action]');
+	if (!btn) return;
+	const action = btn.dataset.action;
+	const id = btn.dataset.taskId;
+	switch (action) {
+		case 'edit': editTask(id); break;
+		case 'run': runTask(id); break;
+		case 'delete': deleteTask(id); break;
+		case 'toggle': toggleTask(id, btn.dataset.enable === 'true'); break;
+	}
+});
+
 // --- Edit task modal ---
 async function editTask(id) {
 	try {
@@ -462,8 +477,9 @@ async function saveTask() {
 }
 
 document.getElementById('btn-save-task').addEventListener('click', saveTask);
+document.getElementById('btn-cancel-edit')?document.getElementById('btn-cancel-edit').addEventListener('click', closeEditModal):null;
+document.getElementById('edit-modal-overlay').addEventListener('click', closeEditModal);
 
 	document.getElementById('btn-create-task').addEventListener('click', createTask);
 	</script>
-</body>
-</html>
+{{template "footer" .}}
