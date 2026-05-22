@@ -7,13 +7,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"html/template"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -348,6 +348,9 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 	sched.RegisterHandler(scheduler.NewAlertSilenceRunner(alertManager))
 	sched.RegisterHandler(scheduler.NewCacheWarmupRunner())
 
+	// 注册 ICP 备案查询 Runner (ST-21)
+	sched.RegisterHandler(scheduler.NewICPQueryRunner(srv.icpConfigProvider))
+
 	// 加载持久化的任务
 	if err := sched.Load(); err != nil {
 		logger.Warnf("Failed to load scheduled tasks: %v", err)
@@ -541,6 +544,22 @@ func securityMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// icpConfigProvider returns a snapshot of the current ICP config for the scheduler runner.
+func (s *Server) icpConfigProvider() adapter.ICPConfig {
+	s.configMutex.Lock()
+	defer s.configMutex.Unlock()
+	if s.config == nil {
+		return adapter.ICPConfig{}
+	}
+	return adapter.ICPConfig{
+		Enabled:     s.config.ICP.Enabled,
+		BaseURL:     s.config.ICP.BaseURL,
+		APIKey:      s.config.ICP.APIKey,
+		Timeout:     s.config.ICP.Timeout,
+		DefaultType: s.config.ICP.DefaultType,
+	}
 }
 
 // Start 启动Web服务器

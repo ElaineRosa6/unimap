@@ -46,10 +46,11 @@ const (
 	TaskURLImport         TaskType = "url_import"         // ST-16: URL 导入
 
 	// ST-17 ~ ST-20: 低优先级 Runner
-	TaskPluginHealth      TaskType = "plugin_health"      // ST-17: 插件健康检查
-	TaskBridgeTokenRotate TaskType = "bridge_token"       // ST-18: Bridge 令牌轮换
-	TaskAlertSilence      TaskType = "alert_silence"      // ST-19: 告警静默窗口
-	TaskCacheWarmup       TaskType = "cache_warmup"       // ST-20: 缓存预热
+	TaskPluginHealth      TaskType = "plugin_health" // ST-17: 插件健康检查
+	TaskBridgeTokenRotate TaskType = "bridge_token"  // ST-18: Bridge 令牌轮换
+	TaskAlertSilence      TaskType = "alert_silence" // ST-19: 告警静默窗口
+	TaskCacheWarmup       TaskType = "cache_warmup"  // ST-20: 缓存预热
+	TaskICPQuery          TaskType = "icp_query"     // ST-21: ICP 备案查询
 )
 
 // AllTaskTypes returns all supported task types.
@@ -60,6 +61,7 @@ func AllTaskTypes() []TaskType {
 		TaskExport, TaskPortScan, TaskScreenshotCleanup, TaskTamperCleanup,
 		TaskQuotaMonitor, TaskAlertSummary, TaskBaselineRefresh, TaskURLImport,
 		TaskPluginHealth, TaskBridgeTokenRotate, TaskAlertSilence, TaskCacheWarmup,
+		TaskICPQuery,
 	}
 }
 
@@ -86,6 +88,7 @@ func TaskTypeLabel(t TaskType) string {
 		TaskBridgeTokenRotate: "Bridge 令牌轮换",
 		TaskAlertSilence:      "告警静默窗口",
 		TaskCacheWarmup:       "缓存预热",
+		TaskICPQuery:          "ICP 备案查询",
 	}
 	if l, ok := labels[t]; ok {
 		return l
@@ -162,6 +165,38 @@ func DefaultTemplates() []TaskTemplate {
 			MaxRetries:  2,
 			Tags:        []string{"auth", "daily"},
 		},
+		{
+			ID:          "tmpl_daily_icp_company_watch",
+			Name:        "每日企业备案巡检",
+			Description: "每天早上 9 点查询关注企业的 ICP 备案状态（内部模板，创建任务时编辑 queries 字段）",
+			Type:        TaskICPQuery,
+			CronExpr:    "0 0 9 * * *",
+			Payload: map[string]interface{}{
+				"queries":   []string{},
+				"type":      "web",
+				"page":      1,
+				"page_size": 40,
+			},
+			TimeoutSec: 600,
+			MaxRetries: 1,
+			Tags:       []string{"icp", "daily", "compliance"},
+		},
+		{
+			ID:          "tmpl_weekly_icp_domain_scan",
+			Name:        "每周域名备案变更扫描",
+			Description: "每周一凌晨 3 点扫描目标域名 ICP 备案变更（内部模板，创建任务时编辑 queries 字段）",
+			Type:        TaskICPQuery,
+			CronExpr:    "0 0 3 * * 1",
+			Payload: map[string]interface{}{
+				"queries":   []string{},
+				"type":      "web",
+				"page":      1,
+				"page_size": 40,
+			},
+			TimeoutSec: 1800,
+			MaxRetries: 1,
+			Tags:       []string{"icp", "weekly", "monitoring"},
+		},
 	}
 }
 
@@ -210,26 +245,26 @@ type ScheduledTask struct {
 	CreatedAt  time.Time              `json:"created_at"`
 
 	// 高级功能字段（阶段五新增）
-	DependsOn     []string          `json:"depends_on,omitempty"`       // 依赖的任务 ID 列表
-	ExecutionWindow *ExecutionWindow `json:"execution_window,omitempty"` // 执行窗口配置
-	Notifications   *NotificationConfig `json:"notifications,omitempty"`  // 通知配置
+	DependsOn       []string            `json:"depends_on,omitempty"`       // 依赖的任务 ID 列表
+	ExecutionWindow *ExecutionWindow    `json:"execution_window,omitempty"` // 执行窗口配置
+	Notifications   *NotificationConfig `json:"notifications,omitempty"`    // 通知配置
 }
 
 // ExecutionWindow defines when a task is allowed to run.
 type ExecutionWindow struct {
-	StartHour   int      `json:"start_hour"`    // 0-23
-	EndHour     int      `json:"end_hour"`      // 0-23
-	Weekdays    []int    `json:"weekdays"`      // 0=Sunday, 1=Monday, ..., 6=Saturday
-	Timezone    string   `json:"timezone"`      // IANA timezone name (e.g., "Asia/Shanghai")
+	StartHour int    `json:"start_hour"` // 0-23
+	EndHour   int    `json:"end_hour"`   // 0-23
+	Weekdays  []int  `json:"weekdays"`   // 0=Sunday, 1=Monday, ..., 6=Saturday
+	Timezone  string `json:"timezone"`   // IANA timezone name (e.g., "Asia/Shanghai")
 }
 
 // NotificationConfig defines notification settings for task events.
 type NotificationConfig struct {
-	OnSuccess bool     `json:"on_success"`
-	OnFailure bool     `json:"on_failure"`
-	OnTimeout bool     `json:"on_timeout"`
-	Channels  []string `json:"channels"` // "webhook", "email", "log"
-	WebhookURL string  `json:"webhook_url,omitempty"`
+	OnSuccess  bool     `json:"on_success"`
+	OnFailure  bool     `json:"on_failure"`
+	OnTimeout  bool     `json:"on_timeout"`
+	Channels   []string `json:"channels"` // "webhook", "email", "log"
+	WebhookURL string   `json:"webhook_url,omitempty"`
 	Recipients []string `json:"recipients,omitempty"` // email addresses
 }
 
@@ -1109,23 +1144,23 @@ func (s *Scheduler) generateID() string {
 
 // TaskExecutionStats holds statistical analysis of task execution history.
 type TaskExecutionStats struct {
-	TaskID         string  `json:"task_id"`
-	TaskName       string  `json:"task_name"`
-	TaskType       string  `json:"task_type"`
-	TotalRuns      int     `json:"total_runs"`
-	SuccessCount   int     `json:"success_count"`
-	FailedCount    int     `json:"failed_count"`
-	TimeoutCount   int     `json:"timeout_count"`
-	SkippedCount   int     `json:"skipped_count"`
-	SuccessRate    float64 `json:"success_rate"`
-	AvgDurationMs  float64 `json:"avg_duration_ms"`
-	MaxDurationMs  int64   `json:"max_duration_ms"`
-	MinDurationMs  int64   `json:"min_duration_ms"`
-	P50DurationMs  int64   `json:"p50_duration_ms"`
-	P95DurationMs  int64   `json:"p95_duration_ms"`
-	TotalRetries   int     `json:"total_retries"`
-	LastSuccessAt  string  `json:"last_success_at,omitempty"`
-	LastFailureAt  string  `json:"last_failure_at,omitempty"`
+	TaskID        string  `json:"task_id"`
+	TaskName      string  `json:"task_name"`
+	TaskType      string  `json:"task_type"`
+	TotalRuns     int     `json:"total_runs"`
+	SuccessCount  int     `json:"success_count"`
+	FailedCount   int     `json:"failed_count"`
+	TimeoutCount  int     `json:"timeout_count"`
+	SkippedCount  int     `json:"skipped_count"`
+	SuccessRate   float64 `json:"success_rate"`
+	AvgDurationMs float64 `json:"avg_duration_ms"`
+	MaxDurationMs int64   `json:"max_duration_ms"`
+	MinDurationMs int64   `json:"min_duration_ms"`
+	P50DurationMs int64   `json:"p50_duration_ms"`
+	P95DurationMs int64   `json:"p95_duration_ms"`
+	TotalRetries  int     `json:"total_retries"`
+	LastSuccessAt string  `json:"last_success_at,omitempty"`
+	LastFailureAt string  `json:"last_failure_at,omitempty"`
 }
 
 // GetTaskExecutionStats analyzes execution history for a specific task.

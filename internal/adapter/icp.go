@@ -31,25 +31,25 @@ const (
 // App/MiniApp/KuaiApp queries return: serviceName, dataId (no domain/mainId)
 // Use json.RawMessage for fields that vary by query type to avoid unmarshal errors.
 type ICPResult struct {
-	Domain       string          `json:"domain"`
-	ServiceName  string          `json:"serviceName"`
-	ServiceType  json.RawMessage `json:"serviceType"`
-	Licence      string          `json:"licence"`
-	UpdateRecord string          `json:"updateRecord"`
-	LimitAccess  string          `json:"limitAccess"`
-	ContentName  string          `json:"contentTypeName"`
-	MainLicence  string          `json:"serviceLicence"`
-	NatureName   string          `json:"natureName"`
-	CityName     string          `json:"cityName"`
-	UnitName     string          `json:"unitName"`
-	LeaderName   string          `json:"leaderName"`
-	MainID       json.RawMessage `json:"mainId"`
-	DetailID     json.RawMessage `json:"detailId"`
-	DomainID     json.RawMessage `json:"domainId"`
-	ServiceID    json.RawMessage `json:"serviceId"`
-	DataID       json.RawMessage `json:"dataId"`
-	MainLicWeb   string          `json:"mainLicence"` // web queries use this field for main licence
-	UpdateRecTime string         `json:"updateRecordTime"`
+	Domain        string          `json:"domain"`
+	ServiceName   string          `json:"serviceName"`
+	ServiceType   json.RawMessage `json:"serviceType"`
+	Licence       string          `json:"licence"`
+	UpdateRecord  string          `json:"updateRecord"`
+	LimitAccess   string          `json:"limitAccess"`
+	ContentName   string          `json:"contentTypeName"`
+	MainLicence   string          `json:"serviceLicence"`
+	NatureName    string          `json:"natureName"`
+	CityName      string          `json:"cityName"`
+	UnitName      string          `json:"unitName"`
+	LeaderName    string          `json:"leaderName"`
+	MainID        json.RawMessage `json:"mainId"`
+	DetailID      json.RawMessage `json:"detailId"`
+	DomainID      json.RawMessage `json:"domainId"`
+	ServiceID     json.RawMessage `json:"serviceId"`
+	DataID        json.RawMessage `json:"dataId"`
+	MainLicWeb    string          `json:"mainLicence"` // web queries use this field for main licence
+	UpdateRecTime string          `json:"updateRecordTime"`
 }
 
 // serviceTypeStr returns the service type as a human-readable string.
@@ -104,20 +104,20 @@ func (r *ICPResult) licence() string {
 }
 
 type icpAPIParams struct {
-	List   []ICPResult `json:"list"`
-	Total  int         `json:"total"`
-	Page   int         `json:"pageNum"`
-	Size   int         `json:"pageSize"`
-	Pages  int         `json:"pages"`
+	List  []ICPResult `json:"list"`
+	Total int         `json:"total"`
+	Page  int         `json:"pageNum"`
+	Size  int         `json:"pageSize"`
+	Pages int         `json:"pages"`
 }
 
 type icpAPIResponse struct {
-	Code  int           `json:"code"`
-	Msg   string        `json:"msg"`
+	Code   int           `json:"code"`
+	Msg    string        `json:"msg"`
 	Params *icpAPIParams `json:"params"`
-	Total int           `json:"total"`
-	EndID string        `json:"endId"`
-	List  []ICPResult   `json:"list"`
+	Total  int           `json:"total"`
+	EndID  string        `json:"endId"`
+	List   []ICPResult   `json:"list"`
 }
 
 type ICPConfig struct {
@@ -417,6 +417,10 @@ type ICPSearchRequest struct {
 }
 
 func ICPSearch(baseURL string, apiKey string, req ICPSearchRequest) ([]ICPResult, int, error) {
+	return ICPSearchWithContext(context.Background(), baseURL, apiKey, req)
+}
+
+func ICPSearchWithContext(ctx context.Context, baseURL string, apiKey string, req ICPSearchRequest) ([]ICPResult, int, error) {
 	req.Type = strings.ToLower(strings.TrimSpace(req.Type))
 	if !IsValidICPQueryType(req.Type) {
 		return nil, 0, fmt.Errorf("invalid ICP query type: %s", req.Type)
@@ -432,7 +436,7 @@ func ICPSearch(baseURL string, apiKey string, req ICPSearchRequest) ([]ICPResult
 		client.SetHeader("X-ICP-API-Key", apiKey)
 	}
 	var resp icpAPIResponse
-	httpResp, err := client.R().
+	httpResp, err := client.R().SetContext(ctx).
 		SetQueryParam("search", req.Query).
 		SetQueryParam("pageNum", fmt.Sprintf("%d", req.Page)).
 		SetQueryParam("pageSize", fmt.Sprintf("%d", req.PageSize)).
@@ -442,7 +446,7 @@ func ICPSearch(baseURL string, apiKey string, req ICPSearchRequest) ([]ICPResult
 		return nil, 0, fmt.Errorf("ICP query request failed: %w", err)
 	}
 	if httpResp.StatusCode() != 200 {
-		return nil, 0, fmt.Errorf("ICP API returned HTTP %d", httpResp.StatusCode())
+		return nil, 0, fmt.Errorf("ICP API returned HTTP %d: %s", httpResp.StatusCode(), httpResp.String())
 	}
 	if resp.Code != 200 {
 		return nil, 0, fmt.Errorf("ICP API error: %s", resp.Msg)
