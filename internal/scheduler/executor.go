@@ -72,6 +72,17 @@ func extractString(payload map[string]interface{}, key string, def string) strin
 	return def
 }
 
+func extractBool(payload map[string]interface{}, key string, def bool) bool {
+	v, ok := payload[key]
+	if !ok {
+		return def
+	}
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	return def
+}
+
 // --- QueryRunner (ST-01) ---
 
 // QueryRunner executes scheduled UQL queries via QueryAppService.
@@ -425,9 +436,9 @@ func generateDistributedTaskID() string {
 
 // ExportRunner executes scheduled data exports.
 type ExportRunner struct {
-	queryApp    *service.QueryAppService
+	queryApp     *service.QueryAppService
 	orchestrator *adapter.EngineOrchestrator
-	outputDir   string
+	outputDir    string
 }
 
 // NewExportRunner creates an ExportRunner.
@@ -615,8 +626,8 @@ func (r *TamperCleanupRunner) Execute(ctx context.Context, payload map[string]in
 
 // QuotaMonitorRunner executes scheduled quota monitoring.
 type QuotaMonitorRunner struct {
-	orchestrator  *adapter.EngineOrchestrator
-	lowThreshold  int
+	orchestrator *adapter.EngineOrchestrator
+	lowThreshold int
 }
 
 // NewQuotaMonitorRunner creates a QuotaMonitorRunner.
@@ -994,4 +1005,114 @@ func (r *CacheWarmupRunner) Execute(ctx context.Context, payload map[string]inte
 	}
 
 	return fmt.Sprintf("warmed up %d/%d URLs", successCount, len(urls)), nil
+}
+
+// --- ICPQueryRunner (ST-21) ---
+
+const icpMaxQueries = 100
+const icpMaxPageSize = 100
+
+// ICPQueryRunner executes scheduled ICP备案 queries.
+type ICPQueryRunner struct {
+	cfgProvider func() adapter.ICPConfig
+}
+
+// NewICPQueryRunner creates an ICPQueryRunner.
+// cfgProvider must return a full ICP config snapshot; it is called on every
+// execution so hot-reloaded config values (timeout, default_type, etc.) are
+// always current.
+func NewICPQueryRunner(p func() adapter.ICPConfig) *ICPQueryRunner {
+	return &ICPQueryRunner{cfgProvider: p}
+}
+
+func (r *ICPQueryRunner) Type() TaskType { return TaskICPQuery }
+
+func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+	cfg := r.cfgProvider()
+
+	if !cfg.Enabled {
+		return "", fmt.Errorf("ICP query is disabled")
+	}
+	if strings.TrimSpace(cfg.BaseURL) == "" {
+		return "", fmt.Errorf("ICP base_url not configured")
+	}
+
+	queries := extractStrings(payload, "queries", nil)
+	if len(queries) == 0 {
+		if q := extractString(payload, "query", ""); q != "" {
+			queries = []string{q}
+		}
+	}
+	if len(queries) == 0 {
+		return "", fmt.Errorf("missing 'queries' or 'query' in payload")
+	}
+	if len(queries) > icpMaxQueries {
+		return "", fmt.Errorf("too many queries (%d), maximum is %d", len(queries), icpMaxQueries)
+	}
+
+	queryType := extractString(payload, "type", cfg.DefaultType)
+	if queryType == "" {
+		queryType = "web"
+	}
+	if !adapter.IsValidICPQueryType(queryType) {
+		return "", fmt.Errorf("invalid ICP query type: %q", queryType)
+	}
+
+	page := extractInt(payload, "page", 1)
+	pageSize := extractInt(payload, "page_size", 20)
+	if pageSize > icpMaxPageSize {
+		pageSize = icpMaxPageSize
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+
+	failFast := extractBool(payload, "fail_fast", false)
+
+	totalRecords := 0
+	succeeded := 0
+	var errs []string
+
+	baseURL := strings.TrimSpace(cfg.BaseURL)
+	apiKey := cfg.APIKey
+
+	for _, q := range queries {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+
+		results, total, err := adapter.ICPSearchWithContext(ctx, baseURL, apiKey, adapter.ICPSearchRequest{
+			Query:    q,
+			Type:     queryType,
+			Page:     page,
+			PageSize: pageSize,
+		})
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%q: %s", q, err.Error()))
+			if failFast {
+				break
+			}
+			continue
+		}
+		succeeded++
+		totalRecords += total
+		_ = results
+	}
+
+	result := fmt.Sprintf("icp [type=%s] %d/%d queries succeeded, total %d records (page=%d size=%d)",
+		queryType, succeeded, len(queries), totalRecords, page, pageSize)
+
+	if len(errs) > 0 {
+		result += fmt.Sprintf(", %d error(s): %s", len(errs), strings.Join(errs, "; "))
+	}
+
+	// Partial failure: return result string + nil error so the scheduler
+	// writes the summary into ExecutionRecord.Result instead of only .Error.
+	// Full failure (0 succeeded) is still returned as an error for retry/alerting.
+	if succeeded == 0 && len(errs) > 0 {
+		return result, fmt.Errorf("all %d ICP query(ies) failed", len(errs))
+	}
+	return result, nil
 }
