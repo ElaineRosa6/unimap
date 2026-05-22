@@ -1,0 +1,414 @@
+{{define "icp-page"}}
+{{template "head" .}}
+{{template "header" (dict "ActiveNav" "icp" "staticVersion" .staticVersion)}}
+
+<style nonce="{{.CSPNonce}}">
+	.icp-wrap {
+		max-width: 1400px;
+		margin: 0 auto;
+		padding: 24px 32px 60px;
+	}
+	.icp-hdr {
+		margin-bottom: 20px;
+	}
+	.icp-hdr h1 {
+		font-size: 1.5rem;
+		font-weight: 600;
+		color: var(--text-primary);
+		margin: 0 0 4px;
+		letter-spacing: -0.02em;
+	}
+	.icp-hdr p {
+		font-size: 13px;
+		color: var(--text-muted);
+		margin: 0;
+	}
+
+	.icp-search-bar {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-bottom: 20px;
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md, 6px);
+		padding: 14px 16px;
+	}
+	.icp-search-bar select,
+	.icp-search-bar input[type="text"] {
+		padding: 8px 12px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm, 4px);
+		font-size: 13px;
+		font-family: var(--font-sans);
+		background: var(--bg-surface);
+		color: var(--text-primary);
+	}
+	.icp-search-bar select { min-width: 140px; }
+	.icp-search-bar input[type="text"] { flex: 1; }
+	.icp-search-bar select:focus,
+	.icp-search-bar input[type="text"]:focus {
+		outline: none;
+		border-color: var(--accent);
+		box-shadow: var(--shadow-focus);
+	}
+	.icp-search-bar .btn-primary {
+		padding: 8px 18px;
+		background: var(--accent);
+		color: #fff;
+		border: none;
+		border-radius: var(--radius-sm, 4px);
+		font-size: 13px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background var(--duration-fast);
+	}
+	.icp-search-bar .btn-primary:hover { background: var(--accent-hover); }
+	.icp-search-bar .btn-primary:disabled {
+		background: var(--slate-300);
+		cursor: not-allowed;
+	}
+
+	.icp-notice {
+		padding: 10px 14px;
+		background: var(--warning-bg, #fff7ed);
+		color: var(--warning, #c2410c);
+		border: 1px solid var(--warning-border, #fed7aa);
+		border-radius: var(--radius-sm, 4px);
+		font-size: 13px;
+		margin-bottom: 16px;
+	}
+	.icp-notice a {
+		color: inherit;
+		text-decoration: underline;
+		font-weight: 500;
+	}
+
+	.icp-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 360px;
+		gap: 16px;
+		min-height: 480px;
+	}
+	@media (max-width: 1024px) {
+		.icp-grid { grid-template-columns: 1fr; }
+	}
+
+	.icp-list {
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md, 6px);
+		overflow: hidden;
+	}
+	.icp-list-hdr {
+		padding: 12px 16px;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text-primary);
+		background: var(--bg-elevated);
+		border-bottom: 1px solid var(--border);
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.icp-list-hdr .meta { font-size: 12px; color: var(--text-muted); font-weight: 400; }
+
+	.icp-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 13px;
+	}
+	.icp-table thead th {
+		text-align: left;
+		padding: 10px 16px;
+		font-weight: 600;
+		font-size: 12px;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		background: var(--bg-elevated);
+		border-bottom: 1px solid var(--border);
+	}
+	.icp-table tbody tr {
+		cursor: pointer;
+		transition: background var(--duration-fast);
+		border-bottom: 1px solid var(--border-light, var(--border));
+	}
+	.icp-table tbody tr:hover { background: var(--bg-elevated); }
+	.icp-table tbody tr.active {
+		background: var(--accent-subtle, var(--bg-elevated));
+	}
+	.icp-table td {
+		padding: 10px 16px;
+		vertical-align: top;
+		color: var(--text-primary);
+	}
+	.icp-table .col-secondary { color: var(--text-muted); font-size: 12px; }
+	.icp-empty {
+		padding: 40px 20px;
+		text-align: center;
+		color: var(--text-muted);
+		font-size: 13px;
+	}
+
+	.icp-detail {
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md, 6px);
+		display: flex;
+		flex-direction: column;
+		min-height: 480px;
+	}
+	.icp-detail-hdr {
+		padding: 12px 16px;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text-primary);
+		background: var(--bg-elevated);
+		border-bottom: 1px solid var(--border);
+	}
+	.icp-detail-body { padding: 16px; flex: 1; overflow-y: auto; }
+	.icp-detail-empty {
+		padding: 60px 20px;
+		text-align: center;
+		color: var(--text-muted);
+		font-size: 13px;
+	}
+	.detail-row {
+		display: grid;
+		grid-template-columns: 96px 1fr;
+		gap: 8px;
+		padding: 8px 0;
+		border-bottom: 1px solid var(--border-light, var(--border));
+		font-size: 13px;
+	}
+	.detail-row:last-child { border-bottom: none; }
+	.detail-key {
+		color: var(--text-muted);
+		font-size: 12px;
+		font-weight: 500;
+	}
+	.detail-val {
+		color: var(--text-primary);
+		word-break: break-all;
+	}
+
+	.icp-msg {
+		display: none;
+		padding: 10px 14px;
+		border-radius: var(--radius-sm, 4px);
+		font-size: 13px;
+		margin-bottom: 12px;
+	}
+	.icp-msg.error { background: var(--danger-bg, #fef2f2); color: var(--danger, #b91c1c); border: 1px solid var(--danger-border, #fecaca); }
+	.icp-msg.warning { background: var(--warning-bg, #fff7ed); color: var(--warning, #c2410c); border: 1px solid var(--warning-border, #fed7aa); }
+	.icp-msg.ok { background: var(--success-bg, #f0fdf4); color: var(--success, #15803d); border: 1px solid var(--success-border, #bbf7d0); }
+</style>
+
+<main class="icp-wrap">
+	<div class="icp-hdr">
+		<h1>ICP 备案查询</h1>
+		<p>调用 sidecar 服务查询工信部备案信息，支持网站、APP、小程序、快应用及对应黑名单共 8 种类型。</p>
+	</div>
+
+	{{if not .icpEnabled}}
+	<div class="icp-notice">
+		ICP 查询当前处于禁用状态。请前往 <a href="/settings">设置 → ICP 备案</a> 开启。
+	</div>
+	{{end}}
+
+	<div class="icp-search-bar">
+		<select id="icp-type">
+			{{range .types}}
+			<option value="{{.value}}"{{if eq .value $.defaultType}} selected{{end}}>{{.label}}</option>
+			{{end}}
+		</select>
+		<input type="text" id="icp-search-input" placeholder="域名 / 公司名 / 许可证号" autocomplete="off">
+		<button type="button" class="btn-primary" id="btn-icp-search">查询</button>
+	</div>
+
+	<div id="icp-msg" class="icp-msg"></div>
+
+	<div class="icp-grid">
+		<div class="icp-list">
+			<div class="icp-list-hdr">
+				<span>结果列表</span>
+				<span class="meta" id="icp-result-meta">--</span>
+			</div>
+			<div id="icp-list-body">
+				<div class="icp-empty">输入关键词后点击「查询」开始</div>
+			</div>
+		</div>
+
+		<aside class="icp-detail">
+			<div class="icp-detail-hdr">详情</div>
+			<div class="icp-detail-body" id="icp-detail-body">
+				<div class="icp-detail-empty">从左侧列表选择一行查看详情</div>
+			</div>
+		</aside>
+	</div>
+</main>
+
+{{template "footer" .}}
+
+<script nonce="{{.CSPNonce}}">
+(function() {
+	var typeSelect = document.getElementById('icp-type');
+	var input = document.getElementById('icp-search-input');
+	var btn = document.getElementById('btn-icp-search');
+	var listBody = document.getElementById('icp-list-body');
+	var detailBody = document.getElementById('icp-detail-body');
+	var meta = document.getElementById('icp-result-meta');
+	var msg = document.getElementById('icp-msg');
+
+	var currentResults = [];
+	var selectedIndex = -1;
+
+	function showMsg(kind, text) {
+		msg.className = 'icp-msg ' + kind;
+		msg.textContent = text;
+		msg.style.display = 'block';
+	}
+	function hideMsg() { msg.style.display = 'none'; msg.textContent = ''; }
+
+	function safe(v) {
+		if (v === undefined || v === null || v === '') return '-';
+		return String(v);
+	}
+
+	function renderList(results) {
+		if (!results || results.length === 0) {
+			listBody.innerHTML = '<div class="icp-empty">未找到匹配的备案信息</div>';
+			return;
+		}
+		var html = '<table class="icp-table"><thead><tr>'
+			+ '<th>域名 / 名称</th>'
+			+ '<th>许可证号</th>'
+			+ '<th>主办单位</th>'
+			+ '<th class="col-secondary">城市</th>'
+			+ '</tr></thead><tbody>';
+		results.forEach(function(r, i) {
+			var domain = r.domain || r.serviceName || '-';
+			var licence = r.licence || r.serviceLicence || r.mainLicence || '-';
+			var unit = r.unitName || '-';
+			var city = r.cityName || '-';
+			html += '<tr data-idx="' + i + '">'
+				+ '<td>' + escapeHtml(domain) + '</td>'
+				+ '<td>' + escapeHtml(licence) + '</td>'
+				+ '<td>' + escapeHtml(unit) + '</td>'
+				+ '<td class="col-secondary">' + escapeHtml(city) + '</td>'
+				+ '</tr>';
+		});
+		html += '</tbody></table>';
+		listBody.innerHTML = html;
+
+		listBody.querySelectorAll('tbody tr').forEach(function(row) {
+			row.addEventListener('click', function() {
+				var idx = parseInt(row.getAttribute('data-idx'), 10);
+				selectRow(idx);
+			});
+		});
+	}
+
+	function selectRow(idx) {
+		listBody.querySelectorAll('tbody tr').forEach(function(row, i) {
+			if (i === idx) row.classList.add('active'); else row.classList.remove('active');
+		});
+		selectedIndex = idx;
+		renderDetail(currentResults[idx]);
+	}
+
+	function renderDetail(r) {
+		if (!r) {
+			detailBody.innerHTML = '<div class="icp-detail-empty">从左侧列表选择一行查看详情</div>';
+			return;
+		}
+		var fields = [
+			['域名', r.domain],
+			['网站名称', r.contentTypeName || r.contentName || r.serviceName],
+			['服务类型', typeof r.serviceType === 'string' ? r.serviceType : (r.serviceType !== undefined ? String(r.serviceType) : '')],
+			['许可证号', r.licence || r.serviceLicence],
+			['主许可证号', r.mainLicence],
+			['主办单位', r.unitName],
+			['负责人', r.leaderName],
+			['性质', r.natureName],
+			['城市', r.cityName],
+			['更新时间', r.updateRecordTime || r.updateRecord],
+			['访问受限', r.limitAccess],
+			['mainId', r.mainId],
+			['detailId', r.detailId],
+			['domainId', r.domainId],
+			['serviceId', r.serviceId],
+			['dataId', r.dataId]
+		];
+		var html = '';
+		fields.forEach(function(pair) {
+			var k = pair[0], v = pair[1];
+			if (v === undefined || v === null || v === '' || (typeof v === 'object' && Object.keys(v).length === 0)) return;
+			var display = typeof v === 'object' ? JSON.stringify(v) : safe(v);
+			html += '<div class="detail-row">'
+				+ '<span class="detail-key">' + escapeHtml(k) + '</span>'
+				+ '<span class="detail-val">' + escapeHtml(display) + '</span>'
+				+ '</div>';
+		});
+		if (html === '') html = '<div class="icp-detail-empty">该行无可显示字段</div>';
+		detailBody.innerHTML = html;
+	}
+
+	function escapeHtml(s) {
+		return String(s).replace(/[&<>"']/g, function(c) {
+			return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+		});
+	}
+
+	function doSearch() {
+		hideMsg();
+		var type = typeSelect.value;
+		var search = input.value.trim();
+		if (!search) {
+			showMsg('warning', '请输入查询关键词');
+			input.focus();
+			return;
+		}
+		btn.disabled = true;
+		btn.textContent = '查询中...';
+		listBody.innerHTML = '<div class="icp-empty">查询中...</div>';
+		meta.textContent = '--';
+		detailBody.innerHTML = '<div class="icp-detail-empty">从左侧列表选择一行查看详情</div>';
+
+		var url = '/api/icp/query?type=' + encodeURIComponent(type)
+			+ '&search=' + encodeURIComponent(search);
+
+		fetch(url, { credentials: 'same-origin' })
+			.then(function(resp) {
+				return resp.json().then(function(data) { return { status: resp.status, body: data }; });
+			})
+			.then(function(env) {
+				btn.disabled = false;
+				btn.textContent = '查询';
+				if (env.status !== 200 || !env.body.success) {
+					var errMsg = (env.body && (env.body.message || env.body.error)) || ('HTTP ' + env.status);
+					showMsg('error', 'ICP 查询失败: ' + errMsg);
+					listBody.innerHTML = '<div class="icp-empty">查询失败</div>';
+					return;
+				}
+				currentResults = env.body.results || [];
+				meta.textContent = '共 ' + (env.body.total || 0) + ' 条 / 第 ' + env.body.page + ' 页';
+				renderList(currentResults);
+				if (currentResults.length > 0) selectRow(0);
+			})
+			.catch(function(err) {
+				btn.disabled = false;
+				btn.textContent = '查询';
+				showMsg('error', 'ICP 查询请求失败: ' + err.message);
+				listBody.innerHTML = '<div class="icp-empty">网络错误</div>';
+			});
+	}
+
+	btn.addEventListener('click', doSearch);
+	input.addEventListener('keydown', function(e) {
+		if (e.key === 'Enter') doSearch();
+	});
+})();
+</script>
+{{end}}

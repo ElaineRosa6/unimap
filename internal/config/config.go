@@ -184,6 +184,15 @@ type Config struct {
 		} `yaml:"error_alerting"`
 	} `yaml:"alerting"`
 
+	// ICP 备案查询配置
+	ICP struct {
+		Enabled     bool   `yaml:"enabled"`      // 是否启用 ICP 查询
+		BaseURL     string `yaml:"base_url"`     // sidecar 服务地址，默认 http://localhost:16181
+		APIKey      string `yaml:"api_key"`      // 可选 API Key，支持 ${ENV_VAR}
+		Timeout     int    `yaml:"timeout"`      // 请求超时（秒）
+		DefaultType string `yaml:"default_type"` // web/app/mapp/kapp/bweb/bapp/bmapp/bkapp
+	} `yaml:"icp"`
+
 	// Backup 数据备份配置
 	Backup struct {
 		Enabled    bool     `yaml:"enabled"`
@@ -437,6 +446,10 @@ func (m *Manager) resolveEnv(config *Config) {
 	}
 	config.Distributed.AdminToken = m.ResolveEnv(config.Distributed.AdminToken)
 	config.Web.Auth.AdminToken = m.ResolveEnv(config.Web.Auth.AdminToken)
+
+	// 解析 ICP 配置
+	config.ICP.BaseURL = m.ResolveEnv(config.ICP.BaseURL)
+	config.ICP.APIKey = m.ResolveEnv(config.ICP.APIKey)
 
 	// 解析缓存配置
 	config.Cache.Backend = m.ResolveEnv(config.Cache.Backend)
@@ -705,6 +718,17 @@ func (m *Manager) applyDefaults(config *Config) {
 	}
 	if config.Web.RequestLimits.MaxMultipartMemory == 0 {
 		config.Web.RequestLimits.MaxMultipartMemory = 10 * 1024 * 1024
+	}
+
+	// ICP 默认值
+	if strings.TrimSpace(config.ICP.BaseURL) == "" {
+		config.ICP.BaseURL = "http://localhost:16181"
+	}
+	if config.ICP.Timeout <= 0 {
+		config.ICP.Timeout = 30
+	}
+	if strings.TrimSpace(config.ICP.DefaultType) == "" {
+		config.ICP.DefaultType = "web"
 	}
 
 	// 默认启用 Web 认证：如果未配置 admin_token，生成安全随机 token

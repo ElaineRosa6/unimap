@@ -228,8 +228,8 @@ func TestMaskAPIKey_Long(t *testing.T) {
 
 func TestMaskAPIKey_Empty(t *testing.T) {
 	got := maskAPIKey("")
-	if got != "****" {
-		t.Fatalf("expected ****, got %q", got)
+	if got != "" {
+		t.Fatalf("expected empty string for empty input, got %q", got)
 	}
 }
 

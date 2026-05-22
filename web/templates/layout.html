@@ -33,7 +33,9 @@
 			<a href="/batch-screenshot"{{if eq .ActiveNav "batch"}} class="active"{{end}}>截图</a>
 			<a href="/monitor"{{if eq .ActiveNav "monitor"}} class="active"{{end}}>监控</a>
 			<a href="/scheduler"{{if eq .ActiveNav "scheduler"}} class="active"{{end}}>任务</a>
+			<a href="/icp"{{if eq .ActiveNav "icp"}} class="active"{{end}}>ICP</a>
 			<a href="/account"{{if eq .ActiveNav "account"}} class="active"{{end}}>账号</a>
+			<a href="/settings"{{if eq .ActiveNav "settings"}} class="active"{{end}}>设置</a>
 			<form method="POST" action="/api/logout" class="logout-form">
 				<button type="submit" class="btn-logout">退出</button>
 			</form>

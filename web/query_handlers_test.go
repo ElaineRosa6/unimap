@@ -377,7 +377,7 @@ func TestMaskAPIKey_Validation(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"empty", "", "****"},
+		{"empty", "", ""},
 		{"short", "abc", "****"},
 		{"exactly 8", "12345678", "****"},
 		{"exactly 9", "123456789", "1234****6789"},

@@ -970,8 +970,12 @@ func appendUniqueStrings(base []string, extra []string) []string {
 	return merged
 }
 
-// maskAPIKey 屏蔽API密钥，用于日志输出
+// maskAPIKey 屏蔽API密钥，用于日志输出与 GET /api/config 响应。
+// 空字符串原样返回，便于前端区分「未配置」与「已配置但已脱敏」。
 func maskAPIKey(apiKey string) string {
+	if apiKey == "" {
+		return ""
+	}
 	if len(apiKey) <= 8 {
 		return "****"
 	}
