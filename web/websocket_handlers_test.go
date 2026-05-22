@@ -553,7 +553,7 @@ func TestMaskAPIKey(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"empty", "", "****"},
+		{"empty", "", ""},
 		{"short", "ab", "****"},
 		{"eight chars", "12345678", "****"},
 		{"nine chars", "123456789", "1234****6789"},

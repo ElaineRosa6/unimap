@@ -39,6 +39,10 @@ func (r *Router) RegisterRoutes() http.Handler {
 	r.addRoute("monitor", "GET", "/monitor", r.server.handleMonitorPage, false)
 	r.addRoute("scheduler", "GET", "/scheduler", r.server.handleSchedulerPage, false)
 
+	// ICP 备案查询页与设置页
+	r.addRoute("icp-page", "GET", "/icp", r.server.handleICPPage, false)
+	r.addRoute("settings-page", "GET", "/settings", r.server.handleSettingsPage, false)
+
 	// 登录/登出路由
 	r.addRoute("login-page", "GET", "/login", r.server.handleLoginPage, false)
 	r.addRoute("login-api", "POST", "/api/login", r.server.handleLoginAPI, true)
@@ -129,6 +133,13 @@ func (r *Router) RegisterRoutes() http.Handler {
 
 	// API 路由 - 账号管理
 	r.addRoute("account-change-password", "POST", "/api/account/change-password", r.server.handleChangePassword, false)
+
+	// API 路由 - ICP 备案查询
+	r.addRoute("icp-query", "GET", "/api/icp/query", r.server.handleICPQuery, true)
+
+	// API 路由 - 配置读写
+	r.addRoute("config-get", "GET", "/api/config", r.server.handleGetConfig, false)
+	r.addRoute("config-save", "POST", "/api/config", r.server.handleSaveConfig, false)
 
 	// 创建 mux
 	mux := http.NewServeMux()

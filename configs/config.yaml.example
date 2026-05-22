@@ -138,6 +138,14 @@ network:
         # 所有代理进入冷却后，是否允许直连
         allow_direct_fallback: true
 
+# ICP 备案查询 sidecar 服务连接配置
+icp:
+    enabled: false
+    base_url: http://localhost:16181   # ICP 查询 sidecar 服务地址
+    api_key: ""                          # 可选，留空则不发送 X-ICP-API-Key 头；支持 ${UNIMAP_ICP_API_KEY}
+    timeout: 30                          # 请求超时（秒）
+    default_type: web                    # web/app/mapp/kapp/bweb/bapp/bmapp/bkapp
+
 distributed:
     # Day15: default disabled, enable only after node-side rollout
     enabled: false
