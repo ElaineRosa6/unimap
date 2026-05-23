@@ -10,6 +10,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
+
+	"github.com/unimap-icp-hunter/project/internal/utils/urlguard"
 )
 
 // Config 系统配置结构
@@ -40,15 +42,17 @@ type Config struct {
 			Cookies []Cookie `yaml:"cookies"`
 		} `yaml:"hunter"`
 		Fofa struct {
-			Enabled   bool     `yaml:"enabled"`
-			APIKey    string   `yaml:"api_key"`
-			Email     string   `yaml:"email"`
-			BaseURL   string   `yaml:"base_url"`
-			WebURL    string   `yaml:"web_url"`
-			QPS       int      `yaml:"qps"`
-			Timeout   int      `yaml:"timeout"`
-			UseWebAPI bool     `yaml:"use_web_api"`
-			Cookies   []Cookie `yaml:"cookies"`
+			Enabled         bool     `yaml:"enabled"`
+			APIKey          string   `yaml:"api_key"`
+			Email           string   `yaml:"email"`
+			BaseURL         string   `yaml:"base_url,omitempty"`          // 废弃，保留兼容
+			APIBaseURL      string   `yaml:"api_base_url"`                 // API 模式使用
+			WebBaseURL      string   `yaml:"web_base_url"`                 // Web 模式使用（本期锁死官方域名）
+			QPS             int      `yaml:"qps"`
+			Timeout         int      `yaml:"timeout"`
+			UseWebAPI       bool     `yaml:"use_web_api"`
+			Cookies         []Cookie `yaml:"cookies"`
+			AllowPrivateAPI bool     `yaml:"allow_private_api"` // 高级配置，仅限内网自建镜像
 		} `yaml:"fofa"`
 		Shodan struct {
 			Enabled bool   `yaml:"enabled"`
@@ -209,6 +213,14 @@ type Config struct {
 		MaxHistory int  `yaml:"max_history"` // 执行历史保留条数
 	} `yaml:"scheduler"`
 
+	// Notifications 通知配置
+	Notifications struct {
+		Enabled        bool                    `yaml:"enabled"`
+		Channels       []NotificationChannelCfg `yaml:"channels"`
+		SendTimeoutSec int                    `yaml:"send_timeout_sec"`
+		MaxRetries     int                    `yaml:"max_retries"`
+	} `yaml:"notifications"`
+
 	// 缓存配置
 	Cache struct {
 		Backend string `yaml:"backend"`
@@ -232,6 +244,17 @@ type Config struct {
 		// 按引擎的缓存配置
 		Engines map[string]EngineCacheConfig `yaml:"engines"`
 	} `yaml:"cache"`
+}
+
+// NotificationChannelCfg 全局通知渠道配置
+type NotificationChannelCfg struct {
+	ID             string            `yaml:"id"`
+	Type           string            `yaml:"type"`
+	Enabled        bool              `yaml:"enabled"`
+	WebhookURL     string            `yaml:"webhook_url"`
+	Secret         string            `yaml:"secret"`
+	Headers        map[string]string `yaml:"headers"`
+	AllowPrivateIP bool              `yaml:"allow_private_ip"`
 }
 
 // EngineCacheConfig 引擎级别的缓存配置
@@ -426,7 +449,8 @@ func (m *Manager) resolveEnv(config *Config) {
 	config.Engines.Fofa.APIKey = m.ResolveEnv(config.Engines.Fofa.APIKey)
 	config.Engines.Fofa.Email = m.ResolveEnv(config.Engines.Fofa.Email)
 	config.Engines.Fofa.BaseURL = m.ResolveEnv(config.Engines.Fofa.BaseURL)
-	config.Engines.Fofa.WebURL = m.ResolveEnv(config.Engines.Fofa.WebURL)
+	config.Engines.Fofa.APIBaseURL = m.ResolveEnv(config.Engines.Fofa.APIBaseURL)
+	config.Engines.Fofa.WebBaseURL = m.ResolveEnv(config.Engines.Fofa.WebBaseURL)
 
 	// 解析系统配置
 	config.System.UserAgent = m.ResolveEnv(config.System.UserAgent)
@@ -524,12 +548,15 @@ func (m *Manager) applyDefaults(config *Config) {
 		config.Engines.Hunter.Timeout = 30
 	}
 
-	if config.Engines.Fofa.BaseURL == "" {
-		config.Engines.Fofa.BaseURL = "https://fofa.info"
+	// FOFA 默认值 + 旧 base_url 迁移
+	if config.Engines.Fofa.APIBaseURL == "" && config.Engines.Fofa.BaseURL != "" {
+		config.Engines.Fofa.APIBaseURL = config.Engines.Fofa.BaseURL
 	}
-	if config.Engines.Fofa.WebURL == "" {
-		config.Engines.Fofa.WebURL = "https://fofa.info"
+	if config.Engines.Fofa.APIBaseURL == "" {
+		config.Engines.Fofa.APIBaseURL = "https://fofa.info"
 	}
+	// WebBaseURL 本期锁死为官方域名
+	config.Engines.Fofa.WebBaseURL = "https://fofa.info"
 	if config.Engines.Fofa.QPS == 0 {
 		config.Engines.Fofa.QPS = 3
 	}
@@ -844,6 +871,14 @@ func (m *Manager) applyDefaults(config *Config) {
 			config.Cache.Engines[engine] = cfg
 		}
 	}
+
+	// 默认通知配置
+	if config.Notifications.SendTimeoutSec == 0 {
+		config.Notifications.SendTimeoutSec = 10
+	}
+	if config.Notifications.MaxRetries == 0 {
+		config.Notifications.MaxRetries = 0
+	}
 }
 
 // validate 验证配置有效性
@@ -891,11 +926,13 @@ func (m *Manager) validate(config *Config) error {
 				return fmt.Errorf("fofa engine enabled but api_key or email not set")
 			}
 		}
-		if config.Engines.Fofa.BaseURL == "" {
-			return fmt.Errorf("fofa engine enabled but base_url not set")
+		if config.Engines.Fofa.APIBaseURL == "" {
+			return fmt.Errorf("fofa engine enabled but api_base_url not set")
 		}
-		if config.Engines.Fofa.WebURL == "" {
-			return fmt.Errorf("fofa engine enabled but web_url not set")
+		if _, err := urlguard.Check(config.Engines.Fofa.APIBaseURL, urlguard.CheckOptions{
+			AllowPrivate: config.Engines.Fofa.AllowPrivateAPI,
+		}); err != nil {
+			return fmt.Errorf("fofa api_base_url validation failed: %w", err)
 		}
 		if config.Engines.Fofa.QPS <= 0 {
 			return fmt.Errorf("fofa engine qps must be greater than 0")

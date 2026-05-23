@@ -21,8 +21,8 @@ engines:
         enabled: true
         api_key: "${FOFA_API_KEY}"
         email: "${FOFA_EMAIL}"
-        base_url: https://fofa.info
-        web_url: https://fofa.info
+        api_base_url: https://fofa.info      # API 模式使用，可改为自建镜像/代理
+        web_base_url: https://fofa.info      # Web/截图/扩展模式（本期固定为官方域名）
         qps: 3
         timeout: 30
         use_web_api: true
@@ -199,3 +199,29 @@ cache:
             enabled: true
             ttl: 7200      # 2小时，Shodan 数据相对稳定
             max_size: 500
+
+# 定时任务通知配置
+notifications:
+    enabled: true
+    send_timeout_sec: 10
+    channels:
+        - id: "team-dingtalk"
+          type: "dingtalk"
+          enabled: true
+          webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=xxx"
+          secret: "${DINGTALK_SECRET}"  # 钉钉加签密钥，推荐用环境变量
+        - id: "ops-feishu"
+          type: "feishu"
+          enabled: true
+          webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+          secret: "${FEISHU_SECRET}"
+        - id: "wechat-work"
+          type: "wecom"
+          enabled: true
+          webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+        - id: "slack-generic"
+          type: "webhook"
+          enabled: false
+          webhook_url: "https://hooks.slack.com/services/xxx"
+          # headers:
+          #   Authorization: "Bearer xxx"

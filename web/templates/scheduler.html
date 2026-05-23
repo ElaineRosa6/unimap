@@ -72,6 +72,36 @@
 							<label><input type="checkbox" id="task-enabled" checked> 启用</label>
 						</div>
 					</div>
+
+					<!-- 通知配置 -->
+					<details class="notify-section">
+						<summary>通知配置</summary>
+						<div class="form-inner">
+							<div class="form-row">
+								<div class="form-group">
+									<label><input type="checkbox" id="task-notify-enabled"> 启用通知</label>
+								</div>
+							</div>
+							<div class="form-row">
+								<div class="form-group">
+									<label><input type="checkbox" id="task-notify-on-success"> 成功时通知</label>
+								</div>
+								<div class="form-group">
+									<label><input type="checkbox" id="task-notify-on-failure" checked> 失败时通知</label>
+								</div>
+								<div class="form-group">
+									<label><input type="checkbox" id="task-notify-on-timeout" checked> 超时通知</label>
+								</div>
+							</div>
+							<div class="form-group">
+								<label>通知渠道（多选）</label>
+								<select id="task-notify-channels" multiple class="form-control" style="height:80px">
+								</select>
+								<small>从全局已配置渠道中选择，留空则不推送</small>
+							</div>
+						</div>
+					</details>
+
 					<button class="btn btn-primary" id="btn-create-task">创建</button>
 				</div>
 			</details>
@@ -186,6 +216,32 @@
 		</div>
 		<div class="form-group"><label>任务参数（JSON）</label><textarea id="edit-task-payload" rows="4" class="form-control"></textarea></div>
 		<div class="form-group"><label><input type="checkbox" id="edit-task-enabled"> 启用</label></div>
+
+		<!-- 编辑通知配置 -->
+		<details class="notify-section">
+			<summary>通知配置</summary>
+			<div class="form-inner">
+				<div class="form-group">
+					<label><input type="checkbox" id="edit-task-notify-enabled"> 启用通知</label>
+				</div>
+				<div class="form-row">
+					<div class="form-group">
+						<label><input type="checkbox" id="edit-task-notify-on-success"> 成功时通知</label>
+					</div>
+					<div class="form-group">
+						<label><input type="checkbox" id="edit-task-notify-on-failure" checked> 失败时通知</label>
+					</div>
+					<div class="form-group">
+						<label><input type="checkbox" id="edit-task-notify-on-timeout" checked> 超时通知</label>
+					</div>
+				</div>
+				<div class="form-group">
+					<label>通知渠道（多选）</label>
+					<select id="edit-task-notify-channels" multiple class="form-control" style="height:80px"></select>
+				</div>
+			</div>
+		</details>
+
 		<div class="modal-actions">
 			<button class="btn btn-secondary" id="btn-cancel-edit">取消</button>
 			<button class="btn btn-primary" id="btn-save-task">保存</button>
@@ -316,10 +372,23 @@
 		if (!name) { showToast('请输入任务名称', 'error'); return; }
 		if (!cronExpr) { showToast('请输入Cron表达式', 'error'); return; }
 
+		// 收集通知配置
+		const notifyEnabled = document.getElementById('task-notify-enabled').checked;
+		const notifications = {
+			enabled: notifyEnabled,
+			on_success: document.getElementById('task-notify-on-success').checked,
+			on_failure: document.getElementById('task-notify-on-failure').checked,
+			on_timeout: document.getElementById('task-notify-on-timeout').checked,
+			channel_ids: getSelectedChannels('task-notify-channels')
+		};
+
+		const body = {name, type: taskType, enabled, cron_expr: cronExpr, payload, timeout_seconds: timeout, max_retries: retries};
+		if (notifyEnabled) body.notifications = notifications;
+
 		const res = await fetch('/api/scheduler/tasks/create', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({name, type: taskType, enabled, cron_expr: cronExpr, payload, timeout_seconds: timeout, max_retries: retries})
+			body: JSON.stringify(body)
 		});
 
 		const data = await res.json();
@@ -391,11 +460,47 @@
 	// Initial load
 	loadTasks();
 	loadHistory();
+	loadNotifyChannels();
 
 	// Auto refresh every 30 seconds
 	setInterval(() => { loadTasks(); }, 30000);
 	setInterval(() => { loadHistory(); }, 60000);
 
+
+	async function loadNotifyChannels() {
+		try {
+			const res = await fetch('/api/notifications/channels');
+			if (!res.ok) return;
+			const data = await res.json();
+			const channels = data.channels || [];
+			['task-notify-channels', 'edit-task-notify-channels'].forEach(selectId => {
+				const sel = document.getElementById(selectId);
+				if (!sel) return;
+				sel.innerHTML = '';
+				channels.forEach(ch => {
+					const opt = document.createElement('option');
+					opt.value = ch.id;
+					opt.textContent = ch.id + ' (' + ch.type + ')';
+					if (!ch.enabled) opt.disabled = true;
+					sel.appendChild(opt);
+				});
+			});
+		} catch(e) {}
+	}
+
+	function getSelectedChannels(selectId) {
+		const sel = document.getElementById(selectId);
+		if (!sel) return [];
+		return Array.from(sel.selectedOptions).map(o => o.value);
+	}
+
+	function setSelectedChannels(selectId, ids) {
+		const sel = document.getElementById(selectId);
+		if (!sel) return;
+		Array.from(sel.options).forEach(o => {
+			o.selected = ids.includes(o.value);
+		});
+	}
 
 // Event delegation for task action buttons
 document.getElementById('task-list').addEventListener('click', (e) => {
@@ -426,6 +531,14 @@ async function editTask(id) {
 		document.getElementById('edit-task-retries').value = task.max_retries || 0;
 		document.getElementById('edit-task-enabled').checked = task.enabled;
 		document.getElementById('edit-task-payload').value = task.payload ? JSON.stringify(task.payload, null, 2) : '';
+
+		// 填充通知
+		const nc = task.notifications || {};
+		document.getElementById('edit-task-notify-enabled').checked = !!nc.enabled;
+		document.getElementById('edit-task-notify-on-success').checked = !!nc.on_success;
+		document.getElementById('edit-task-notify-on-failure').checked = !!nc.on_failure;
+		document.getElementById('edit-task-notify-on-timeout').checked = !!nc.on_timeout;
+		setSelectedChannels('edit-task-notify-channels', nc.channel_ids || []);
 
 		document.getElementById('edit-modal').classList.add('active');
 		document.getElementById('edit-modal-overlay').classList.add('active');
@@ -459,10 +572,22 @@ async function saveTask() {
 	if (!name) { showToast('请输入任务名称', 'error'); return; }
 	if (!cronExpr) { showToast('请输入Cron表达式', 'error'); return; }
 
+	const notifyEnabled = document.getElementById('edit-task-notify-enabled').checked;
+	const notifications = {
+		enabled: notifyEnabled,
+		on_success: document.getElementById('edit-task-notify-on-success').checked,
+		on_failure: document.getElementById('edit-task-notify-on-failure').checked,
+		on_timeout: document.getElementById('edit-task-notify-on-timeout').checked,
+		channel_ids: getSelectedChannels('edit-task-notify-channels')
+	};
+
+	const body = {id, name, type: taskType, enabled, cron_expr: cronExpr, payload, timeout_seconds: timeout, max_retries: retries};
+	if (notifyEnabled) body.notifications = notifications;
+
 	const res = await fetch('/api/scheduler/tasks/update', {
 		method: 'POST',
 		headers: {'Content-Type': 'application/json'},
-		body: JSON.stringify({id, name, type: taskType, enabled, cron_expr: cronExpr, payload, timeout_seconds: timeout, max_retries: retries})
+		body: JSON.stringify(body)
 	});
 
 	const data = await res.json();

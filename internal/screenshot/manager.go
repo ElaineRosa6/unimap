@@ -405,7 +405,7 @@ func (m *Manager) CheckEngineLoginStatus(ctx context.Context, engine, query stri
 func (m *Manager) EngineLoginURL(engine string) string {
 	switch strings.ToLower(engine) {
 	case "fofa":
-		return "https://fofa.info/"
+		return model.FOFAOfficialWebURL + "/"
 	case "hunter":
 		return "https://hunter.qianxin.com/"
 	case "quake":
@@ -733,7 +733,7 @@ func (m *Manager) BuildSearchEngineURL(engine, query string) string {
 
 	switch strings.ToLower(engine) {
 	case "fofa":
-		return fmt.Sprintf("https://fofa.info/result?qbase64=%s", encodedB64)
+		return fmt.Sprintf("%s/result?qbase64=%s", model.FOFAOfficialWebURL, encodedB64)
 	case "hunter":
 		return fmt.Sprintf("https://hunter.qianxin.com/list?searchValue=%s", encodedB64)
 	case "quake":

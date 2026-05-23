@@ -280,9 +280,10 @@
 						<span class="cfg-key">enabled</span>
 						<div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="fofa-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div>
 					</div>
+					<div class="cfg-row"><span class="cfg-key">api_base_url</span><div class="cfg-val"><input type="text" id="fofa-api-base-url" placeholder="https://fofa.info"><small class="cfg-hint">仅 API 模式生效，可填自建镜像/代理</small></div></div>
+					<div class="cfg-row"><span class="cfg-key">web_base_url</span><div class="cfg-val"><input type="text" id="fofa-web-base-url" value="https://fofa.info" disabled readonly class="cfg-input-disabled"><small class="cfg-hint">固定官方，Web/截图/扩展模式始终使用</small></div></div>
 					<div class="cfg-row"><span class="cfg-key">email</span><div class="cfg-val"><input type="email" id="fofa-email" placeholder="your@email.com"></div></div>
 					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="fofa-api-key" placeholder="输入 API Key" autocomplete="off"></div></div>
-					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="fofa-base-url" placeholder="https://fofa.info/api"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="fofa-qps" min="1" max="100" value="10"></div></div>
 				</div>
 
@@ -527,8 +528,16 @@
 					var c = data.engines[eng];
 					var el = document.getElementById(eng + '-enabled');
 					if (el) el.checked = c.enabled;
-					var u = document.getElementById(eng + '-base-url');
-					if (u) u.value = c.base_url || '';
+					// FOFA 特殊处理：api_base_url + web_base_url
+					if (eng === 'fofa') {
+						var abu = document.getElementById('fofa-api-base-url');
+						if (abu) abu.value = c.api_base_url || '';
+						var wbu = document.getElementById('fofa-web-base-url');
+						if (wbu) wbu.value = c.web_base_url || 'https://fofa.info';
+					} else {
+						var u = document.getElementById(eng + '-base-url');
+						if (u) u.value = c.base_url || '';
+					}
 					var q = document.getElementById(eng + '-qps');
 					if (q) q.value = c.qps || 10;
 					var t = document.getElementById(eng + '-timeout');
@@ -574,16 +583,24 @@
 		var engines = ['fofa', 'hunter', 'zoomeye', 'quake', 'shodan'];
 		var data = {};
 		engines.forEach(function(eng) {
-			data[eng] = {
+			var engData = {
 				enabled: document.getElementById(eng + '-enabled').checked,
-				base_url: document.getElementById(eng + '-base-url').value,
 				qps: parseInt(document.getElementById(eng + '-qps').value),
 				timeout: parseInt(document.getElementById(eng + '-timeout').value)
 			};
+			// FOFA 特殊处理
+			if (eng === 'fofa') {
+				var abu = document.getElementById('fofa-api-base-url');
+				if (abu) engData.api_base_url = abu.value;
+			} else {
+				var u = document.getElementById(eng + '-base-url');
+				if (u) engData.base_url = u.value;
+			}
 			var ak = document.getElementById(eng + '-api-key');
-			if (ak && ak.value) data[eng].api_key = ak.value;
+			if (ak && ak.value) engData.api_key = ak.value;
 			var em = document.getElementById(eng + '-email');
-			if (em && em.value) data[eng].email = em.value;
+			if (em && em.value) engData.email = em.value;
+			data[eng] = engData;
 		});
 
 		try {

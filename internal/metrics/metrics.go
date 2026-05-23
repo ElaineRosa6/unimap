@@ -332,6 +332,14 @@ var (
 		[]string{"task_type"},
 	)
 
+	schedulerNotifyTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unimap_scheduler_notify_total",
+			Help: "Total number of scheduler notifications by channel type and status.",
+		},
+		[]string{"channel_type", "status"},
+	)
+
 	// ICP 查询指标
 	icpQueriesTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -422,6 +430,7 @@ func init() {
 	prometheus.MustRegister(schedulerTasksRegisteredGauge)
 	prometheus.MustRegister(schedulerTasksEnabledGauge)
 	prometheus.MustRegister(schedulerTaskRetriesTotal)
+	prometheus.MustRegister(schedulerNotifyTotal)
 
 	// ICP 指标
 	prometheus.MustRegister(icpQueriesTotal)
@@ -655,6 +664,20 @@ func IncSchedulerTaskRetry(taskType string) {
 		taskType = "unknown"
 	}
 	schedulerTaskRetriesTotal.WithLabelValues(taskType).Inc()
+}
+
+func IncSchedulerNotifySuccess(channelType string) {
+	if channelType == "" {
+		channelType = "unknown"
+	}
+	schedulerNotifyTotal.WithLabelValues(channelType, "success").Inc()
+}
+
+func IncSchedulerNotifyFail(channelType string) {
+	if channelType == "" {
+		channelType = "unknown"
+	}
+	schedulerNotifyTotal.WithLabelValues(channelType, "failed").Inc()
 }
 
 func IncICPQuery(queryType, status string) {

@@ -594,7 +594,7 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 func buildSearchEngineURL(engine, query string) string {
 	switch strings.ToLower(strings.TrimSpace(engine)) {
 	case "fofa":
-		return fmt.Sprintf("https://fofa.info/result?qbase64=%s", urlBase64(query))
+		return fmt.Sprintf("%s/result?qbase64=%s", model.FOFAOfficialWebURL, urlBase64(query))
 	case "hunter":
 		return fmt.Sprintf("https://hunter.qianxin.com/list?searchValue=%s", urlBase64(query))
 	case "quake":

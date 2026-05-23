@@ -26,6 +26,7 @@ import (
 	"github.com/unimap-icp-hunter/project/internal/logger"
 	"github.com/unimap-icp-hunter/project/internal/metrics"
 	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap-icp-hunter/project/internal/notify"
 	"github.com/unimap-icp-hunter/project/internal/proxypool"
 	"github.com/unimap-icp-hunter/project/internal/requestid"
 	"github.com/unimap-icp-hunter/project/internal/scheduler"
@@ -102,6 +103,7 @@ type Server struct {
 	scheduler        *scheduler.Scheduler
 	icpDB            *icpdb.Database
 	icpRepo          icpdb.ICPResultRepository
+	notifyRegistry   *notify.Registry
 	apiAuth          *auth.AuthMiddleware
 	shutdownCtx      context.Context
 	shutdownCancel   context.CancelFunc
@@ -377,6 +379,37 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 	if err := sched.Load(); err != nil {
 		logger.Warnf("Failed to load scheduled tasks: %v", err)
 	}
+
+	// 初始化通知系统
+	notifyReg := notify.NewRegistry()
+	notifyReg.Register(notify.NewLogChannel("builtin-log", true))
+	sched.SetNotifyRegistry(notifyReg)
+
+	if cfg != nil {
+		sched.SetNotifyCfgProvider(func() *notify.NotifyGlobalCfg {
+			c := cfgManager.GetConfig()
+			return &notify.NotifyGlobalCfg{
+				Enabled:        c.Notifications.Enabled,
+				SendTimeoutSec: c.Notifications.SendTimeoutSec,
+			}
+		})
+		// 初始加载渠道配置
+		var chanCfgs []notify.ChannelConfig
+		for _, cc := range cfg.Notifications.Channels {
+			chanCfgs = append(chanCfgs, notify.ChannelConfig{
+				ID:             cc.ID,
+				Type:           cc.Type,
+				Enabled:        cc.Enabled,
+				WebhookURL:     cc.WebhookURL,
+				Secret:         cc.Secret,
+				Headers:        cc.Headers,
+				AllowPrivateIP: cc.AllowPrivateIP,
+			})
+		}
+		notifyReg.Reload(chanCfgs)
+	}
+
+	srv.notifyRegistry = notifyReg
 
 	// 所有 handler 注册完毕且数据加载完成后再启动 cron
 	sched.Start()

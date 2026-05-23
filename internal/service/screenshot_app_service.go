@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/unimap-icp-hunter/project/internal/metrics"
+	"github.com/unimap-icp-hunter/project/internal/model"
 	"github.com/unimap-icp-hunter/project/internal/screenshot"
 )
 
@@ -437,7 +438,7 @@ func buildSearchEngineResultURL(engine, query string) string {
 
 	switch strings.ToLower(strings.TrimSpace(engine)) {
 	case "fofa":
-		return fmt.Sprintf("https://fofa.info/result?qbase64=%s", encodedB64)
+		return fmt.Sprintf("%s/result?qbase64=%s", model.FOFAOfficialWebURL, encodedB64)
 	case "hunter":
 		return fmt.Sprintf("https://hunter.qianxin.com/list?search=%s", encodedB64)
 	case "quake":
