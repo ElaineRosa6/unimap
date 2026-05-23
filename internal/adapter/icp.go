@@ -125,6 +125,7 @@ type ICPConfig struct {
 	BaseURL          string
 	Timeout          int
 	DefaultType      string
+	DatabasePath     string
 	RetryOnCaptcha   bool
 	MaxRetries       int
 	APIKey           string

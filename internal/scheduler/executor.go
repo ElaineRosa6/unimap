@@ -3,7 +3,9 @@ package scheduler
 import (
 	"bufio"
 	"context"
+	"encoding/csv"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 	"github.com/unimap-icp-hunter/project/internal/alerting"
 	"github.com/unimap-icp-hunter/project/internal/distributed"
 	"github.com/unimap-icp-hunter/project/internal/exporter"
+	icpdb "github.com/unimap-icp-hunter/project/internal/icp/database"
 	"github.com/unimap-icp-hunter/project/internal/screenshot"
 	"github.com/unimap-icp-hunter/project/internal/service"
 )
@@ -1012,17 +1015,33 @@ func (r *CacheWarmupRunner) Execute(ctx context.Context, payload map[string]inte
 const icpMaxQueries = 100
 const icpMaxPageSize = 100
 
+// ICPResultStore is the subset of the repository interface used by ICPQueryRunner.
+type ICPResultStore interface {
+	SaveRun(run *icpdb.ICPQueryRun) (int64, error)
+	SaveResults(runID int64, results []adapter.ICPResult, fetchedAt time.Time) error
+	GetLatestResults(keyword, queryType string) ([]*icpdb.ICPResultRow, error)
+	GetPreviousResults(keyword, queryType string, before time.Time) ([]*icpdb.ICPResultRow, error)
+}
+
+// ICPAlertSender sends ICP change alerts.
+type ICPAlertSender interface {
+	SendWarning(alertType alerting.AlertType, title, message string, details interface{}, source, url string)
+}
+
 // ICPQueryRunner executes scheduled ICP备案 queries.
 type ICPQueryRunner struct {
 	cfgProvider func() adapter.ICPConfig
+	store       ICPResultStore
+	alertSender ICPAlertSender
 }
 
 // NewICPQueryRunner creates an ICPQueryRunner.
 // cfgProvider must return a full ICP config snapshot; it is called on every
 // execution so hot-reloaded config values (timeout, default_type, etc.) are
-// always current.
-func NewICPQueryRunner(p func() adapter.ICPConfig) *ICPQueryRunner {
-	return &ICPQueryRunner{cfgProvider: p}
+// always current. store may be nil, in which case results are not persisted.
+// alertSender may be nil, in which case change alerts are not sent.
+func NewICPQueryRunner(p func() adapter.ICPConfig, store ICPResultStore, alertSender ICPAlertSender) *ICPQueryRunner {
+	return &ICPQueryRunner{cfgProvider: p, store: store, alertSender: alertSender}
 }
 
 func (r *ICPQueryRunner) Type() TaskType { return TaskICPQuery }
@@ -1068,6 +1087,7 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 	}
 
 	failFast := extractBool(payload, "fail_fast", false)
+	taskID := extractString(payload, "_task_id", "")
 
 	totalRecords := 0
 	succeeded := 0
@@ -1075,6 +1095,7 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 
 	baseURL := strings.TrimSpace(cfg.BaseURL)
 	apiKey := cfg.APIKey
+	startedAt := time.Now()
 
 	for _, q := range queries {
 		select {
@@ -1098,7 +1119,8 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 		}
 		succeeded++
 		totalRecords += total
-		_ = results
+
+		r.persistRun(taskID, q, queryType, page, pageSize, total, results, startedAt)
 	}
 
 	result := fmt.Sprintf("icp [type=%s] %d/%d queries succeeded, total %d records (page=%d size=%d)",
@@ -1108,11 +1130,198 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 		result += fmt.Sprintf(", %d error(s): %s", len(errs), strings.Join(errs, "; "))
 	}
 
-	// Partial failure: return result string + nil error so the scheduler
-	// writes the summary into ExecutionRecord.Result instead of only .Error.
-	// Full failure (0 succeeded) is still returned as an error for retry/alerting.
 	if succeeded == 0 && len(errs) > 0 {
 		return result, fmt.Errorf("all %d ICP query(ies) failed", len(errs))
 	}
 	return result, nil
+}
+
+// persistRun saves a single query's run and results to the database.
+// If an alertSender is configured and previous results exist, it compares
+// licence/unit_name/update_record fields and sends change alerts.
+func (r *ICPQueryRunner) persistRun(taskID, keyword, queryType string, page, pageSize, total int, results []adapter.ICPResult, startedAt time.Time) {
+	if r.store == nil {
+		return
+	}
+	run := &icpdb.ICPQueryRun{
+		TaskID:       taskID,
+		QueryKeyword: keyword,
+		QueryType:    queryType,
+		Page:         page,
+		PageSize:     pageSize,
+		TotalRecords: total,
+		ResultCount:  len(results),
+		StartedAt:    startedAt,
+	}
+	runID, err := r.store.SaveRun(run)
+	if err != nil {
+		return
+	}
+	_ = r.store.SaveResults(runID, results, time.Now())
+
+	// Check for备案 changes and alert.
+	if r.alertSender == nil || len(results) == 0 {
+		return
+	}
+	previous, _ := r.store.GetPreviousResults(keyword, queryType, startedAt)
+	if len(previous) == 0 {
+		return
+	}
+
+	prevMap := make(map[string]*icpdb.ICPResultRow, len(previous))
+	for _, p := range previous {
+		if p.Domain != "" {
+			prevMap[p.Domain] = p
+		}
+	}
+
+	var changes []string
+	for _, res := range results {
+		if res.Domain == "" {
+			continue
+		}
+		p, ok := prevMap[res.Domain]
+		if !ok {
+			changes = append(changes, fmt.Sprintf("%s: new record", res.Domain))
+			continue
+		}
+		if p.Licence != res.Licence && res.Licence != "" {
+			changes = append(changes, fmt.Sprintf("%s: licence %s -> %s", res.Domain, p.Licence, res.Licence))
+		}
+		if p.UnitName != res.UnitName && res.UnitName != "" {
+			changes = append(changes, fmt.Sprintf("%s: unit %s -> %s", res.Domain, p.UnitName, res.UnitName))
+		}
+		if p.UpdateRecord != res.UpdateRecord && res.UpdateRecord != "" {
+			changes = append(changes, fmt.Sprintf("%s: update_record %s -> %s", res.Domain, p.UpdateRecord, res.UpdateRecord))
+		}
+	}
+
+	if len(changes) == 0 {
+		return
+	}
+
+	title := fmt.Sprintf("ICP备案变更: %s", keyword)
+	message := fmt.Sprintf("检测到 %d 项变更 (type=%s):\n%s", len(changes), queryType, strings.Join(changes, "\n"))
+	r.alertSender.SendWarning(alerting.AlertTypeICP, title, message, map[string]interface{}{
+		"keyword": keyword,
+		"type":    queryType,
+		"changes": changes,
+	}, "scheduler", "")
+}
+
+// --- ICPImportRunner (ST-22) ---
+
+const icpImportMaxRows = 1000
+
+// ICPImportRunner reads keyword lists from CSV files and creates ICP query tasks.
+type ICPImportRunner struct {
+	importDir string
+	scheduler *Scheduler
+}
+
+// NewICPImportRunner creates an ICPImportRunner.
+// scheduler is optional; if provided, imported keywords are auto-queued as ICP tasks.
+func NewICPImportRunner(importDir string, scheduler *Scheduler) *ICPImportRunner {
+	return &ICPImportRunner{importDir: importDir, scheduler: scheduler}
+}
+
+func (r *ICPImportRunner) Type() TaskType { return TaskICPQuery }
+
+func (r *ICPImportRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+	if r.importDir == "" {
+		return "", fmt.Errorf("import directory not configured")
+	}
+
+	filePattern := extractString(payload, "file_pattern", "*.csv")
+	queryType := extractString(payload, "type", "web")
+	maxRows := extractInt(payload, "max_rows", icpImportMaxRows)
+	if maxRows > icpImportMaxRows {
+		maxRows = icpImportMaxRows
+	}
+
+	matches, err := filepath.Glob(filepath.Join(r.importDir, filePattern))
+	if err != nil {
+		return "", fmt.Errorf("glob failed: %w", err)
+	}
+	if len(matches) == 0 {
+		return fmt.Sprintf("no files matching %s in %s", filePattern, r.importDir), nil
+	}
+
+	var queries []string
+	for _, filePath := range matches {
+		rows, err := readKeywordsFromCSV(filePath, maxRows-len(queries))
+		if err != nil {
+			continue
+		}
+		queries = append(queries, rows...)
+	}
+
+	if len(queries) == 0 {
+		return "no keywords found in CSV files", nil
+	}
+
+	if r.scheduler != nil {
+		task := &ScheduledTask{
+			Name:        fmt.Sprintf("ICP import batch %s", filePattern),
+			Type:        TaskICPQuery,
+			CronExpr:    "0 0 * * * *", // run once immediately
+			Payload:     map[string]interface{}{"queries": queries, "type": queryType},
+			TimeoutSec:  600,
+			MaxRetries:  1,
+			Enabled:     true,
+		}
+		if err := r.scheduler.AddTask(task); err != nil {
+			return "", fmt.Errorf("failed to create ICP task: %w", err)
+		}
+	}
+
+	return fmt.Sprintf("imported %d keyword(s) from %d file(s), queued as ICP task", len(queries), len(matches)), nil
+}
+
+func readKeywordsFromCSV(filePath string, maxRows int) ([]string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	reader := csv.NewReader(f)
+	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1 // allow variable fields
+
+	var keywords []string
+	rowCount := 0
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			continue
+		}
+		if rowCount == 0 {
+			// Skip header row if it looks like column names
+			if len(record) > 0 && isCSVHeader(record[0]) {
+				rowCount++
+				continue
+			}
+		}
+		if rowCount >= maxRows {
+			break
+		}
+		// First column is the keyword
+		if len(record) > 0 {
+			kw := strings.TrimSpace(record[0])
+			if kw != "" && !strings.HasPrefix(kw, "#") {
+				keywords = append(keywords, kw)
+			}
+		}
+		rowCount++
+	}
+	return keywords, nil
+}
+
+func isCSVHeader(s string) bool {
+	lower := strings.ToLower(s)
+	return lower == "keyword" || lower == "domain" || lower == "company" || lower == "query" || lower == "name"
 }

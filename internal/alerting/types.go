@@ -32,6 +32,8 @@ const (
 	AlertTypeSystem AlertType = "system"
 	// AlertTypePerformance 性能告警
 	AlertTypePerformance AlertType = "performance"
+	// AlertTypeICP ICP 备案变更告警
+	AlertTypeICP AlertType = "icp"
 )
 
 // Alert 告警信息
