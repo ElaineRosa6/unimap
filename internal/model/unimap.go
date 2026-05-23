@@ -1,5 +1,8 @@
 package model
 
+// FOFAOfficialWebURL FOFA 官方 Web 域名，所有 Web/截图/扩展链路仅允许读此常量或配置中的 WebBaseURL。
+const FOFAOfficialWebURL = "https://fofa.info"
+
 // UQLNode UQL语法树节点
 type UQLNode struct {
 	Type     string     `json:"type"`     // operator, field, value

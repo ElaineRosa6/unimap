@@ -59,8 +59,8 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, 5, cfg.Engines.Hunter.QPS)
 	assert.Equal(t, 30, cfg.Engines.Hunter.Timeout)
 	
-	assert.Equal(t, "https://fofa.info", cfg.Engines.Fofa.BaseURL)
-	assert.Equal(t, "https://fofa.info", cfg.Engines.Fofa.WebURL)
+	assert.Equal(t, "https://fofa.info", cfg.Engines.Fofa.APIBaseURL)
+	assert.Equal(t, "https://fofa.info", cfg.Engines.Fofa.WebBaseURL)
 	assert.Equal(t, 3, cfg.Engines.Fofa.QPS)
 	assert.Equal(t, 30, cfg.Engines.Fofa.Timeout)
 	

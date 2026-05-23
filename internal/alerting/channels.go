@@ -2,16 +2,13 @@ package alerting
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
-	"net/url"
-	"strings"
 
 	"github.com/unimap-icp-hunter/project/internal/logger"
 	"github.com/unimap-icp-hunter/project/internal/utils"
+	"github.com/unimap-icp-hunter/project/internal/utils/urlguard"
 )
 
 // LogChannel 日志告警渠道
@@ -66,43 +63,11 @@ type WebhookChannel struct {
 
 // NewWebhookChannel 创建Webhook告警渠道
 func NewWebhookChannel(rawURL string, headers map[string]string, enabled bool) *WebhookChannel {
-	// Validate URL and block private/internal addresses (SSRF prevention)
-	if strings.TrimSpace(rawURL) != "" {
-		parsed, err := url.Parse(rawURL)
-		if err != nil {
-			logger.Warnf("Webhook URL is invalid: %v", err)
-			rawURL = ""
-		} else if parsed.Scheme != "http" && parsed.Scheme != "https" {
-			logger.Warnf("Webhook URL scheme must be http or https: %s", rawURL)
-			rawURL = ""
-		} else if parsed.Hostname() != "" {
-			host := parsed.Hostname()
-			if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0" {
-				logger.Warnf("Webhook URL resolves to a loopback address: %s", rawURL)
-				rawURL = ""
-			} else if ip := net.ParseIP(host); ip != nil {
-				if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() {
-					logger.Warnf("Webhook URL resolves to a private/internal address: %s", rawURL)
-					rawURL = ""
-				}
-			}
-			// For hostnames, resolve DNS
-			if rawURL != "" && net.ParseIP(host) == nil {
-				ips, err := net.DefaultResolver.LookupIPAddr(context.Background(), host)
-				if err != nil {
-					logger.Warnf("Webhook URL DNS resolution failed: %s", rawURL)
-					rawURL = ""
-				} else {
-					for _, addr := range ips {
-						if addr.IP.IsLoopback() || addr.IP.IsPrivate() || addr.IP.IsUnspecified() {
-							logger.Warnf("Webhook URL DNS resolves to a private/internal address: %s", rawURL)
-							rawURL = ""
-							break
-						}
-					}
-				}
-			}
-		}
+	if u, err := urlguard.Check(rawURL, urlguard.CheckOptions{}); err != nil {
+		logger.Warnf("Webhook URL blocked by urlguard: %v", err)
+		rawURL = ""
+	} else {
+		rawURL = u.String()
 	}
 
 	return &WebhookChannel{

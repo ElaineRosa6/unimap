@@ -80,13 +80,14 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name       string                 `json:"name"`
-		Type       string                 `json:"type"`
-		Enabled    bool                   `json:"enabled"`
-		CronExpr   string                 `json:"cron_expr"`
-		Payload    map[string]interface{} `json:"payload"`
-		TimeoutSec int                    `json:"timeout_seconds"`
-		MaxRetries int                    `json:"max_retries"`
+		Name         string                    `json:"name"`
+		Type         string                    `json:"type"`
+		Enabled      bool                      `json:"enabled"`
+		CronExpr     string                    `json:"cron_expr"`
+		Payload      map[string]interface{}    `json:"payload"`
+		TimeoutSec   int                       `json:"timeout_seconds"`
+		MaxRetries   int                       `json:"max_retries"`
+		Notifications *scheduler.NotificationConfig `json:"notifications,omitempty"`
 	}
 
 	if !decodeJSONBody(w, r, &req) {
@@ -103,13 +104,30 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	task := &scheduler.ScheduledTask{
-		Name:       strings.TrimSpace(req.Name),
-		Type:       scheduler.TaskType(req.Type),
-		Enabled:    req.Enabled,
-		CronExpr:   strings.TrimSpace(req.CronExpr),
-		Payload:    req.Payload,
-		TimeoutSec: req.TimeoutSec,
-		MaxRetries: req.MaxRetries,
+		Name:          strings.TrimSpace(req.Name),
+		Type:          scheduler.TaskType(req.Type),
+		Enabled:       req.Enabled,
+		CronExpr:      strings.TrimSpace(req.CronExpr),
+		Payload:       req.Payload,
+		TimeoutSec:    req.TimeoutSec,
+		MaxRetries:    req.MaxRetries,
+		Notifications: req.Notifications,
+	}
+
+	if req.Notifications != nil && len(req.Notifications.ChannelIDs) > 0 {
+		if s.notifyRegistry == nil {
+			writeSchedulerJSONError(w, http.StatusBadRequest, "notification system not initialized")
+			return
+		}
+		for _, chID := range req.Notifications.ChannelIDs {
+			if chID == "__task_inline_webhook__" {
+				continue
+			}
+			if s.notifyRegistry.Get(chID) == nil {
+				writeSchedulerJSONError(w, http.StatusBadRequest, "unknown notification channel: "+chID)
+				return
+			}
+		}
 	}
 
 	if err := validateTaskPayload(req.Payload); err != nil {
@@ -178,14 +196,15 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ID         string                 `json:"id"`
-		Name       string                 `json:"name"`
-		Type       string                 `json:"type"`
-		Enabled    bool                   `json:"enabled"`
-		CronExpr   string                 `json:"cron_expr"`
-		Payload    map[string]interface{} `json:"payload"`
-		TimeoutSec int                    `json:"timeout_seconds"`
-		MaxRetries int                    `json:"max_retries"`
+		ID           string                    `json:"id"`
+		Name         string                    `json:"name"`
+		Type         string                    `json:"type"`
+		Enabled      bool                      `json:"enabled"`
+		CronExpr     string                    `json:"cron_expr"`
+		Payload      map[string]interface{}    `json:"payload"`
+		TimeoutSec   int                       `json:"timeout_seconds"`
+		MaxRetries   int                       `json:"max_retries"`
+		Notifications *scheduler.NotificationConfig `json:"notifications,omitempty"`
 	}
 
 	if !decodeJSONBody(w, r, &req) {
@@ -197,15 +216,32 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Notifications != nil && len(req.Notifications.ChannelIDs) > 0 {
+		if s.notifyRegistry == nil {
+			writeSchedulerJSONError(w, http.StatusBadRequest, "notification system not initialized")
+			return
+		}
+		for _, chID := range req.Notifications.ChannelIDs {
+			if chID == "__task_inline_webhook__" {
+				continue
+			}
+			if s.notifyRegistry.Get(chID) == nil {
+				writeSchedulerJSONError(w, http.StatusBadRequest, "unknown notification channel: "+chID)
+				return
+			}
+		}
+	}
+
 	task := &scheduler.ScheduledTask{
-		ID:         strings.TrimSpace(req.ID),
-		Name:       strings.TrimSpace(req.Name),
-		Type:       scheduler.TaskType(req.Type),
-		Enabled:    req.Enabled,
-		CronExpr:   strings.TrimSpace(req.CronExpr),
-		Payload:    req.Payload,
-		TimeoutSec: req.TimeoutSec,
-		MaxRetries: req.MaxRetries,
+		ID:            strings.TrimSpace(req.ID),
+		Name:          strings.TrimSpace(req.Name),
+		Type:          scheduler.TaskType(req.Type),
+		Enabled:       req.Enabled,
+		CronExpr:      strings.TrimSpace(req.CronExpr),
+		Payload:       req.Payload,
+		TimeoutSec:    req.TimeoutSec,
+		MaxRetries:    req.MaxRetries,
+		Notifications: req.Notifications,
 	}
 
 	if err := validateTaskPayload(req.Payload); err != nil {
