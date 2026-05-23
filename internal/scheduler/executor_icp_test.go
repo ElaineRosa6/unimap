@@ -35,7 +35,7 @@ func missingBaseURLConfig() adapter.ICPConfig {
 // --- Type tests ---
 
 func TestICPQueryRunner_Type(t *testing.T) {
-	r := NewICPQueryRunner(defaultICPConfig)
+	r := NewICPQueryRunner(defaultICPConfig, nil, nil)
 	if r.Type() != TaskICPQuery {
 		t.Errorf("expected %s, got %s", TaskICPQuery, r.Type())
 	}
@@ -44,7 +44,7 @@ func TestICPQueryRunner_Type(t *testing.T) {
 // --- Validation tests ---
 
 func TestICPQueryRunner_MissingQueries(t *testing.T) {
-	r := NewICPQueryRunner(defaultICPConfig)
+	r := NewICPQueryRunner(defaultICPConfig, nil, nil)
 	_, err := r.Execute(context.Background(), map[string]interface{}{})
 	if err == nil {
 		t.Fatal("expected error for missing queries")
@@ -55,7 +55,7 @@ func TestICPQueryRunner_MissingQueries(t *testing.T) {
 }
 
 func TestICPQueryRunner_DisabledByConfig(t *testing.T) {
-	r := NewICPQueryRunner(disabledICPConfig)
+	r := NewICPQueryRunner(disabledICPConfig, nil, nil)
 	_, err := r.Execute(context.Background(), map[string]interface{}{
 		"queries": []string{"test"},
 	})
@@ -68,7 +68,7 @@ func TestICPQueryRunner_DisabledByConfig(t *testing.T) {
 }
 
 func TestICPQueryRunner_MissingBaseURL(t *testing.T) {
-	r := NewICPQueryRunner(missingBaseURLConfig)
+	r := NewICPQueryRunner(missingBaseURLConfig, nil, nil)
 	_, err := r.Execute(context.Background(), map[string]interface{}{
 		"queries": []string{"test"},
 	})
@@ -81,7 +81,7 @@ func TestICPQueryRunner_MissingBaseURL(t *testing.T) {
 }
 
 func TestICPQueryRunner_InvalidType(t *testing.T) {
-	r := NewICPQueryRunner(defaultICPConfig)
+	r := NewICPQueryRunner(defaultICPConfig, nil, nil)
 	_, err := r.Execute(context.Background(), map[string]interface{}{
 		"queries": []string{"test"},
 		"type":    "zzz",
@@ -95,7 +95,7 @@ func TestICPQueryRunner_InvalidType(t *testing.T) {
 }
 
 func TestICPQueryRunner_TooManyQueries(t *testing.T) {
-	r := NewICPQueryRunner(defaultICPConfig)
+	r := NewICPQueryRunner(defaultICPConfig, nil, nil)
 	queries := make([]string, 101)
 	for i := range queries {
 		queries[i] = fmt.Sprintf("query%d", i)
@@ -120,7 +120,7 @@ func TestICPQueryRunner_PageSizeCapped(t *testing.T) {
 	cfg := adapter.ICPConfig{
 		Enabled: true, BaseURL: srv.URL, APIKey: "k", Timeout: 5, DefaultType: "web",
 	}
-	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg })
+	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"queries":   []string{"test"},
@@ -145,7 +145,7 @@ func TestICPQueryRunner_PayloadDefaults(t *testing.T) {
 	cfg := adapter.ICPConfig{
 		Enabled: true, BaseURL: srv.URL, APIKey: "k", Timeout: 5, DefaultType: "web",
 	}
-	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg })
+	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
 	// Only pass queries, verify defaults for type/page/page_size
 	result, err := r.Execute(context.Background(), map[string]interface{}{
@@ -174,7 +174,7 @@ func TestICPQueryRunner_SingleQueryString(t *testing.T) {
 	cfg := adapter.ICPConfig{
 		Enabled: true, BaseURL: srv.URL, APIKey: "k", Timeout: 5, DefaultType: "web",
 	}
-	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg })
+	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"query": "example.com",
@@ -196,7 +196,7 @@ func TestICPQueryRunner_ConfigDefaultType(t *testing.T) {
 	cfg := adapter.ICPConfig{
 		Enabled: true, BaseURL: srv.URL, APIKey: "k", Timeout: 5, DefaultType: "app",
 	}
-	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg })
+	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"queries": []string{"test"},
@@ -292,7 +292,7 @@ func TestICPQueryRunner_SingleQuerySuccess(t *testing.T) {
 	cfg := adapter.ICPConfig{
 		Enabled: true, BaseURL: srv.URL, APIKey: "k", Timeout: 5, DefaultType: "web",
 	}
-	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg })
+	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"queries":   []string{"example.com"},
@@ -317,7 +317,7 @@ func TestICPQueryRunner_MultiQueryPartialFailure(t *testing.T) {
 	cfg := adapter.ICPConfig{
 		Enabled: true, BaseURL: srv.URL, APIKey: "k", Timeout: 5, DefaultType: "web",
 	}
-	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg })
+	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"queries":   []string{"ok1", "fail_api", "ok2"},
@@ -346,7 +346,7 @@ func TestICPQueryRunner_FailFast(t *testing.T) {
 	cfg := adapter.ICPConfig{
 		Enabled: true, BaseURL: srv.URL, APIKey: "k", Timeout: 5, DefaultType: "web",
 	}
-	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg })
+	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"queries":   []string{"fail500", "ok1", "ok2"},
@@ -369,7 +369,7 @@ func TestICPQueryRunner_AllFail(t *testing.T) {
 	cfg := adapter.ICPConfig{
 		Enabled: true, BaseURL: srv.URL, APIKey: "k", Timeout: 5, DefaultType: "web",
 	}
-	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg })
+	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
 	result, err := r.Execute(context.Background(), map[string]interface{}{
 		"queries": []string{"fail500", "fail_api"},
@@ -392,7 +392,7 @@ func TestICPQueryRunner_ContextCancel(t *testing.T) {
 	cfg := adapter.ICPConfig{
 		Enabled: true, BaseURL: srv.URL, APIKey: "k", Timeout: 5, DefaultType: "web",
 	}
-	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg })
+	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
@@ -417,7 +417,7 @@ func TestICPQueryRunner_ContextTimeout(t *testing.T) {
 	cfg := adapter.ICPConfig{
 		Enabled: true, BaseURL: srv.URL, APIKey: "k", Timeout: 5, DefaultType: "web",
 	}
-	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg })
+	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
 	// Use a very short timeout — should still succeed since mock responds fast
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

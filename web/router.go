@@ -137,6 +137,11 @@ func (r *Router) RegisterRoutes() http.Handler {
 	// API 路由 - ICP 备案查询
 	r.addRoute("icp-query", "GET", "/api/icp/query", r.server.handleICPQuery, true)
 
+	// API 路由 - ICP 历史与对比
+	r.addRoute("icp-history", "GET", "/api/icp/history", r.server.handleICPHistory, true)
+	r.addRoute("icp-history-results", "GET", "/api/icp/history/results", r.server.handleICPHistoryResults, true)
+	r.addRoute("icp-compare", "GET", "/api/icp/compare", r.server.handleICPCompare, true)
+
 	// API 路由 - 配置读写
 	r.addRoute("config-get", "GET", "/api/config", r.server.handleGetConfig, false)
 	r.addRoute("config-save", "POST", "/api/config", r.server.handleSaveConfig, false)

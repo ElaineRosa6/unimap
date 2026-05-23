@@ -22,6 +22,7 @@ import (
 	"github.com/unimap-icp-hunter/project/internal/auth"
 	"github.com/unimap-icp-hunter/project/internal/config"
 	"github.com/unimap-icp-hunter/project/internal/distributed"
+	icpdb "github.com/unimap-icp-hunter/project/internal/icp/database"
 	"github.com/unimap-icp-hunter/project/internal/logger"
 	"github.com/unimap-icp-hunter/project/internal/metrics"
 	"github.com/unimap-icp-hunter/project/internal/model"
@@ -99,6 +100,8 @@ type Server struct {
 	proxyPool        *proxypool.Pool
 	distributed      *DistributedState
 	scheduler        *scheduler.Scheduler
+	icpDB            *icpdb.Database
+	icpRepo          icpdb.ICPResultRepository
 	apiAuth          *auth.AuthMiddleware
 	shutdownCtx      context.Context
 	shutdownCancel   context.CancelFunc
@@ -349,7 +352,7 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 	sched.RegisterHandler(scheduler.NewCacheWarmupRunner())
 
 	// 注册 ICP 备案查询 Runner (ST-21)
-	sched.RegisterHandler(scheduler.NewICPQueryRunner(srv.icpConfigProvider))
+	sched.RegisterHandler(scheduler.NewICPQueryRunner(srv.icpConfigProvider, srv.icpRepo, alertManager))
 
 	// 加载持久化的任务
 	if err := sched.Load(); err != nil {

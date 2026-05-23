@@ -190,7 +190,8 @@ type Config struct {
 		BaseURL     string `yaml:"base_url"`     // sidecar 服务地址，默认 http://localhost:16181
 		APIKey      string `yaml:"api_key"`      // 可选 API Key，支持 ${ENV_VAR}
 		Timeout     int    `yaml:"timeout"`      // 请求超时（秒）
-		DefaultType string `yaml:"default_type"` // web/app/mapp/kapp/bweb/bapp/bmapp/bkapp
+		DefaultType  string `yaml:"default_type"` // web/app/mapp/kapp/bweb/bapp/bmapp/bkapp
+		DatabasePath string `yaml:"database_path"` // SQLite 持久化路径，默认 ./data/icp_results.db
 	} `yaml:"icp"`
 
 	// Backup 数据备份配置
