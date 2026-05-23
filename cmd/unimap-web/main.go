@@ -99,7 +99,7 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 	if cfg.Engines.Fofa.Enabled {
 		if cfg.Engines.Fofa.APIKey != "" {
 			svc.RegisterAdapter(adapter.NewFofaAdapter(
-				cfg.Engines.Fofa.BaseURL,
+				cfg.Engines.Fofa.APIBaseURL,
 				cfg.Engines.Fofa.APIKey,
 				cfg.Engines.Fofa.Email,
 				cfg.Engines.Fofa.QPS,

@@ -4,13 +4,10 @@ package scheduler
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -20,6 +17,8 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/unimap-icp-hunter/project/internal/metrics"
+	"github.com/unimap-icp-hunter/project/internal/notify"
+	"github.com/unimap-icp-hunter/project/internal/utils/urlguard"
 )
 
 // TaskType identifies the type of scheduled task.
@@ -258,14 +257,16 @@ type ExecutionWindow struct {
 	Timezone  string `json:"timezone"`   // IANA timezone name (e.g., "Asia/Shanghai")
 }
 
-// NotificationConfig defines notification settings for task events.
+// NotificationConfig 通知配置
 type NotificationConfig struct {
+	Enabled    bool     `json:"enabled"`
 	OnSuccess  bool     `json:"on_success"`
 	OnFailure  bool     `json:"on_failure"`
 	OnTimeout  bool     `json:"on_timeout"`
-	Channels   []string `json:"channels"` // "webhook", "email", "log"
-	WebhookURL string   `json:"webhook_url,omitempty"`
-	Recipients []string `json:"recipients,omitempty"` // email addresses
+	ChannelIDs []string `json:"channel_ids"`          // 新字段：引用全局 channel ID
+	Channels   []string `json:"channels,omitempty"`   // 旧字段：向后兼容
+	WebhookURL string   `json:"webhook_url,omitempty"` // 旧字段：任务级 inline webhook
+	Recipients []string `json:"recipients,omitempty"`
 }
 
 // TaskTemplate is a pre-defined task configuration that can be used to quickly create tasks.
@@ -313,6 +314,12 @@ type Scheduler struct {
 	stopped    bool
 	mu         sync.RWMutex
 	maxHistory int
+
+	// 通知系统
+	notifyRegistry    *notify.Registry
+	notifyCfgProvider func() *notify.NotifyGlobalCfg
+	notifyWg          sync.WaitGroup
+	notifyTimeout     time.Duration
 }
 
 // NewScheduler creates a new Scheduler. If storePath is non-empty, tasks are
@@ -341,6 +348,16 @@ func NewScheduler(storePath string, historyPath string, maxHistory int) *Schedul
 	}
 
 	return s
+}
+
+// SetNotifyRegistry 设置通知渠道注册表
+func (s *Scheduler) SetNotifyRegistry(reg *notify.Registry) {
+	s.notifyRegistry = reg
+}
+
+// SetNotifyCfgProvider 设置全局通知配置提供者
+func (s *Scheduler) SetNotifyCfgProvider(provider func() *notify.NotifyGlobalCfg) {
+	s.notifyCfgProvider = provider
 }
 
 // Start begins the internal cron scheduler. Call this after registering
@@ -672,35 +689,15 @@ func validateWebhookURL(webhookURL string) error {
 }
 
 // ValidateWebhookURLPublic validates a webhook URL to prevent SSRF.
-// It performs DNS resolution to verify the resolved IP, not just the literal hostname.
+// Requires https scheme and performs DNS resolution to verify the resolved IP.
 func ValidateWebhookURLPublic(webhookURL string) error {
 	if webhookURL == "" {
 		return nil
 	}
-	parsed, err := url.Parse(webhookURL)
-	if err != nil {
-		return fmt.Errorf("invalid webhook URL: %v", err)
-	}
-	if parsed.Scheme != "https" {
-		return fmt.Errorf("webhook URL must use https scheme")
-	}
-	host := parsed.Hostname()
-	// Resolve DNS and check ALL resolved IPs
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		return fmt.Errorf("failed to resolve webhook URL host: %v", err)
-	}
-	for _, ip := range ips {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			return fmt.Errorf("webhook URL resolved to private/internal address: %s", ip)
-		}
-	}
-	// Also check literal hostname for localhost strings (covers DNS rebinding edge cases)
-	lowerHost := strings.ToLower(host)
-	if lowerHost == "localhost" || lowerHost == "127.0.0.1" || lowerHost == "::1" || lowerHost == "0.0.0.0" {
-		return fmt.Errorf("webhook URL cannot point to localhost/loopback address")
-	}
-	return nil
+	_, err := urlguard.Check(webhookURL, urlguard.CheckOptions{
+		AllowedSchemes: []string{"https"},
+	})
+	return err
 }
 
 // hasCyclicDependency checks for cyclic dependencies in a task's dependency chain.
@@ -996,10 +993,24 @@ func (s *Scheduler) recordSkippedExecution(task *ScheduledTask, status string, r
 
 // sendNotification sends notifications based on task configuration and execution result.
 func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord) {
+	// 全局开关
+	if s.notifyCfgProvider != nil {
+		globalCfg := s.notifyCfgProvider()
+		if globalCfg == nil || !globalCfg.Enabled {
+			return
+		}
+	}
+
 	if task.Notifications == nil {
 		return
 	}
 
+	// 任务级总开关
+	if !task.Notifications.Enabled {
+		return
+	}
+
+	// 事件匹配
 	shouldNotify := false
 	switch record.Status {
 	case "success":
@@ -1009,69 +1020,109 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 	case "timeout":
 		shouldNotify = task.Notifications.OnTimeout
 	}
-
-	if !shouldNotify || len(task.Notifications.Channels) == 0 {
+	if !shouldNotify {
 		return
 	}
 
-	notification := map[string]interface{}{
-		"task_id":   task.ID,
-		"task_name": task.Name,
-		"task_type": task.Type,
-		"status":    record.Status,
-		"result":    record.Result,
-		"error":     record.Error,
-		"duration":  record.DurationMs,
-		"timestamp": record.FinishedAt,
+	// 数据迁移：旧 Channels[] -> 新 ChannelIDs[]
+	channelIDs := migrateChannelIDs(task.Notifications)
+	if len(channelIDs) == 0 {
+		return
 	}
 
-	for _, channel := range task.Notifications.Channels {
-		switch channel {
-		case "log":
-			log.Printf("[scheduler] notification: task %s (%s) %s - %s", task.Name, task.Type, record.Status, record.Result)
-		case "webhook":
-			if task.Notifications.WebhookURL != "" {
-				s.sendWebhookNotification(task.Notifications.WebhookURL, notification)
-			}
-		case "email":
-			// Email notification would require SMTP configuration
-			// Placeholder for future implementation
-			log.Printf("[scheduler] email notification not yet implemented for task %s", task.ID)
+	msg := notify.TaskNotification{
+		TaskID:    task.ID,
+		TaskName:  task.Name,
+		TaskType:  string(task.Type),
+		Status:    record.Status,
+		Result:    record.Result,
+		Error:     record.Error,
+		Duration:  float64(record.DurationMs),
+		Timestamp: time.Now(),
+	}
+
+	timeout := s.notifyTimeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
+
+	for _, chID := range channelIDs {
+		// 任务级 inline webhook 特殊处理
+		if chID == "__task_inline_webhook__" && task.Notifications.WebhookURL != "" {
+			s.notifyWg.Add(1)
+			go func(url string) {
+				defer s.notifyWg.Done()
+				ch, err := notify.NewGenericWebhookChannel("__inline__", url, nil, true, false)
+				if err != nil {
+					log.Printf("[scheduler] inline webhook URL blocked: %v", err)
+					return
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), timeout)
+				defer cancel()
+				if err := ch.Send(ctx, msg); err != nil {
+					log.Printf("[scheduler] notify inline webhook failed: %v", err)
+					metrics.IncSchedulerNotifyFail("webhook")
+				} else {
+					metrics.IncSchedulerNotifySuccess("webhook")
+				}
+			}(task.Notifications.WebhookURL)
+			continue
 		}
+
+		if s.notifyRegistry == nil {
+			continue
+		}
+		ch := s.notifyRegistry.Get(chID)
+		if ch == nil {
+			log.Printf("[scheduler] notify channel %q not registered, skipping", chID)
+			continue
+		}
+		if !ch.IsEnabled() {
+			continue
+		}
+
+		s.notifyWg.Add(1)
+		go func(ch notify.NotifyChannel) {
+			defer s.notifyWg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			if err := ch.Send(ctx, msg); err != nil {
+				log.Printf("[scheduler] notify %s (%s) failed: %v", ch.ID(), ch.Type(), err)
+				metrics.IncSchedulerNotifyFail(ch.Type())
+			} else {
+				metrics.IncSchedulerNotifySuccess(ch.Type())
+			}
+		}(ch)
 	}
 }
 
+// migrateChannelIDs 将旧 Channels[] 字段迁移到 ChannelIDs[]
+func migrateChannelIDs(nc *NotificationConfig) []string {
+	if len(nc.ChannelIDs) > 0 {
+		return nc.ChannelIDs
+	}
+
+	var ids []string
+	for _, name := range nc.Channels {
+		switch name {
+		case "log":
+			ids = append(ids, "builtin-log")
+		case "webhook":
+			if nc.WebhookURL != "" {
+				ids = append(ids, "__task_inline_webhook__")
+			} else {
+				log.Printf("[scheduler] task webhook channel without URL skipped")
+			}
+		case "email":
+			log.Printf("[scheduler] email channel not supported, skipped")
+		}
+	}
+	return ids
+}
+
 // sendWebhookNotification sends a webhook notification.
-// safeWebhookClient returns an http.Client that:
-// 1. Refuses all redirects (prevents redirect-based SSRF bypass)
-// 2. Only dials public IPs (prevents DNS rebinding at connection time)
 func safeWebhookClient() *http.Client {
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			// Resolve and verify all IPs
-			ips, err := net.LookupIP(host)
-			if err != nil {
-				return nil, fmt.Errorf("DNS lookup blocked for webhook: %v", err)
-			}
-			for _, ip := range ips {
-				if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-					return nil, fmt.Errorf("connection to private IP blocked: %s", ip)
-				}
-			}
-			return net.DialTimeout(network, net.JoinHostPort(host, port), 10*time.Second)
-		},
-	}
-	return &http.Client{
-		Transport: transport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse // refuse all redirects
-		},
-	}
+	return urlguard.SafeHTTPClient(urlguard.CheckOptions{}, 30*time.Second)
 }
 
 func (s *Scheduler) sendWebhookNotification(webhookURL string, payload map[string]interface{}) {
