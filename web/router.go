@@ -119,6 +119,11 @@ func (r *Router) RegisterRoutes() http.Handler {
 	r.addRoute("scheduler-task-enable", "POST", "/api/scheduler/tasks/enable", r.server.handleEnableTask, false)
 	r.addRoute("scheduler-task-disable", "POST", "/api/scheduler/tasks/disable", r.server.handleDisableTask, false)
 	r.addRoute("scheduler-history", "GET", "/api/scheduler/history", r.server.handleTaskHistory, false)
+
+	// API 路由 - 通知系统
+	r.addRoute("notify-channels", "GET", "/api/notifications/channels", r.server.handleNotificationChannels, false)
+	r.addRoute("notify-reload", "POST", "/api/notifications/reload", r.server.handleNotifyReload, false)
+
 	// API 路由 - 篡改检测（限流）
 	r.addRoute("tamper-check", "POST", "/api/tamper/check", r.server.handleTamperCheck, true)
 	r.addRoute("tamper-baseline", "POST", "/api/tamper/baseline", r.server.handleTamperBaseline, true)
