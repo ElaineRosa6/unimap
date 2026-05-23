@@ -9,6 +9,7 @@
 - [测试覆盖率 Phase1 进度 2026-04-21](project_test_coverage_phase1_2026-04-21.md) — Phase 1完成：adapter 17.7%、screenshot 20.8%、service 22.5%，数据竞争修复，整体65.1%
 - [深度审查核实 2026-04-29](project_deep_review_verification_2026-04-29.md) — 第三轮code review 25项问题核实：仅2项修复，18项未修复（含8项Critical/High）
 - [安全修复执行 2026-05-07](project_security_fix_2026-05-07.md) — 修复第三轮 review 遗留的 13 项未修复问题（4 Critical、3 High、4 Medium、2 Low），详细记录见 project_security_fix_2026-05-07.md
+- [ICP 定时任务接入 2026-05-22](project_icp_scheduled_task_2026-05-22.md) — 新增 ST-21 TaskICPQuery + ICPQueryRunner + ICPSearchWithContext + 2 内置模板，21 个测试通过，P1/P2 全部修订
 
 ### ✅ 全部项目完成状态
 

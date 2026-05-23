@@ -173,7 +173,15 @@ Plan §7.5 要求：
    - `memory/MEMORY.md` 加索引行
    - `memory/project_notify_fofa_2026-05-22.md` 落地报告（plan F-27）
 
-覆盖率提升（urlguard → 90%、notify → 85%）建议作为单独一次 commit，避免和功能修复混在一起。
+## 6. 状态更新（2026-05-23 后续修复）
+
+- **P0 已修复** (`6662f78`): `urlguard.Check` 不再做 DNS 解析。`checkIPLiteralPrivate`（语法校验）用于 `Check()`；`checkHostLive`（DNS 解析）仅用于 `SafeHTTPClient.DialContext`。14/14 urlguard tests + config tests 全部通过，离线/CI/DNS 抖动不再阻塞启动。
+- **P1 WARN 日志已修复** (`6662f78`): `config.go` 新增两处 `logger.Warnf`（base_url 迁移、web_base_url 强制覆盖）。
+
+**仍遗留：**
+- 🟡 P1: `docs/API.md` + `docs/RUNBOOK.md` 通知章节（计划 F-24/F-25）
+- 🟡 P1: `memory/project_notify_fofa_2026-05-22.md` 落地报告（计划 F-27）
+- 🟢 P2: urlguard 覆盖率 72%→90%、notify 66%→85%
 
 ---
 
