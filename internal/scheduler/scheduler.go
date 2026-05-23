@@ -51,6 +51,7 @@ const (
 	TaskAlertSilence      TaskType = "alert_silence" // ST-19: 告警静默窗口
 	TaskCacheWarmup       TaskType = "cache_warmup"  // ST-20: 缓存预热
 	TaskICPQuery          TaskType = "icp_query"     // ST-21: ICP 备案查询
+	TaskICPImport         TaskType = "icp_import"    // ST-22: ICP 关键词 CSV 导入
 )
 
 // AllTaskTypes returns all supported task types.
@@ -61,7 +62,7 @@ func AllTaskTypes() []TaskType {
 		TaskExport, TaskPortScan, TaskScreenshotCleanup, TaskTamperCleanup,
 		TaskQuotaMonitor, TaskAlertSummary, TaskBaselineRefresh, TaskURLImport,
 		TaskPluginHealth, TaskBridgeTokenRotate, TaskAlertSilence, TaskCacheWarmup,
-		TaskICPQuery,
+		TaskICPQuery, TaskICPImport,
 	}
 }
 
@@ -89,6 +90,7 @@ func TaskTypeLabel(t TaskType) string {
 		TaskAlertSilence:      "告警静默窗口",
 		TaskCacheWarmup:       "缓存预热",
 		TaskICPQuery:          "ICP 备案查询",
+		TaskICPImport:         "ICP 关键词导入",
 	}
 	if l, ok := labels[t]; ok {
 		return l

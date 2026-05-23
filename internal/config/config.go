@@ -731,6 +731,9 @@ func (m *Manager) applyDefaults(config *Config) {
 	if strings.TrimSpace(config.ICP.DefaultType) == "" {
 		config.ICP.DefaultType = "web"
 	}
+	if strings.TrimSpace(config.ICP.DatabasePath) == "" {
+		config.ICP.DatabasePath = "./data/icp_results.db"
+	}
 
 	// 默认启用 Web 认证：如果未配置 admin_token，生成安全随机 token
 	if strings.TrimSpace(config.Web.Auth.AdminToken) == "" {

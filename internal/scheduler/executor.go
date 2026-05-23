@@ -1225,7 +1225,7 @@ func NewICPImportRunner(importDir string, scheduler *Scheduler) *ICPImportRunner
 	return &ICPImportRunner{importDir: importDir, scheduler: scheduler}
 }
 
-func (r *ICPImportRunner) Type() TaskType { return TaskICPQuery }
+func (r *ICPImportRunner) Type() TaskType { return TaskICPImport }
 
 func (r *ICPImportRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
 	if r.importDir == "" {

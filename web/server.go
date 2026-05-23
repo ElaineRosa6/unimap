@@ -316,6 +316,22 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		shutdownCancel: shutdownCancel,
 	}
 
+	// 初始化 ICP 结果数据库（持久化 + 变更告警依赖此 DB）
+	if cfg != nil && strings.TrimSpace(cfg.ICP.DatabasePath) != "" {
+		dbPath := cfg.ICP.DatabasePath
+		if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+			logger.Warnf("ICP result DB dir create failed (%s): %v", dbPath, err)
+		} else if db, err := icpdb.NewDatabase(dbPath); err != nil {
+			logger.Warnf("ICP result DB unavailable at %s: %v", dbPath, err)
+		} else if err := db.InitSchema(); err != nil {
+			logger.Warnf("ICP result DB schema init failed: %v", err)
+			_ = db.Close()
+		} else {
+			srv.icpDB = db
+			srv.icpRepo = icpdb.NewICPResultRepository(db.DB())
+		}
+	}
+
 	// 初始化定时任务调度器
 	maxHistory := 500
 	if cfg != nil && cfg.Scheduler.MaxHistory > 0 {
@@ -353,6 +369,9 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 
 	// 注册 ICP 备案查询 Runner (ST-21)
 	sched.RegisterHandler(scheduler.NewICPQueryRunner(srv.icpConfigProvider, srv.icpRepo, alertManager))
+
+	// 注册 ICP 关键词 CSV 导入 Runner (ST-22)
+	sched.RegisterHandler(scheduler.NewICPImportRunner("./data/icp_imports", sched))
 
 	// 加载持久化的任务
 	if err := sched.Load(); err != nil {
@@ -724,6 +743,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// 停止定时任务调度器
 	if s.scheduler != nil {
 		s.scheduler.Stop()
+	}
+
+	// 关闭 ICP 结果数据库
+	if s.icpDB != nil {
+		if err := s.icpDB.Close(); err != nil {
+			logger.Warnf("ICP result DB close error: %v", err)
+		}
 	}
 
 	if err := s.httpServer.Shutdown(ctx); err != nil {
