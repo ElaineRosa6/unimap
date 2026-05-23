@@ -299,3 +299,106 @@ curl -s http://localhost:8448/debug/pprof/heap?debug=1 | head -20
 | 内存使用 | > 80% | > 95% | 1 min |
 | 磁盘使用 | > 80% | > 90% | 15 min |
 | Redis 连接 | 不可用 | 不可用 | 1 min |
+
+---
+
+## 7. 通知未收到
+
+### 症状
+- 定时任务执行成功/失败/超时，但配置的钉钉/飞书/企微群没有收到推送消息
+- 日志中可能出现 `notify.* failed` 或 `channel not registered` 警告
+
+### 诊断步骤
+
+#### 7.1 确认全局通知已启用
+
+```bash
+cat config.yaml | grep -A5 "notifications:"
+# 应看到 enabled: true
+```
+
+如果 `notifications.enabled: false`，所有通知都不会发送（无论任务级开关如何配置）。
+
+#### 7.2 确认渠道已正确配置且启用
+
+```bash
+curl -s http://localhost:8448/api/notifications/channels | jq '.channels[] | {id, type, enabled}'
+```
+
+检查点：
+- 渠道 `id` 是否与任务 `channel_ids` 中的一致
+- `enabled` 是否为 `true`
+- `webhook_url` 是否完整且可访问
+
+#### 7.3 确认任务级通知配置
+
+```bash
+curl -s http://localhost:8448/api/scheduler/tasks | jq '.[] | select(.notifications != null) | {id, name, notifications}'
+```
+
+检查点：
+- `notifications.enabled` 是否为 `true`（任务级总开关）
+- `notifications.on_success` / `on_failure` / `on_timeout` 是否匹配当前事件
+- `notifications.channel_ids` 是否包含已注册的渠道 ID
+
+#### 7.4 检查日志中的通知发送记录
+
+```bash
+journalctl -u unimap-web --since "1 hour ago" | grep -iE "notify.*failed|notify.*success|channel not registered|channel disabled"
+```
+
+关键日志：
+- `channel not registered: <id>` → 渠道 ID 未在全局配置中注册
+- `channel disabled: <id>` → 渠道已注册但 enabled=false
+- `notify.* failed: ...` → 发送失败，查看具体错误信息
+
+#### 7.5 测试通知渠道连通性
+
+```bash
+# 钉钉
+curl -X POST "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"msgtype":"text","text":{"content":"UniMap 通知测试"}}'
+
+# 飞书
+curl -X POST "https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_HOOK" \
+  -H 'Content-Type: application/json' \
+  -d '{"msg_type":"text","content":{"text":"UniMap 通知测试"}}'
+```
+
+如果直接请求也失败，说明 webhook URL 或 Token 有问题，不是 UniMap 的 bug。
+
+#### 7.6 手动触发重载
+
+如果刚修改了 `config.yaml` 中的通知配置，通知注册表可能还没读到最新值：
+
+```bash
+curl -X POST http://localhost:8448/api/notifications/reload
+```
+
+### 恢复操作
+
+1. **补全配置**：根据诊断结果补充缺失的配置项
+2. **重载通知渠道**：`POST /api/notifications/reload`
+3. **重启服务**（如果热更新不生效）：
+   ```bash
+   systemctl restart unimap-web
+   ```
+
+### 预防措施
+
+- 创建通知渠道后，手动触发一次任务验证消息能收到
+- 监控通知发送成功率，低于 90% 时告警
+- 定期检查 webhook URL 是否仍然有效（Token 过期等）
+- 通知密钥（`secret`）变更时同步更新配置并重载
+
+---
+
+## 附录：通知渠道类型对照
+
+| 类型 | 官方文档 | 签名支持 | 消息格式 |
+|------|---------|---------|---------|
+| `dingtalk` | https://open.dingtalk.com/document/group/customize-robot-security-settings | HMAC-SHA256 | Markdown |
+| `feishu` | https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot | HMAC-SHA256 | 富文本卡片 |
+| `wecom` | https://developer.work.weixin.qq.com/document/path/91770 | 无 | Markdown |
+| `webhook` | 通用 | 无 | 通用 JSON |
