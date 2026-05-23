@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,67 @@ const (
 	sessionMaxAge     = 86400 // 24 hours
 	csrfMaxAge        = 3600  // 1 hour
 )
+
+// sessionRevocationStore tracks revoked session tokens for server-side invalidation.
+type sessionRevocationStore struct {
+	mu      sync.RWMutex
+	revoked map[string]time.Time // token hash -> expiry time
+	stopCh  chan struct{}
+}
+
+func newSessionRevocationStore() *sessionRevocationStore {
+	s := &sessionRevocationStore{
+		revoked: make(map[string]time.Time),
+		stopCh:  make(chan struct{}),
+	}
+	go s.cleanupLoop()
+	return s
+}
+
+func (s *sessionRevocationStore) cleanupLoop() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.cleanup()
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
+func (s *sessionRevocationStore) cleanup() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	for tokenHash, expiry := range s.revoked {
+		if now.After(expiry) {
+			delete(s.revoked, tokenHash)
+		}
+	}
+}
+
+func (s *sessionRevocationStore) Revoke(token string, ttl time.Duration) {
+	h := sha256.Sum256([]byte(token))
+	tokenHash := hex.EncodeToString(h[:])
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.revoked[tokenHash] = time.Now().Add(ttl)
+}
+
+func (s *sessionRevocationStore) IsRevoked(token string) bool {
+	h := sha256.Sum256([]byte(token))
+	tokenHash := hex.EncodeToString(h[:])
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.revoked[tokenHash]
+	return ok
+}
+
+func (s *sessionRevocationStore) Stop() {
+	close(s.stopCh)
+}
 
 // deriveSessionKey derives a 32-byte AES key from adminToken + pepper.
 func (s *Server) deriveSessionKey() []byte {
@@ -92,7 +154,7 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request) error 
 	return nil
 }
 
-// getSessionToken extracts and decrypts the session cookie. Returns "" if invalid.
+// getSessionToken extracts and decrypts the session cookie. Returns "" if invalid or revoked.
 func (s *Server) getSessionToken(r *http.Request) string {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil || cookie.Value == "" {
@@ -102,11 +164,18 @@ func (s *Server) getSessionToken(r *http.Request) string {
 	if err != nil {
 		return ""
 	}
+	if s.revocationStore != nil && s.revocationStore.IsRevoked(token) {
+		return ""
+	}
 	return token
 }
 
-// clearSessionCookie expires the session cookie.
+// clearSessionCookie expires the session cookie and revokes the token server-side.
 func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+	token := s.getSessionToken(r)
+	if s.revocationStore != nil && token != "" {
+		s.revocationStore.Revoke(token, 24*time.Hour)
+	}
 	secure := r.TLS != nil
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,

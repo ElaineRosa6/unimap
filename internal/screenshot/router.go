@@ -163,7 +163,7 @@ func (r *ScreenshotRouter) runProbes(ctx context.Context) {
 	}
 
 	// Determine best mode
-	current := r.currentMode.Load().(ScreenshotMode)
+	current := r.loadMode()
 	best := r.determineBestMode(current, cdpOK, extOK)
 	if best != current {
 		r.currentMode.Store(best)
@@ -210,9 +210,22 @@ func (r *ScreenshotRouter) determineBestMode(current ScreenshotMode, cdpOK, extO
 	return current
 }
 
+// loadMode safely reads the current screenshot mode from atomic.Value.
+func (r *ScreenshotRouter) loadMode() ScreenshotMode {
+	v := r.currentMode.Load()
+	if v == nil {
+		return ModeAuto
+	}
+	mode, ok := v.(ScreenshotMode)
+	if !ok {
+		return ModeAuto
+	}
+	return mode
+}
+
 // ActiveMode returns the current active screenshot mode.
 func (r *ScreenshotRouter) ActiveMode() ScreenshotMode {
-	return r.currentMode.Load().(ScreenshotMode)
+	return r.loadMode()
 }
 
 // HealthStatus returns the health status of both modes.
@@ -233,7 +246,7 @@ func (r *ScreenshotRouter) SetMode(mode ScreenshotMode) {
 	if mode != ModeCDP && mode != ModeExtension && mode != ModeAuto {
 		return
 	}
-	old := r.currentMode.Load().(ScreenshotMode)
+	old := r.loadMode()
 	if old == mode {
 		return
 	}
@@ -245,12 +258,12 @@ func (r *ScreenshotRouter) SetMode(mode ScreenshotMode) {
 
 // CurrentMode returns the active screenshot execution mode.
 func (r *ScreenshotRouter) CurrentMode() ScreenshotMode {
-	return r.currentMode.Load().(ScreenshotMode)
+	return r.loadMode()
 }
 
 // CaptureSearchEngineResult captures a search engine result using the active mode.
 func (r *ScreenshotRouter) CaptureSearchEngineResult(ctx context.Context, engine, query, queryID string) (string, error) {
-	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
+	provider, err := r.resolveProvider(r.loadMode())
 	if err != nil {
 		return "", err
 	}
@@ -259,7 +272,7 @@ func (r *ScreenshotRouter) CaptureSearchEngineResult(ctx context.Context, engine
 
 // CaptureTargetWebsite captures a target website using the active mode.
 func (r *ScreenshotRouter) CaptureTargetWebsite(ctx context.Context, targetURL, ip, port, protocol, queryID string) (string, error) {
-	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
+	provider, err := r.resolveProvider(r.loadMode())
 	if err != nil {
 		return "", err
 	}
@@ -268,7 +281,7 @@ func (r *ScreenshotRouter) CaptureTargetWebsite(ctx context.Context, targetURL, 
 
 // CaptureBatchURLs captures a batch of URLs using the active mode.
 func (r *ScreenshotRouter) CaptureBatchURLs(ctx context.Context, urls []string, batchID string, concurrency int) ([]BatchScreenshotResult, error) {
-	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
+	provider, err := r.resolveProvider(r.loadMode())
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +298,7 @@ func (r *ScreenshotRouter) GetScreenshotDirectory() string {
 
 // OpenSearchEngineResult opens a search engine result page using the active mode.
 func (r *ScreenshotRouter) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
-	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
+	provider, err := r.resolveProvider(r.loadMode())
 	if err != nil {
 		return "", err
 	}
@@ -294,7 +307,7 @@ func (r *ScreenshotRouter) OpenSearchEngineResult(ctx context.Context, engine, q
 
 // CollectSearchEngineResult collects structured data from a search engine result using the active mode.
 func (r *ScreenshotRouter) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
-	provider, err := r.resolveProvider(r.currentMode.Load().(ScreenshotMode))
+	provider, err := r.resolveProvider(r.loadMode())
 	if err != nil {
 		return nil, err
 	}

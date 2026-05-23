@@ -339,6 +339,16 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 		engineStats[result.EngineName] = len(assets)
 	}
 
+	if len(allAssets) > 0 && s.merger != nil {
+		mergeResult := s.merger.Merge(allAssets)
+		allAssets = make([]model.UnifiedAsset, 0, mergeResult.Total)
+		for _, asset := range mergeResult.Assets {
+			if asset != nil {
+				allAssets = append(allAssets, *asset)
+			}
+		}
+	}
+
 	// 如果需要处理数据
 	if req.ProcessData {
 		allAssets, err = s.processAssets(ctx, allAssets)

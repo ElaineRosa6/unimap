@@ -107,6 +107,7 @@ type Server struct {
 	apiAuth          *auth.AuthMiddleware
 	shutdownCtx      context.Context
 	shutdownCancel   context.CancelFunc
+	revocationStore  *sessionRevocationStore
 }
 
 // NewServer 创建Web服务器
@@ -315,7 +316,8 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		},
 		apiAuth:        auth.NewAuthMiddleware(auth.NewAPIKeyManager("./data/api_keys.json")),
 		shutdownCtx:    shutdownCtx,
-		shutdownCancel: shutdownCancel,
+		shutdownCancel:   shutdownCancel,
+		revocationStore:  newSessionRevocationStore(),
 	}
 
 	// 初始化 ICP 结果数据库（持久化 + 变更告警依赖此 DB）
@@ -489,7 +491,7 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		// 传统 extension 单模式
 		mockClient := newBridgeMockClient()
 		bridgeSvc := screenshot.NewBridgeService(mockClient, cfg.Screenshot.Extension.MaxConcurrency, time.Duration(cfg.Screenshot.Extension.TaskTimeoutSeconds)*time.Second)
-		bridgeSvc.Start(context.Background())
+		bridgeSvc.Start(shutdownCtx)
 		srv.bridge.Mock = mockClient
 		srv.bridge.Service = bridgeSvc
 		screenshotApp.SetBridgeService(bridgeSvc)
@@ -528,7 +530,10 @@ func resolveWebRoot() (string, error) {
 		return "", fmt.Errorf("UNIMAP_WEB_ROOT=%s is not a valid web root", env)
 	}
 
-	exePath, _ := os.Executable()
+	exePath, exeErr := os.Executable()
+	if exeErr != nil {
+		logger.Warnf("os.Executable failed, falling back to current directory: %v", exeErr)
+	}
 	exeDir := ""
 	if exePath != "" {
 		exeDir = filepath.Dir(exePath)
@@ -569,7 +574,10 @@ type cspNonceKey struct{}
 
 func cspNonceFromContext(ctx context.Context) string {
 	if v := ctx.Value(cspNonceKey{}); v != nil {
-		return v.(string)
+		s, ok := v.(string)
+		if ok {
+			return s
+		}
 	}
 	return ""
 }
@@ -792,6 +800,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// 停止截图Router（停止健康探测goroutine）
 	if s.screenshotRouter != nil {
 		s.screenshotRouter.Stop()
+	}
+
+	// 停止会话撤销表清理 goroutine
+	if s.revocationStore != nil {
+		s.revocationStore.Stop()
 	}
 
 	// 关闭Chrome进程
