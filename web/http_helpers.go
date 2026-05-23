@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/unimap-icp-hunter/project/internal/logger"
 )
@@ -237,7 +238,9 @@ func isBlockedIP(ip net.IP) bool {
 
 // isPrivateOrInternalIP 兼容旧接口，内部委托给 isPrivateOrInternalHost
 func isPrivateOrInternalIP(host string) bool {
-	return isPrivateOrInternalHost(context.Background(), host)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return isPrivateOrInternalHost(ctx, host)
 }
 
 func corsMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeaders []string, allowCredentials bool, maxAge int) func(http.Handler) http.Handler {

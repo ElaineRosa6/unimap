@@ -601,15 +601,19 @@ func (s *Server) persistBridgeImageData(dataURL, requestID, batchID, targetURL s
 		if createErr != nil {
 			return "", createErr
 		}
-		defer f.Close()
+		var writeErr error
 		if decErr != nil {
-			if _, writeErr := f.Write(raw); writeErr != nil {
-				return "", writeErr
-			}
+			_, writeErr = f.Write(raw)
 		} else {
-			if encErr := jpeg.Encode(f, img, &jpeg.Options{Quality: 90}); encErr != nil {
-				return "", encErr
-			}
+			writeErr = jpeg.Encode(f, img, &jpeg.Options{Quality: 90})
+		}
+		if closeErr := f.Close(); closeErr != nil {
+			os.Remove(absPath)
+			return "", closeErr
+		}
+		if writeErr != nil {
+			os.Remove(absPath)
+			return "", writeErr
 		}
 	} else if strings.EqualFold(mime, "image/webp") {
 		img, decErr := webp.Decode(bytes.NewReader(raw))
@@ -618,15 +622,19 @@ func (s *Server) persistBridgeImageData(dataURL, requestID, batchID, targetURL s
 		if createErr != nil {
 			return "", createErr
 		}
-		defer f.Close()
+		var writeErr error
 		if decErr != nil {
-			if _, writeErr := f.Write(raw); writeErr != nil {
-				return "", writeErr
-			}
+			_, writeErr = f.Write(raw)
 		} else {
-			if encErr := png.Encode(f, img); encErr != nil {
-				return "", encErr
-			}
+			writeErr = png.Encode(f, img)
+		}
+		if closeErr := f.Close(); closeErr != nil {
+			os.Remove(absPath)
+			return "", closeErr
+		}
+		if writeErr != nil {
+			os.Remove(absPath)
+			return "", writeErr
 		}
 	} else {
 		img, _, decErr := image.Decode(bytes.NewReader(raw))
@@ -634,15 +642,19 @@ func (s *Server) persistBridgeImageData(dataURL, requestID, batchID, targetURL s
 		if createErr != nil {
 			return "", createErr
 		}
-		defer f.Close()
+		var writeErr error
 		if decErr != nil {
-			if _, writeErr := f.Write(raw); writeErr != nil {
-				return "", writeErr
-			}
+			_, writeErr = f.Write(raw)
 		} else {
-			if encErr := png.Encode(f, img); encErr != nil {
-				return "", encErr
-			}
+			writeErr = jpeg.Encode(f, img, nil)
+		}
+		if closeErr := f.Close(); closeErr != nil {
+			os.Remove(absPath)
+			return "", closeErr
+		}
+		if writeErr != nil {
+			os.Remove(absPath)
+			return "", writeErr
 		}
 	}
 

@@ -18,8 +18,10 @@ import (
 	"github.com/unimap-icp-hunter/project/internal/distributed"
 	"github.com/unimap-icp-hunter/project/internal/exporter"
 	icpdb "github.com/unimap-icp-hunter/project/internal/icp/database"
+	"github.com/unimap-icp-hunter/project/internal/logger"
 	"github.com/unimap-icp-hunter/project/internal/screenshot"
 	"github.com/unimap-icp-hunter/project/internal/service"
+	"github.com/unimap-icp-hunter/project/internal/utils/urlguard"
 )
 
 // extractStrings pulls a string slice from payload[key], falling back to def.
@@ -615,14 +617,34 @@ func (r *TamperCleanupRunner) Execute(ctx context.Context, payload map[string]in
 		return "", fmt.Errorf("list check records failed: %w", err)
 	}
 
-	deletedCount := len(records)
-	for url := range records {
-		if delErr := r.tamperSvc.DeleteCheckRecords(url); delErr != nil {
-			deletedCount--
+	cutoff := time.Now().AddDate(0, 0, -r.maxAgeDays).Unix()
+	deletedCount := 0
+	skippedCount := 0
+
+	for url, urlRecords := range records {
+		for _, record := range urlRecords {
+			if record == nil {
+				continue
+			}
+			if record.Timestamp == 0 {
+				logger.Warnf("tamper check record for %q has zero timestamp, skipping deletion", url)
+				skippedCount++
+				continue
+			}
+			if record.Timestamp >= cutoff {
+				skippedCount++
+				continue
+			}
+			if delErr := r.tamperSvc.DeleteCheckRecords(url); delErr != nil {
+				logger.Warnf("failed to delete tamper record for %q: %v", url, delErr)
+			} else {
+				deletedCount++
+				break
+			}
 		}
 	}
 
-	return fmt.Sprintf("cleaned up check records for %d URL(s) (max age: %d days)", deletedCount, r.maxAgeDays), nil
+	return fmt.Sprintf("cleaned up %d expired check record(s), skipped %d within max age %d days", deletedCount, skippedCount, r.maxAgeDays), nil
 }
 
 // --- QuotaMonitorRunner (ST-13) ---
@@ -982,9 +1004,6 @@ func NewCacheWarmupRunner() *CacheWarmupRunner {
 func (r *CacheWarmupRunner) Type() TaskType { return TaskCacheWarmup }
 
 func (r *CacheWarmupRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
-	// Cache warmup is typically done by running lightweight health checks
-	// or pinging common endpoints. Without a query service dependency,
-	// this runner serves as a placeholder that can be extended.
 	urls := extractStrings(payload, "warmup_urls", []string{})
 	if len(urls) == 0 {
 		return "no warmup URLs configured", nil
@@ -992,8 +1011,18 @@ func (r *CacheWarmupRunner) Execute(ctx context.Context, payload map[string]inte
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	successCount := 0
+	var skippedErrors []string
 	for _, u := range urls {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		parsed, err := urlguard.Check(u, urlguard.CheckOptions{
+			AllowedSchemes: []string{"http", "https"},
+			AllowPrivate:   false,
+		})
+		if err != nil {
+			skippedErrors = append(skippedErrors, fmt.Sprintf("%s: %v", u, err))
+			continue
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 		if err != nil {
 			continue
 		}
@@ -1007,7 +1036,11 @@ func (r *CacheWarmupRunner) Execute(ctx context.Context, payload map[string]inte
 		}
 	}
 
-	return fmt.Sprintf("warmed up %d/%d URLs", successCount, len(urls)), nil
+	result := fmt.Sprintf("warmed up %d/%d URLs", successCount, len(urls))
+	if len(skippedErrors) > 0 {
+		result += fmt.Sprintf(", %d URL(s) rejected by SSRF guard: %v", len(skippedErrors), skippedErrors)
+	}
+	return result, nil
 }
 
 // --- ICPQueryRunner (ST-21) ---

@@ -2,7 +2,9 @@ package web
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -14,6 +16,14 @@ import (
 	"github.com/unimap-icp-hunter/project/internal/model"
 	"github.com/unimap-icp-hunter/project/internal/service"
 )
+
+func generateConnectionID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
 
 // handleWebSocket 处理WebSocket连接
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -31,7 +41,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	// 为连接生成唯一ID
-	connID := fmt.Sprintf("%d", time.Now().UnixNano())
+	connID := generateConnectionID()
 	managed := &managedConn{conn: conn}
 	connCtx, cancelConn := context.WithCancel(r.Context())
 
@@ -303,6 +313,12 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 		var statusCopy QueryStatus
 		if st != nil {
 			statusCopy = *st
+			if st.Results != nil {
+				statusCopy.Results = append([]model.UnifiedAsset(nil), st.Results...)
+			}
+			if st.Errors != nil {
+				statusCopy.Errors = append([]string(nil), st.Errors...)
+			}
 		}
 		s.queryMutex.Unlock()
 

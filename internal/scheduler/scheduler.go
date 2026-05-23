@@ -409,9 +409,14 @@ func (s *Scheduler) saveLocked() error {
 	for _, t := range s.tasks {
 		cp := *t
 		if cp.Payload != nil {
-			cp.Payload = make(map[string]interface{})
-			for k, v := range t.Payload {
-				cp.Payload[k] = v
+			raw, err := json.Marshal(t.Payload)
+			if err == nil {
+				_ = json.Unmarshal(raw, &cp.Payload)
+			} else {
+				cp.Payload = make(map[string]interface{})
+				for k, v := range t.Payload {
+					cp.Payload[k] = v
+				}
 			}
 		}
 		if cp.LastRunAt != nil {
@@ -836,7 +841,16 @@ func (s *Scheduler) executeTask(task *ScheduledTask, handler TaskHandler, timeou
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
-		result, err := handler.Execute(ctx, task.Payload)
+		var result string
+		var err error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("panic in runner: %v", r)
+				}
+			}()
+			result, err = handler.Execute(ctx, task.Payload)
+		}()
 		cancel()
 
 		elapsed = time.Since(now)
@@ -1188,6 +1202,9 @@ func (s *Scheduler) Stop() {
 
 	// Stop cron
 	s.cron.Stop()
+
+	// Wait for notification goroutines to finish
+	s.notifyWg.Wait()
 }
 
 // generateID creates a short unique ID using a monotonic counter.

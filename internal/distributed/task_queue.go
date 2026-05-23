@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/unimap-icp-hunter/project/internal/logger"
 )
 
 const (
@@ -86,7 +88,7 @@ type TaskQueue struct {
 	defaultMaxReassign int
 	scheduler          Scheduler
 	snapshotPath       string
-	mu                 sync.Mutex
+	mu                 sync.RWMutex
 	stopChan           chan struct{}
 	stopped            bool
 }
@@ -418,10 +420,9 @@ func (q *TaskQueue) SubmitResult(res TaskResult) (TaskRecord, error) {
 }
 
 func (q *TaskQueue) Snapshot() []TaskRecord {
-	q.mu.Lock()
-	defer q.mu.Unlock()
+	q.mu.RLock()
+	defer q.mu.RUnlock()
 
-	q.recycleExpiredLocked()
 	out := make([]TaskRecord, 0, len(q.tasks))
 	for _, rec := range q.tasks {
 		out = append(out, *rec)
@@ -669,6 +670,10 @@ func (q *TaskQueue) calculateRetryDelay(attempt int) time.Duration {
 		delay -= jitter
 	}
 
+	if delay < 0 {
+		delay = 0
+	}
+
 	// 限制最大延迟
 	if delay > maxDelay {
 		delay = maxDelay
@@ -737,7 +742,10 @@ func (q *TaskQueue) saveLocked() {
 	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
 		return
 	}
-	os.Rename(tmpPath, q.snapshotPath)
+	if err := os.Rename(tmpPath, q.snapshotPath); err != nil {
+		_ = os.Remove(tmpPath)
+		logger.Warnf("failed to rename snapshot: %v", err)
+	}
 }
 
 // loadSnapshot restores the task queue state from disk.

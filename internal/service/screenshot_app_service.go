@@ -664,7 +664,10 @@ func (s *ScreenshotAppService) ListBatchFiles(batch string, previewURLBuilder fu
 	}
 
 	// 安全检查：确保目录在 baseDir 内
-	absBaseDir, _ := filepath.Abs(s.baseDir)
+	absBaseDir, err := filepath.Abs(s.baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base directory")
+	}
 	rel, err := filepath.Rel(absBaseDir, absBatchDir)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 		return nil, fmt.Errorf("invalid batch path")
@@ -723,7 +726,10 @@ func (s *ScreenshotAppService) DeleteBatch(batch string) error {
 	}
 
 	// 安全检查
-	absBaseDir, _ := filepath.Abs(s.baseDir)
+	absBaseDir, err := filepath.Abs(s.baseDir)
+	if err != nil {
+		return fmt.Errorf("invalid base directory")
+	}
 	rel, err := filepath.Rel(absBaseDir, absBatchDir)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 		return fmt.Errorf("invalid batch path")
@@ -758,11 +764,16 @@ func (s *ScreenshotAppService) DeleteFile(batch, fileName string) error {
 	}
 
 	// 安全检查
-	absBaseDir, _ := filepath.Abs(s.baseDir)
+	absBaseDir, err := filepath.Abs(s.baseDir)
+	if err != nil {
+		return fmt.Errorf("invalid base directory")
+	}
 	rel, err := filepath.Rel(absBaseDir, absBatchDir)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 		return fmt.Errorf("invalid batch path")
 	}
+
+	// Remove old hash entries
 
 	targetFile := filepath.Join(absBatchDir, fileToken)
 	absTarget, err := filepath.Abs(targetFile)
