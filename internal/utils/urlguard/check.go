@@ -123,7 +123,8 @@ func SafeHTTPClient(opts CheckOptions, timeout time.Duration) *http.Client {
 				return nil, err
 			}
 			if !opts.AllowPrivate {
-				if err := checkHostLive(host); err != nil {	return nil, err
+				if err := checkHostLive(host); err != nil {
+					return nil, err
 				}
 			}
 			return net.DialTimeout(network, addr, 10*time.Second)
@@ -136,7 +137,8 @@ func SafeHTTPClient(opts CheckOptions, timeout time.Duration) *http.Client {
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if !opts.AllowPrivate {
 				redirectHost := req.URL.Hostname()
-				if err := checkHostLive(redirectHost); err != nil {	return fmt.Errorf("urlguard: redirect to restricted host: %w", err)
+				if err := checkHostLive(redirectHost); err != nil {
+					return fmt.Errorf("urlguard: redirect to restricted host: %w", err)
 				}
 			}
 			return nil

@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 
+	"github.com/unimap-icp-hunter/project/internal/logger"
 	"github.com/unimap-icp-hunter/project/internal/utils/urlguard"
 )
 
@@ -551,11 +552,15 @@ func (m *Manager) applyDefaults(config *Config) {
 	// FOFA 默认值 + 旧 base_url 迁移
 	if config.Engines.Fofa.APIBaseURL == "" && config.Engines.Fofa.BaseURL != "" {
 		config.Engines.Fofa.APIBaseURL = config.Engines.Fofa.BaseURL
+		logger.Warnf("fofa.base_url 已迁移到 fofa.api_base_url，请更新 config.yaml")
 	}
 	if config.Engines.Fofa.APIBaseURL == "" {
 		config.Engines.Fofa.APIBaseURL = "https://fofa.info"
 	}
 	// WebBaseURL 本期锁死为官方域名
+	if config.Engines.Fofa.WebBaseURL != "" && config.Engines.Fofa.WebBaseURL != "https://fofa.info" {
+		logger.Warnf("fofa.web_base_url 已强制重置为官方域名 https://fofa.info，Web/截图/扩展模式请勿修改")
+	}
 	config.Engines.Fofa.WebBaseURL = "https://fofa.info"
 	if config.Engines.Fofa.QPS == 0 {
 		config.Engines.Fofa.QPS = 3
