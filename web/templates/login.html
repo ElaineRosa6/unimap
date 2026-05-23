@@ -7,27 +7,62 @@
 	<link rel="stylesheet" href="/static/css/style.css?v={{.staticVersion}}">
 </head>
 <body class="login-page">
-	<div class="login-container">
-		<div class="login-card">
-			<div class="login-header">
-				<span class="logo-mark">U</span>
-				<h1>UniMap</h1>
-				<p>多引擎网络资产查询平台</p>
+	<!-- Background layers -->
+	<div class="login-bg" aria-hidden="true">
+		<div class="login-bg__grid"></div>
+		<div class="login-bg__noise"></div>
+		<div class="login-bg__glow"></div>
+	</div>
+
+	<div class="login-wrapper">
+		<!-- Left branding panel -->
+		<div class="login-brand">
+			<div class="login-brand__inner">
+				<div class="login-logo">
+					<span class="login-logo__mark">U</span>
+					<span class="login-logo__text">UniMap</span>
+				</div>
+				<p class="login-tagline">多引擎网络资产查询平台</p>
+				<div class="login-engines">
+					<span class="login-engines__label">引擎</span>
+					<div class="login-engines__list">
+						<span class="login-engines__chip">FOFA</span>
+						<span class="login-engines__chip">Hunter</span>
+						<span class="login-engines__chip">ZoomEye</span>
+						<span class="login-engines__chip">Quake</span>
+						<span class="login-engines__chip">Shodan</span>
+					</div>
+				</div>
 			</div>
-			<form id="login-form">
-				<div class="form-group">
-					<label for="username">用户名</label>
-					<input type="text" id="username" name="username" autocomplete="username" required autofocus>
-				</div>
-				<div class="form-group">
-					<label for="password">密码</label>
-					<input type="password" id="password" name="password" autocomplete="current-password" required>
-				</div>
-				<div id="login-error" class="login-error" style="display:none;"></div>
-				<button type="submit" id="login-btn" class="btn btn-primary">登录</button>
-			</form>
+		</div>
+
+		<!-- Right form panel -->
+		<div class="login-panel">
+			<div class="login-card">
+				<header class="login-header">
+					<h1>登录</h1>
+					<p class="login-sub">输入凭证以访问控制台</p>
+				</header>
+				<form id="login-form" autocomplete="on">
+					<div class="field">
+						<label for="username">用户名</label>
+						<input type="text" id="username" name="username" autocomplete="username" placeholder="admin" required autofocus>
+					</div>
+					<div class="field">
+						<label for="password">密码</label>
+						<input type="password" id="password" name="password" autocomplete="current-password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" required>
+					</div>
+					<div id="login-error" class="login-error" style="display:none;"></div>
+					<button type="submit" id="login-btn" class="btn btn-primary">
+						<span class="btn__text">登录</span>
+						<span class="btn__spinner" style="display:none;" aria-hidden="true"></span>
+					</button>
+				</form>
+			</div>
+			<p class="login-footer">UniMap &copy; 2026</p>
 		</div>
 	</div>
+
 	<script nonce="{{.CSPNonce}}">
 	(function() {
 		function getCookie(name) {
@@ -38,6 +73,8 @@
 		document.getElementById('login-form').addEventListener('submit', async function(e) {
 			e.preventDefault();
 			var btn = document.getElementById('login-btn');
+			var btnText = btn.querySelector('.btn__text');
+			var btnSpinner = btn.querySelector('.btn__spinner');
 			var errDiv = document.getElementById('login-error');
 			var username = document.getElementById('username').value.trim();
 			var password = document.getElementById('password').value;
@@ -50,7 +87,8 @@
 			}
 
 			btn.disabled = true;
-			btn.textContent = '登录中...';
+			btnText.style.display = 'none';
+			btnSpinner.style.display = 'inline-block';
 			errDiv.style.display = 'none';
 
 			try {
@@ -75,7 +113,8 @@
 				errDiv.style.display = 'block';
 			} finally {
 				btn.disabled = false;
-				btn.textContent = '登录';
+				btnText.style.display = 'inline';
+				btnSpinner.style.display = 'none';
 			}
 		});
 	})();
