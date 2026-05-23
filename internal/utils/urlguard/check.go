@@ -45,7 +45,7 @@ func Check(rawURL string, opts CheckOptions) (*url.URL, error) {
 	}
 
 	if !opts.AllowPrivate {
-		if err := checkHostPrivate(host); err != nil {
+		if err := checkIPLiteralPrivate(host); err != nil {
 			return nil, err
 		}
 	}
@@ -53,7 +53,12 @@ func Check(rawURL string, opts CheckOptions) (*url.URL, error) {
 	return u, nil
 }
 
-func checkHostPrivate(host string) error {
+// checkIPLiteralPrivate rejects loopback/private/link-local IPs.
+// For hostname literals, it does NOT perform DNS — DNS rebinding protection
+// is enforced at dial time in SafeHTTPClient.DialContext (where the resolved
+// IP is the actual connection target). This keeps Check() usable in offline
+// environments (config validation, unit tests, CI sandboxes).
+func checkIPLiteralPrivate(host string) error {
 	if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0" {
 		return fmt.Errorf("urlguard: host %q is loopback", host)
 	}
@@ -66,6 +71,21 @@ func checkHostPrivate(host string) error {
 		return nil
 	}
 
+	// Not an IP literal — skip DNS here. DNS rebinding protection is
+	// enforced at connection time in SafeHTTPClient.DialContext.
+	return nil
+}
+
+// checkHostLive does the full DNS resolution check. Used at dial/redirect time.
+func checkHostLive(host string) error {
+	if err := checkIPLiteralPrivate(host); err == nil {
+		// If it's an IP literal that passed, we're done.
+		if net.ParseIP(host) != nil {
+			return nil
+		}
+	}
+
+	// Hostname — must resolve to a safe IP.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -103,8 +123,7 @@ func SafeHTTPClient(opts CheckOptions, timeout time.Duration) *http.Client {
 				return nil, err
 			}
 			if !opts.AllowPrivate {
-				if err := checkHostPrivate(host); err != nil {
-					return nil, err
+				if err := checkHostLive(host); err != nil {	return nil, err
 				}
 			}
 			return net.DialTimeout(network, addr, 10*time.Second)
@@ -117,8 +136,7 @@ func SafeHTTPClient(opts CheckOptions, timeout time.Duration) *http.Client {
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if !opts.AllowPrivate {
 				redirectHost := req.URL.Hostname()
-				if err := checkHostPrivate(redirectHost); err != nil {
-					return fmt.Errorf("urlguard: redirect to restricted host: %w", err)
+				if err := checkHostLive(redirectHost); err != nil {	return fmt.Errorf("urlguard: redirect to restricted host: %w", err)
 				}
 			}
 			return nil
