@@ -622,25 +622,40 @@ func (r *TamperCleanupRunner) Execute(ctx context.Context, payload map[string]in
 	skippedCount := 0
 
 	for url, urlRecords := range records {
+		onlyExpired := true
+		hasExpired := false
+		zeroTimestampFound := false
+
 		for _, record := range urlRecords {
 			if record == nil {
 				continue
 			}
 			if record.Timestamp == 0 {
-				logger.Warnf("tamper check record for %q has zero timestamp, skipping deletion", url)
-				skippedCount++
+				zeroTimestampFound = true
 				continue
 			}
 			if record.Timestamp >= cutoff {
-				skippedCount++
-				continue
-			}
-			if delErr := r.tamperSvc.DeleteCheckRecords(url); delErr != nil {
-				logger.Warnf("failed to delete tamper record for %q: %v", url, delErr)
-			} else {
-				deletedCount++
+				onlyExpired = false
 				break
 			}
+			hasExpired = true
+		}
+
+		if !onlyExpired || !hasExpired {
+			skippedCount += len(urlRecords)
+			continue
+		}
+
+		if zeroTimestampFound {
+			logger.Warnf("tamper check record for %q has zero timestamp(s), skipping deletion to prevent data loss", url)
+			skippedCount += len(urlRecords)
+			continue
+		}
+
+		if delErr := r.tamperSvc.DeleteCheckRecords(url); delErr != nil {
+			logger.Warnf("failed to delete expired tamper records for %q: %v", url, delErr)
+		} else {
+			deletedCount += len(urlRecords)
 		}
 	}
 
@@ -1009,25 +1024,20 @@ func (r *CacheWarmupRunner) Execute(ctx context.Context, payload map[string]inte
 		return "no warmup URLs configured", nil
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := urlguard.SafeHTTPClient(urlguard.CheckOptions{
+		AllowedSchemes: []string{"http", "https"},
+		AllowPrivate:   false,
+	}, 10*time.Second)
 	successCount := 0
 	var skippedErrors []string
 	for _, u := range urls {
-		parsed, err := urlguard.Check(u, urlguard.CheckOptions{
-			AllowedSchemes: []string{"http", "https"},
-			AllowPrivate:   false,
-		})
-		if err != nil {
-			skippedErrors = append(skippedErrors, fmt.Sprintf("%s: %v", u, err))
-			continue
-		}
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
 			continue
 		}
 		resp, err := client.Do(req)
 		if err != nil {
+			skippedErrors = append(skippedErrors, fmt.Sprintf("%s: %v", u, err))
 			continue
 		}
 		resp.Body.Close()
@@ -1038,7 +1048,7 @@ func (r *CacheWarmupRunner) Execute(ctx context.Context, payload map[string]inte
 
 	result := fmt.Sprintf("warmed up %d/%d URLs", successCount, len(urls))
 	if len(skippedErrors) > 0 {
-		result += fmt.Sprintf(", %d URL(s) rejected by SSRF guard: %v", len(skippedErrors), skippedErrors)
+		result += fmt.Sprintf(", %d URL(s) rejected or unreachable", len(skippedErrors))
 	}
 	return result, nil
 }
