@@ -638,6 +638,7 @@ func (s *Server) persistBridgeImageData(dataURL, requestID, batchID, targetURL s
 		}
 	} else {
 		img, _, decErr := image.Decode(bytes.NewReader(raw))
+		absPath = strings.TrimSuffix(absPath, ext) + ".png"
 		f, createErr := os.Create(absPath)
 		if createErr != nil {
 			return "", createErr
@@ -646,7 +647,7 @@ func (s *Server) persistBridgeImageData(dataURL, requestID, batchID, targetURL s
 		if decErr != nil {
 			_, writeErr = f.Write(raw)
 		} else {
-			writeErr = jpeg.Encode(f, img, nil)
+			writeErr = png.Encode(f, img)
 		}
 		if closeErr := f.Close(); closeErr != nil {
 			os.Remove(absPath)

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -22,10 +23,10 @@ const (
 	csrfMaxAge        = 3600  // 1 hour
 )
 
-// sessionRevocationStore tracks revoked session tokens for server-side invalidation.
+// sessionRevocationStore tracks revoked session IDs for server-side invalidation.
 type sessionRevocationStore struct {
 	mu      sync.RWMutex
-	revoked map[string]time.Time // token hash -> expiry time
+	revoked map[string]time.Time // session ID -> expiry time
 	stopCh  chan struct{}
 }
 
@@ -55,27 +56,25 @@ func (s *sessionRevocationStore) cleanup() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
-	for tokenHash, expiry := range s.revoked {
+	for id, expiry := range s.revoked {
 		if now.After(expiry) {
-			delete(s.revoked, tokenHash)
+			delete(s.revoked, id)
 		}
 	}
 }
 
-func (s *sessionRevocationStore) Revoke(token string, ttl time.Duration) {
-	h := sha256.Sum256([]byte(token))
-	tokenHash := hex.EncodeToString(h[:])
+// Revoke adds a session ID to the revocation list with a TTL.
+func (s *sessionRevocationStore) Revoke(sessionID string, ttl time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.revoked[tokenHash] = time.Now().Add(ttl)
+	s.revoked[sessionID] = time.Now().Add(ttl)
 }
 
-func (s *sessionRevocationStore) IsRevoked(token string) bool {
-	h := sha256.Sum256([]byte(token))
-	tokenHash := hex.EncodeToString(h[:])
+// IsRevoked checks whether a session ID has been revoked.
+func (s *sessionRevocationStore) IsRevoked(sessionID string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	_, ok := s.revoked[tokenHash]
+	_, ok := s.revoked[sessionID]
 	return ok
 }
 
@@ -135,16 +134,22 @@ func (s *Server) decryptToken(encrypted string) (string, error) {
 	return string(plaintext), nil
 }
 
-// setSessionCookie sets the HttpOnly session cookie with encrypted admin token.
+// setSessionCookie creates a new session with a random session ID and encrypted admin token.
+// Cookie format: "sessionID:encryptedToken"
 func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request) error {
+	sessionID := generateSessionID()
 	encrypted, err := s.encryptToken(s.adminToken())
 	if err != nil {
 		return fmt.Errorf("encrypt token: %w", err)
 	}
+	cookieValue := sessionID + ":" + encrypted
+	if s.revocationStore != nil {
+		s.revocationStore.Revoke(sessionID, 24*time.Hour)
+	}
 	secure := r.TLS != nil
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
-		Value:    encrypted,
+		Value:    cookieValue,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   secure,
@@ -160,21 +165,39 @@ func (s *Server) getSessionToken(r *http.Request) string {
 	if err != nil || cookie.Value == "" {
 		return ""
 	}
-	token, err := s.decryptToken(cookie.Value)
-	if err != nil {
+	parts := strings.SplitN(cookie.Value, ":", 2)
+	if len(parts) != 2 {
 		return ""
 	}
-	if s.revocationStore != nil && s.revocationStore.IsRevoked(token) {
+	sessionID := parts[0]
+	if s.revocationStore != nil && s.revocationStore.IsRevoked(sessionID) {
+		return ""
+	}
+	token, err := s.decryptToken(parts[1])
+	if err != nil {
 		return ""
 	}
 	return token
 }
 
-// clearSessionCookie expires the session cookie and revokes the token server-side.
+// getSessionID extracts the session ID from the cookie. Returns "" if missing.
+func (s *Server) getSessionID(r *http.Request) string {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil || cookie.Value == "" {
+		return ""
+	}
+	parts := strings.SplitN(cookie.Value, ":", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	return parts[0]
+}
+
+// clearSessionCookie expires the session cookie and revokes the session ID server-side.
 func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
-	token := s.getSessionToken(r)
-	if s.revocationStore != nil && token != "" {
-		s.revocationStore.Revoke(token, 24*time.Hour)
+	sessionID := s.getSessionID(r)
+	if s.revocationStore != nil && sessionID != "" {
+		s.revocationStore.Revoke(sessionID, 24*time.Hour)
 	}
 	secure := r.TLS != nil
 	http.SetCookie(w, &http.Cookie{
@@ -186,6 +209,14 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
+}
+
+func generateSessionID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
 }
 
 // generateCSRFToken generates a random 32-byte hex CSRF token.

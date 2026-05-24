@@ -167,6 +167,11 @@ func (s *Server) handleURLReachability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.monitorApp == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "monitor_service_unavailable", "monitor app service not initialized", nil)
+		return
+	}
+
 	// 检查所有URL是否指向内网地址
 	for _, urlStr := range req.URLs {
 		parsed, err := url.Parse(urlStr)
@@ -177,11 +182,6 @@ func (s *Server) handleURLReachability(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, http.StatusForbidden, "blocked_url", "target url resolves to private/internal address", nil)
 			return
 		}
-	}
-
-	if s.monitorApp == nil {
-		writeAPIError(w, http.StatusServiceUnavailable, "monitor_service_unavailable", "monitor app service not initialized", nil)
-		return
 	}
 
 	response, err := s.monitorApp.CheckURLReachability(r.Context(), req.URLs, req.Concurrency)
