@@ -313,6 +313,13 @@ func (o *EngineOrchestrator) RegisterAdapter(adapter EngineAdapter) {
 	o.adapters[adapter.Name()] = adapter
 }
 
+// UnregisterAdapter 移除指定引擎适配器
+func (o *EngineOrchestrator) UnregisterAdapter(name string) {
+	o.mutex.Lock()
+	defer o.mutex.Unlock()
+	delete(o.adapters, name)
+}
+
 // GetAdapter 获取指定引擎适配器
 func (o *EngineOrchestrator) GetAdapter(name string) (EngineAdapter, bool) {
 	o.mutex.RLock()

@@ -286,14 +286,14 @@
 					<div class="cfg-row"><span class="cfg-key">api_base_url</span><div class="cfg-val"><input type="text" id="fofa-api-base-url" placeholder="https://fofa.info"><small class="cfg-hint">仅 API 模式生效，可填自建镜像/代理</small></div></div>
 					<div class="cfg-row"><span class="cfg-key">web_base_url</span><div class="cfg-val"><input type="text" id="fofa-web-base-url" value="https://fofa.info" disabled readonly class="cfg-input-disabled"><small class="cfg-hint">固定官方，Web/截图/扩展模式始终使用</small></div></div>
 					<div class="cfg-row"><span class="cfg-key">email</span><div class="cfg-val"><input type="email" id="fofa-email" placeholder="your@email.com"></div></div>
-					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="fofa-api-key" placeholder="输入 API Key" autocomplete="off"></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="fofa-api-key" placeholder="输入 API Key" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="fofa-qps" min="1" max="100" value="10"></div></div>
 				</div>
 
 				<div class="cfg-group" data-engine="hunter">
 					<div class="cfg-group-title"><span class="dot" id="hunter-dot"></span> Hunter</div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="hunter-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
-					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="hunter-api-key" placeholder="输入 API Key" autocomplete="off"></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="hunter-api-key" placeholder="输入 API Key" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
 					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="hunter-base-url" placeholder="https://hunter.qianxin.com/api"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="hunter-qps" min="1" max="100" value="10"></div></div>
 					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="hunter-timeout" min="5" max="300" value="30"></div></div>
@@ -302,7 +302,7 @@
 				<div class="cfg-group" data-engine="zoomeye">
 					<div class="cfg-group-title"><span class="dot" id="zoomeye-dot"></span> ZoomEye</div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="zoomeye-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
-					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="zoomeye-api-key" placeholder="输入 API Key" autocomplete="off"></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="zoomeye-api-key" placeholder="输入 API Key" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
 					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="zoomeye-base-url" placeholder="https://api.zoomeye.org"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="zoomeye-qps" min="1" max="100" value="10"></div></div>
 					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="zoomeye-timeout" min="5" max="300" value="30"></div></div>
@@ -311,7 +311,7 @@
 				<div class="cfg-group" data-engine="quake">
 					<div class="cfg-group-title"><span class="dot" id="quake-dot"></span> Quake</div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="quake-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
-					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="quake-api-key" placeholder="输入 API Key" autocomplete="off"></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="quake-api-key" placeholder="输入 API Key" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
 					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="quake-base-url" placeholder="https://quake.360.net/api/v1"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="quake-qps" min="1" max="100" value="10"></div></div>
 					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="quake-timeout" min="5" max="300" value="30"></div></div>
@@ -320,7 +320,7 @@
 				<div class="cfg-group" data-engine="shodan">
 					<div class="cfg-group-title"><span class="dot" id="shodan-dot"></span> Shodan</div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="shodan-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
-					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="shodan-api-key" placeholder="输入 API Key" autocomplete="off"></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="shodan-api-key" placeholder="输入 API Key" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
 					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="shodan-base-url" placeholder="https://api.shodan.io"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="shodan-qps" min="1" max="100" value="10"></div></div>
 				</div>
@@ -341,7 +341,7 @@
 					<div class="cfg-group-title">ICP Query Sidecar</div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="icp-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用 ICP 查询</span></label></div></div>
 					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="icp-base-url" placeholder="http://localhost:16181"><div class="hint">默认 localhost:16181</div></div></div>
-					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="icp-api-key" placeholder="输入 API Key" autocomplete="off"><div class="hint">加密存储</div></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="icp-api-key" placeholder="输入 API Key" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">加密存储</div></div></div>
 					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="icp-timeout" min="5" max="300" value="30"></div></div>
 					<div class="cfg-row"><span class="cfg-key">default_type</span><div class="cfg-val">
 						<select id="icp-default-type">
@@ -503,7 +503,7 @@
 						</select>
 					</div></div>
 					<div class="cfg-row"><span class="cfg-key">Webhook URL</span><div class="cfg-val"><input type="text" id="nch-url" placeholder="https://..."><div class="hint">log 类型无需填写</div></div></div>
-					<div class="cfg-row"><span class="cfg-key">签名密钥</span><div class="cfg-val"><input type="password" id="nch-secret" placeholder="可空" autocomplete="off"><div class="hint">钉钉/飞书加签密钥，留空不签名</div></div></div>
+					<div class="cfg-row"><span class="cfg-key">签名密钥</span><div class="cfg-val"><input type="password" id="nch-secret" placeholder="可空" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">钉钉/飞书加签密钥，留空不签名</div></div></div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="nch-enabled" checked><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此渠道</span></label></div></div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">allow_private_ip</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="nch-private-ip"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">允许内网地址（测试用）</span></label></div></div>
 					<div class="cfg-actions">
@@ -554,17 +554,9 @@
 		});
 	});
 
-	document.addEventListener('DOMContentLoaded', function() { loadConfig(); });
-
-	// Wire up save buttons (was inline onclick, blocked by CSP)
-	var btnEnginesSave = document.getElementById('btn-engines-save');
-	if (btnEnginesSave) btnEnginesSave.addEventListener('click', window.saveAllEngines);
-	var btnIcpSave = document.getElementById('btn-icp-save');
-	if (btnIcpSave) btnIcpSave.addEventListener('click', window.saveICP);
-	var btnScreenshotSave = document.getElementById('btn-screenshot-save');
-	if (btnScreenshotSave) btnScreenshotSave.addEventListener('click', window.saveScreenshot);
-	var btnSystemSave = document.getElementById('btn-system-save');
-	if (btnSystemSave) btnSystemSave.addEventListener('click', window.saveSystem);
+	// ============================================================
+	// Function definitions (must come before event listener wiring)
+	// ============================================================
 
 	async function loadConfig() {
 		try {
@@ -634,9 +626,11 @@
 		engines.forEach(function(eng) {
 			var engData = {
 				enabled: document.getElementById(eng + '-enabled').checked,
-				qps: parseInt(document.getElementById(eng + '-qps').value),
-				timeout: parseInt(document.getElementById(eng + '-timeout').value)
 			};
+			var qps = document.getElementById(eng + '-qps');
+			if (qps) engData.qps = parseInt(qps.value);
+			var timeout = document.getElementById(eng + '-timeout');
+			if (timeout) engData.timeout = parseInt(timeout.value);
 			// FOFA 特殊处理
 			if (eng === 'fofa') {
 				var abu = document.getElementById('fofa-api-base-url');
@@ -729,6 +723,13 @@
 		setTimeout(function() { el.style.display = 'none'; }, 5000);
 	}
 
+	function hideResult(id) {
+		var el = document.getElementById(id);
+		if (!el) return;
+		el.textContent = '';
+		el.style.display = 'none';
+	}
+
 	function tok() {
 		return sessionStorage.getItem('authToken') || localStorage.getItem('authToken') || '';
 	}
@@ -750,7 +751,7 @@
 			});
 			var data = await resp.json();
 			showResult('cookies-result', data.success ? 'ok' : 'fail',
-				data.success ? '保存成功' : (data.error || data.message || '保存失败'));
+				data.success ? '保存成功' : (extractErrorMsg(data)));
 		} catch (e) { showResult('cookies-result', 'fail', '保存失败: ' + e.message); }
 	}
 
@@ -762,7 +763,7 @@
 			});
 			var data = await resp.json();
 			showResult('cookies-result', data.success ? 'ok' : 'fail',
-				data.success ? '验证完成' : (data.error || data.message || '验证失败'));
+				data.success ? '验证完成' : (extractErrorMsg(data)));
 		} catch (e) { showResult('cookies-result', 'fail', '验证失败: ' + e.message); }
 	}
 
@@ -799,7 +800,7 @@
 			});
 			var data = await resp.json();
 			showResult('cookies-result', data.success ? 'ok' : 'fail',
-				data.success ? '导入成功' : (data.error || data.message || '导入失败'));
+				data.success ? '导入成功' : (extractErrorMsg(data)));
 			if (data.success && data.cookieHeader) {
 				var input = document.getElementById(ckIds[engine]);
 				if (input) input.value = data.cookieHeader;
@@ -843,7 +844,7 @@
 			});
 			var data = await resp.json();
 			showResult('session-result', data.success ? 'ok' : 'fail',
-				data.success ? 'CDP 连接成功' : (data.error || data.message || 'CDP 连接失败'));
+				data.success ? 'CDP 连接成功' : (extractErrorMsg(data)));
 			refreshCDPStatusPanel();
 		} catch (e) { showResult('session-result', 'fail', 'CDP 连接失败: ' + e.message); }
 	}
@@ -874,7 +875,7 @@
 			});
 			var data = await resp.json();
 			showResult('session-result', data.success !== false ? 'ok' : 'fail',
-				data.success !== false ? ('模式已切换到 ' + (data.mode || mode)) : (data.error || '切换失败'));
+				data.success !== false ? ('模式已切换到 ' + (data.mode || mode)) : (extractErrorMsg(data)));
 		} catch (e) { showResult('session-result', 'fail', '切换失败: ' + e.message); }
 	}
 
@@ -985,8 +986,8 @@
 		var enabled = document.getElementById('nch-enabled').checked;
 		var allowPrivate = document.getElementById('nch-private-ip').checked;
 
-		if (!id) { showResult('notify-form-result', 'fail', '请输入渠道 ID'); return; }
-		if (type !== 'log' && !url) { showResult('notify-form-result', 'fail', '请输入 Webhook URL'); return; }
+		if (!id) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '请输入渠道 ID'); return; }
+		if (type !== 'log' && !url) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '请输入 Webhook URL'); return; }
 
 		var body = { id: id, type: type, enabled: enabled, webhook_url: url, allow_private_ip: allowPrivate };
 		if (secret) body.secret = secret;
@@ -1003,9 +1004,9 @@
 				loadNotifyChannelsPanel();
 				showResult('notify-result', 'ok', '渠道 ' + id + ' 已保存');
 			} else {
-				showResult('notify-form-result', 'fail', data.error || data.message || '保存失败');
+				showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', extractErrorMsg(data));
 			}
-		} catch (e) { showResult('notify-form-result', 'fail', '保存失败: ' + e.message); }
+		} catch (e) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '保存失败: ' + e.message); }
 	}
 
 	async function deleteNotifyChannel(id) {
@@ -1021,7 +1022,7 @@
 				loadNotifyChannelsPanel();
 				showResult('notify-result', 'ok', '渠道 ' + id + ' 已删除');
 			} else {
-				showResult('notify-result', 'fail', data.error || data.message || '删除失败');
+				showResult('notify-result', 'fail', extractErrorMsg(data));
 			}
 		} catch (e) { showResult('notify-result', 'fail', '删除失败: ' + e.message); }
 	}
@@ -1051,7 +1052,7 @@
 			secret = input;
 		}
 
-		showResult('notify-form-result', 'ok', '测试发送中…');
+		showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'ok', '测试发送中…');
 
 		try {
 			var resp = await fetch('/api/notifications/channels/test', {
@@ -1064,11 +1065,22 @@
 			});
 			var data = await resp.json();
 			if (data.success) {
-				showResult('notify-form-result', 'ok', '测试消息发送成功');
+				showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'ok', '测试消息发送成功');
 			} else {
-				showResult('notify-form-result', 'fail', data.error || data.message || '测试失败');
+				showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', extractErrorMsg(data));
 			}
-		} catch (e) { showResult('notify-form-result', 'fail', '测试失败: ' + e.message); }
+		} catch (e) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '测试失败: ' + e.message); }
+	}
+
+	// extractErrorMsg pulls the human-readable message from a backend error response.
+	// Backend returns {success:false, error:{code, message}} — this handles both
+	// the object form and a plain string fallback.
+	function extractErrorMsg(data) {
+		if (!data) return '未知错误';
+		if (data.error && typeof data.error === 'object' && data.error.message) return data.error.message;
+		if (typeof data.error === 'string') return data.error;
+		if (data.message) return data.message;
+		return '未知错误';
 	}
 
 	function escHtml(s) {
@@ -1081,6 +1093,23 @@
 		return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 	}
 
+	// ============================================================
+	// Event wiring (runs after all functions are defined)
+	// ============================================================
+
+	document.addEventListener('DOMContentLoaded', function() { loadConfig(); });
+
+	// Save buttons (was inline onclick, blocked by CSP)
+	var btnEnginesSave = document.getElementById('btn-engines-save');
+	if (btnEnginesSave) btnEnginesSave.addEventListener('click', window.saveAllEngines);
+	var btnIcpSave = document.getElementById('btn-icp-save');
+	if (btnIcpSave) btnIcpSave.addEventListener('click', window.saveICP);
+	var btnScreenshotSave = document.getElementById('btn-screenshot-save');
+	if (btnScreenshotSave) btnScreenshotSave.addEventListener('click', window.saveScreenshot);
+	var btnSystemSave = document.getElementById('btn-system-save');
+	if (btnSystemSave) btnSystemSave.addEventListener('click', window.saveSystem);
+
+	// Notification channel buttons
 	var btnAdd = document.getElementById('btn-nch-add');
 	if (btnAdd) btnAdd.addEventListener('click', function() { showNotifyForm(null); });
 	var btnSave = document.getElementById('btn-nch-save');

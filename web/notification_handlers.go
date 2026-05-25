@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/unimap-icp-hunter/project/internal/adapter"
 	"github.com/unimap-icp-hunter/project/internal/config"
 	"github.com/unimap-icp-hunter/project/internal/logger"
 	"github.com/unimap-icp-hunter/project/internal/notify"
@@ -71,6 +73,102 @@ func (s *Server) reloadNotifyChannels() {
 
 	if s.notifyRegistry != nil {
 		s.notifyRegistry.Reload(chanCfgs)
+	}
+}
+
+// reloadEngineAdapters re-registers all engine adapters from the current config.
+// This allows quota and API queries to work immediately after saving API keys
+// without restarting the server.
+func (s *Server) reloadEngineAdapters() {
+	if s.orchestrator == nil || s.config == nil {
+		return
+	}
+
+	engineNames := []string{"fofa", "hunter", "zoomeye", "quake", "shodan"}
+	for _, name := range engineNames {
+		s.orchestrator.UnregisterAdapter(name)
+	}
+
+	cfg := s.config
+
+	if cfg.Engines.Fofa.Enabled {
+		if cfg.Engines.Fofa.APIKey != "" {
+			s.orchestrator.RegisterAdapter(adapter.NewFofaAdapter(
+				cfg.Engines.Fofa.APIBaseURL,
+				cfg.Engines.Fofa.APIKey,
+				cfg.Engines.Fofa.Email,
+				cfg.Engines.Fofa.QPS,
+				time.Duration(cfg.Engines.Fofa.Timeout)*time.Second,
+			))
+			logger.Info("FOFA engine re-registered (API mode)")
+		} else {
+			s.orchestrator.RegisterAdapter(adapter.NewFofaAdapterWebOnly())
+			logger.Info("FOFA engine re-registered (Web-only mode)")
+		}
+	}
+
+	if cfg.Engines.Hunter.Enabled {
+		if cfg.Engines.Hunter.APIKey != "" {
+			s.orchestrator.RegisterAdapter(adapter.NewHunterAdapter(
+				cfg.Engines.Hunter.BaseURL,
+				cfg.Engines.Hunter.APIKey,
+				cfg.Engines.Hunter.QPS,
+				time.Duration(cfg.Engines.Hunter.Timeout)*time.Second,
+			))
+			logger.Info("Hunter engine re-registered (API mode)")
+		} else {
+			s.orchestrator.RegisterAdapter(adapter.NewHunterAdapterWebOnly())
+			logger.Info("Hunter engine re-registered (Web-only mode)")
+		}
+	}
+
+	if cfg.Engines.Zoomeye.Enabled {
+		if cfg.Engines.Zoomeye.APIKey != "" {
+			s.orchestrator.RegisterAdapter(adapter.NewZoomEyeAdapter(
+				cfg.Engines.Zoomeye.BaseURL,
+				cfg.Engines.Zoomeye.APIKey,
+				cfg.Engines.Zoomeye.QPS,
+				time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second,
+			))
+			logger.Info("ZoomEye engine re-registered (API mode)")
+		} else {
+			s.orchestrator.RegisterAdapter(adapter.NewZoomEyeAdapterWebOnly())
+			logger.Info("ZoomEye engine re-registered (Web-only mode)")
+		}
+	}
+
+	if cfg.Engines.Quake.Enabled {
+		if cfg.Engines.Quake.APIKey != "" {
+			s.orchestrator.RegisterAdapter(adapter.NewQuakeAdapter(
+				cfg.Engines.Quake.BaseURL,
+				cfg.Engines.Quake.APIKey,
+				cfg.Engines.Quake.QPS,
+				time.Duration(cfg.Engines.Quake.Timeout)*time.Second,
+			))
+			logger.Info("Quake engine re-registered (API mode)")
+		} else {
+			s.orchestrator.RegisterAdapter(adapter.NewQuakeAdapterWebOnly())
+			logger.Info("Quake engine re-registered (Web-only mode)")
+		}
+	}
+
+	if cfg.Engines.Shodan.Enabled {
+		if cfg.Engines.Shodan.APIKey != "" {
+			s.orchestrator.RegisterAdapter(adapter.NewShodanAdapter(
+				cfg.Engines.Shodan.BaseURL,
+				cfg.Engines.Shodan.APIKey,
+				cfg.Engines.Shodan.QPS,
+				time.Duration(cfg.Engines.Shodan.Timeout)*time.Second,
+			))
+			logger.Info("Shodan engine re-registered (API mode)")
+		} else {
+			s.orchestrator.RegisterAdapter(adapter.NewShodanAdapterWebOnly())
+			logger.Info("Shodan engine re-registered (Web-only mode)")
+		}
+	}
+
+	if s.screenshotRouter != nil {
+		s.orchestrator.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: s.screenshotRouter})
 	}
 }
 
@@ -248,14 +346,22 @@ func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// If webhook_url is missing, look up the channel in saved config
-	if req.WebhookURL == "" {
+	// If webhook_url is missing OR secret is missing, look up the channel in saved config
+	// to get the decrypted secret.
+	if req.WebhookURL == "" || req.Secret == "" {
 		s.configMutex.Lock()
 		for _, ch := range s.config.Notifications.Channels {
 			if ch.ID == req.ID {
-				req.Type = ch.Type
-				req.WebhookURL = ch.WebhookURL
-				req.Secret = ch.Secret
+				if req.WebhookURL == "" {
+					req.WebhookURL = ch.WebhookURL
+				}
+				if req.Secret == "" {
+					req.Secret = ch.Secret
+					logger.Infof("notify test: loaded decrypted secret for channel %q (len=%d)", req.ID, len(req.Secret))
+				}
+				if req.Type == "" {
+					req.Type = ch.Type
+				}
 				req.AllowPrivateIP = ch.AllowPrivateIP
 				req.Headers = ch.Headers
 				break
@@ -274,6 +380,7 @@ func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Build a temporary channel to test
+	logger.Infof("notify test: channel=%q type=%q secret_len=%d webhook_set=%v", req.ID, req.Type, len(req.Secret), req.WebhookURL != "")
 	chCfg := notify.ChannelConfig{
 		ID:             req.ID,
 		Type:           req.Type,
