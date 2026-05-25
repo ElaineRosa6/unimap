@@ -143,9 +143,6 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request) error 
 		return fmt.Errorf("encrypt token: %w", err)
 	}
 	cookieValue := sessionID + ":" + encrypted
-	if s.revocationStore != nil {
-		s.revocationStore.Revoke(sessionID, 24*time.Hour)
-	}
 	secure := r.TLS != nil
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
