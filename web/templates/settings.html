@@ -13,23 +13,23 @@
 
 	.ctrl-nav {
 		background: var(--bg-surface);
-		padding: 24px 0;
+		padding: 32px 0;
 		border-right: 1px solid var(--border);
 	}
 	.ctrl-nav-title {
-		padding: 0 20px;
+		padding: 0 24px;
 		font-size: 11px;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: var(--text-muted);
-		margin-bottom: 16px;
+		margin-bottom: 20px;
 		font-weight: 600;
 	}
 	.ctrl-nav-item {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 10px 20px;
+		padding: 12px 24px;
 		cursor: pointer;
 		color: var(--text-secondary);
 		font-size: 13px;
@@ -53,7 +53,7 @@
 	}
 
 	.ctrl-body {
-		padding: 28px 32px 60px;
+		padding: 36px 40px 64px;
 		background: var(--bg-body);
 	}
 
@@ -61,8 +61,8 @@
 	.ctrl-panel.active { display: block; }
 
 	.ctrl-hdr {
-		margin-bottom: 24px;
-		padding-bottom: 16px;
+		margin-bottom: 28px;
+		padding-bottom: 20px;
 		border-bottom: 1px solid var(--border);
 	}
 	.ctrl-hdr h2 {
@@ -83,10 +83,10 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		overflow: hidden;
-		margin-bottom: 16px;
+		margin-bottom: 20px;
 	}
 	.cfg-group-title {
-		padding: 12px 16px;
+		padding: 14px 20px;
 		font-size: 13px;
 		font-weight: 600;
 		color: var(--text-primary);
@@ -109,7 +109,7 @@
 		display: grid;
 		grid-template-columns: 140px 1fr;
 		align-items: center;
-		padding: 10px 16px;
+		padding: 12px 20px;
 		border-bottom: 1px solid var(--border);
 		gap: 16px;
 	}
@@ -127,7 +127,7 @@
 	.cfg-val select {
 		width: 100%;
 		max-width: 340px;
-		padding: 6px 10px;
+		padding: 8px 12px;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		font-size: 13px;
@@ -194,7 +194,7 @@
 		align-items: center;
 		gap: 12px;
 		margin-top: 20px;
-		padding: 14px 16px;
+		padding: 16px 20px;
 		background: var(--bg-surface);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
@@ -262,6 +262,9 @@
 			<button class="ctrl-nav-item" data-panel="session">
 				<span>会话连接</span>
 			</button>
+			<button class="ctrl-nav-item" data-panel="notify">
+				<span>通知渠道</span>
+			</button>
 			<button class="ctrl-nav-item" data-panel="system">
 				<span>系统设置</span>
 			</button>
@@ -323,7 +326,7 @@
 				</div>
 
 				<div class="cfg-actions" id="engines-actions">
-					<button class="cfg-btn cfg-btn-save" onclick="saveAllEngines()">保存全部</button>
+					<button class="cfg-btn cfg-btn-save" id="btn-engines-save">保存全部</button>
 					<span class="cfg-result" id="engines-result"></span>
 				</div>
 			</div>
@@ -351,7 +354,7 @@
 				</div>
 
 				<div class="cfg-actions">
-					<button class="cfg-btn cfg-btn-save" onclick="saveICP()">保存配置</button>
+					<button class="cfg-btn cfg-btn-save" id="btn-icp-save">保存配置</button>
 					<span class="cfg-result" id="icp-result"></span>
 				</div>
 			</div>
@@ -382,7 +385,7 @@
 				</div>
 
 				<div class="cfg-actions">
-					<button class="cfg-btn cfg-btn-save" onclick="saveScreenshot()">保存配置</button>
+					<button class="cfg-btn cfg-btn-save" id="btn-screenshot-save">保存配置</button>
 					<span class="cfg-result" id="screenshot-result"></span>
 				</div>
 			</div>
@@ -479,7 +482,45 @@
 				</div>
 			</div>
 
+			<div id="panel-notify" class="ctrl-panel">
+				<div class="ctrl-hdr">
+					<h2>通知渠道</h2>
+					<p>配置钉钉、飞书、企业微信等通知渠道。密钥加密存储。</p>
+				</div>
 
+				<div id="notify-channel-list"></div>
+
+				<div class="cfg-group" id="notify-form-panel" style="display:none">
+					<div class="cfg-group-title" id="notify-form-title">新增渠道</div>
+					<div class="cfg-row"><span class="cfg-key">渠道 ID</span><div class="cfg-val"><input type="text" id="nch-id" placeholder="如 team-dingtalk"><div class="hint">唯一标识，创建后不可修改</div></div></div>
+					<div class="cfg-row"><span class="cfg-key">类型</span><div class="cfg-val">
+						<select id="nch-type">
+							<option value="dingtalk">钉钉 (DingTalk)</option>
+							<option value="feishu">飞书 (Feishu)</option>
+							<option value="wecom">企业微信 (WeCom)</option>
+							<option value="webhook">通用 Webhook</option>
+							<option value="log">日志输出</option>
+						</select>
+					</div></div>
+					<div class="cfg-row"><span class="cfg-key">Webhook URL</span><div class="cfg-val"><input type="text" id="nch-url" placeholder="https://..."><div class="hint">log 类型无需填写</div></div></div>
+					<div class="cfg-row"><span class="cfg-key">签名密钥</span><div class="cfg-val"><input type="password" id="nch-secret" placeholder="可空" autocomplete="off"><div class="hint">钉钉/飞书加签密钥，留空不签名</div></div></div>
+					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="nch-enabled" checked><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此渠道</span></label></div></div>
+					<div class="cfg-row toggle-row"><span class="cfg-key">allow_private_ip</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="nch-private-ip"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">允许内网地址（测试用）</span></label></div></div>
+					<div class="cfg-actions">
+						<button class="cfg-btn cfg-btn-save" id="btn-nch-save">保存</button>
+						<button class="cfg-btn cfg-btn-test" id="btn-nch-test" style="display:none">测试发送</button>
+						<button class="cfg-btn cfg-btn-test" id="btn-nch-cancel">取消</button>
+						<span class="cfg-result" id="notify-form-result"></span>
+					</div>
+				</div>
+
+				<div class="cfg-actions">
+					<button class="cfg-btn cfg-btn-save" id="btn-nch-add">新增渠道</button>
+					<span class="cfg-result" id="notify-result"></span>
+				</div>
+			</div>
+
+			<div id="panel-system" class="ctrl-panel">
 				<div class="ctrl-hdr">
 					<h2>系统设置</h2>
 					<p>并发、缓存等全局参数。</p>
@@ -493,12 +534,10 @@
 				</div>
 
 				<div class="cfg-actions">
-					<button class="cfg-btn cfg-btn-save" onclick="saveSystem()">保存配置</button>
+					<button class="cfg-btn cfg-btn-save" id="btn-system-save">保存配置</button>
 					<span class="cfg-result" id="system-result"></span>
 				</div>
 			</div>
-
-		</div>
 	</div>
 
 {{template "footer" .}}
@@ -516,6 +555,16 @@
 	});
 
 	document.addEventListener('DOMContentLoaded', function() { loadConfig(); });
+
+	// Wire up save buttons (was inline onclick, blocked by CSP)
+	var btnEnginesSave = document.getElementById('btn-engines-save');
+	if (btnEnginesSave) btnEnginesSave.addEventListener('click', window.saveAllEngines);
+	var btnIcpSave = document.getElementById('btn-icp-save');
+	if (btnIcpSave) btnIcpSave.addEventListener('click', window.saveICP);
+	var btnScreenshotSave = document.getElementById('btn-screenshot-save');
+	if (btnScreenshotSave) btnScreenshotSave.addEventListener('click', window.saveScreenshot);
+	var btnSystemSave = document.getElementById('btn-system-save');
+	if (btnSystemSave) btnSystemSave.addEventListener('click', window.saveSystem);
 
 	async function loadConfig() {
 		try {
@@ -837,5 +886,225 @@
 	if (sessMode) sessMode.addEventListener('change', changeSessionMode);
 	refreshCDPStatusPanel();
 	refreshBridgeStatusPanel();
+
+	// --- Notification channel panel ---
+	var notifyChannels = [];
+	var editingChannelId = null;
+
+	function loadNotifyChannelsPanel() {
+		fetch('/api/notifications/channels', { headers: { 'Authorization': 'Bearer ' + tok() } })
+			.then(function(r) { return r.json(); })
+			.then(function(data) {
+				notifyChannels = (data && data.channels) || [];
+				renderNotifyChannelList();
+			})
+			.catch(function(e) { console.error('notify channels load error:', e); });
+	}
+
+	function renderNotifyChannelList() {
+		var container = document.getElementById('notify-channel-list');
+		if (!container) return;
+
+		if (!notifyChannels.length) {
+			container.innerHTML = '<div class="cfg-group"><div class="cfg-group-title">已配置渠道</div>' +
+				'<div class="cfg-row"><span class="cfg-key">暂无</span><div class="cfg-val"><span class="hint">尚无通知渠道，请点击"新增渠道"</span></div></div></div>';
+			return;
+		}
+
+		var typeNames = { dingtalk: '钉钉', feishu: '飞书', wecom: '企业微信', webhook: 'Webhook', log: '日志' };
+		var typeBadge = { dingtalk: '#1677FF', feishu: '#3370FF', wecom: '#07C160', webhook: '#722ED1', log: '#8B8B8B' };
+
+		var html = '<div class="cfg-group"><div class="cfg-group-title">已配置渠道 (' + notifyChannels.length + ')</div>';
+		for (var i = 0; i < notifyChannels.length; i++) {
+			var ch = notifyChannels[i];
+			var color = typeBadge[ch.type] || '#666';
+			html += '<div class="cfg-row" style="grid-template-columns:1fr auto">' +
+				'<div style="display:flex;align-items:center;gap:12px">' +
+				'<span style="display:inline-block;padding:2px 10px;border-radius:3px;font-size:11px;font-weight:600;color:#fff;background:' + color + ';min-width:48px;text-align:center">' + (typeNames[ch.type] || ch.type) + '</span>' +
+				'<span style="font-weight:600;color:var(--text-primary)">' + escHtml(ch.id) + '</span>' +
+				(ch.enabled ? '<span class="dot on" style="margin-left:4px"></span>' : '<span class="dot off" style="margin-left:4px"></span>') +
+				'</div>' +
+				'<div style="display:flex;gap:8px;align-items:center">' +
+				'<button class="cfg-btn cfg-btn-test nch-edit-btn" data-ch-id="' + escAttr(ch.id) + '" style="font-size:11px;padding:4px 10px">编辑</button>' +
+				'<button class="cfg-btn cfg-btn-test nch-test-btn" data-ch-id="' + escAttr(ch.id) + '" style="font-size:11px;padding:4px 10px">测试</button>' +
+				'<button class="cfg-btn cfg-btn-test nch-delete-btn" data-ch-id="' + escAttr(ch.id) + '" style="font-size:11px;padding:4px 10px;color:var(--danger);border-color:var(--danger)">删除</button>' +
+				'</div></div>';
+		}
+		html += '</div>';
+		container.innerHTML = html;
+	}
+
+	function showNotifyForm(isEdit) {
+		editingChannelId = isEdit || null;
+		document.getElementById('notify-form-title').textContent = isEdit ? '编辑渠道: ' + isEdit : '新增渠道';
+		document.getElementById('notify-form-panel').style.display = '';
+
+		if (isEdit) {
+			document.getElementById('nch-id').disabled = true;
+			var ch = findChannel(isEdit);
+			if (ch) {
+				document.getElementById('nch-id').value = ch.id;
+				document.getElementById('nch-type').value = ch.type;
+				document.getElementById('nch-url').value = '';
+				document.getElementById('nch-secret').value = '';
+				document.getElementById('nch-enabled').checked = ch.enabled;
+			}
+			document.getElementById('btn-nch-test').style.display = '';
+		} else {
+			document.getElementById('nch-id').disabled = false;
+			document.getElementById('nch-id').value = '';
+			document.getElementById('nch-type').value = 'dingtalk';
+			document.getElementById('nch-url').value = '';
+			document.getElementById('nch-secret').value = '';
+			document.getElementById('nch-enabled').checked = true;
+			document.getElementById('nch-private-ip').checked = false;
+			document.getElementById('btn-nch-test').style.display = 'none';
+		}
+		hideResult('notify-form-result');
+	}
+
+	function hideNotifyForm() {
+		document.getElementById('notify-form-panel').style.display = 'none';
+		editingChannelId = null;
+		document.getElementById('nch-id').disabled = false;
+		document.getElementById('btn-nch-test').style.display = 'none';
+	}
+
+	function findChannel(id) {
+		for (var i = 0; i < notifyChannels.length; i++) {
+			if (notifyChannels[i].id === id) return notifyChannels[i];
+		}
+		return null;
+	}
+
+	async function saveNotifyChannel() {
+		var id = document.getElementById('nch-id').value.trim();
+		var type = document.getElementById('nch-type').value;
+		var url = document.getElementById('nch-url').value.trim();
+		var secret = document.getElementById('nch-secret').value;
+		var enabled = document.getElementById('nch-enabled').checked;
+		var allowPrivate = document.getElementById('nch-private-ip').checked;
+
+		if (!id) { showResult('notify-form-result', 'fail', '请输入渠道 ID'); return; }
+		if (type !== 'log' && !url) { showResult('notify-form-result', 'fail', '请输入 Webhook URL'); return; }
+
+		var body = { id: id, type: type, enabled: enabled, webhook_url: url, allow_private_ip: allowPrivate };
+		if (secret) body.secret = secret;
+
+		try {
+			var resp = await fetch('/api/notifications/channels', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
+				body: JSON.stringify(body)
+			});
+			var data = await resp.json();
+			if (data.success) {
+				hideNotifyForm();
+				loadNotifyChannelsPanel();
+				showResult('notify-result', 'ok', '渠道 ' + id + ' 已保存');
+			} else {
+				showResult('notify-form-result', 'fail', data.error || data.message || '保存失败');
+			}
+		} catch (e) { showResult('notify-form-result', 'fail', '保存失败: ' + e.message); }
+	}
+
+	async function deleteNotifyChannel(id) {
+		if (!confirm('确定删除渠道 "' + id + '"？此操作不可撤销。')) return;
+		try {
+			var resp = await fetch('/api/notifications/channels?id=' + encodeURIComponent(id), {
+				method: 'DELETE',
+				headers: { 'Authorization': 'Bearer ' + tok() }
+			});
+			var data = await resp.json();
+			if (data.success) {
+				if (editingChannelId === id) hideNotifyForm();
+				loadNotifyChannelsPanel();
+				showResult('notify-result', 'ok', '渠道 ' + id + ' 已删除');
+			} else {
+				showResult('notify-result', 'fail', data.error || data.message || '删除失败');
+			}
+		} catch (e) { showResult('notify-result', 'fail', '删除失败: ' + e.message); }
+	}
+
+	function editNotifyChannel(id) {
+		showNotifyForm(id);
+	}
+
+	async function testNotifyChannel(id) {
+		var ch = findChannel(id);
+		if (!ch) {
+			// Use form values if editing a new/unsaved channel
+			ch = {
+				id: document.getElementById('nch-id').value.trim(),
+				type: document.getElementById('nch-type').value,
+				webhook_url: document.getElementById('nch-url').value.trim(),
+				secret: document.getElementById('nch-secret').value
+			};
+		}
+
+		// For saved channels, we need the real secret. Prompt if empty.
+		var secret = document.getElementById('nch-secret').value || '';
+		if (editingChannelId && !secret) {
+			// Ask user to re-enter secret for testing (since it's encrypted in storage)
+			var input = prompt('请输入签名密钥用于测试（已加密存储，需手动输入）:');
+			if (input === null) return;
+			secret = input;
+		}
+
+		showResult('notify-form-result', 'ok', '测试发送中…');
+
+		try {
+			var resp = await fetch('/api/notifications/channels/test', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
+				body: JSON.stringify({
+					id: ch.id, type: ch.type, webhook_url: ch.webhook_url,
+					secret: secret, allow_private_ip: document.getElementById('nch-private-ip').checked
+				})
+			});
+			var data = await resp.json();
+			if (data.success) {
+				showResult('notify-form-result', 'ok', '测试消息发送成功');
+			} else {
+				showResult('notify-form-result', 'fail', data.error || data.message || '测试失败');
+			}
+		} catch (e) { showResult('notify-form-result', 'fail', '测试失败: ' + e.message); }
+	}
+
+	function escHtml(s) {
+		var d = document.createElement('div');
+		d.textContent = s;
+		return d.innerHTML;
+	}
+
+	function escAttr(s) {
+		return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	}
+
+	var btnAdd = document.getElementById('btn-nch-add');
+	if (btnAdd) btnAdd.addEventListener('click', function() { showNotifyForm(null); });
+	var btnSave = document.getElementById('btn-nch-save');
+	if (btnSave) btnSave.addEventListener('click', saveNotifyChannel);
+	var btnCancel = document.getElementById('btn-nch-cancel');
+	if (btnCancel) btnCancel.addEventListener('click', hideNotifyForm);
+	var btnTest = document.getElementById('btn-nch-test');
+	if (btnTest) btnTest.addEventListener('click', function() { testNotifyChannel(editingChannelId); });
+
+	// Event delegation for dynamically rendered channel action buttons
+	var notifyList = document.getElementById('notify-channel-list');
+	if (notifyList) {
+		notifyList.addEventListener('click', function(e) {
+			var btn = e.target.closest('.nch-edit-btn, .nch-test-btn, .nch-delete-btn');
+			if (!btn) return;
+			e.preventDefault();
+			var id = btn.getAttribute('data-ch-id');
+			if (!id) return;
+			if (btn.classList.contains('nch-edit-btn')) editNotifyChannel(id);
+			else if (btn.classList.contains('nch-test-btn')) testNotifyChannel(id);
+			else if (btn.classList.contains('nch-delete-btn')) deleteNotifyChannel(id);
+		});
+	}
+
+	loadNotifyChannelsPanel();
 })();
 </script>

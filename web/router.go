@@ -122,6 +122,9 @@ func (r *Router) RegisterRoutes() http.Handler {
 
 	// API 路由 - 通知系统
 	r.addRoute("notify-channels", "GET", "/api/notifications/channels", r.server.handleNotificationChannels, false)
+	r.addRoute("notify-channels-save", "POST", "/api/notifications/channels", r.server.handleNotifyChannelSave, false)
+	r.addRoute("notify-channels-delete", "DELETE", "/api/notifications/channels", r.server.handleNotifyChannelDelete, false)
+	r.addRoute("notify-channels-test", "POST", "/api/notifications/channels/test", r.server.handleNotifyChannelTest, false)
 	r.addRoute("notify-reload", "POST", "/api/notifications/reload", r.server.handleNotifyReload, false)
 
 	// API 路由 - 篡改检测（限流）

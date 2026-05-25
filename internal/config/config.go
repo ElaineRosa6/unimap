@@ -418,6 +418,9 @@ func (m *Manager) Load() error {
 	// 解析环境变量
 	m.resolveEnv(&config)
 
+	// 解密通知渠道密钥
+	DecryptNotifySecrets(&config)
+
 	// 验证配置
 	if err := m.validate(&config); err != nil {
 		// 配置无效时保留默认值，避免上层直接崩溃
@@ -482,6 +485,12 @@ func (m *Manager) resolveEnv(config *Config) {
 	config.Cache.Redis.Addr = m.ResolveEnv(config.Cache.Redis.Addr)
 	config.Cache.Redis.Password = m.ResolveEnv(config.Cache.Redis.Password)
 	config.Cache.Redis.Prefix = m.ResolveEnv(config.Cache.Redis.Prefix)
+
+	// 解析通知渠道环境变量
+	for i := range config.Notifications.Channels {
+		config.Notifications.Channels[i].WebhookURL = m.ResolveEnv(config.Notifications.Channels[i].WebhookURL)
+		config.Notifications.Channels[i].Secret = m.ResolveEnv(config.Notifications.Channels[i].Secret)
+	}
 }
 
 // ResolveEnv 解析环境变量
@@ -1099,6 +1108,10 @@ func (m *Manager) Save() error {
 	if m.config == nil {
 		return fmt.Errorf("config is nil")
 	}
+
+	// 加密通知渠道密钥后再持久化
+	EncryptNotifySecrets(m.config)
+	defer DecryptNotifySecrets(m.config)
 
 	data, err := yaml.Marshal(m.config)
 	if err != nil {
