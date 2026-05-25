@@ -24,12 +24,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 
 	engines := map[string]map[string]interface{}{
 		"fofa": {
-			"enabled":  s.config.Engines.Fofa.Enabled,
-			"base_url": s.config.Engines.Fofa.BaseURL,
-			"email":    s.config.Engines.Fofa.Email,
-			"api_key":  maskAPIKey(s.config.Engines.Fofa.APIKey),
-			"qps":      s.config.Engines.Fofa.QPS,
-			"timeout":  s.config.Engines.Fofa.Timeout,
+			"enabled":      s.config.Engines.Fofa.Enabled,
+			"api_base_url": s.config.Engines.Fofa.APIBaseURL,
+			"web_base_url": s.config.Engines.Fofa.WebBaseURL,
+			"email":        s.config.Engines.Fofa.Email,
+			"api_key":      maskAPIKey(s.config.Engines.Fofa.APIKey),
+			"qps":          s.config.Engines.Fofa.QPS,
+			"timeout":      s.config.Engines.Fofa.Timeout,
 		},
 		"hunter": {
 			"enabled":  s.config.Engines.Hunter.Enabled,
@@ -69,14 +70,16 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	screenshot := map[string]interface{}{
+		"enabled": s.config.Screenshot.Enabled,
 		"engine":  s.config.Screenshot.Engine,
 		"mode":    s.config.Screenshot.Mode,
 		"timeout": s.config.Screenshot.Timeout,
 	}
 
 	system := map[string]interface{}{
-		"max_concurrent": s.config.System.MaxConcurrent,
-		"cache_ttl":      s.config.System.CacheTTL,
+		"max_concurrent":    s.config.System.MaxConcurrent,
+		"cache_ttl":         s.config.System.CacheTTL,
+		"cache_max_entries": s.config.System.CacheMaxSize,
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -122,6 +125,8 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 
 	s.configMutex.Lock()
 	switch section {
+	case "engines":
+		applyEngineSections(s.config, req.Data)
 	case "icp":
 		applyICPSection(s.config, req.Data)
 	case "screenshot":
@@ -139,6 +144,11 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	if s.configManager != nil {
 		saveErr = s.configManager.Save()
 	}
+
+	if section == "engines" {
+		s.reloadEngineAdapters()
+	}
+
 	s.configMutex.Unlock()
 
 	if saveErr != nil {
@@ -206,6 +216,115 @@ func applySystemSection(c *config.Config, data map[string]interface{}) {
 	}
 	if v, ok := intField(data, "cache_ttl"); ok && v >= 0 {
 		c.System.CacheTTL = v
+	}
+	if v, ok := intField(data, "cache_max_entries"); ok && v >= 0 {
+		c.System.CacheMaxSize = v
+	}
+}
+
+// applyEngineSections handles engine configs. req.Data is a map of engine name → fields.
+func applyEngineSections(c *config.Config, data map[string]interface{}) {
+	if c == nil {
+		return
+	}
+	engines := map[string]interface{}{
+		"fofa":    data["fofa"],
+		"hunter":  data["hunter"],
+		"zoomeye": data["zoomeye"],
+		"quake":   data["quake"],
+		"shodan":  data["shodan"],
+	}
+	for name, raw := range engines {
+		if raw == nil {
+			continue
+		}
+		eng, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		switch name {
+		case "fofa":
+			if v, _ := boolField(eng, "enabled"); v {
+				c.Engines.Fofa.Enabled = v
+			}
+			if v, _ := stringField(eng, "api_base_url"); v != "" {
+				c.Engines.Fofa.APIBaseURL = v
+			}
+			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
+				c.Engines.Fofa.APIKey = v
+			}
+			if v, _ := stringField(eng, "email"); v != "" {
+				c.Engines.Fofa.Email = v
+			}
+			if v, _ := intField(eng, "qps"); v > 0 {
+				c.Engines.Fofa.QPS = v
+			}
+			if v, _ := intField(eng, "timeout"); v > 0 {
+				c.Engines.Fofa.Timeout = v
+			}
+		case "hunter":
+			if v, _ := boolField(eng, "enabled"); v {
+				c.Engines.Hunter.Enabled = v
+			}
+			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
+				c.Engines.Hunter.APIKey = v
+			}
+			if v, _ := stringField(eng, "base_url"); v != "" {
+				c.Engines.Hunter.BaseURL = v
+			}
+			if v, _ := intField(eng, "qps"); v > 0 {
+				c.Engines.Hunter.QPS = v
+			}
+			if v, _ := intField(eng, "timeout"); v > 0 {
+				c.Engines.Hunter.Timeout = v
+			}
+		case "zoomeye":
+			if v, _ := boolField(eng, "enabled"); v {
+				c.Engines.Zoomeye.Enabled = v
+			}
+			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
+				c.Engines.Zoomeye.APIKey = v
+			}
+			if v, _ := stringField(eng, "base_url"); v != "" {
+				c.Engines.Zoomeye.BaseURL = v
+			}
+			if v, _ := intField(eng, "qps"); v > 0 {
+				c.Engines.Zoomeye.QPS = v
+			}
+			if v, _ := intField(eng, "timeout"); v > 0 {
+				c.Engines.Zoomeye.Timeout = v
+			}
+		case "quake":
+			if v, _ := boolField(eng, "enabled"); v {
+				c.Engines.Quake.Enabled = v
+			}
+			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
+				c.Engines.Quake.APIKey = v
+			}
+			if v, _ := stringField(eng, "base_url"); v != "" {
+				c.Engines.Quake.BaseURL = v
+			}
+			if v, _ := intField(eng, "qps"); v > 0 {
+				c.Engines.Quake.QPS = v
+			}
+			if v, _ := intField(eng, "timeout"); v > 0 {
+				c.Engines.Quake.Timeout = v
+			}
+		case "shodan":
+			if v, _ := boolField(eng, "enabled"); v {
+				c.Engines.Shodan.Enabled = v
+			}
+			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
+				c.Engines.Shodan.APIKey = v
+			}
+			if v, _ := stringField(eng, "base_url"); v != "" {
+				c.Engines.Shodan.BaseURL = v
+			}
+			if v, _ := intField(eng, "qps"); v > 0 {
+				c.Engines.Shodan.QPS = v
+			}
+			// Shodan doesn't have timeout field
+		}
 	}
 }
 

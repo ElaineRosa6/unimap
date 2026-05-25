@@ -104,6 +104,17 @@ func (c *DingTalkChannel) Send(ctx context.Context, n TaskNotification) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("dingtalk returned status %d", resp.StatusCode)
 	}
+
+	// DingTalk returns HTTP 200 with errcode on failure.
+	var dtResp struct {
+		Errcode int    `json:"errcode"`
+		Errmsg  string `json:"errmsg"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&dtResp); err == nil {
+		if dtResp.Errcode != 0 {
+			return fmt.Errorf("dingtalk api error: errcode=%d errmsg=%s", dtResp.Errcode, dtResp.Errmsg)
+		}
+	}
 	return nil
 }
 
@@ -141,11 +152,17 @@ func (c *FeishuChannel) Send(ctx context.Context, n TaskNotification) error {
 		return nil
 	}
 
-	title := fmt.Sprintf("[UniMap] 定时任务 [%s] %s", n.TaskName, statusLabel(n.Status))
+	statusEmoji := map[string]string{
+		"success": "✅",
+		"failed":  "❌",
+		"timeout": "⏰",
+	}
+	emoji := statusEmoji[n.Status]
+	title := fmt.Sprintf("%s **[UniMap]** 定时任务 **[%s]** %s", emoji, n.TaskName, statusLabel(n.Status))
 
-	content := fmt.Sprintf("- 类型: %s\n- 耗时: %.1fs\n- 结果: %s", n.TaskType, n.Duration/1000.0, n.Result)
+	text := fmt.Sprintf("**类型**: %s\n\n**耗时**: %.1fs\n\n**结果**: %s", n.TaskType, n.Duration/1000.0, n.Result)
 	if n.Error != "" {
-		content += fmt.Sprintf("\n- 错误: %s", n.Error)
+		text += fmt.Sprintf("\n\n**错误**: %s", n.Error)
 	}
 
 	body := map[string]interface{}{
@@ -156,11 +173,13 @@ func (c *FeishuChannel) Send(ctx context.Context, n TaskNotification) error {
 					"tag":     "plain_text",
 					"content": title,
 				},
+				"template": "blue",
 			},
 			"elements": []map[string]interface{}{
 				{
-					"tag":     "markdown",
-					"content": fmt.Sprintf("**%s**\n\n%s", title, content),
+					"tag":      "markdown",
+					"content":  text,
+					"text_align": "left",
 				},
 			},
 		},
@@ -172,7 +191,7 @@ func (c *FeishuChannel) Send(ctx context.Context, n TaskNotification) error {
 		if err != nil {
 			return fmt.Errorf("feishu sign error: %w", err)
 		}
-		body["timestamp"] = ts
+		body["timestamp"] = fmt.Sprintf("%d", ts)
 		body["sign"] = sign
 	}
 
@@ -191,6 +210,17 @@ func (c *FeishuChannel) Send(ctx context.Context, n TaskNotification) error {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("feishu returned status %d", resp.StatusCode)
+	}
+
+	// Feishu returns HTTP 200 even on API errors — check the response body.
+	var feishuResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&feishuResp); err == nil {
+		if feishuResp.Code != 0 {
+			return fmt.Errorf("feishu api error: code=%d msg=%s", feishuResp.Code, feishuResp.Msg)
+		}
 	}
 	return nil
 }
@@ -258,6 +288,17 @@ func (c *WeComChannel) Send(ctx context.Context, n TaskNotification) error {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("wecom returned status %d", resp.StatusCode)
+	}
+
+	// WeCom returns HTTP 200 with errcode on failure.
+	var wcResp struct {
+		Errcode int    `json:"errcode"`
+		Errmsg  string `json:"errmsg"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&wcResp); err == nil {
+		if wcResp.Errcode != 0 {
+			return fmt.Errorf("wecom api error: errcode=%d errmsg=%s", wcResp.Errcode, wcResp.Errmsg)
+		}
 	}
 	return nil
 }
