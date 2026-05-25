@@ -95,7 +95,7 @@
 body {
 	font-family: var(--font-sans);
 	font-size: 14px;
-	line-height: 1.6;
+	line-height: 1.65;
 	color: var(--text-primary);
 	background-color: var(--bg-body);
 	-webkit-font-smoothing: antialiased;
@@ -235,20 +235,20 @@ header .nav-bar a.active {
 main {
 	max-width: 1120px;
 	margin: 0 auto;
-	padding: var(--space-8) var(--space-6);
+	padding: var(--space-12) var(--space-8);
 }
 
 section {
 	background: var(--bg-surface);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-md);
-	padding: var(--space-6);
+	padding: var(--space-8);
 	margin-bottom: var(--space-6);
 	box-shadow: var(--shadow-sm);
 }
 
 section h2 {
-	margin-bottom: var(--space-5);
+	margin-bottom: var(--space-6);
 	color: var(--text-primary);
 	border-bottom: none;
 	padding-bottom: var(--space-3);
@@ -257,7 +257,7 @@ section h2 {
 }
 
 section h3 {
-	margin: var(--space-4) 0 var(--space-3);
+	margin: var(--space-5) 0 var(--space-4);
 	color: var(--text-secondary);
 	font-weight: 500;
 }
@@ -291,7 +291,7 @@ footer {
 .form-group textarea,
 .form-group select {
 	width: 100%;
-	padding: var(--space-2) var(--space-3);
+	padding: var(--space-3) var(--space-3);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
 	font-size: 14px;
@@ -343,7 +343,7 @@ footer {
 	align-items: center;
 	justify-content: center;
 	gap: var(--space-2);
-	padding: var(--space-2) var(--space-4);
+	padding: var(--space-3) var(--space-5);
 	border: 1px solid transparent;
 	border-radius: var(--radius-sm);
 	font-size: 13px;
@@ -476,7 +476,7 @@ footer {
 
 .code-editor textarea {
 	border: none;
-	padding: var(--space-4);
+	padding: var(--space-5);
 }
 
 .code-editor textarea:focus {
@@ -486,7 +486,7 @@ footer {
 .editor-toolbar {
 	background: var(--bg-elevated);
 	border-top: 1px solid var(--border);
-	padding: var(--space-2) var(--space-3);
+	padding: var(--space-3) var(--space-4);
 	display: flex;
 	gap: var(--space-2);
 }
@@ -577,7 +577,7 @@ footer {
 	display: flex;
 	align-items: center;
 	gap: var(--space-2);
-	padding: var(--space-2) var(--space-3);
+	padding: var(--space-3) var(--space-4);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
 	cursor: pointer;
@@ -718,7 +718,7 @@ footer {
 .btn-toggle-cookie.expanded .toggle-hint { display: none; }
 
 .cookie-input-content {
-	padding: var(--space-4);
+	padding: var(--space-5);
 	background: var(--bg-surface);
 	border: 1px solid var(--border);
 	border-top: none;
@@ -730,7 +730,7 @@ footer {
 	display: flex;
 	gap: var(--space-3);
 	align-items: center;
-	padding: var(--space-3) var(--space-4);
+	padding: var(--space-4) var(--space-5);
 	margin-bottom: var(--space-2);
 	background: var(--bg-elevated);
 	border: 1px solid var(--border);
@@ -874,7 +874,7 @@ footer {
 	background: var(--bg-surface);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-md);
-	padding: var(--space-5);
+	padding: var(--space-6);
 	box-shadow: var(--shadow-sm);
 	transition: box-shadow var(--duration-normal);
 }
@@ -889,8 +889,8 @@ footer {
 	color: var(--accent);
 	text-transform: uppercase;
 	letter-spacing: 0.06em;
-	margin-bottom: var(--space-4);
-	padding-bottom: var(--space-3);
+	margin-bottom: var(--space-5);
+	padding-bottom: var(--space-4);
 	border-bottom: 1px solid var(--accent-subtle);
 }
 
@@ -949,7 +949,7 @@ footer {
 	background: var(--bg-surface);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
-	padding: var(--space-4);
+	padding: var(--space-5);
 	transition: box-shadow var(--duration-normal);
 }
 
@@ -982,7 +982,7 @@ table {
 }
 
 th, td {
-	padding: var(--space-3) var(--space-3);
+	padding: var(--space-3) var(--space-4);
 	border-bottom: 1px solid var(--border);
 	text-align: left;
 	font-size: 13px;
@@ -1025,7 +1025,7 @@ td:first-child {
 	background: var(--bg-elevated);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
-	padding: var(--space-4);
+	padding: var(--space-5);
 	text-align: center;
 }
 
@@ -1061,7 +1061,7 @@ td:first-child {
 }
 
 .tab-btn, .tab {
-	padding: var(--space-3) var(--space-4);
+	padding: var(--space-3) var(--space-5);
 	border: none;
 	background: none;
 	cursor: pointer;
@@ -1122,7 +1122,7 @@ td:first-child {
 .modal-content {
 	background: var(--bg-surface);
 	margin: 8vh auto;
-	padding: var(--space-6);
+	padding: var(--space-8);
 	border: 1px solid var(--border);
 	width: 90%;
 	max-width: 600px;
@@ -1186,7 +1186,7 @@ td:first-child {
 	transform: translate(-50%, -50%);
 	background: var(--bg-surface);
 	border-radius: var(--radius-md);
-	padding: var(--space-6);
+	padding: var(--space-8);
 	width: 90%;
 	max-width: 600px;
 	z-index: 9999;
@@ -1213,7 +1213,7 @@ td:first-child {
 
 .create-form summary {
 	cursor: pointer;
-	padding: var(--space-3) var(--space-4);
+	padding: var(--space-4) var(--space-5);
 	background: var(--bg-elevated);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
@@ -1229,7 +1229,7 @@ td:first-child {
 }
 
 .create-form .form-inner {
-	padding: var(--space-4);
+	padding: var(--space-5);
 	border: 1px solid var(--border);
 	border-top: none;
 	border-bottom-left-radius: var(--radius-sm);
@@ -1394,7 +1394,7 @@ td:first-child {
 	display: flex;
 	gap: var(--space-3);
 	align-items: center;
-	padding: var(--space-3) var(--space-4);
+	padding: var(--space-4) var(--space-5);
 	background: var(--bg-elevated);
 	border-bottom: 1px solid var(--border);
 }
@@ -1405,7 +1405,7 @@ td:first-child {
 	font-size: 13px;
 }
 
-.result-card-body { padding: var(--space-4); }
+.result-card-body { padding: var(--space-5); }
 
 .status-blocks {
 	display: grid;
@@ -1415,7 +1415,7 @@ td:first-child {
 }
 
 .status-block {
-	padding: var(--space-3);
+	padding: var(--space-4);
 	border-radius: var(--radius-sm);
 	border: 1px solid var(--border);
 	background: var(--bg-elevated);
@@ -1429,8 +1429,8 @@ td:first-child {
 .status-block.info { border-color: var(--info-border); background: var(--info-bg); }
 
 .tamper-alert {
-	padding: var(--space-4);
-	margin-bottom: var(--space-3);
+	padding: var(--space-5);
+	margin-bottom: var(--space-4);
 	border-radius: var(--radius-sm);
 }
 
@@ -1469,7 +1469,7 @@ td:first-child {
 .screenshot-result {
 	display: flex;
 	align-items: center;
-	padding: var(--space-3) var(--space-4);
+	padding: var(--space-4) var(--space-5);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
 	margin-bottom: var(--space-2);
@@ -1519,7 +1519,7 @@ td:first-child {
 .result-item {
 	display: flex;
 	align-items: center;
-	padding: var(--space-3);
+	padding: var(--space-4);
 	margin-bottom: var(--space-2);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
@@ -1552,12 +1552,12 @@ td:first-child {
 .history-item-header {
 	display: flex;
 	justify-content: space-between;
-	padding: var(--space-3) var(--space-4);
+	padding: var(--space-4) var(--space-5);
 	background: var(--bg-elevated);
 	border-bottom: 1px solid var(--border);
 }
 
-.history-item-body { padding: var(--space-4); }
+.history-item-body { padding: var(--space-5); }
 .history-item .url { font-weight: 600; word-break: break-all; }
 .history-item .timestamp { font-size: 11px; color: var(--text-muted); }
 .history-item .hash-preview {
@@ -1573,7 +1573,7 @@ td:first-child {
 .query-info {
 	background: var(--accent-subtle);
 	border-left: 3px solid var(--accent);
-	padding: var(--space-3) var(--space-4);
+	padding: var(--space-4) var(--space-5);
 	border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
@@ -1585,7 +1585,7 @@ td:first-child {
 
 .filter-options {
 	background: var(--bg-elevated);
-	padding: var(--space-3) var(--space-4);
+	padding: var(--space-4) var(--space-5);
 	border-radius: var(--radius-sm);
 	margin-bottom: var(--space-4);
 	display: flex;
@@ -1667,7 +1667,7 @@ td:first-child {
 	background: var(--bg-elevated);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
-	padding: var(--space-5);
+	padding: var(--space-6);
 }
 
 .quota-header {
@@ -1772,7 +1772,7 @@ td:first-child {
 
 .stat-item {
 	background: var(--bg-elevated);
-	padding: var(--space-4);
+	padding: var(--space-5);
 	border-radius: var(--radius-sm);
 	text-align: center;
 	border: 1px solid var(--border);
