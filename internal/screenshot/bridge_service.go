@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/metrics"
+	"github.com/unimap/project/internal/metrics"
 )
 
 type bridgeJob struct {
@@ -256,3 +256,4 @@ func isRetryableBridgeError(err error) bool {
 	}
 	return false
 }
+

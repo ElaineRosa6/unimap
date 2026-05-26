@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/utils"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/utils"
 )
 
 // HunterAdapter Hunter引擎适配器
@@ -27,7 +27,7 @@ type HunterAdapter struct {
 func NewHunterAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *HunterAdapter {
 	client := resty.New().
 		SetTimeout(timeout).
-		SetHeader("User-Agent", "UniMap-ICP-Hunter/1.0")
+		SetHeader("User-Agent", "unimap/1.0")
 
 	return &HunterAdapter{
 		client:  client,
@@ -482,3 +482,4 @@ func NewHunterAdapterWebOnly() *HunterAdapterWebOnly {
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "hunter"),
 	}
 }
+

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/utils"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/utils"
 )
 
 // ShodanAdapter Shodan引擎适配器
@@ -25,7 +25,7 @@ type ShodanAdapter struct {
 func NewShodanAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *ShodanAdapter {
 	client := resty.New().
 		SetTimeout(timeout).
-		SetHeader("User-Agent", "UniMap-ICP-Hunter/1.0")
+		SetHeader("User-Agent", "unimap/1.0")
 
 	return &ShodanAdapter{
 		client:  client,
@@ -458,3 +458,4 @@ func NewShodanAdapterWebOnly() *ShodanAdapterWebOnly {
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "shodan"),
 	}
 }
+

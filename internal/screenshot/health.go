@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 // HealthChecker probes a screenshot mode for liveness.
@@ -83,3 +83,4 @@ func (e *ExtensionHealthChecker) Check(ctx context.Context) (bool, error) {
 	}
 	return true, nil
 }
+

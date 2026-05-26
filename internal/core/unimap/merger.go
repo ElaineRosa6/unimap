@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/utils"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/utils"
 )
 
 // ResultMerger 结果归并与去重
@@ -319,3 +319,4 @@ func (m *ResultMerger) GetSourceStats(assets []model.UnifiedAsset) map[string]in
 	}
 	return stats
 }
+

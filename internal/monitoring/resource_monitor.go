@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 // ResourceStats 资源使用统计
@@ -524,3 +524,4 @@ func (m *ResourceMonitor) DeleteCustomMetric(name string, labels map[string]stri
 
 	delete(m.customMetrics, key)
 }
+

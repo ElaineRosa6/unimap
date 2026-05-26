@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/utils"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/utils"
 )
 
 const (
@@ -35,7 +35,7 @@ type FofaAdapter struct {
 func NewFofaAdapter(baseURL, apiKey, email string, qps int, timeout time.Duration) *FofaAdapter {
 	client := resty.New().
 		SetTimeout(timeout).
-		SetHeader("User-Agent", "UniMap-ICP-Hunter/1.0")
+		SetHeader("User-Agent", "unimap/1.0")
 
 	return &FofaAdapter{
 		client:  client,
@@ -514,3 +514,4 @@ func NewFofaAdapterWebOnly() *FofaAdapterWebOnly {
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "fofa"),
 	}
 }
+

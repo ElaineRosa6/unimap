@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/unimap-icp-hunter/project/internal/service"
-	"github.com/unimap-icp-hunter/project/internal/tamper"
+	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/tamper"
 )
 
 func (s *Server) newTamperDetector(ctx context.Context, mode string) (*tamper.Detector, context.CancelFunc, error) {
@@ -266,3 +266,4 @@ func (s *Server) handleTamperHistoryDelete(w http.ResponseWriter, r *http.Reques
 		"url":     urlValue,
 	})
 }
+

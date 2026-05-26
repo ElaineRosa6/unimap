@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/alerting"
-	"github.com/unimap-icp-hunter/project/internal/distributed"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
-	"github.com/unimap-icp-hunter/project/internal/service"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/alerting"
+	"github.com/unimap/project/internal/distributed"
+	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/service"
 )
 
 // ===== Bridge client mock for scheduler tests =====
@@ -629,3 +629,4 @@ func TestDistributedTaskIDMonotonic(t *testing.T) {
 		ids[id] = true
 	}
 }
+

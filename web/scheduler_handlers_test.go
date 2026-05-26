@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/scheduler"
+	"github.com/unimap/project/internal/scheduler"
 )
 
 // setupScheduler creates a scheduler with the "query" handler registered for tests
@@ -583,3 +583,4 @@ func TestHandleRunTaskNow_GetMethod_Returns405(t *testing.T) {
 		t.Fatalf("expected 405, got %d", rec.Code)
 	}
 }
+

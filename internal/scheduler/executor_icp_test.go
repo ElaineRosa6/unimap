@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
+	"github.com/unimap/project/internal/adapter"
 	"slices"
 )
 
@@ -520,3 +520,4 @@ func TestExtractBool(t *testing.T) {
 		})
 	}
 }
+

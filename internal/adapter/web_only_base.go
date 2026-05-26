@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 // BrowserQueryBackend provides browser-based result collection for engines
@@ -105,3 +105,4 @@ func (w *WebOnlyAdapterBase) GetQuota() (*model.QuotaInfo, error) {
 func (w *WebOnlyAdapterBase) IsWebOnly() bool {
 	return true
 }
+

@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/plugin"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/plugin"
 )
 
 // 预编译正则表达式，避免每次调用时重新编译
@@ -345,3 +345,4 @@ func (p *EnrichmentProcessor) guessServiceType(asset model.UnifiedAsset) string 
 		return "unknown"
 	}
 }
+

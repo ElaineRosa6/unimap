@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/core/unimap"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/core/unimap"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 // BrowserQueryOutcome 封装浏览器联动查询的结果。
@@ -278,3 +278,4 @@ func normalizeCDPBaseURL(raw string) string {
 	}
 	return strings.TrimRight(raw, "/")
 }
+

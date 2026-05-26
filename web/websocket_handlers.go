@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/metrics"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/service"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/metrics"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/service"
 )
 
 func generateConnectionID() string {
@@ -411,3 +411,4 @@ func (s *Server) updateQueryProgress(queryID string, progress float64) {
 		})
 	}
 }
+

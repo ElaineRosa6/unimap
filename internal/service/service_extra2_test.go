@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 // ===== QueryAppService: constructors and simple methods =====
@@ -387,3 +387,4 @@ func (m *mockScreenshotProvider) CollectSearchEngineResult(ctx context.Context, 
 	m.collectedQueries = append(m.collectedQueries, query)
 	return []screenshot.CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query}}, nil
 }
+

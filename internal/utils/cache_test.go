@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 func TestNewMemoryCache(t *testing.T) {

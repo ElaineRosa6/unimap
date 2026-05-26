@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
+	"github.com/unimap/project/internal/screenshot"
 	"golang.org/x/image/webp"
 )
 
@@ -845,3 +845,4 @@ func (s *Server) screenshotRouterExtHealthy() bool {
 	}
 	return false
 }
+

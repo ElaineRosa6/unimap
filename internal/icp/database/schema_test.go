@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
+	"github.com/unimap/project/internal/adapter"
 )
 
 func setupTestDB(t *testing.T) (*Database, func()) {
@@ -250,3 +250,4 @@ func TestRawJSON(t *testing.T) {
 		})
 	}
 }
+

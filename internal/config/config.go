@@ -11,8 +11,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/utils/urlguard"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/utils/urlguard"
 )
 
 // Config 系统配置结构
@@ -605,7 +605,7 @@ func (m *Manager) applyDefaults(config *Config) {
 		config.System.RetryAttempts = 3
 	}
 	if config.System.UserAgent == "" {
-		config.System.UserAgent = "UniMap-ICP-Hunter/1.0"
+		config.System.UserAgent = "unimap/1.0"
 	}
 
 	// 默认日志配置
@@ -1299,3 +1299,4 @@ func HashPassword(password string) (string, error) {
 func CheckPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
+

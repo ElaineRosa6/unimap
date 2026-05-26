@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
-	"github.com/unimap-icp-hunter/project/internal/service"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/service"
 )
 
 func TestHandleAPIQuery_GetMethod_Returns405(t *testing.T) {
@@ -524,3 +524,4 @@ func TestParseEnginesParam_SingleValue(t *testing.T) {
 		t.Fatalf("expected [quake], got %v", engines)
 	}
 }
+

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/unimap-icp-hunter/project/internal/distributed"
+	"github.com/unimap/project/internal/distributed"
 )
 
 func (s *Server) handleNodeTaskEnqueue(w http.ResponseWriter, r *http.Request) {
@@ -222,3 +222,4 @@ func (s *Server) handleNodeTaskDelete(w http.ResponseWriter, r *http.Request) {
 		"task_id": taskID,
 	})
 }
+

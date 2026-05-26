@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 func TestTokenizeSimpleQuery(t *testing.T) {
@@ -375,3 +375,4 @@ func TestParseNoValidTokens(t *testing.T) {
 		t.Error("expected error for whitespace-only query")
 	}
 }
+

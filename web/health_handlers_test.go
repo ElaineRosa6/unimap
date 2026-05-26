@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
+	"github.com/unimap/project/internal/adapter"
 )
 
 func TestHandleHealthReady_OK(t *testing.T) {
@@ -74,3 +74,4 @@ func TestLivenessCheck(t *testing.T) {
 		t.Fatal("expected liveness check to return true")
 	}
 }
+

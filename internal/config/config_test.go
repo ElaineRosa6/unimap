@@ -74,7 +74,7 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, 1000, cfg.System.CacheMaxSize)
 	assert.Equal(t, 300, cfg.System.CacheCleanupInterval)
 	assert.Equal(t, 3, cfg.System.RetryAttempts)
-	assert.Equal(t, "UniMap-ICP-Hunter/1.0", cfg.System.UserAgent)
+	assert.Equal(t, "unimap/1.0", cfg.System.UserAgent)
 	
 	// Test default log configurations
 	assert.Equal(t, "info", cfg.Log.Level)
@@ -323,3 +323,4 @@ func TestClone_NilVsEmptySlice(t *testing.T) {
 	assert.NotNil(t, cloned2.Network.ProxyPool.Proxies)
 	assert.Empty(t, cloned2.Network.ProxyPool.Proxies)
 }
+

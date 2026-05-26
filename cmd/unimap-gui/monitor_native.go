@@ -31,8 +31,8 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
-	"github.com/unimap-icp-hunter/project/internal/tamper"
+	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/tamper"
 )
 
 type monitorTarget struct {
@@ -2148,3 +2148,4 @@ func openPathInSystem(path string) error {
 	}
 	return cmd.Start()
 }
+

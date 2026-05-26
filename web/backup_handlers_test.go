@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
+	"github.com/unimap/project/internal/config"
 )
 
 func setupBackupServer(t *testing.T, tmpDir string) *Server {
@@ -160,3 +160,4 @@ func TestDirExists(t *testing.T) {
 		t.Error("dirExists should return false for file")
 	}
 }
+

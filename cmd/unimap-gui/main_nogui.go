@@ -6,7 +6,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/unimap-icp-hunter/project/internal/appversion"
+	"github.com/unimap/project/internal/appversion"
 )
 
 func main() {
@@ -15,3 +15,4 @@ func main() {
 	fmt.Println("To run the GUI: go run -tags gui ./cmd/unimap-gui")
 	fmt.Println("To run the CLI: go run ./cmd/unimap-cli")
 }
+

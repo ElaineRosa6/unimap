@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/unimap-icp-hunter/project/internal/metrics"
+	"github.com/unimap/project/internal/metrics"
 )
 
 type statusRecorder struct {
@@ -37,3 +37,4 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	promhttp.Handler().ServeHTTP(w, r)
 }
+

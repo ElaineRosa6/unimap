@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
+	"github.com/unimap/project/internal/config"
 )
 
 func TestAdminAuthMiddleware_MissingToken_Returns401(t *testing.T) {
@@ -149,3 +149,4 @@ func TestAdminToken(t *testing.T) {
 		t.Fatalf("expected empty when config nil, got %q", got)
 	}
 }
+

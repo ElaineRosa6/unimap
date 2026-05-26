@@ -326,7 +326,7 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 
 ```go
 // 其他项目可以导入 UniMap 作为库
-import "github.com/unimap-icp-hunter/project/internal/service"
+import "github.com/unimap/project/internal/service"
 
 func yourFunction() {
     unimap := service.NewUnifiedService()
@@ -342,8 +342,8 @@ func yourFunction() {
 package myplugin
 
 import (
-    "github.com/unimap-icp-hunter/project/internal/model"
-    "github.com/unimap-icp-hunter/project/internal/plugin"
+    "github.com/unimap/project/internal/model"
+    "github.com/unimap/project/internal/plugin"
 )
 
 type MyEnginePlugin struct {
@@ -384,7 +384,7 @@ UniMap 可以作为插件被其他工具集成：
 
 ```go
 // 在其他工具中
-import unimap "github.com/unimap-icp-hunter/project/internal/service"
+import unimap "github.com/unimap/project/internal/service"
 
 func main() {
     // 使用 UniMap 的服务
@@ -487,12 +487,13 @@ func main() {
 
 ## 技术支持
 
-- GitHub Issues: https://github.com/ElaineRosa6/unimap-icp-hunter/issues
-- 文档: https://github.com/ElaineRosa6/unimap-icp-hunter/wiki
-- 示例代码: https://github.com/ElaineRosa6/unimap-icp-hunter/tree/main/examples
+- GitHub Issues: https://github.com/ElaineRosa6/unimap/issues
+- 文档: https://github.com/ElaineRosa6/unimap/wiki
+- 示例代码: https://github.com/ElaineRosa6/unimap/tree/main/examples
 
 ---
 
 **版本**: 1.0.0  
 **最后更新**: 2026-02-04  
 **维护者**: UniMap Team
+

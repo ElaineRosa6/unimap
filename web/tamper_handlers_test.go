@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/service"
-	"github.com/unimap-icp-hunter/project/internal/tamper"
+	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/tamper"
 )
 
 func TestHandleTamperHistoryDelete(t *testing.T) {
@@ -287,3 +287,4 @@ func TestTamperAllocatorFactory_NilMgr(t *testing.T) {
 		t.Fatal("expected nil factory when screenshotMgr is nil")
 	}
 }
+

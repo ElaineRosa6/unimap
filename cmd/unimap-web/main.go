@@ -6,13 +6,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/appversion"
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/service"
-	"github.com/unimap-icp-hunter/project/internal/utils"
-	"github.com/unimap-icp-hunter/project/web"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/appversion"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/utils"
+	"github.com/unimap/project/web"
 )
 
 const configPath = "configs/config.yaml"
@@ -177,3 +177,4 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 		}
 	}
 }
+

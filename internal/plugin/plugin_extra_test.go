@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 // ===== ExampleEnginePlugin metadata =====
@@ -421,3 +421,4 @@ func (f *failingProcessor) Process(ctx context.Context, assets []model.UnifiedAs
 	return nil, context.DeadlineExceeded
 }
 func (f *failingProcessor) Priority() int { return 1 }
+

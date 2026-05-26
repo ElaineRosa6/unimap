@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	icpdb "github.com/unimap-icp-hunter/project/internal/icp/database"
+	"github.com/unimap/project/internal/adapter"
+	icpdb "github.com/unimap/project/internal/icp/database"
 )
 
 // handleICPPage renders the ICP query page (GET /icp).
@@ -328,3 +328,4 @@ func compareICPResults(latest, previous []*icpdb.ICPResultRow) []ICPChange {
 
 	return changes
 }
+

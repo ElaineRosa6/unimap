@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/unimap-icp-hunter/project/internal/distributed"
+	"github.com/unimap/project/internal/distributed"
 )
 
 func (s *Server) isDistributedEnabled() bool {
@@ -256,3 +256,4 @@ func (s *Server) handleNodeGet(w http.ResponseWriter, r *http.Request) {
 		"node":    rec,
 	})
 }
+

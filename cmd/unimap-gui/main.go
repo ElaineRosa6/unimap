@@ -19,14 +19,14 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/appversion"
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/exporter"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
-	"github.com/unimap-icp-hunter/project/internal/service"
-	"github.com/unimap-icp-hunter/project/internal/tamper"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/appversion"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/exporter"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/tamper"
 )
 
 const configPath = "configs/config.yaml"
@@ -711,3 +711,4 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 		))
 	}
 }
+

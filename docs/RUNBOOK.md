@@ -402,3 +402,4 @@ curl -X POST http://localhost:8448/api/notifications/reload
 | `feishu` | https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot | HMAC-SHA256 | 富文本卡片 |
 | `wecom` | https://developer.work.weixin.qq.com/document/path/91770 | 无 | Markdown |
 | `webhook` | 通用 | 无 | 通用 JSON |
+

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 // EngineCacheConfig 引擎缓存配置接口
@@ -716,3 +716,4 @@ func (s *ConfigBasedCacheStrategy) GetAllEngineConfigs() map[string]EngineCacheC
 	}
 	return result
 }
+

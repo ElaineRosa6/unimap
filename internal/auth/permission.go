@@ -3,7 +3,7 @@ package auth
 import (
 	"sync"
 
-	unierror "github.com/unimap-icp-hunter/project/internal/error"
+	unierror "github.com/unimap/project/internal/error"
 )
 
 // Permission 权限定义

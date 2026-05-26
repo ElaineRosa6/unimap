@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/distributed"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/distributed"
 )
 
 func TestNodeRegisterHeartbeatStatus(t *testing.T) {
@@ -250,3 +250,4 @@ func TestNodeDeregister_AdminTokenFallback(t *testing.T) {
 		t.Fatalf("expected 200 with admin token, got %d, body=%s", authW.Code, authW.Body.String())
 	}
 }
+

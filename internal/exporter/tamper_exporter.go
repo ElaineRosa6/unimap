@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/tamper"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/tamper"
 	"github.com/xuri/excelize/v2"
 )
 

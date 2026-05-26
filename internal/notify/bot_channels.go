@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/utils/urlguard"
+	"github.com/unimap/project/internal/utils/urlguard"
 )
 
 // DingTalkChannel 钉钉群机器人
@@ -323,3 +323,4 @@ func statusLabel(status string) string {
 		return status
 	}
 }
+

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
+	"github.com/unimap/project/internal/config"
 )
 
 func newServerForConfigTest() *Server {
@@ -248,3 +248,4 @@ func TestIsMaskedSecret(t *testing.T) {
 		}
 	}
 }
+

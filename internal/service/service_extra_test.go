@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/model"
 )
 
 // 测试 Query PageSize 默认值

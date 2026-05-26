@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/utils"
-	"github.com/unimap-icp-hunter/project/internal/utils/urlguard"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/utils"
+	"github.com/unimap/project/internal/utils/urlguard"
 )
 
 // LogChannel 日志告警渠道
@@ -137,3 +137,4 @@ func (c *WebhookChannel) IsEnabled() bool {
 func (c *WebhookChannel) Close() error {
 	return nil
 }
+

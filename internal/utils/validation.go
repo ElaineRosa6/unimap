@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/microcosm-cc/bluemonday"
-	unierror "github.com/unimap-icp-hunter/project/internal/error"
+	unierror "github.com/unimap/project/internal/error"
 )
 
 // ValidationError 验证错误
@@ -264,3 +264,4 @@ func ValidateRequestSize(contentLength int64, maxSizeMB int) bool {
 func ValidateContentType(contentType, expectedType string) bool {
 	return strings.HasPrefix(strings.ToLower(contentType), strings.ToLower(expectedType))
 }
+

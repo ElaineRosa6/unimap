@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/alerting"
+	"github.com/unimap/project/internal/alerting"
 )
 
 func TestAlerting_WebhookEndToEnd(t *testing.T) {
@@ -167,3 +167,4 @@ func TestAlerting_WebhookWithAuthHeader(t *testing.T) {
 		t.Errorf("expected Authorization header 'Bearer test-token-123', got %q", auth)
 	}
 }
+

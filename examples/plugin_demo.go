@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/plugin"
-	"github.com/unimap-icp-hunter/project/internal/plugin/processors"
-	"github.com/unimap-icp-hunter/project/internal/service"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/plugin"
+	"github.com/unimap/project/internal/plugin/processors"
+	"github.com/unimap/project/internal/service"
 )
 
 func main() {
@@ -205,3 +205,4 @@ func processAssets(svc *service.UnifiedService, ctx context.Context, assets []mo
 	pipeline := plugin.NewProcessorPipeline(processors)
 	return pipeline.Process(ctx, assets)
 }
+

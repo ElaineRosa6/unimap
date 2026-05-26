@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/logger"
 )
 
 // loginRateLimiter provides brute force protection for the login endpoint.
@@ -143,3 +143,4 @@ func secureCompare(a, b string) bool {
 	}
 	return result == 0
 }
+

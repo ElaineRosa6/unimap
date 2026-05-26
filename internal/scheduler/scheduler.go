@@ -16,10 +16,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/metrics"
-	"github.com/unimap-icp-hunter/project/internal/notify"
-	"github.com/unimap-icp-hunter/project/internal/utils/urlguard"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/metrics"
+	"github.com/unimap/project/internal/notify"
+	"github.com/unimap/project/internal/utils/urlguard"
 )
 
 // TaskType identifies the type of scheduled task.
@@ -1396,3 +1396,4 @@ func sortInt64(s []int64) {
 		return s[i] < s[j]
 	})
 }
+

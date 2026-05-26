@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 // ScreenshotMode represents the active screenshot capture mode.
@@ -771,3 +771,4 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 
 	return assets, total, hasMore
 }
+

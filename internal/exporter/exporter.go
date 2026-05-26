@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -100,3 +100,4 @@ func (e *ExcelExporter) Export(assets []model.UnifiedAsset, filepath string) err
 
 	return nil
 }
+
