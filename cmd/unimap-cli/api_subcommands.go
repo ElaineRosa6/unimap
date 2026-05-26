@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 type apiQueryResponse struct {
@@ -430,3 +430,4 @@ func runAPIScheduler(args []string) {
 		os.Exit(1)
 	}
 }
+

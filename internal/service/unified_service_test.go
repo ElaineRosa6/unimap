@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/model"
 )
 
 func TestNewUnifiedServiceWithConfig_Defaults(t *testing.T) {
@@ -350,3 +350,4 @@ func (m *testMockAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAss
 }
 func (m *testMockAdapter) GetQuota() (*model.QuotaInfo, error)                    { return &model.QuotaInfo{}, nil }
 func (m *testMockAdapter) IsWebOnly() bool                                        { return false }
+

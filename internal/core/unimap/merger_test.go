@@ -3,7 +3,7 @@ package unimap
 import (
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 func TestNewResultMerger(t *testing.T) {
@@ -336,3 +336,4 @@ func TestMergeAssets(t *testing.T) {
 		t.Errorf("expected merged sources, got %q", existing.Source)
 	}
 }
+

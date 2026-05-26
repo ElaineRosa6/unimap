@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 // Manager 告警管理器
@@ -397,3 +397,4 @@ func (m *Manager) CleanupOldRecords(maxAge time.Duration) {
 		}
 	}
 }
+

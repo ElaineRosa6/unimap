@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 func TestExampleEnginePlugin_Lifecycle(t *testing.T) {
@@ -187,3 +187,4 @@ func (t *testProcessor) Process(ctx context.Context, assets []model.UnifiedAsset
 	return assets, nil
 }
 func (t *testProcessor) Priority() int { return t.priority }
+

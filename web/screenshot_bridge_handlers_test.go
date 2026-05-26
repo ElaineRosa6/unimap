@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
+	"github.com/unimap/project/internal/config"
 )
 
 func newBridgeTestServer(signatureRequired bool) *Server {
@@ -206,3 +206,4 @@ func TestIsLoopbackRequestRejectsNonLoopbackHost(t *testing.T) {
 		t.Fatalf("expected non-loopback host to be rejected")
 	}
 }
+

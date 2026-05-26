@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 // ShutdownManager 优雅关闭管理器
@@ -148,3 +148,4 @@ func GracefulShutdown(timeout time.Duration, handlers ...ShutdownHandler) {
 	manager.Start()
 	manager.Wait()
 }
+

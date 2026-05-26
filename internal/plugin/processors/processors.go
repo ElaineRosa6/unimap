@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/plugin"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/plugin"
 )
 
 // DeduplicationProcessor 去重处理器
@@ -333,3 +333,4 @@ func (p *DataCleaningProcessor) normalizeURL(url string) string {
 func (p *DataCleaningProcessor) isEmptyAsset(asset model.UnifiedAsset) bool {
 	return asset.IP == "" && asset.Host == "" && asset.URL == ""
 }
+

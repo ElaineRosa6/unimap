@@ -2,6 +2,25 @@
 
 ---
 
+## [1.0.0] - 2026-05-26 生产级就绪正式版发布 (Major Upgrade)
+
+> **变更类型**: 核心架构升级 & 正式发布
+> **涉及模块**: CLI / Web UI / GUI / 核心引擎架构 / 全量系统
+
+### 🎉 新增功能
+- **全系引擎全量支持**: 深入集成并解耦 FOFA / Hunter / ZoomEye / Quake / Shodan 五大搜索引擎底座。
+- **Screenshot 截图容灾**: 引入核心高可用 ScreenshotRouter 组件，实现 CDP 与 Extension 双擎自动探测及故障切换备份策略。
+- **多端业务矩阵**: 重构分离出独立的 Web API 守护进程、CLI 终端查询工作流及 GUI 图形桌面端，业务矩阵全面闭环。
+- **智能化篡改防护 (Tamper Detection)**: 新增网页动态区域特征隔离算法及针对不同颗粒度防护的五模监控匹配引擎。
+- **分布式调度阵列 (Scheduler Node Cluster)**: 搭建基于 LRU/Redis 持久化的轻量级多任务心跳管理及 Task 自动分发阵列（涵盖20种专属定时检查 Runner）。
+- **企业级告警通道**: 原生实现频率风暴限制、重复异常静默期管理的 Log/Webhook 推送集成。
+
+### 🔄 优化与重构
+- 统领 UQL（Unified Query Language）抽象语法字典及各引擎底层的自动转译机制。
+- 完整脱敏开源仓库信息，统一合规及安全审查路径，升级并补全全部产品技术手册文档库 (docs/)。
+
+---
+
 ## [2026-05-07] 引擎加载问题修复 — 空间搜索引擎默认启用
 
 > **变更类型**: Bug 修复
@@ -87,3 +106,6 @@ config.Engines.Fofa.UseWebAPI = true
 - `go test -race ./...` — 全部通过（0 failures, 0 races）
 
 ---
+
+
+

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 // 不需要记录审计日志的路径前缀
@@ -64,3 +64,4 @@ func (w *auditResponseWriter) WriteHeader(code int) {
 	}
 	w.ResponseWriter.WriteHeader(code)
 }
+

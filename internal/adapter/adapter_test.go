@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 // ===== quakeIsSuccessCode =====
@@ -1540,3 +1540,4 @@ func TestNewZoomEyeAdapterWebOnly(t *testing.T) {
 		t.Error("expected IsWebOnly() = true")
 	}
 }
+

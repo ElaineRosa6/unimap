@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/distributed"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/distributed"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 // ============================================================
@@ -629,3 +629,4 @@ func TestWriteAPIError(t *testing.T) {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
 }
+

@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/unimap-icp-hunter/project/internal/metrics"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/requestid"
+	"github.com/unimap/project/internal/metrics"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/requestid"
 )
 
 type ICPQueryType string
@@ -463,3 +463,4 @@ func ICPSearchWithContext(ctx context.Context, baseURL string, apiKey string, re
 func requestIDFromContext(ctx context.Context) string {
 	return requestid.FromContext(ctx)
 }
+

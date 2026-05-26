@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
-	"github.com/unimap-icp-hunter/project/internal/service"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/service"
 )
 
 func buildTestServerWithScreenshotBase(baseDir string) *Server {
@@ -516,4 +516,5 @@ func TestHandleScreenshotFileDelete_WrongMethod(t *testing.T) {
 		t.Fatalf("expected 405, got %d", w.Code)
 	}
 }
+
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 // ExampleEnginePlugin is a minimal EnginePlugin implementation used for
@@ -135,3 +135,4 @@ func (e *ExampleEnginePlugin) RateLimit() RateLimitConfig {
 		RequestsPerMinute: 30,
 	}
 }
+

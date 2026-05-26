@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/notify"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/notify"
 )
 
 func (s *Server) handleNotificationChannels(w http.ResponseWriter, r *http.Request) {
@@ -416,3 +416,4 @@ func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request)
 		"message": "test message sent successfully",
 	})
 }
+

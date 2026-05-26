@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 // CircuitBreaker 状态转换测试

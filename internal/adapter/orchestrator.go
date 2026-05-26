@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/metrics"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/utils"
-	"github.com/unimap-icp-hunter/project/internal/utils/workerpool"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/metrics"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/utils"
+	"github.com/unimap/project/internal/utils/workerpool"
 )
 
 const (
@@ -904,3 +904,4 @@ func (o *EngineOrchestrator) ExecuteUnifiedQuery(ast *model.UQLAST, engineNames 
 
 	return assets, nil
 }
+

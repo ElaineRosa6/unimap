@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/logger"
 )
 
 // handleGetConfig returns the current config with secrets masked (GET /api/config).
@@ -379,3 +379,4 @@ func isMaskedSecret(s string) bool {
 	}
 	return strings.Contains(s, "****")
 }
+

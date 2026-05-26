@@ -3,7 +3,7 @@ package web
 import (
 	"net/http"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 func (s *Server) renderTemplate(w http.ResponseWriter, status int, name string, data interface{}) bool {
@@ -41,3 +41,4 @@ func (s *Server) renderTemplateWithNonce(r *http.Request, w http.ResponseWriter,
 
 	return true
 }
+

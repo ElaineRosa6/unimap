@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 type apiErrorPayload struct {
@@ -331,3 +331,4 @@ func sanitizeError(err string) string {
 	}
 	return sanitized
 }
+

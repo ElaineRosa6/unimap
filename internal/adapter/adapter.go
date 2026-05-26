@@ -1,7 +1,7 @@
 package adapter
 
 import (
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 // EngineAdapter 引擎适配器接口
@@ -24,3 +24,4 @@ type EngineAdapter interface {
 	// IsWebOnly 检查是否为 Web-only 模式
 	IsWebOnly() bool
 }
+

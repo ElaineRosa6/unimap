@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 // handleImportCookieJSON 导入浏览器导出的Cookie JSON
@@ -654,3 +654,4 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 		"engines":       results,
 	})
 }
+

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/utils"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/utils"
 )
 
 // QuakeAdapter Quake引擎适配器
@@ -43,7 +43,7 @@ func quakeIsSuccessCode(code interface{}) bool {
 func NewQuakeAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *QuakeAdapter {
 	client := resty.New().
 		SetTimeout(timeout).
-		SetHeader("User-Agent", "UniMap-ICP-Hunter/1.0").
+		SetHeader("User-Agent", "unimap/1.0").
 		SetHeader("X-QuakeToken", apiKey)
 
 	return &QuakeAdapter{
@@ -453,3 +453,4 @@ func NewQuakeAdapterWebOnly() *QuakeAdapterWebOnly {
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "quake"),
 	}
 }
+

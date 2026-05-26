@@ -201,3 +201,4 @@ results, err := manager.CaptureBatchURLsWithTamper(ctx, urls, batchID, concurren
 ```
 
 返回的结果中会包含 `TamperResult` 字段，包含篡改检测结果。
+

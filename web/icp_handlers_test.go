@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
+	"github.com/unimap/project/internal/config"
 )
 
 func newServerWithICP(enabled bool, baseURL string) *Server {
@@ -176,3 +176,4 @@ func TestHandleICPQuery_RejectsNonGET(t *testing.T) {
 		t.Fatalf("expected 405, got %d (body=%q)", w.Code, w.Body.String())
 	}
 }
+

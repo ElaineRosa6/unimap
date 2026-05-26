@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 // State 熔断器状态
@@ -224,3 +224,4 @@ func (cb *circuitBreaker) GetStats() Stats {
 		LastStateChange:  cb.lastStateChange,
 	}
 }
+

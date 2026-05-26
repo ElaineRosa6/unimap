@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	unierror "github.com/unimap-icp-hunter/project/internal/error"
+	unierror "github.com/unimap/project/internal/error"
 )
 
 // APIKey API密钥结构
@@ -301,3 +301,4 @@ func (m *APIKeyManager) GetKeyStats() map[string]int {
 
 	return stats
 }
+

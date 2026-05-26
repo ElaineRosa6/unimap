@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 // Plugin 插件接口 - 定义了所有插件必须实现的方法
@@ -233,3 +233,4 @@ func (r *PluginRegistry) GetNotifierPlugins() []NotifierPlugin {
 	}
 	return notifiers
 }
+

@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/core/unimap"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/metrics"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/plugin"
-	"github.com/unimap-icp-hunter/project/internal/utils"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/core/unimap"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/metrics"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/plugin"
+	"github.com/unimap/project/internal/utils"
 )
 
 // UnifiedService 统一服务层 - 为 CLI、GUI 和 Web 提供统一接口
@@ -669,3 +669,4 @@ func (a *enginePluginAdapter) IsWebOnly() bool {
 	// 如果引擎插件没有实现IsWebOnly方法，返回默认值
 	return false
 }
+

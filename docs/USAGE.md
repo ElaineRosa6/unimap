@@ -1,6 +1,6 @@
-# UniMap Light 使用指南
+# UniMap 使用指南
 
-本文档提供 UniMap Light 的详细使用说明和示例。
+本文档提供 UniMap 的详细使用说明和示例。
 
 ## 目录
 
@@ -41,8 +41,8 @@ chmod +x unimap-gui-linux-amd64
 
 ```bash
 # 克隆仓库
-git clone https://github.com/ElaineRosa6/unimap-icp-hunter.git
-cd unimap-icp-hunter
+git clone https://github.com/ElaineRosa6/unimap.git
+cd unimap
 
 # 编译
 go build -o unimap-gui ./cmd/unimap-gui
@@ -53,7 +53,7 @@ go build -o unimap-gui ./cmd/unimap-gui
 
 ## 界面概览
 
-UniMap Light 主界面包含以下几个区域：
+UniMap 主界面包含以下几个区域：
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -479,4 +479,5 @@ port IN ["21", "22", "23", "3389", "5900"]
 
 ---
 
-**UniMap Light 使用指南** © 2026 | 持续更新中
+**UniMap 使用指南** © 2026 | 持续更新中
+

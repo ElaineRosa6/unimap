@@ -3,7 +3,7 @@ package web
 import (
 	"net/http"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
+	"github.com/unimap/project/internal/adapter"
 )
 
 // handleSettingsPage renders the unified settings page (GET /settings).
@@ -50,3 +50,4 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+

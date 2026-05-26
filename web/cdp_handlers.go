@@ -17,7 +17,7 @@ import (
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 // handleCDPStatus 检测CDP端口状态
@@ -529,3 +529,4 @@ func (s *Server) updateCDPConfig(baseURL string) {
 		}
 	}
 }
+

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 type mockAdapter struct {
@@ -378,3 +378,4 @@ func BenchmarkOrchestratorGetAdapter(b *testing.B) {
 		o.GetAdapter("fofa")
 	}
 }
+

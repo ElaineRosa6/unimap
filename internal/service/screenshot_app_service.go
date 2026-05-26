@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/metrics"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
+	"github.com/unimap/project/internal/metrics"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 // ScreenshotAppService 封装截图相关应用层流程。
@@ -815,3 +815,4 @@ func (s *ScreenshotAppService) normalizePathToken(raw string) string {
 	}
 	return token
 }
+

@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/requestid"
+	"github.com/unimap/project/internal/requestid"
 )
 
 func TestRequestIDMiddleware_GeneratesID(t *testing.T) {
@@ -57,3 +57,4 @@ func TestRequestIDMiddleware_SetsContext(t *testing.T) {
 		t.Fatalf("context ID %q != header ID %q", capturedID, rec.Header().Get(requestid.HeaderName))
 	}
 }
+

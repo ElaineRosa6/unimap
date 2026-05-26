@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	unierror "github.com/unimap-icp-hunter/project/internal/error"
+	unierror "github.com/unimap/project/internal/error"
 )
 
 // --- APIKeyManager Tests ---
@@ -770,3 +770,4 @@ func TestHasPermission(t *testing.T) {
 		}
 	})
 }
+

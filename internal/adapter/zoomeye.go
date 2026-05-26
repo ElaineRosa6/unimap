@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/utils"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/utils"
 )
 
 // ZoomEyeAdapter ZoomEye引擎适配器
@@ -27,7 +27,7 @@ type ZoomEyeAdapter struct {
 func NewZoomEyeAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *ZoomEyeAdapter {
 	client := resty.New().
 		SetTimeout(timeout).
-		SetHeader("User-Agent", "UniMap-ICP-Hunter/1.0").
+		SetHeader("User-Agent", "unimap/1.0").
 		SetHeader("API-KEY", apiKey)
 
 	return &ZoomEyeAdapter{
@@ -532,3 +532,4 @@ func NewZoomEyeAdapterWebOnly() *ZoomEyeAdapterWebOnly {
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "zoomeye"),
 	}
 }
+

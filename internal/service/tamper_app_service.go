@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/unimap-icp-hunter/project/internal/alerting"
-	"github.com/unimap-icp-hunter/project/internal/metrics"
-	"github.com/unimap-icp-hunter/project/internal/tamper"
+	"github.com/unimap/project/internal/alerting"
+	"github.com/unimap/project/internal/metrics"
+	"github.com/unimap/project/internal/tamper"
 )
 
 // TamperAllocatorFactory 用于注入浏览器 allocator，便于复用 screenshot 的 CDP/本地启动策略。
@@ -412,3 +412,4 @@ func (s *TamperAppService) newDetector(ctx context.Context, mode string, allocat
 
 	return detector, cleanup, nil
 }
+

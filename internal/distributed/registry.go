@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 // Registry stores node liveness and runtime metadata in memory.
@@ -534,3 +534,4 @@ func cloneStringSlice(in []string) []string {
 	}
 	return out
 }
+

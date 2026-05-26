@@ -3,7 +3,7 @@ package web
 import (
 	"sync"
 
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 // BridgeState holds all screenshot bridge-related state.
@@ -20,3 +20,4 @@ type BridgeState struct {
 	LastTaskPullAt   int64 // Unix timestamp of last bridge task pull
 	LastCallbackAt   int64 // Unix timestamp of last callback result received
 }
+

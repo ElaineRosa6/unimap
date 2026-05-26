@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/distributed"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/distributed"
 )
 
 func TestNodeTaskFlow(t *testing.T) {
@@ -220,3 +220,4 @@ func TestHandleNodeTaskDelete_NotFound(t *testing.T) {
 		t.Fatalf("expected 404 for nonexistent task, got %d", w.Code)
 	}
 }
+

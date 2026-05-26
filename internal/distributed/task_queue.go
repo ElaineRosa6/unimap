@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 const (
@@ -791,3 +791,4 @@ func (q *TaskQueue) loadSnapshot() {
 		}
 	}
 }
+

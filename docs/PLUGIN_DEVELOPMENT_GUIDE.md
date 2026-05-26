@@ -32,8 +32,8 @@ import (
     "net/http"
     "time"
 
-    "github.com/unimap-icp-hunter/project/internal/model"
-    "github.com/unimap-icp-hunter/project/internal/plugin"
+    "github.com/unimap/project/internal/model"
+    "github.com/unimap/project/internal/plugin"
 )
 
 // MyEnginePlugin 自定义搜索引擎插件
@@ -370,7 +370,7 @@ import (
     "context"
     "testing"
 
-    "github.com/unimap-icp-hunter/project/internal/model"
+    "github.com/unimap/project/internal/model"
 )
 
 func TestMyEnginePlugin(t *testing.T) {
@@ -429,8 +429,8 @@ package main
 import (
     "context"
     
-    "github.com/unimap-icp-hunter/project/internal/service"
-    "github.com/unimap-icp-hunter/project/plugins/myengine"
+    "github.com/unimap/project/internal/service"
+    "github.com/unimap/project/plugins/myengine"
 )
 
 func main() {
@@ -481,8 +481,8 @@ import (
     "context"
     "net"
     
-    "github.com/unimap-icp-hunter/project/internal/model"
-    "github.com/unimap-icp-hunter/project/internal/plugin"
+    "github.com/unimap/project/internal/model"
+    "github.com/unimap/project/internal/plugin"
 )
 
 type GeoIPProcessor struct {
@@ -519,8 +519,8 @@ import (
     "encoding/csv"
     "os"
     
-    "github.com/unimap-icp-hunter/project/internal/model"
-    "github.com/unimap-icp-hunter/project/internal/plugin"
+    "github.com/unimap/project/internal/model"
+    "github.com/unimap/project/internal/plugin"
 )
 
 type CSVExporter struct{}
@@ -728,9 +728,10 @@ asset.Extra["custom_field"] = value
 
 - 查看 [PLUGIN_ARCHITECTURE.md](PLUGIN_ARCHITECTURE.md)
 - 查看示例代码 `examples/`
-- 提交 Issue: https://github.com/ElaineRosa6/unimap-icp-hunter/issues
+- 提交 Issue: https://github.com/ElaineRosa6/unimap/issues
 
 ---
 
 **版本**: 1.0.0  
 **最后更新**: 2026-02-04
+

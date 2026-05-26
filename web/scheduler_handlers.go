@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/scheduler"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/scheduler"
 )
 
 const maxPayloadKeys = 50
@@ -423,3 +423,4 @@ func (s *Server) handleTaskHistory(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, history)
 }
+

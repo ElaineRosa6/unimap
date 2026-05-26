@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 // ============================================================
@@ -349,3 +349,4 @@ func TestVerifyEngineSession_UnknownEngine(t *testing.T) {
 	}
 	_ = hint // hint varies by implementation
 }
+

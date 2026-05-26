@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/proxypool"
-	"github.com/unimap-icp-hunter/project/internal/utils/workerpool"
+	"github.com/unimap/project/internal/proxypool"
+	"github.com/unimap/project/internal/utils/workerpool"
 )
 
 var defaultScanPorts = []int{80, 81, 443, 8000, 8080, 8443, 9000}
@@ -449,3 +449,4 @@ func isLikelyCDNIP(ipText string) bool {
 	}
 	return false
 }
+

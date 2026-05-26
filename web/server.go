@@ -17,21 +17,21 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/alerting"
-	"github.com/unimap-icp-hunter/project/internal/auth"
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/distributed"
-	icpdb "github.com/unimap-icp-hunter/project/internal/icp/database"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/metrics"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/notify"
-	"github.com/unimap-icp-hunter/project/internal/proxypool"
-	"github.com/unimap-icp-hunter/project/internal/requestid"
-	"github.com/unimap-icp-hunter/project/internal/scheduler"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
-	"github.com/unimap-icp-hunter/project/internal/service"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/alerting"
+	"github.com/unimap/project/internal/auth"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/distributed"
+	icpdb "github.com/unimap/project/internal/icp/database"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/metrics"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/notify"
+	"github.com/unimap/project/internal/proxypool"
+	"github.com/unimap/project/internal/requestid"
+	"github.com/unimap/project/internal/scheduler"
+	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/service"
 )
 
 // 查询状态
@@ -1085,3 +1085,4 @@ func maskAPIKey(apiKey string) string {
 	}
 	return apiKey[:4] + "****" + apiKey[len(apiKey)-4:]
 }
+

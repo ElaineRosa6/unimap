@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/metrics"
+	"github.com/unimap/project/internal/metrics"
 )
 
 // RateLimiter 滑动窗口限流器
@@ -242,3 +242,4 @@ func SetRateLimitConfig(rate int, window time.Duration) {
 func SetRateLimitEnabled(enabled bool) {
 	rateLimitEnabled.Store(enabled)
 }
+

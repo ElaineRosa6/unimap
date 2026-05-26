@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 // MemoryStats 内存统计信息
@@ -238,3 +238,4 @@ func (m *MemoryMonitor) GetMemoryGrowthRate() float64 {
 	memDiff := float64(last.Alloc - first.Alloc)
 	return memDiff / timeDiff
 }
+

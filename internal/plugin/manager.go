@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
 )
 
 // PluginManager 插件管理器 - 管理插件的加载、启动、停止和健康检查
@@ -284,3 +284,4 @@ func (p *ProcessorPipeline) RemoveProcessor(name string) {
 func (p *ProcessorPipeline) GetProcessors() []ProcessorPlugin {
 	return p.processors
 }
+

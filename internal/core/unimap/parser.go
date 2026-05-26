@@ -5,7 +5,7 @@ import (
 	"strings"
 	"text/scanner"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 // UQLParser UQL查询语言解析器
@@ -434,3 +434,4 @@ func (p *UQLParser) Simplify(query string) string {
 	query = strings.ReplaceAll(query, "\n", " ")
 	return strings.TrimSpace(query)
 }
+

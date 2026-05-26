@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
+	"github.com/unimap/project/internal/config"
 )
 
 func TestIsNodeAuthRequired_NilServer(t *testing.T) {
@@ -275,3 +275,4 @@ func TestRequireNodeOrAdminToken_NodePasses(t *testing.T) {
 		t.Fatal("expected true for valid node token")
 	}
 }
+

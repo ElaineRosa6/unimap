@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/utils"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/utils"
 )
 
 func main() {
@@ -139,3 +139,4 @@ func testBatchOperations(c utils.QueryCache, name string, batchSize, batches int
 	fmt.Printf("   Throughput: %.2f ops/sec\n", throughput)
 	fmt.Printf("   Average Latency: %v\n", totalTime/time.Duration(totalOperations))
 }
+

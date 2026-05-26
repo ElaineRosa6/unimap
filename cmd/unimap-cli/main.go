@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/appversion"
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/exporter"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/service"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/appversion"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/exporter"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/service"
 )
 
 func main() {
@@ -284,3 +284,4 @@ func saveResultsCSV(assets []model.UnifiedAsset, path string) error {
 	}
 	return nil
 }
+

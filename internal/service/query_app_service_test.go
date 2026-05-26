@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 type stubBrowserRouter struct {
@@ -106,3 +106,4 @@ func TestRunBrowserQueryAsync_CollectsStructuredAssets(t *testing.T) {
 		t.Fatalf("unexpected asset: %#v", outcome.CollectedResults[0].Assets[0])
 	}
 }
+

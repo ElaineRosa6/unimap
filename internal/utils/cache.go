@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
 )
 
 // QueryCache 查询缓存接口
@@ -736,4 +736,5 @@ func stringsEqualFold(a, b string) bool {
 	}
 	return true
 }
+
 

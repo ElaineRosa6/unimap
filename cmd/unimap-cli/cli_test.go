@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/model"
 )
 
 func TestSplitCSVText_Empty(t *testing.T) {
@@ -366,3 +366,4 @@ func TestWriteJSONFile_Array(t *testing.T) {
 		t.Fatalf("expected 3 items, got %d", len(got))
 	}
 }
+

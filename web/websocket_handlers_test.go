@@ -8,9 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/service"
+	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/service"
 )
 
 func TestHandleWebSocket_ValidationFailure_Returns401(t *testing.T) {
@@ -568,3 +568,4 @@ func TestMaskAPIKey(t *testing.T) {
 		})
 	}
 }
+

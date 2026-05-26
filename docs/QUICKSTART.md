@@ -58,9 +58,9 @@ go run ./cmd/unimap-cli -q 'country="CN" && port="80"' -e fofa,hunter -l 100
 ### 3.3 导出结果
 
 ```bash
-go run ./cmd/unimap-cli -q 'title="login"' -e fofa -o result.csv
-go run ./cmd/unimap-cli -q 'title="login"' -e fofa -o result.json
-go run ./cmd/unimap-cli -q 'title="login"' -e fofa -o result.xlsx
+go run ./cmd/unimap-cli -q 'title="login"' -e fofa,hunter,quake -o result.csv
+go run ./cmd/unimap-cli -q 'title="login"' -e fofa,hunter,quake -o result.json
+go run ./cmd/unimap-cli -q 'title="login"' -e fofa,hunter,quake -o result.xlsx
 ```
 
 ## 4. 启动 GUI（可选）

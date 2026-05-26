@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/natefinch/lumberjack"
-	unierror "github.com/unimap-icp-hunter/project/internal/error"
-	"github.com/unimap-icp-hunter/project/internal/requestid"
+	unierror "github.com/unimap/project/internal/error"
+	"github.com/unimap/project/internal/requestid"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -582,3 +582,4 @@ func asyncLogWriter() {
 		}
 	}
 }
+

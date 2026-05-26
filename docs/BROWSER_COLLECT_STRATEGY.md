@@ -126,3 +126,4 @@
 | `open` | 打开页面，不截图、不采集 | 无 |
 | `collect` | 打开页面 → 等待加载 → 提取 DOM → 回传 | `structured_collected_data` |
 | `screenshot` / 无 action | 打开页面 → 等待加载 → 截图 | `image_data` + `image_path` |
+

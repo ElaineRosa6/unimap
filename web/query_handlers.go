@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/service"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/service"
 )
 
 func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, action string, queryID string, progress func(done, total int, engine string, err error)) <-chan browserQueryOutcome {
@@ -456,3 +456,4 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{"success": "password updated"})
 }
+

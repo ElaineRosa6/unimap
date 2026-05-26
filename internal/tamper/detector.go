@@ -20,10 +20,10 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/chromedp/chromedp"
-	"github.com/unimap-icp-hunter/project/internal/alerting"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/utils"
-	"github.com/unimap-icp-hunter/project/internal/utils/workerpool"
+	"github.com/unimap/project/internal/alerting"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/utils"
+	"github.com/unimap/project/internal/utils/workerpool"
 )
 
 const (
@@ -1792,3 +1792,4 @@ func (s *HashStorage) DeleteCheckRecords(url string) error {
 	recordsDir := filepath.Join(s.baseDir, "records", sanitizeFilenameForStorage(url))
 	return os.RemoveAll(recordsDir)
 }
+

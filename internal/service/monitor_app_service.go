@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/proxypool"
-	"github.com/unimap-icp-hunter/project/internal/utils/workerpool"
+	"github.com/unimap/project/internal/proxypool"
+	"github.com/unimap/project/internal/utils/workerpool"
 )
 
 // URLReachabilityResult 单个 URL 可达性结果。
@@ -308,3 +308,4 @@ func buildReachabilityHTTPClient(proxyAddr string) (*http.Client, error) {
 
 	return &http.Client{Timeout: 15 * time.Second, Transport: transport}, nil
 }
+

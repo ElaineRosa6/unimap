@@ -36,3 +36,4 @@ This will check:
 
 ## Code Updates
 I have updated `internal/adapter/zoomeye.go` to provide a more descriptive error message when a 402 occurs, suggesting account verification.
+

@@ -3,7 +3,7 @@ package web
 import (
 	"net/http"
 
-	"github.com/unimap-icp-hunter/project/internal/requestid"
+	"github.com/unimap/project/internal/requestid"
 )
 
 func requestIDMiddleware(next http.Handler) http.Handler {
@@ -18,3 +18,4 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+

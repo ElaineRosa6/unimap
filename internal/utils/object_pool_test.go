@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 func TestNewAssetPool(t *testing.T) {

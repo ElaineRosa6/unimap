@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
+	"github.com/unimap/project/internal/config"
 )
 
 // ============================================================
@@ -278,3 +278,4 @@ func TestAllowedOriginsFromConfig_TrimsWhitespace(t *testing.T) {
 		t.Fatalf("expected 'https://myapp.com', got %q", got[0])
 	}
 }
+

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 // NotifyGlobalCfg 全局通知配置
@@ -122,3 +122,4 @@ func (r *Registry) Reload(chanCfgs []ChannelConfig) {
 		r.channels[cfg.ID] = ch
 	}
 }
+

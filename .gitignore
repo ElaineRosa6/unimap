@@ -73,3 +73,17 @@ internal/backup/backups/*.tar.gz
 # Node.js
 node_modules/
 package-lock.json
+
+# Project internal audit, logs, and development reports (Local Only)
+/docs_archive/
+/docs/test_reports/
+/docs/API_KEYS.md
+/docs/AUDIT_REPORT_*.md
+/docs/CODE_REVIEW_REPORT_*.md
+/docs/DEEP_AUDIT_*.md
+/docs/DEEP_REVIEW_*.md
+/docs/FIX_REPORT_*.md
+/docs/FIX_VERIFICATION_AUDIT_*.md
+/docs/OPTIMIZATION_REMEDIATION_PLAN_*.md
+/docs/PLAN_*.md
+/docs/REVIEW_NOTIFY_FOFA_*.md

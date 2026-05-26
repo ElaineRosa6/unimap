@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/metrics"
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
-	"github.com/unimap-icp-hunter/project/internal/service"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/metrics"
+	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/service"
 )
 
 func (s *Server) resolveScreenshotBaseDir() string {
@@ -792,3 +792,4 @@ func (s *Server) handleSetScreenshotMode(w http.ResponseWriter, r *http.Request)
 		"router_mode": routerMode,
 	})
 }
+

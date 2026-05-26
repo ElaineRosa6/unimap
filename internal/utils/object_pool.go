@@ -3,7 +3,7 @@ package utils
 import (
 	"sync"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 // AssetPool 统一资产对象池
@@ -165,3 +165,4 @@ func (p *InterfaceMapPool) Put(m map[string]interface{}) {
 		p.pool.Put(m)
 	}
 }
+

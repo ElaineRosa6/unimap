@@ -3,7 +3,7 @@ package screenshot
 import (
 	"context"
 
-	"github.com/unimap-icp-hunter/project/internal/model"
+	"github.com/unimap/project/internal/model"
 )
 
 // CollectResult holds structured data extracted from a search engine result page.
@@ -33,3 +33,4 @@ type Provider interface {
 	// structured data from the page. Returns collected results.
 	CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error)
 }
+

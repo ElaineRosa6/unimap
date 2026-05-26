@@ -441,8 +441,8 @@ func TestAnalyzeCoverage(t *testing.T) {
 
 	t.Run("parses coverage file", func(t *testing.T) {
 		content := `mode: atomic
-github.com/unimap-icp-hunter/project/internal/sample/sample.go:3.13,5.2 1 1
-github.com/unimap-icp-hunter/project/internal/sample/sample.go:7.13,9.2 1 0
+github.com/unimap/project/internal/sample/sample.go:3.13,5.2 1 1
+github.com/unimap/project/internal/sample/sample.go:7.13,9.2 1 0
 `
 		if err := os.WriteFile(coverageFile, []byte(content), 0644); err != nil {
 			t.Fatalf("failed to write coverage file: %v", err)
@@ -464,3 +464,4 @@ github.com/unimap-icp-hunter/project/internal/sample/sample.go:7.13,9.2 1 0
 		}
 	})
 }
+

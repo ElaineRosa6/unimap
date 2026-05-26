@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 	"gopkg.in/yaml.v3"
 )
 
@@ -273,3 +273,4 @@ func (h *HotUpdateManager) GetCurrentVersion() int {
 	defer h.mutex.RUnlock()
 	return len(h.configHistory)
 }
+

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/screenshot"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 type bridgeMockClient struct {
@@ -142,3 +142,4 @@ func (m *bridgeMockClient) removeFromOrderLocked(requestID string) {
 		}
 	}
 }
+

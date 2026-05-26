@@ -1,4 +1,4 @@
-module github.com/unimap-icp-hunter/project
+module github.com/unimap/project
 
 go 1.26
 
@@ -73,3 +73,4 @@ require (
 	google.golang.org/protobuf v1.36.8 // indirect
 	honnef.co/go/js/dom v0.0.0-20210725211120-f030747120f2 // indirect
 )
+

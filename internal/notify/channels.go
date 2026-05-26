@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/utils/urlguard"
+	"github.com/unimap/project/internal/utils/urlguard"
 )
 
 // NotifyChannel 通知渠道接口
@@ -147,3 +147,4 @@ func (c *GenericWebhookChannel) Send(ctx context.Context, n TaskNotification) er
 	}
 	return nil
 }
+

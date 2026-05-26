@@ -17,9 +17,9 @@ import (
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
-	"github.com/unimap-icp-hunter/project/internal/logger"
-	"github.com/unimap-icp-hunter/project/internal/model"
-	"github.com/unimap-icp-hunter/project/internal/utils"
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/utils"
 )
 
 // ScreenshotType 截图类型
@@ -1185,3 +1185,4 @@ func safeJoinPath(baseDir string, elems []string) (string, error) {
 
 	return result, nil
 }
+

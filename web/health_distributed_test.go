@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/unimap-icp-hunter/project/internal/config"
-	"github.com/unimap-icp-hunter/project/internal/distributed"
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/distributed"
 )
 
 func TestIsDistributedEnabled_NilServer(t *testing.T) {
@@ -141,3 +141,4 @@ func TestHandleMetrics_GetMethod(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 }
+

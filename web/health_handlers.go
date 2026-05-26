@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/appversion"
+	"github.com/unimap/project/internal/appversion"
 )
 
 // handleHealthReady 就绪检查：依赖连接正常
@@ -80,3 +80,4 @@ func livenessCheck(ctx context.Context) bool {
 		return true
 	}
 }
+

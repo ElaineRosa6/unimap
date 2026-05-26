@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/unimap-icp-hunter/project/internal/adapter"
+	"github.com/unimap/project/internal/adapter"
 )
 
 // ICPResultRepository defines operations for persisting and querying ICP results.
@@ -234,3 +234,4 @@ func scanResults(rows *sql.Rows) ([]*ICPResultRow, error) {
 	}
 	return results, rows.Err()
 }
+

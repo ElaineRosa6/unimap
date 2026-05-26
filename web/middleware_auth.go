@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/unimap-icp-hunter/project/internal/logger"
+	"github.com/unimap/project/internal/logger"
 )
 
 // adminAuthMiddleware returns a middleware that requires authentication
@@ -132,3 +132,4 @@ func (s *Server) adminToken() string {
 	logger.Warnf("Admin token was not configured; auto-generated a random token: %s (save this to config.yaml)", maskTokenForLog(token))
 	return token
 }
+
