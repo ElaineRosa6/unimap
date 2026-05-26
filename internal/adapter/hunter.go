@@ -375,7 +375,7 @@ func (h *HunterAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset
 			asset.URL = u.String()
 		}
 
-		if asset.IP != "" {
+		if asset.IP != "" || asset.Host != "" {
 			assets = append(assets, *asset)
 		}
 	}

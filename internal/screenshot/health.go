@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"github.com/unimap-icp-hunter/project/internal/logger"
 )
 
 // HealthChecker probes a screenshot mode for liveness.
@@ -41,6 +43,7 @@ func (c *CDPHealthChecker) Check(ctx context.Context) (bool, error) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		logger.Debugf("CDP health check failed for %s: %v", c.RemoteDebugURL, err)
 		return false, nil
 	}
 	defer resp.Body.Close()

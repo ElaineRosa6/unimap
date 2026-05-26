@@ -846,6 +846,11 @@ func (s *Server) bindAddr() string {
 }
 
 func (s *Server) cleanupStaleQueries() {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf("panic in cleanupStaleQueries: %v", r)
+		}
+	}()
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
 
@@ -868,6 +873,11 @@ func (s *Server) cleanupStaleQueries() {
 }
 
 func (s *Server) cleanupStaleBridgeTokens() {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf("panic in cleanupStaleBridgeTokens: %v", r)
+		}
+	}()
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 

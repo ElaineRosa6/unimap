@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 
+	"github.com/unimap-icp-hunter/project/internal/logger"
 	"github.com/unimap-icp-hunter/project/internal/metrics"
 	"github.com/unimap-icp-hunter/project/internal/notify"
 	"github.com/unimap-icp-hunter/project/internal/utils/urlguard"
@@ -322,6 +323,7 @@ type Scheduler struct {
 	notifyCfgProvider func() *notify.NotifyGlobalCfg
 	notifyWg          sync.WaitGroup
 	notifyTimeout     time.Duration
+	stopping          bool
 }
 
 // NewScheduler creates a new Scheduler. If storePath is non-empty, tasks are
@@ -410,13 +412,11 @@ func (s *Scheduler) saveLocked() error {
 		cp := *t
 		if cp.Payload != nil {
 			raw, err := json.Marshal(t.Payload)
-			if err == nil {
-				_ = json.Unmarshal(raw, &cp.Payload)
-			} else {
+			if err != nil {
+				log.Printf("[scheduler] failed to deep-copy payload for task %s: %v", t.ID, err)
 				cp.Payload = make(map[string]interface{})
-				for k, v := range t.Payload {
-					cp.Payload[k] = v
-				}
+			} else {
+				_ = json.Unmarshal(raw, &cp.Payload)
 			}
 		}
 		if cp.LastRunAt != nil {
@@ -632,7 +632,14 @@ func (s *Scheduler) RunTaskNow(id string) error {
 	}
 	s.mu.RUnlock()
 
-	go s.executeTask(&taskCopy, handler, timeoutSec, retries)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf("scheduler panic in RunTaskNow (%s): %v", taskCopy.ID, r)
+			}
+		}()
+		s.executeTask(&taskCopy, handler, timeoutSec, retries)
+	}()
 	return nil
 }
 
@@ -709,27 +716,30 @@ func ValidateWebhookURLPublic(webhookURL string) error {
 
 // hasCyclicDependency checks for cyclic dependencies in a task's dependency chain.
 func (s *Scheduler) hasCyclicDependencyLocked(taskID string, dependsOn []string) bool {
-	visited := make(map[string]bool)
+	visiting := make(map[string]bool) // nodes in current path
+	visited := make(map[string]bool)  // fully explored nodes
 
 	var dfs func(string) bool
 	dfs = func(current string) bool {
-		if visited[current] {
-			return current == taskID
+		if visiting[current] {
+			return true // cycle: back-edge to node in current path
 		}
-		visited[current] = true
+		if visited[current] {
+			return false // already fully explored, no cycle from here
+		}
+		visiting[current] = true
 
 		task, ok := s.tasks[current]
-		if !ok {
-			return false
-		}
-
-		for _, depID := range task.DependsOn {
-			if dfs(depID) {
-				return true
+		if ok {
+			for _, depID := range task.DependsOn {
+				if dfs(depID) {
+					return true
+				}
 			}
 		}
 
-		delete(visited, current)
+		visiting[current] = false
+		visited[current] = true
 		return false
 	}
 
@@ -953,7 +963,9 @@ func (s *Scheduler) isWithinExecutionWindow(window *ExecutionWindow) bool {
 	now := time.Now()
 	if window.Timezone != "" {
 		loc, err := time.LoadLocation(window.Timezone)
-		if err == nil {
+		if err != nil {
+			log.Printf("[scheduler] invalid timezone %q, using local time: %v", window.Timezone, err)
+		} else {
 			now = now.In(loc)
 		}
 	}
@@ -1065,9 +1077,20 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 	for _, chID := range channelIDs {
 		// 任务级 inline webhook 特殊处理
 		if chID == "__task_inline_webhook__" && task.Notifications.WebhookURL != "" {
+			s.mu.RLock()
+			stopping := s.stopped || s.stopping
+			s.mu.RUnlock()
+			if stopping {
+				continue
+			}
 			s.notifyWg.Add(1)
 			go func(url string) {
-				defer s.notifyWg.Done()
+				defer func() {
+					s.notifyWg.Done()
+					if r := recover(); r != nil {
+						logger.Errorf("scheduler panic in inline webhook notification: %v", r)
+					}
+				}()
 				ch, err := notify.NewGenericWebhookChannel("__inline__", url, nil, true, false)
 				if err != nil {
 					log.Printf("[scheduler] inline webhook URL blocked: %v", err)
@@ -1097,9 +1120,20 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 			continue
 		}
 
+		s.mu.RLock()
+		stopping := s.stopped || s.stopping
+		s.mu.RUnlock()
+		if stopping {
+			continue
+		}
 		s.notifyWg.Add(1)
 		go func(ch notify.NotifyChannel) {
-			defer s.notifyWg.Done()
+			defer func() {
+				s.notifyWg.Done()
+				if r := recover(); r != nil {
+					logger.Errorf("scheduler panic in notify channel %s: %v", ch.ID(), r)
+				}
+			}()
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			if err := ch.Send(ctx, msg); err != nil {
@@ -1143,6 +1177,11 @@ func safeWebhookClient() *http.Client {
 
 func (s *Scheduler) sendWebhookNotification(webhookURL string, payload map[string]interface{}) {
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf("scheduler panic in sendWebhookNotification: %v", r)
+			}
+		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
@@ -1185,7 +1224,14 @@ func (s *Scheduler) getNextRunTime(taskID string) time.Time {
 // saveAsync persists data to disk in a background goroutine.
 func (s *Scheduler) saveAsync() {
 	go func() {
-		s.Save()
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf("scheduler panic in saveAsync: %v", r)
+			}
+		}()
+		if err := s.Save(); err != nil {
+			log.Printf("[scheduler] saveAsync failed: %v", err)
+		}
 	}()
 }
 
@@ -1196,6 +1242,7 @@ func (s *Scheduler) Stop() {
 		s.mu.Unlock()
 		return
 	}
+	s.stopping = true
 	s.stopped = true
 	close(s.stopCh)
 	s.mu.Unlock()

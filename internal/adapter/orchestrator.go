@@ -551,14 +551,19 @@ func (t *SearchTask) Execute() error {
 		return nil
 	}
 	normalized, err := adapter.Normalize(result)
-	if err != nil {
+	if err != nil || len(normalized) == 0 {
+		// Don't cache error/empty results
 		logger.CtxWarnf(t.ctx, "failed to normalize results from %s: %v", t.query.EngineName, err)
-		// 标准化失败，但仍返回原始结果
-	} else if len(normalized) > 0 {
-		// 使用按引擎的缓存TTL
-		cacheTTL, _ := t.orchestrator.GetEngineCacheTTL(t.query.EngineName)
-		t.orchestrator.cache.Set(cacheKey, normalized, cacheTTL)
+		select {
+		case t.resultChan <- result:
+		default:
+			logger.CtxErrorf(t.ctx, "failed to send result: channel full")
+		}
+		return nil
 	}
+	// Only cache when normalized has data
+	cacheTTL, _ := t.orchestrator.GetEngineCacheTTL(t.query.EngineName)
+	t.orchestrator.cache.Set(cacheKey, normalized, cacheTTL)
 
 	metrics.IncEngineQuery(t.query.EngineName, "success")
 	metrics.ObserveEngineQueryDuration(t.query.EngineName, time.Since(startTime))
@@ -692,6 +697,12 @@ func (t *PaginatedSearchTask) Execute() error {
 	for page := 1; page <= t.maxPages; page++ {
 		if t.ctx.Err() != nil {
 			return nil
+		}
+
+		// Check circuit breaker before each page fetch (after page 1)
+		if page > 1 && t.orchestrator.IsEngineCircuited(t.query.EngineName) {
+			logger.Warnf("circuit breaker opened, stopping pagination for %s at page %d", t.query.EngineName, page)
+			break
 		}
 
 		// 生成缓存键

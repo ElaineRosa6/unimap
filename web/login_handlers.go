@@ -24,7 +24,7 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	// Check X-Admin-Token header too (API clients)
 	token := r.Header.Get("X-Admin-Token")
 	if token != "" && s.adminToken() != "" {
-		if strings.Compare(token, s.adminToken()) == 0 {
+		if secureCompare(token, s.adminToken()) {
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}

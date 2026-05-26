@@ -53,18 +53,7 @@ func (m *ResultMerger) Merge(assets []model.UnifiedAsset) *model.MergeResult {
 	assetMap := make(map[string]*model.UnifiedAsset)
 	duplicates := 0
 
-	// 使用对象池获取sourceStats映射
-	sourceStats := m.interfaceMapPool.Get()
-	defer m.interfaceMapPool.Put(sourceStats)
-
 	for i, asset := range assets {
-		// 增加来源统计
-		if count, exists := sourceStats[asset.Source].(int); exists {
-			sourceStats[asset.Source] = count + 1
-		} else {
-			sourceStats[asset.Source] = 1
-		}
-
 		// 使用预生成的键
 		key := keys[i]
 
@@ -86,20 +75,6 @@ func (m *ResultMerger) Merge(assets []model.UnifiedAsset) *model.MergeResult {
 		Assets:     assetMap,
 		Total:      len(assetMap),
 		Duplicates: duplicates,
-	}
-
-	// 添加来源统计信息到Extra字段
-	// 注意：需要复制sourceStats，避免所有资产指向同一个map（该map会被回收）
-	for _, asset := range assetMap {
-		if asset.Extra == nil {
-			asset.Extra = m.interfaceMapPool.Get()
-		}
-		// 复制sourceStats到每个资产的Extra中
-		statsCopy := make(map[string]interface{}, len(sourceStats))
-		for k, v := range sourceStats {
-			statsCopy[k] = v
-		}
-		asset.Extra["source_stats"] = statsCopy
 	}
 
 	return mergedResult

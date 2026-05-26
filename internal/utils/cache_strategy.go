@@ -55,7 +55,7 @@ type DynamicCacheStrategy struct {
 	maxDuration   time.Duration
 	queryStats    map[string]queryStat
 	engineStats   map[string]engineStat
-	mutex         chan struct{}
+	mu            sync.Mutex
 	totalQueries  int
 	cacheHits     int
 	cacheMisses   int
@@ -128,7 +128,6 @@ func NewDynamicCacheStrategy(baseDuration, minDuration, maxDuration time.Duratio
 		queryFrequencyStats:    make(map[string]frequencyStat),
 		enginePerformanceStats: make(map[string]performanceStat),
 		dataVolatilityStats:    make(map[string]volatilityStat),
-		mutex:                  make(chan struct{}, 1),
 		lastUpdate:             time.Now(),
 	}
 }
@@ -458,16 +457,34 @@ func (s *DynamicCacheStrategy) cleanupOldStats() {
 
 	// 清理引擎性能统计（保留所有引擎的统计）
 	// 清理数据波动性统计（保留所有引擎的统计）
+
+	// Cap each map to prevent unbounded growth
+	const maxEntries = 10000
+	capMap(s.queryStats, maxEntries)
+	capMap(s.queryFrequencyStats, maxEntries)
+	capMap(s.enginePerformanceStats, maxEntries)
+	capMap(s.dataVolatilityStats, maxEntries)
+	capMap(s.engineStats, maxEntries)
+}
+
+// capMap deletes arbitrary entries from a map until it fits within maxEntries.
+func capMap[K comparable, V any](m map[K]V, maxEntries int) {
+	for len(m) > maxEntries {
+		for k := range m {
+			delete(m, k)
+			break
+		}
+	}
 }
 
 // lock 加锁
 func (s *DynamicCacheStrategy) lock() {
-	s.mutex <- struct{}{}
+	s.mu.Lock()
 }
 
 // unlock 解锁
 func (s *DynamicCacheStrategy) unlock() {
-	<-s.mutex
+	s.mu.Unlock()
 }
 
 // DefaultCacheStrategy 默认缓存策略

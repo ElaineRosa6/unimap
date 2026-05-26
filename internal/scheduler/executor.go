@@ -489,7 +489,13 @@ func (r *ExportRunner) Execute(ctx context.Context, payload map[string]interface
 	}
 
 	// Export
-	exp := exporter.NewJSONExporter()
+	var exp exporter.Exporter
+	switch format {
+	case "excel", "xlsx":
+		exp = exporter.NewExcelExporter()
+	default:
+		exp = exporter.NewJSONExporter()
+	}
 	if err := exp.Export(resp.Assets, outPath); err != nil {
 		return "", fmt.Errorf("export failed: %w", err)
 	}
@@ -1003,22 +1009,35 @@ func (r *AlertSilenceRunner) Execute(ctx context.Context, payload map[string]int
 	return fmt.Sprintf("cleaned up alert records older than %d days", maxAgeDays), nil
 }
 
-// --- CacheWarmupRunner (ST-20) ---
+// --- URLHealthChecker (ST-20) ---
 
-// CacheWarmupRunner executes scheduled cache warmup.
-type CacheWarmupRunner struct {
-	// No direct dependency — warms up by triggering common queries
-	// that will populate the cache for subsequent requests.
+// URLHealthChecker executes scheduled URL reachability health checks.
+// Despite the legacy task type name "cache_warmup", this runner performs
+// HTTP GET requests against configured URLs to verify they are reachable —
+// effectively acting as a URL health checker rather than warming the
+// application query cache.
+type URLHealthChecker struct {
+	// No direct dependency — probes configured URLs via HTTP GET.
 }
 
-// NewCacheWarmupRunner creates a CacheWarmupRunner.
+// NewURLHealthChecker creates a URLHealthChecker.
+func NewURLHealthChecker() *URLHealthChecker {
+	return &URLHealthChecker{}
+}
+
+// CacheWarmupRunner is a deprecated alias for URLHealthChecker.
+// Renamed because the runner performs HTTP GET reachability checks,
+// not application cache warming.
+type CacheWarmupRunner = URLHealthChecker
+
+// NewCacheWarmupRunner creates a CacheWarmupRunner (alias for NewURLHealthChecker).
 func NewCacheWarmupRunner() *CacheWarmupRunner {
-	return &CacheWarmupRunner{}
+	return NewURLHealthChecker()
 }
 
-func (r *CacheWarmupRunner) Type() TaskType { return TaskCacheWarmup }
+func (r *URLHealthChecker) Type() TaskType { return TaskCacheWarmup }
 
-func (r *CacheWarmupRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *URLHealthChecker) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
 	urls := extractStrings(payload, "warmup_urls", []string{})
 	if len(urls) == 0 {
 		return "no warmup URLs configured", nil
@@ -1200,7 +1219,9 @@ func (r *ICPQueryRunner) persistRun(taskID, keyword, queryType string, page, pag
 	if err != nil {
 		return
 	}
-	_ = r.store.SaveResults(runID, results, time.Now())
+	if err := r.store.SaveResults(runID, results, time.Now()); err != nil {
+		logger.Errorf("ICP: failed to persist results for run %s: %v", runID, err)
+	}
 
 	// Check for备案 changes and alert.
 	if r.alertSender == nil || len(results) == 0 {

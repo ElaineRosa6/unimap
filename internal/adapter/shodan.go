@@ -360,6 +360,10 @@ func (s *ShodanAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset
 
 			asset.Extra = data
 			assets = append(assets, *asset)
+		} else if asset.Host != "" {
+			// Keep hostname-only assets (e.g. CDN-backed sites)
+			asset.Extra = data
+			assets = append(assets, *asset)
 		}
 	}
 

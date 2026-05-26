@@ -737,14 +737,3 @@ func stringsEqualFold(a, b string) bool {
 	return true
 }
 
-// WarmupCache 预热缓存
-func WarmupCache(cache QueryCache, queries []struct {
-	EngineName string
-	Query      string
-	Page       int
-	PageSize   int
-}, duration time.Duration) {
-	// 这里可以实现缓存预热逻辑
-	// 例如，预先执行一些常见的查询并将结果存入缓存
-	// 实际实现需要根据具体的查询逻辑来编写
-}

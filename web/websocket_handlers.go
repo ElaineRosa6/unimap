@@ -233,6 +233,15 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 
 	// 异步执行查询，带有独立的超时上下文
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf("WebSocket query panic for %s: %v", queryID, r)
+				s.broadcastMessage(map[string]interface{}{
+					"type":  "query_error",
+					"error": fmt.Sprintf("internal error: query %s failed", queryID),
+				})
+			}
+		}()
 		// 为查询创建带超时的上下文（默认 60 秒查询超时）
 		if ctx == nil {
 			ctx = context.Background()
@@ -324,6 +333,11 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 
 		// 延迟清理查询状态，允许客户端在一段时间内查询已完成任务的状态
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Errorf("WebSocket query cleanup panic for %s: %v", queryID, r)
+				}
+			}()
 			select {
 			case <-time.After(5 * time.Minute):
 				s.queryMutex.Lock()

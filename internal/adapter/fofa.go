@@ -114,6 +114,14 @@ func (f *FofaAdapter) translateNode(node *model.UQLNode) string {
 	return ""
 }
 
+// safeRowField safely extracts a field from a row by index, returning nil if out of bounds.
+func safeRowField(row []interface{}, idx int) interface{} {
+	if idx < len(row) {
+		return row[idx]
+	}
+	return nil
+}
+
 // mapField 映射统一字段到FOFA字段
 func (f *FofaAdapter) mapField(field string) string {
 	mapping := map[string]string{
@@ -229,25 +237,25 @@ func (f *FofaAdapter) Search(query string, page, pageSize int) (*model.EngineRes
 		rawData := []interface{}{}
 		for _, row := range result.Results {
 			// New fields: ip,port,protocol,domain,title,server,header,country,region,city,asn,org,isp,status_code
-			// Total 14 fields
+			// Total 14 fields expected, but parse what we can if fewer are available
 			if len(row) < 14 {
-				continue
+				logger.Warnf("fofa: unexpected row length %d (expected >= 14), parsing with available fields", len(row))
 			}
 			data := map[string]interface{}{
-				"ip":          row[0],
-				"port":        row[1],
-				"protocol":    row[2],
-				"domain":      row[3],
-				"title":       row[4],
-				"server":      row[5],
-				"header":      row[6],
-				"country":     row[7],
-				"region":      row[8],
-				"city":        row[9],
-				"asn":         row[10],
-				"org":         row[11],
-				"isp":         row[12],
-				"status_code": row[13],
+				"ip":          safeRowField(row, 0),
+				"port":        safeRowField(row, 1),
+				"protocol":    safeRowField(row, 2),
+				"domain":      safeRowField(row, 3),
+				"title":       safeRowField(row, 4),
+				"server":      safeRowField(row, 5),
+				"header":      safeRowField(row, 6),
+				"country":     safeRowField(row, 7),
+				"region":      safeRowField(row, 8),
+				"city":        safeRowField(row, 9),
+				"asn":         safeRowField(row, 10),
+				"org":         safeRowField(row, 11),
+				"isp":         safeRowField(row, 12),
+				"status_code": safeRowField(row, 13),
 			}
 			rawData = append(rawData, data)
 		}

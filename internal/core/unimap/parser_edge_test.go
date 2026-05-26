@@ -1,6 +1,7 @@
 package unimap
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/unimap-icp-hunter/project/internal/model"
@@ -206,9 +207,12 @@ func TestExtractConditions(t *testing.T) {
 		t.Fatalf("Parse failed: %v", err)
 	}
 
-	conditions := parser.ExtractConditions(ast)
+	conditions, warnings := parser.ExtractConditions(ast)
 	if len(conditions) != 2 {
 		t.Errorf("expected 2 conditions, got %d", len(conditions))
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected 0 warnings, got %d", len(warnings))
 	}
 }
 
@@ -220,22 +224,64 @@ func TestExtractConditionsIN(t *testing.T) {
 		t.Fatalf("Parse failed: %v", err)
 	}
 
-	conditions := parser.ExtractConditions(ast)
+	conditions, warnings := parser.ExtractConditions(ast)
 	if len(conditions) != 1 {
 		t.Errorf("expected 1 condition, got %d", len(conditions))
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected 0 warnings, got %d", len(warnings))
 	}
 }
 
 func TestExtractConditionsNilAST(t *testing.T) {
 	parser := NewUQLParser()
-	conditions := parser.ExtractConditions(nil)
+	conditions, warnings := parser.ExtractConditions(nil)
 	if len(conditions) != 0 {
 		t.Errorf("expected 0 conditions for nil AST, got %d", len(conditions))
 	}
+	if len(warnings) != 0 {
+		t.Errorf("expected 0 warnings for nil AST, got %d", len(warnings))
+	}
 
-	conditions = parser.ExtractConditions(&model.UQLAST{Root: nil})
+	conditions, warnings = parser.ExtractConditions(&model.UQLAST{Root: nil})
 	if len(conditions) != 0 {
 		t.Errorf("expected 0 conditions for nil root, got %d", len(conditions))
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected 0 warnings for nil root, got %d", len(warnings))
+	}
+}
+
+func TestExtractConditionsDuplicateFields(t *testing.T) {
+	parser := NewUQLParser()
+
+	// Same field used twice: only last value should be kept
+	ast, err := parser.Parse(`port="80" && port="443"`)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	conditions, warnings := parser.ExtractConditions(ast)
+	if len(conditions) != 1 {
+		t.Errorf("expected 1 condition (deduplicated), got %d", len(conditions))
+	}
+	if len(warnings) != 1 {
+		t.Errorf("expected 1 warning for duplicate field, got %d", len(warnings))
+	}
+
+	// Verify the warning mentions the duplicate field
+	if len(warnings) > 0 && !strings.Contains(warnings[0], `duplicate field "port"`) {
+		t.Errorf("warning should mention port, got: %s", warnings[0])
+	}
+
+	// Verify the last value wins
+	if portCond, ok := conditions["port"]; ok {
+		condMap := portCond.(map[string]interface{})
+		if condMap["value"] != "443" {
+			t.Errorf("expected port value to be '443' (last wins), got '%v'", condMap["value"])
+		}
+	} else {
+		t.Error("expected 'port' key in conditions")
 	}
 }
 

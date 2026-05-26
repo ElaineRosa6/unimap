@@ -2,10 +2,13 @@ package distributed
 
 import (
 	"fmt"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/unimap-icp-hunter/project/internal/logger"
 )
 
 // Registry stores node liveness and runtime metadata in memory.
@@ -32,6 +35,9 @@ func NewRegistry(heartbeatTimeout time.Duration) *Registry {
 		failoverStrategy: FailoverStrategyHealthBased, // 默认基于健康状态的故障转移
 	}
 	go r.startBackgroundCleanup()
+	runtime.SetFinalizer(r, func(r *Registry) {
+		r.Stop()
+	})
 	return r
 }
 
@@ -78,6 +84,13 @@ func (r *Registry) cleanupStaleNodes() {
 
 	for nodeID, record := range r.nodes {
 		if !record.Online && now.Sub(record.LastHeartbeatAt) > cutoff {
+			// Release orphaned tasks from stale node before removing record
+			if r.taskQueue != nil {
+				released := r.taskQueue.ReleaseNodeTasks(nodeID)
+				if released > 0 {
+					logger.Infof("registry: released %d orphaned task(s) from stale node %s", released, nodeID)
+				}
+			}
 			delete(r.nodes, nodeID)
 		}
 	}

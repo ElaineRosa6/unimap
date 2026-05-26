@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -108,6 +109,9 @@ func NewTaskQueueWithPath(snapshotPath string) *TaskQueue {
 	}
 	q.loadSnapshot()
 	go q.startBackgroundRecycle()
+	runtime.SetFinalizer(q, func(q *TaskQueue) {
+		q.Stop()
+	})
 	return q
 }
 
@@ -717,6 +721,7 @@ func (q *TaskQueue) saveLocked() {
 
 	dir := filepath.Dir(q.snapshotPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
+		logger.Errorf("task_queue: failed to create snapshot dir %s: %v", dir, err)
 		return
 	}
 
@@ -735,16 +740,18 @@ func (q *TaskQueue) saveLocked() {
 
 	data, err := json.Marshal(s)
 	if err != nil {
+		logger.Errorf("task_queue: failed to marshal snapshot: %v", err)
 		return
 	}
 
 	tmpPath := q.snapshotPath + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		logger.Errorf("task_queue: failed to write snapshot tmp %s: %v", tmpPath, err)
 		return
 	}
 	if err := os.Rename(tmpPath, q.snapshotPath); err != nil {
 		_ = os.Remove(tmpPath)
-		logger.Warnf("failed to rename snapshot: %v", err)
+		logger.Errorf("task_queue: failed to rename snapshot %s: %v", q.snapshotPath, err)
 	}
 }
 
@@ -755,6 +762,10 @@ func (q *TaskQueue) loadSnapshot() {
 	}
 	data, err := os.ReadFile(q.snapshotPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return // first run, no snapshot yet
+		}
+		logger.Errorf("task_queue: failed to load snapshot %s: %v", q.snapshotPath, err)
 		return
 	}
 
@@ -763,6 +774,7 @@ func (q *TaskQueue) loadSnapshot() {
 		Pending []string      `json:"pending"`
 	}
 	if err := json.Unmarshal(data, &s); err != nil {
+		logger.Errorf("task_queue: failed to unmarshal snapshot %s: %v", q.snapshotPath, err)
 		return
 	}
 

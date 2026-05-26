@@ -135,27 +135,66 @@ var (
 
 	// 危险的事件处理器模式
 	dangerousEventPattern = regexp.MustCompile(`(?i)on(?:error|load|mouseover|click|keyup|keydown|submit)\s*=\s*["'][^"']*(?:eval\(|document\.write\(|Function\(|atob\(|btoa\(|unescape\(|decodeURIComponent\(|String\.fromCharCode\(|crypto|miner|coin-hive|coinhive|cryptonight)[^"']*["']`)
+
+	// Pre-compiled word-boundary regexes for keyword matching to avoid false positives
+	maliciousKeywordRes = compileWordBoundaryRegexes(maliciousScriptKeywords)
+	domainKeywordRes    = compileWordBoundaryRegexes(suspiciousDomainKeywords)
+	pathKeywordRes      = compileWordBoundaryRegexes(suspiciousPathKeywords)
 )
+
+// compiledKeyword pairs a human-readable keyword with its regex.
+type compiledKeyword struct {
+	keyword string
+	re      *regexp.Regexp
+}
+
+// compileWordBoundaryRegexes builds word-boundary regexps from keyword list.
+// For keywords ending in word characters (e.g. "crypto"), adds \b after.
+// For keywords ending in non-word chars (e.g. "eval(", "document.write("),
+// the trailing non-word char already acts as a boundary, so no trailing \b is added.
+func compileWordBoundaryRegexes(keywords []string) []compiledKeyword {
+	res := make([]compiledKeyword, 0, len(keywords))
+	for _, kw := range keywords {
+		quoted := regexp.QuoteMeta(kw)
+		// Only add trailing \b if keyword ends with a word character
+		if len(kw) > 0 && isWordChar(kw[len(kw)-1]) {
+			res = append(res, compiledKeyword{
+				keyword: kw,
+				re:      regexp.MustCompile(`(?i)\b` + quoted + `\b`),
+			})
+		} else {
+			res = append(res, compiledKeyword{
+				keyword: kw,
+				re:      regexp.MustCompile(`(?i)\b` + quoted),
+			})
+		}
+	}
+	return res
+}
+
+// isWordChar reports whether b is an ASCII word character [a-zA-Z0-9_].
+func isWordChar(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
+}
 
 func detectMaliciousContent(html string) []string {
 	var flags []string
-	htmlLower := strings.ToLower(html)
 
-	// 检测恶意脚本关键词
-	for _, keyword := range maliciousScriptKeywords {
-		if strings.Contains(htmlLower, strings.ToLower(keyword)) {
-			flags = append(flags, fmt.Sprintf("suspicious_script: %s", keyword))
+	// 检测恶意脚本关键词（使用词边界匹配，避免误报）
+	for _, item := range maliciousKeywordRes {
+		if item.re.MatchString(html) {
+			flags = append(flags, fmt.Sprintf("suspicious_script: %s", item.keyword))
 		}
 	}
 
 	// 检测可疑域名关键词（需要多个关键词同时出现才标记）
 	domainMatches := 0
-	for _, keyword := range suspiciousDomainKeywords {
-		if strings.Contains(htmlLower, strings.ToLower(keyword)) {
+	for _, item := range domainKeywordRes {
+		if item.re.MatchString(html) {
 			domainMatches++
 			// 只有当多个域名关键词同时出现时才标记
 			if domainMatches >= 2 {
-				flags = append(flags, fmt.Sprintf("suspicious_domain_keywords: multiple matches"))
+				flags = append(flags, "suspicious_domain_keywords: multiple matches")
 				break
 			}
 		}
@@ -163,12 +202,12 @@ func detectMaliciousContent(html string) []string {
 
 	// 检测可疑路径关键词（需要多个关键词同时出现才标记）
 	pathMatches := 0
-	for _, keyword := range suspiciousPathKeywords {
-		if strings.Contains(htmlLower, strings.ToLower(keyword)) {
+	for _, item := range pathKeywordRes {
+		if item.re.MatchString(html) {
 			pathMatches++
 			// 只有当多个路径关键词同时出现时才标记
 			if pathMatches >= 2 {
-				flags = append(flags, fmt.Sprintf("suspicious_path_keywords: multiple matches"))
+				flags = append(flags, "suspicious_path_keywords: multiple matches")
 				break
 			}
 		}
@@ -536,7 +575,13 @@ func (d *Detector) ComputeHashFromHTML(url, title, html string) (*PageHashResult
 		Timestamp:  time.Now().Unix(),
 		HTMLLength: len(html),
 		Status:     "success",
-		RawHTML:    html,
+	}
+
+	// Limit RawHTML to first 4096 bytes for diagnostic reference
+	if len(html) > 4096 {
+		result.RawHTML = html[:4096] + "... [truncated]"
+	} else {
+		result.RawHTML = html
 	}
 
 	segmentHashes := d.computeSegmentHashes(doc, html)
@@ -1096,7 +1141,12 @@ func (d *Detector) CheckTampering(ctx context.Context, url string) (*TamperCheck
 						url)
 				}
 			} else {
+				// Changes detected but not considered meaningful tamper — still record the change
 				checkType = "normal_dynamic"
+				if len(changes) > 0 {
+					result.Status = "changed"
+					result.Tampered = true
+				}
 			}
 		}
 	}
