@@ -99,13 +99,28 @@ func (m *Manager) SendAlert(level AlertLevel, alertType AlertType, title, messag
 	}
 
 	m.mutex.Lock()
+	// Cap the alert records to prevent unbounded growth
+	if len(m.alertRecords) > 10000 {
+		oldest := make([]string, 0, len(m.alertRecords)/2)
+		for id, record := range m.alertRecords {
+			if len(m.alertRecords)-len(oldest) <= 5000 {
+				break
+			}
+			if record.Status == AlertStatusResolved || record.Status == AlertStatusSilenced {
+				oldest = append(oldest, id)
+			}
+		}
+		for _, id := range oldest {
+			delete(m.alertRecords, id)
+		}
+	}
 	m.alertRecords[alert.ID] = record
+	// Copy channels under write lock to avoid race between Unlock/RLock gap
+	channels := make([]AlertChannel, len(m.channels))
+	copy(channels, m.channels)
 	m.mutex.Unlock()
 
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-
-	for _, channel := range m.channels {
+	for _, channel := range channels {
 		if !channel.IsEnabled() {
 			continue
 		}

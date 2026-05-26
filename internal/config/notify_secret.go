@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 )
 
@@ -95,7 +96,8 @@ func EncryptNotifySecrets(cfg *Config) {
 		}
 		enc, err := encryptNotifySecret(ch.Secret)
 		if err != nil {
-			continue // keep original on error
+			log.Printf("[notify] failed to encrypt secret for channel %s: %v", ch.ID, err)
+			continue
 		}
 		ch.Secret = enc
 	}

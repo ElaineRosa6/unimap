@@ -245,11 +245,13 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 		}
 
 		// 触发查询后钩子
-		s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", map[string]interface{}{
+		if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", map[string]interface{}{
 			"result_count": len(cachedAssets),
 			"engines":      req.Engines,
 			"cached":       true,
-		})
+		}); err != nil {
+			logger.CtxWarnf(ctx, "post-query hook failed: %v", err)
+		}
 
 		return &QueryResponse{
 			Assets:      cachedAssets,
@@ -291,9 +293,11 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 	if err != nil {
 		// 记录错误但继续处理
 		errors = append(errors, err.Error())
-		s.pluginManager.GetHooks().TriggerHook(plugin.HookQueryError, "query", map[string]interface{}{
+		if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookQueryError, "query", map[string]interface{}{
 			"error": err.Error(),
-		})
+		}); err != nil {
+			logger.CtxWarnf(ctx, "query error hook failed: %v", err)
+		}
 	}
 
 	// 规范化和合并结果
@@ -365,11 +369,13 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 	}
 
 	// 触发查询后钩子
-	s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", map[string]interface{}{
+	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", map[string]interface{}{
 		"result_count": len(allAssets),
 		"engines":      req.Engines,
 		"cached":       false,
-	})
+	}); err != nil {
+		logger.CtxWarnf(ctx, "post-query hook failed: %v", err)
+	}
 
 	return &QueryResponse{
 		Assets:      allAssets,
@@ -571,24 +577,24 @@ func (s *UnifiedService) checkResourceLimits(ctx context.Context) error {
 // acquireQueryLock 获取查询并发锁
 func (s *UnifiedService) acquireQueryLock() bool {
 	s.queryMutex.Lock()
-	defer s.queryMutex.Unlock()
 
 	if s.activeQueries >= s.maxConcurrent {
+		s.queryMutex.Unlock()
 		return false
 	}
 
 	s.activeQueries++
+	s.queryMutex.Unlock()
 	return true
 }
 
 // releaseQueryLock 释放查询并发锁
 func (s *UnifiedService) releaseQueryLock() {
 	s.queryMutex.Lock()
-	defer s.queryMutex.Unlock()
-
 	if s.activeQueries > 0 {
 		s.activeQueries--
 	}
+	s.queryMutex.Unlock()
 }
 
 // runWithQueryLock 在查询并发锁保护下执行函数，panic 时确保计数器回退

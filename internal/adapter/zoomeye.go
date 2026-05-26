@@ -122,15 +122,15 @@ func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
 		field = mapped
 	}
 
-	sender := ""
+	prefix := ""
 	if op == "!=" || op == "<>" {
-		sender = "-"
+		prefix = "-"
 	} else {
-		sender = "+"
+		prefix = "+"
 	}
 
 	// ZoomEye search syntax: app:"nginx" or +app:"nginx" -app:"apache"
-	return fmt.Sprintf(`%s%s:"%s"`, sender, field, value)
+	return fmt.Sprintf(`%s%s:"%s"`, prefix, field, value)
 }
 
 // Search 执行搜索
@@ -332,6 +332,10 @@ func (z *ZoomEyeAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsse
 				asset.Extra = make(map[string]interface{})
 			}
 			asset.Extra["country"] = countryName
+		}
+		// Extract CountryCode from new format
+		if code, ok := data["country.code"].(string); ok {
+			asset.CountryCode = code
 		}
 
 		if provinceName, ok := data["province.name"].(string); ok {

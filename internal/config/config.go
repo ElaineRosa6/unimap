@@ -781,13 +781,21 @@ func (m *Manager) applyDefaults(config *Config) {
 		if config.Web.BindAddress != "127.0.0.1" && config.Web.BindAddress != "localhost" {
 			config.Web.Auth.AdminToken = generateSecureToken(32)
 			config.Web.Auth.Enabled = true
-			fmt.Printf("[config] Generated production admin token (bind=%s): %s\n", config.Web.BindAddress, config.Web.Auth.AdminToken)
+			if len(config.Web.Auth.AdminToken) > 4 {
+				fmt.Printf("[config] Generated production admin token (bind=%s): %s***\n", config.Web.BindAddress, config.Web.Auth.AdminToken[:4])
+			} else {
+				fmt.Printf("[config] Generated production admin token (bind=%s): ***\n", config.Web.BindAddress)
+			}
 			fmt.Printf("[config] SAVE THIS TOKEN: it will not be shown again. Set 'admin_token' in your config file.\n")
 		} else {
 			token := generateSecureToken(32)
 			config.Web.Auth.AdminToken = token
 			config.Web.Auth.Enabled = true
-			fmt.Printf("[config] Generated development admin token (bind=%s): %s\n", config.Web.BindAddress, token)
+			if len(token) > 4 {
+				fmt.Printf("[config] Generated development admin token (bind=%s): %s***\n", config.Web.BindAddress, token[:4])
+			} else {
+				fmt.Printf("[config] Generated development admin token (bind=%s): ***\n", config.Web.BindAddress)
+			}
 		}
 	} else if !config.Web.Auth.Enabled {
 		config.Web.Auth.Enabled = true
@@ -1126,7 +1134,7 @@ func (m *Manager) Save() error {
 		}
 	}
 
-	if err := os.WriteFile(m.path, data, 0644); err != nil {
+	if err := os.WriteFile(m.path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 	return nil

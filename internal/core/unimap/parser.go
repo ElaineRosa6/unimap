@@ -359,12 +359,16 @@ func (p *UQLParser) buildAST(tokens []string) (*model.UQLNode, error) {
 	return root, nil
 }
 
-// ExtractConditions 提取查询条件
-func (p *UQLParser) ExtractConditions(ast *model.UQLAST) map[string]interface{} {
+// ExtractConditions 提取查询条件。
+// 返回条件映射和重复字段告警列表。
+func (p *UQLParser) ExtractConditions(ast *model.UQLAST) (map[string]interface{}, []string) {
 	conditions := make(map[string]interface{})
+	var warnings []string
 	if ast == nil || ast.Root == nil {
-		return conditions
+		return conditions, warnings
 	}
+
+	seenFields := make(map[string]int)
 
 	var traverse func(*model.UQLNode)
 	traverse = func(node *model.UQLNode) {
@@ -376,6 +380,11 @@ func (p *UQLParser) ExtractConditions(ast *model.UQLAST) map[string]interface{} 
 			field := node.Value
 			op := node.Children[0].Value
 			val := node.Children[1].Value
+
+			seenFields[field]++
+			if seenFields[field] > 1 {
+				warnings = append(warnings, fmt.Sprintf("duplicate field %q - only last value will be used", field))
+			}
 
 			if op == "IN" {
 				// 解析数组
@@ -399,7 +408,7 @@ func (p *UQLParser) ExtractConditions(ast *model.UQLAST) map[string]interface{} 
 	}
 
 	traverse(ast.Root)
-	return conditions
+	return conditions, warnings
 }
 
 // Validate 验证UQL查询的有效性

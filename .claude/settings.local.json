@@ -56,7 +56,18 @@
       "Bash(node -c \"D:/Project/Go_project/add-multi-engine-search/tools/extension-screenshot/test_extraction_node.js\")",
       "Bash(pkill -f unimap-web.exe)",
       "Bash(perl -ne 'print if $.>=140 && $.<=360')",
-      "Bash(pkill -f \"unimap-web\")"
+      "Bash(pkill -f \"unimap-web\")",
+      "Bash(echo \"=== 1. 查看现有渠道 ===\")",
+      "Bash(echo \"=== Debug: POST with verbose ===\")",
+      "Bash(cd \"D:\\\\Project\\\\Go_project\\\\add-multi-engine-search\")",
+      "Bash(sleep 5)",
+      "Bash(echo \"---SERVER RESTARTED---\")",
+      "Bash(echo \"=== Test POST ===\")",
+      "Bash(cmd *)",
+      "Read(//c/Users/ljw/AppData/Local/Temp/claude/D--Project-Go-project-add-multi-engine-search/606e3650-8350-48b5-af99-0de53acda002/tasks/**)",
+      "Bash(cd D:\\\\\\\\Project\\\\\\\\Go_project\\\\\\\\add-multi-engine-search)",
+      "Bash(git diff *)",
+      "Bash(echo \"PID=$!\")"
     ]
   }
 }

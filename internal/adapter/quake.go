@@ -279,7 +279,7 @@ func (q *QuakeAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset,
 			}
 		}
 
-		if asset.IP != "" {
+		if asset.IP != "" || asset.Host != "" {
 			assets = append(assets, *asset)
 		}
 	}

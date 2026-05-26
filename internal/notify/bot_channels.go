@@ -26,7 +26,7 @@ func NewDingTalkChannel(id, rawURL, secret string, enabled bool, allowPrivate bo
 	if _, err := urlguard.Check(rawURL, opts); err != nil {
 		return nil, fmt.Errorf("urlguard blocked dingtalk URL: %w", err)
 	}
-	client := urlguard.SafeHTTPClient(opts, 10*time.Second)
+	client := urlguard.SafeHTTPClient(opts, 30*time.Second)
 	return &DingTalkChannel{
 		id:      id,
 		baseURL: rawURL,
@@ -72,6 +72,10 @@ func (c *DingTalkChannel) Send(ctx context.Context, n TaskNotification) error {
 
 	sendURL := c.baseURL
 	if c.secret != "" {
+		// Warn if the secret looks like an unresolved environment variable placeholder
+		if len(c.secret) > 3 && c.secret[0] == '$' && c.secret[1] == '{' && c.secret[len(c.secret)-1] == '}' {
+			return fmt.Errorf("dingtalk secret is an unresolved placeholder: %s — set the environment variable or use the raw value", c.secret)
+		}
 		ts := TimestampNow() / 1000
 		sign, err := DingTalkSign(c.secret, ts)
 		if err != nil {
@@ -132,7 +136,7 @@ func NewFeishuChannel(id, rawURL, secret string, enabled bool, allowPrivate bool
 	if _, err := urlguard.Check(rawURL, opts); err != nil {
 		return nil, fmt.Errorf("urlguard blocked feishu URL: %w", err)
 	}
-	client := urlguard.SafeHTTPClient(opts, 10*time.Second)
+	client := urlguard.SafeHTTPClient(opts, 30*time.Second)
 	return &FeishuChannel{
 		id:      id,
 		url:     rawURL,
@@ -186,6 +190,10 @@ func (c *FeishuChannel) Send(ctx context.Context, n TaskNotification) error {
 	}
 
 	if c.secret != "" {
+		// Warn if the secret looks like an unresolved environment variable placeholder
+		if len(c.secret) > 3 && c.secret[0] == '$' && c.secret[1] == '{' && c.secret[len(c.secret)-1] == '}' {
+			return fmt.Errorf("feishu secret is an unresolved placeholder: %s — set the environment variable or use the raw value", c.secret)
+		}
 		ts := TimestampNow() / 1000
 		sign, err := FeishuSign(c.secret, ts)
 		if err != nil {
@@ -238,7 +246,7 @@ func NewWeComChannel(id, rawURL string, enabled bool, allowPrivate bool) (*WeCom
 	if _, err := urlguard.Check(rawURL, opts); err != nil {
 		return nil, fmt.Errorf("urlguard blocked wecom URL: %w", err)
 	}
-	client := urlguard.SafeHTTPClient(opts, 10*time.Second)
+	client := urlguard.SafeHTTPClient(opts, 30*time.Second)
 	return &WeComChannel{
 		id:      id,
 		url:     rawURL,

@@ -279,7 +279,7 @@ func (s *Server) handleQuota(w http.ResponseWriter, r *http.Request) {
 		err    error
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	ch := make(chan result, len(engines))
@@ -303,12 +303,13 @@ func (s *Server) handleQuota(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		// Map engine name to channel result
 		results := make(map[string]result)
+	outer:
 		for i := 0; i < len(engines); i++ {
 			var res result
 			select {
 			case res = <-ch:
 			case <-ctx.Done():
-				break
+				break outer
 			}
 			results[res.engine] = res
 		}
@@ -445,7 +446,12 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	s.configMutex.Lock()
 	s.config.Web.Auth.PasswordHash = newHash
-	s.configManager.Save()
+	if err := s.configManager.Save(); err != nil {
+		s.config.Web.Auth.PasswordHash = currentHash
+		s.configMutex.Unlock()
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to persist config"})
+		return
+	}
 	s.configMutex.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]string{"success": "password updated"})

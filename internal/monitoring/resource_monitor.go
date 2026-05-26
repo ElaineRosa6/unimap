@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 
@@ -407,13 +408,7 @@ func (m *ResourceMonitor) updatePercentiles() {
 	// 创建副本并排序
 	sortedTimes := make([]float64, len(m.responseTimeHistory))
 	copy(sortedTimes, m.responseTimeHistory)
-	for i := 0; i < len(sortedTimes); i++ {
-		for j := i + 1; j < len(sortedTimes); j++ {
-			if sortedTimes[i] > sortedTimes[j] {
-				sortedTimes[i], sortedTimes[j] = sortedTimes[j], sortedTimes[i]
-			}
-		}
-	}
+	sort.Float64s(sortedTimes)
 
 	// 计算百分位数
 	count := len(sortedTimes)

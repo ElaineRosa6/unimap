@@ -3,6 +3,7 @@ package scheduler
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -20,7 +21,9 @@ func NewStore(taskPath, historyPath string) *Store {
 	// Ensure parent directories exist
 	for _, p := range []string{taskPath, historyPath} {
 		if dir := filepath.Dir(p); dir != "" && dir != "." {
-			os.MkdirAll(dir, 0755)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				log.Printf("[scheduler] failed to create store directory %s: %v", dir, err)
+			}
 		}
 	}
 	return &Store{
