@@ -48,20 +48,20 @@
 						{{with $quota}}
 							<div class="quota-details">
 								<div class="quota-row">
-									<span class="label">剩余</span>
+									<span class="label">剩余配额</span>
 									<span class="value">{{.Remaining}} {{.Unit}}</span>
 								</div>
 								<div class="quota-row">
-									<span class="label">已用</span>
+									<span class="label">已用配额</span>
 									<span class="value">{{.Used}} {{.Unit}}</span>
 								</div>
 								<div class="quota-row">
-									<span class="label">总计</span>
-									<span class="value">{{.Total}} {{.Unit}}</span>
+									<span class="label">总配额</span>
+									<span class="value">{{if gt .Total 0}}{{.Total}} {{.Unit}}{{else}}未知{{end}}</span>
 								</div>
 								<div class="quota-row">
 									<span class="label">使用率</span>
-									<span class="value">{{if gt .Total 0}}{{printf "%.1f" (div (float .Used) (float .Total) | mul 100)}}{{else}}0{{end}}%</span>
+									<span class="value">{{if gt .Total 0}}{{printf "%.1f" (div (float .Used) (float .Total) | mul 100)}}%{{else}}N/A{{end}}</span>
 								</div>
 								{{if .Expiry}}
 								<div class="quota-row">

@@ -21,8 +21,8 @@ func DingTalkSign(secret string, timestamp int64) (string, error) {
 // FeishuSign 飞书机器人加签
 func FeishuSign(secret string, timestamp int64) (string, error) {
 	stringToSign := fmt.Sprintf("%d\n%s", timestamp, secret)
-	h := hmac.New(sha256.New, []byte(secret))
-	h.Write([]byte(stringToSign))
+	h := hmac.New(sha256.New, []byte(stringToSign))
+	h.Write(nil)
 	sign := base64.StdEncoding.EncodeToString(h.Sum(nil))
 	return sign, nil
 }
