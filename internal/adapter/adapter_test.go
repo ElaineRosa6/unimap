@@ -932,7 +932,7 @@ func TestShodanAdapter_GetQuota(t *testing.T) {
 
 	t.Run("successful quota", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(`{"scan_credits":50}`))
+			w.Write([]byte(`{"query_credits":50,"scan_credits":10,"usage_limits":{"query_credits":100,"scan_credits":20}}`))
 		}))
 		defer server.Close()
 
@@ -943,6 +943,23 @@ func TestShodanAdapter_GetQuota(t *testing.T) {
 		}
 		if quota == nil {
 			t.Fatal("expected quota info, got nil")
+		}
+		if quota.Remaining != 50 || quota.Total != 100 || quota.Used != 50 || quota.Unit != "query credits" {
+			t.Fatalf("unexpected quota: %+v", quota)
+		}
+	})
+
+	t.Run("json api error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"Invalid API key"}`))
+		}))
+		defer server.Close()
+
+		a := NewShodanAdapter(server.URL, "key", 3, 30*time.Second)
+		_, err := a.GetQuota()
+		if err == nil || !strings.Contains(err.Error(), "Invalid API key") {
+			t.Fatalf("expected Shodan API error, got %v", err)
 		}
 	})
 }

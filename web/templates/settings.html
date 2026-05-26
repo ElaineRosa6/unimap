@@ -1043,14 +1043,9 @@
 			};
 		}
 
-		// For saved channels, we need the real secret. Prompt if empty.
+		// Saved channels can be tested without re-entering the secret; the backend
+		// uses the decrypted value from config when this field is empty.
 		var secret = document.getElementById('nch-secret').value || '';
-		if (editingChannelId && !secret) {
-			// Ask user to re-enter secret for testing (since it's encrypted in storage)
-			var input = prompt('请输入签名密钥用于测试（已加密存储，需手动输入）:');
-			if (input === null) return;
-			secret = input;
-		}
 
 		showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'ok', '测试发送中…');
 

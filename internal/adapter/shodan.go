@@ -390,7 +390,13 @@ func (s *ShodanAdapter) GetQuota() (*model.QuotaInfo, error) {
 	}
 
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
+		var apiErr struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal(resp.Body(), &apiErr); err == nil && strings.TrimSpace(apiErr.Error) != "" {
+			return nil, fmt.Errorf("Shodan API error: %s", strings.TrimSpace(apiErr.Error))
+		}
+		return nil, fmt.Errorf("Shodan API HTTP %d", resp.StatusCode())
 	}
 
 	// Shodan API info response structure
@@ -400,17 +406,37 @@ func (s *ShodanAdapter) GetQuota() (*model.QuotaInfo, error) {
 		ScanCredits  int    `json:"scan_credits"`
 		MonitoredIPs int    `json:"monitored_ips"`
 		Unlocked     bool   `json:"unlocked"`
+		Error        string `json:"error"`
+		UsageLimits  struct {
+			Credits     int `json:"query_credits"`
+			ScanCredits int `json:"scan_credits"`
+		} `json:"usage_limits"`
 	}
 
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
 		return nil, fmt.Errorf("parse error: %v", err)
 	}
+	if strings.TrimSpace(result.Error) != "" {
+		return nil, fmt.Errorf("Shodan API error: %s", strings.TrimSpace(result.Error))
+	}
+
+	total := result.UsageLimits.Credits
+	if total < 0 {
+		total = 0 // Shodan uses negative values for unlimited/unknown limits.
+	}
+	used := 0
+	if total > 0 {
+		used = total - result.Credits
+		if used < 0 {
+			used = 0
+		}
+	}
 
 	return &model.QuotaInfo{
 		Remaining: result.Credits,
-		Total:     result.Credits, // Shodan API doesn't return total credits
-		Used:      0,              // Shodan API doesn't return used credits
-		Unit:      "credits",
+		Total:     total,
+		Used:      used,
+		Unit:      "query credits",
 		Expiry:    "", // Shodan API doesn't return expiry info
 	}, nil
 }

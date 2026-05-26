@@ -187,8 +187,9 @@ func TestFeishuChannel_Sign(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if sign == "" {
-		t.Fatal("expected non-empty sign")
+	const want = "qCaOcLimil1ehZl6GzN2CUL6wgdt4onZPxvw8V+3TzA="
+	if sign != want {
+		t.Fatalf("unexpected sign: got %q want %q", sign, want)
 	}
 }
 
