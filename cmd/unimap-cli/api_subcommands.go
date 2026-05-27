@@ -300,7 +300,7 @@ func runAPIScheduler(args []string) {
 	switch strings.ToLower(subcmd) {
 	case "list":
 		var resp struct {
-			Success bool                   `json:"success"`
+			Success bool                     `json:"success"`
 			Tasks   []map[string]interface{} `json:"tasks"`
 		}
 		if err := doFormRequest(base, prefix+"/tasks", *timeoutSec, nil, &resp); err != nil {
@@ -320,7 +320,9 @@ func runAPIScheduler(args []string) {
 			os.Exit(1)
 		}
 		payload := map[string]string{"id": taskID.Value.String()}
-		var resp struct{ Success bool `json:"success"` }
+		var resp struct {
+			Success bool `json:"success"`
+		}
 		if err := doJSONRequest(base, prefix+"/tasks/run", *timeoutSec, payload, &resp); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -374,7 +376,9 @@ func runAPIScheduler(args []string) {
 		}
 		action := strings.ToLower(subcmd)
 		payload := map[string]string{"id": *taskID}
-		var resp struct{ Success bool `json:"success"` }
+		var resp struct {
+			Success bool `json:"success"`
+		}
 		if err := doJSONRequest(base, prefix+"/tasks/"+action, *timeoutSec, payload, &resp); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -389,7 +393,9 @@ func runAPIScheduler(args []string) {
 			os.Exit(1)
 		}
 		payload := map[string]string{"id": *taskID}
-		var resp struct{ Success bool `json:"success"` }
+		var resp struct {
+			Success bool `json:"success"`
+		}
 		if err := doJSONRequest(base, prefix+"/tasks/delete", *timeoutSec, payload, &resp); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -430,4 +436,3 @@ func runAPIScheduler(args []string) {
 		os.Exit(1)
 	}
 }
-

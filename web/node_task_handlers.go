@@ -222,4 +222,3 @@ func (s *Server) handleNodeTaskDelete(w http.ResponseWriter, r *http.Request) {
 		"task_id": taskID,
 	})
 }
-

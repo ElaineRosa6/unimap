@@ -34,23 +34,23 @@ func (r *ruleRepository) CreateRule(rule *Rule) error {
 		INSERT INTO rules (name, type, pattern, description, severity, enabled, priority, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	
+
 	now := time.Now()
 	rule.CreatedAt = now
 	rule.UpdatedAt = now
-	
+
 	result, err := r.db.Exec(query, rule.Name, rule.Type, rule.Pattern, rule.Description, rule.Severity, rule.Enabled, rule.Priority, rule.CreatedAt, rule.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to create rule: %w", err)
 	}
-	
+
 	id, err := result.LastInsertId()
 	if err != nil {
 		return fmt.Errorf("failed to get last insert id: %w", err)
 	}
-	
+
 	rule.ID = int(id)
-	
+
 	// 创建初始版本
 	return r.createRuleVersion(rule)
 }
@@ -62,7 +62,7 @@ func (r *ruleRepository) GetRuleByID(id int) (*Rule, error) {
 		FROM rules
 		WHERE id = ?
 	`
-	
+
 	var rule Rule
 	err := r.db.QueryRow(query, id).Scan(
 		&rule.ID,
@@ -76,14 +76,14 @@ func (r *ruleRepository) GetRuleByID(id int) (*Rule, error) {
 		&rule.CreatedAt,
 		&rule.UpdatedAt,
 	)
-	
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("rule not found with id: %d", id)
 		}
 		return nil, fmt.Errorf("failed to get rule: %w", err)
 	}
-	
+
 	return &rule, nil
 }
 
@@ -95,13 +95,13 @@ func (r *ruleRepository) GetRulesByType(ruleType string) ([]*Rule, error) {
 		WHERE type = ?
 		ORDER BY priority DESC
 	`
-	
+
 	rows, err := r.db.Query(query, ruleType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query rules by type: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var rules []*Rule
 	for rows.Next() {
 		var rule Rule
@@ -122,11 +122,11 @@ func (r *ruleRepository) GetRulesByType(ruleType string) ([]*Rule, error) {
 		}
 		rules = append(rules, &rule)
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating rows: %w", err)
 	}
-	
+
 	return rules, nil
 }
 
@@ -137,13 +137,13 @@ func (r *ruleRepository) GetAllRules() ([]*Rule, error) {
 		FROM rules
 		ORDER BY priority DESC
 	`
-	
+
 	rows, err := r.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query all rules: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var rules []*Rule
 	for rows.Next() {
 		var rule Rule
@@ -164,11 +164,11 @@ func (r *ruleRepository) GetAllRules() ([]*Rule, error) {
 		}
 		rules = append(rules, &rule)
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating rows: %w", err)
 	}
-	
+
 	return rules, nil
 }
 
@@ -179,23 +179,23 @@ func (r *ruleRepository) UpdateRule(rule *Rule) error {
 		SET name = ?, type = ?, pattern = ?, description = ?, severity = ?, enabled = ?, priority = ?, updated_at = ?
 		WHERE id = ?
 	`
-	
+
 	rule.UpdatedAt = time.Now()
-	
+
 	result, err := r.db.Exec(query, rule.Name, rule.Type, rule.Pattern, rule.Description, rule.Severity, rule.Enabled, rule.Priority, rule.UpdatedAt, rule.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update rule: %w", err)
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
-	
+
 	if rowsAffected == 0 {
 		return fmt.Errorf("rule not found with id: %d", rule.ID)
 	}
-	
+
 	// 创建新版本
 	return r.createRuleVersion(rule)
 }
@@ -207,32 +207,32 @@ func (r *ruleRepository) DeleteRule(id int) error {
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	
+
 	// 删除相关的版本记录
 	_, err = tx.Exec("DELETE FROM rule_versions WHERE rule_id = ?", id)
 	if err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to delete rule versions: %w", err)
 	}
-	
+
 	// 删除规则
 	result, err := tx.Exec("DELETE FROM rules WHERE id = ?", id)
 	if err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to delete rule: %w", err)
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
-	
+
 	if rowsAffected == 0 {
 		tx.Rollback()
 		return fmt.Errorf("rule not found with id: %d", id)
 	}
-	
+
 	return tx.Commit()
 }
 
@@ -244,13 +244,13 @@ func (r *ruleRepository) GetEnabledRules() ([]*Rule, error) {
 		WHERE enabled = TRUE
 		ORDER BY priority DESC
 	`
-	
+
 	rows, err := r.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query enabled rules: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var rules []*Rule
 	for rows.Next() {
 		var rule Rule
@@ -271,11 +271,11 @@ func (r *ruleRepository) GetEnabledRules() ([]*Rule, error) {
 		}
 		rules = append(rules, &rule)
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating rows: %w", err)
 	}
-	
+
 	return rules, nil
 }
 
@@ -286,7 +286,7 @@ func (r *ruleRepository) GetRulesByPriority() ([]*Rule, error) {
 		FROM rules
 		ORDER BY priority DESC
 	`
-	
+
 	return r.getAllRules(query)
 }
 
@@ -297,7 +297,7 @@ func (r *ruleRepository) getAllRules(query string) ([]*Rule, error) {
 		return nil, fmt.Errorf("failed to query rules: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var rules []*Rule
 	for rows.Next() {
 		var rule Rule
@@ -318,11 +318,11 @@ func (r *ruleRepository) getAllRules(query string) ([]*Rule, error) {
 		}
 		rules = append(rules, &rule)
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating rows: %w", err)
 	}
-	
+
 	return rules, nil
 }
 
@@ -334,18 +334,18 @@ func (r *ruleRepository) createRuleVersion(rule *Rule) error {
 	if err != nil {
 		return fmt.Errorf("failed to get max version: %w", err)
 	}
-	
+
 	newVersion := maxVersion + 1
-	
+
 	query := `
 		INSERT INTO rule_versions (rule_id, version, name, type, pattern, description, severity, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	
+
 	_, err = r.db.Exec(query, rule.ID, newVersion, rule.Name, rule.Type, rule.Pattern, rule.Description, rule.Severity, time.Now())
 	if err != nil {
 		return fmt.Errorf("failed to create rule version: %w", err)
 	}
-	
+
 	return nil
 }

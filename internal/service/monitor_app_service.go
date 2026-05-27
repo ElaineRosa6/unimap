@@ -326,4 +326,3 @@ func buildReachabilityHTTPClient(proxyAddr string) (*http.Client, error) {
 
 	return &http.Client{Timeout: 15 * time.Second, Transport: transport}, nil
 }
-

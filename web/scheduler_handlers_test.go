@@ -31,7 +31,7 @@ func setupScheduler(t *testing.T) *scheduler.Scheduler {
 // mockQueryHandler is a minimal handler for testing
 type mockQueryHandler struct{}
 
-func (h *mockQueryHandler) Type() scheduler.TaskType            { return scheduler.TaskQuery }
+func (h *mockQueryHandler) Type() scheduler.TaskType { return scheduler.TaskQuery }
 func (h *mockQueryHandler) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
 	return "mock query result", nil
 }
@@ -583,4 +583,3 @@ func TestHandleRunTaskNow_GetMethod_Returns405(t *testing.T) {
 		t.Fatalf("expected 405, got %d", rec.Code)
 	}
 }
-

@@ -135,4 +135,3 @@ func (e *ExampleEnginePlugin) RateLimit() RateLimitConfig {
 		RequestsPerMinute: 30,
 	}
 }
-

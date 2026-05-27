@@ -254,8 +254,8 @@ func TestResolveCacheTTL(t *testing.T) {
 	svc := NewUnifiedService()
 
 	req := QueryRequest{
-		Query:   "test",
-		Engines: []string{"fofa"},
+		Query:    "test",
+		Engines:  []string{"fofa"},
 		PageSize: 100,
 	}
 

@@ -529,4 +529,3 @@ func (s *Server) updateCDPConfig(baseURL string) {
 		}
 	}
 }
-

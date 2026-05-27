@@ -271,9 +271,9 @@ func TestJoinLines(t *testing.T) {
 
 func TestContains(t *testing.T) {
 	tests := []struct {
-		s       string
-		substr  string
-		want    bool
+		s      string
+		substr string
+		want   bool
 	}{
 		{"hello world", "world", true},
 		{"hello world", "hello", true},
@@ -384,7 +384,7 @@ func TestCheckResourceUsage(t *testing.T) {
 		// Very low threshold should trigger
 		alerts := m.CheckResourceUsage(map[string]float64{
 			"memory":    0.0001, // 0.0001% - should be exceeded
-			"goroutine": 999999,  // very high - should not be exceeded
+			"goroutine": 999999, // very high - should not be exceeded
 		})
 		if !alerts["memory"] {
 			t.Error("expected memory alert for very low threshold")

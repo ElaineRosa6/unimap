@@ -770,4 +770,3 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 
 	return assets, total, hasMore
 }
-

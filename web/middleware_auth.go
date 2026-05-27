@@ -131,4 +131,3 @@ func (s *Server) adminToken() string {
 	logger.Warnf("Admin token was not configured; auto-generated a random token: %s (save this to config.yaml)", maskTokenForLog(token))
 	return token
 }
-

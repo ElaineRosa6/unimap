@@ -53,12 +53,12 @@ type Config struct {
 
 // ServiceStatus 服务状态
 type ServiceStatus struct {
-	IsDegraded     bool
-	CurrentLevel   ServiceLevel
-	LastCheckTime  time.Time
-	Load           float64
-	ErrorRate      float64
-	ResponseTime   time.Duration
+	IsDegraded    bool
+	CurrentLevel  ServiceLevel
+	LastCheckTime time.Time
+	Load          float64
+	ErrorRate     float64
+	ResponseTime  time.Duration
 }
 
 // DegradationManager 服务降级管理器接口
@@ -77,16 +77,16 @@ type DegradationManager interface {
 type degradationManager struct {
 	config Config
 
-	mutex          sync.RWMutex
-	status         ServiceStatus
-	degradedLevel  ServiceLevel
+	mutex           sync.RWMutex
+	status          ServiceStatus
+	degradedLevel   ServiceLevel
 	lastDegradeTime time.Time
 }
 
 // NewDegradationManager 创建降级管理器
 func NewDegradationManager(config Config) DegradationManager {
 	// 设置默认值
-	if config.RecoveryInterval<= 0 {
+	if config.RecoveryInterval <= 0 {
 		config.RecoveryInterval = 30 * time.Second
 	}
 	if config.LoadThreshold <= 0 {
@@ -95,7 +95,7 @@ func NewDegradationManager(config Config) DegradationManager {
 	if config.ErrorRateThreshold <= 0 {
 		config.ErrorRateThreshold = 0.3 // 30%
 	}
-	if config.ResponseTimeThreshold<= 0 {
+	if config.ResponseTimeThreshold <= 0 {
 		config.ResponseTimeThreshold = 500 * time.Millisecond
 	}
 	if config.Name == "" {
@@ -140,10 +140,10 @@ func (dm *degradationManager) UpdateMetrics(load float64, errorRate float64, res
 
 	// 根据策略判断是否需要降级
 	shouldDegrade := false
-	
+
 	switch dm.config.Strategy {
 	case StrategyLoadBased:
-		shouldDegrade = load >dm.config.LoadThreshold
+		shouldDegrade = load > dm.config.LoadThreshold
 	case StrategyErrorRateBased:
 		shouldDegrade = errorRate > dm.config.ErrorRateThreshold
 	case StrategyResponseTimeBased:
@@ -157,7 +157,7 @@ func (dm *degradationManager) UpdateMetrics(load float64, errorRate float64, res
 	if shouldDegrade && !dm.status.IsDegraded {
 		dm.status.IsDegraded = true
 		dm.lastDegradeTime = time.Now()
-		
+
 		// 根据服务级别确定降级程度
 		switch dm.config.ServiceLevel {
 		case LevelCritical:
@@ -169,12 +169,12 @@ func (dm *degradationManager) UpdateMetrics(load float64, errorRate float64, res
 		case LevelOptional:
 			dm.degradedLevel = LevelOptional
 		}
-		
+
 		dm.status.CurrentLevel = dm.degradedLevel
-		logger.Warnf("Service %s degraded: level=%d, load=%.2f, errorRate=%.2f, responseTime=%v", 
+		logger.Warnf("Service %s degraded: level=%d, load=%.2f, errorRate=%.2f, responseTime=%v",
 			dm.config.Name, dm.degradedLevel, load, errorRate, responseTime)
 	}
-	
+
 	// 如果不需要降级但当前处于降级状态，检查是否可以恢复
 	if !shouldDegrade && dm.status.IsDegraded {
 		if time.Since(dm.lastDegradeTime) >= dm.config.RecoveryInterval {
@@ -189,10 +189,10 @@ func (dm *degradationManager) UpdateMetrics(load float64, errorRate float64, res
 func (dm *degradationManager) Reset() {
 	dm.mutex.Lock()
 	defer dm.mutex.Unlock()
-	
+
 	dm.status.IsDegraded = false
 	dm.status.CurrentLevel = dm.config.ServiceLevel
 	dm.lastDegradeTime = time.Time{}
-	
+
 	logger.Infof("Service %s reset degradation state", dm.config.Name)
 }

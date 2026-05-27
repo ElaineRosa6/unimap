@@ -256,4 +256,3 @@ func (s *Server) handleNodeGet(w http.ResponseWriter, r *http.Request) {
 		"node":    rec,
 	})
 }
-

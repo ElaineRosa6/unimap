@@ -129,4 +129,3 @@ func (s *Server) handleLogoutAPI(w http.ResponseWriter, r *http.Request) {
 func secureCompare(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
-

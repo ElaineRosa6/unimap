@@ -520,4 +520,3 @@ func TestExtractBool(t *testing.T) {
 		})
 	}
 }
-

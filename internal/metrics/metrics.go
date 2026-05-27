@@ -302,8 +302,8 @@ var (
 
 	schedulerTaskExecutionDurationSeconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: "unimap_scheduler_task_execution_duration_seconds",
-			Help: "Scheduled task execution duration in seconds.",
+			Name:    "unimap_scheduler_task_execution_duration_seconds",
+			Help:    "Scheduled task execution duration in seconds.",
 			Buckets: []float64{1.0, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0},
 		},
 		[]string{"task_type"},
@@ -703,4 +703,3 @@ func IncICPCaptchaFailure(queryType string) {
 	}
 	icpCaptchaFailuresTotal.WithLabelValues(queryType).Inc()
 }
-

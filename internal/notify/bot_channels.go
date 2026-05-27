@@ -181,8 +181,8 @@ func (c *FeishuChannel) Send(ctx context.Context, n TaskNotification) error {
 			},
 			"elements": []map[string]interface{}{
 				{
-					"tag":      "markdown",
-					"content":  text,
+					"tag":        "markdown",
+					"content":    text,
 					"text_align": "left",
 				},
 			},
@@ -323,4 +323,3 @@ func statusLabel(status string) string {
 		return status
 	}
 }
-

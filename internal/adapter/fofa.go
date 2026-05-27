@@ -515,4 +515,3 @@ func NewFofaAdapterWebOnly() *FofaAdapterWebOnly {
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "fofa"),
 	}
 }
-

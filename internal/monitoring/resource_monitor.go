@@ -524,4 +524,3 @@ func (m *ResourceMonitor) DeleteCustomMetric(name string, labels map[string]stri
 
 	delete(m.customMetrics, key)
 }
-

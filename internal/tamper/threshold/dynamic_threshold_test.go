@@ -157,7 +157,7 @@ func TestRuleWeights(t *testing.T) {
 
 	t.Run("bulk update rejects invalid weight", func(t *testing.T) {
 		err := tm.UpdateRuleWeights(map[string]float64{
-			"valid": 5.0,
+			"valid":   5.0,
 			"invalid": -1.0,
 		})
 		if err == nil {

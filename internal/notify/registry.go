@@ -122,4 +122,3 @@ func (r *Registry) Reload(chanCfgs []ChannelConfig) {
 		r.channels[cfg.ID] = ch
 	}
 }
-

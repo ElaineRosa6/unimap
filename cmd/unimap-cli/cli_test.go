@@ -366,4 +366,3 @@ func TestWriteJSONFile_Array(t *testing.T) {
 		t.Fatalf("expected 3 items, got %d", len(got))
 	}
 }
-

@@ -7,53 +7,53 @@ import (
 // extractStrings 测试
 func TestExtractStrings(t *testing.T) {
 	tests := []struct {
-		name     string
-		payload  map[string]interface{}
-		key      string
-		def      []string
-		want     []string
+		name    string
+		payload map[string]interface{}
+		key     string
+		def     []string
+		want    []string
 	}{
 		{
-			name:     "key not exists returns default",
-			payload:  map[string]interface{}{},
-			key:      "missing",
-			def:      []string{"default"},
-			want:     []string{"default"},
+			name:    "key not exists returns default",
+			payload: map[string]interface{}{},
+			key:     "missing",
+			def:     []string{"default"},
+			want:    []string{"default"},
 		},
 		{
-			name:     "value is []string returns it",
-			payload:  map[string]interface{}{"engines": []string{"fofa", "hunter"}},
-			key:      "engines",
-			def:      []string{},
-			want:     []string{"fofa", "hunter"},
+			name:    "value is []string returns it",
+			payload: map[string]interface{}{"engines": []string{"fofa", "hunter"}},
+			key:     "engines",
+			def:     []string{},
+			want:    []string{"fofa", "hunter"},
 		},
 		{
-			name:     "value is []interface{} extracts strings",
-			payload:  map[string]interface{}{"engines": []interface{}{"fofa", "hunter", 123}},
-			key:      "engines",
-			def:      []string{},
-			want:     []string{"fofa", "hunter"},
+			name:    "value is []interface{} extracts strings",
+			payload: map[string]interface{}{"engines": []interface{}{"fofa", "hunter", 123}},
+			key:     "engines",
+			def:     []string{},
+			want:    []string{"fofa", "hunter"},
 		},
 		{
-			name:     "value is string returns single-element slice",
-			payload:  map[string]interface{}{"engine": "fofa"},
-			key:      "engine",
-			def:      []string{},
-			want:     []string{"fofa"},
+			name:    "value is string returns single-element slice",
+			payload: map[string]interface{}{"engine": "fofa"},
+			key:     "engine",
+			def:     []string{},
+			want:    []string{"fofa"},
 		},
 		{
-			name:     "value is empty string returns default",
-			payload:  map[string]interface{}{"engine": ""},
-			key:      "engine",
-			def:      []string{"default"},
-			want:     []string{"default"},
+			name:    "value is empty string returns default",
+			payload: map[string]interface{}{"engine": ""},
+			key:     "engine",
+			def:     []string{"default"},
+			want:    []string{"default"},
 		},
 		{
-			name:     "value is other type returns default",
-			payload:  map[string]interface{}{"engines": 123},
-			key:      "engines",
-			def:      []string{"default"},
-			want:     []string{"default"},
+			name:    "value is other type returns default",
+			payload: map[string]interface{}{"engines": 123},
+			key:     "engines",
+			def:     []string{"default"},
+			want:    []string{"default"},
 		},
 	}
 

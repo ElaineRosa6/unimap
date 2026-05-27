@@ -57,4 +57,3 @@ func TestRequestIDMiddleware_SetsContext(t *testing.T) {
 		t.Fatalf("context ID %q != header ID %q", capturedID, rec.Header().Get(requestid.HeaderName))
 	}
 }
-

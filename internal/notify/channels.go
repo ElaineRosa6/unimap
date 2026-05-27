@@ -147,4 +147,3 @@ func (c *GenericWebhookChannel) Send(ctx context.Context, n TaskNotification) er
 	}
 	return nil
 }
-

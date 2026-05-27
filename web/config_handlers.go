@@ -379,4 +379,3 @@ func isMaskedSecret(s string) bool {
 	}
 	return strings.Contains(s, "****")
 }
-

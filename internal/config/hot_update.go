@@ -273,4 +273,3 @@ func (h *HotUpdateManager) GetCurrentVersion() int {
 	defer h.mutex.RUnlock()
 	return len(h.configHistory)
 }
-

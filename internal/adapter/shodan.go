@@ -459,4 +459,3 @@ func NewShodanAdapterWebOnly() *ShodanAdapterWebOnly {
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "shodan"),
 	}
 }
-

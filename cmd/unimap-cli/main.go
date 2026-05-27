@@ -284,4 +284,3 @@ func saveResultsCSV(assets []model.UnifiedAsset, path string) error {
 	}
 	return nil
 }
-

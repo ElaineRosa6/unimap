@@ -337,12 +337,12 @@ func (m *Manager) isCDPMode() bool {
 
 // EngineLoginStatus represents the login status of a search engine.
 type EngineLoginStatus struct {
-	Engine    string `json:"engine"`
-	LoggedIn  bool   `json:"logged_in"`
-	Reason    string `json:"reason"`    // "browser_session" / "cookie_configured" / "login_required" / "no_session"
-	Title     string `json:"title"`     // page title if detected
-	LoginURL  string `json:"login_url"` // engine homepage for login redirect
-	Error     string `json:"error,omitempty"`
+	Engine   string `json:"engine"`
+	LoggedIn bool   `json:"logged_in"`
+	Reason   string `json:"reason"`    // "browser_session" / "cookie_configured" / "login_required" / "no_session"
+	Title    string `json:"title"`     // page title if detected
+	LoginURL string `json:"login_url"` // engine homepage for login redirect
+	Error    string `json:"error,omitempty"`
 }
 
 // CheckEngineLoginStatus checks whether the user is logged in to the given
@@ -1185,4 +1185,3 @@ func safeJoinPath(baseDir string, elems []string) (string, error) {
 
 	return result, nil
 }
-

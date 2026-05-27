@@ -568,4 +568,3 @@ func TestMaskAPIKey(t *testing.T) {
 		})
 	}
 }
-

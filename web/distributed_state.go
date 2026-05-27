@@ -9,4 +9,3 @@ type DistributedState struct {
 	NodeRegistry  *distributed.Registry
 	NodeTaskQueue *distributed.TaskQueue
 }
-

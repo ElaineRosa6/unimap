@@ -15,12 +15,12 @@ import (
 // ===== mockBridgeClient =====
 
 type mockBridgeClient struct {
-	mu           sync.Mutex
-	submitCalls  []BridgeTask
-	submitErr    error
-	awaitResult  BridgeResult
-	awaitErr     error
-	submitDelay  time.Duration
+	mu          sync.Mutex
+	submitCalls []BridgeTask
+	submitErr   error
+	awaitResult BridgeResult
+	awaitErr    error
+	submitDelay time.Duration
 }
 
 func (m *mockBridgeClient) SubmitTask(ctx context.Context, task BridgeTask) error {

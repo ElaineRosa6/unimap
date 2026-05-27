@@ -328,4 +328,3 @@ func compareICPResults(latest, previous []*icpdb.ICPResultRow) []ICPChange {
 
 	return changes
 }
-

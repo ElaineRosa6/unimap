@@ -629,4 +629,3 @@ func TestWriteAPIError(t *testing.T) {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
 }
-

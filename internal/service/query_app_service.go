@@ -278,4 +278,3 @@ func normalizeCDPBaseURL(raw string) string {
 	}
 	return strings.TrimRight(raw, "/")
 }
-

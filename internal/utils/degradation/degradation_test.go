@@ -29,13 +29,13 @@ func TestNewDegradationManager(t *testing.T) {
 
 	t.Run("respects provided values", func(t *testing.T) {
 		cfg := Config{
-			ServiceLevel:        LevelImportant,
-			Strategy:            StrategyErrorRateBased,
-			LoadThreshold:       0.9,
-			ErrorRateThreshold:  0.5,
+			ServiceLevel:          LevelImportant,
+			Strategy:              StrategyErrorRateBased,
+			LoadThreshold:         0.9,
+			ErrorRateThreshold:    0.5,
 			ResponseTimeThreshold: 1 * time.Second,
-			RecoveryInterval:    10 * time.Second,
-			Name:                "api-service",
+			RecoveryInterval:      10 * time.Second,
+			Name:                  "api-service",
 		}
 		dm := NewDegradationManager(cfg).(*degradationManager)
 		if dm.config.ServiceLevel != LevelImportant {
@@ -109,7 +109,7 @@ func TestLoadBasedDegradation(t *testing.T) {
 
 func TestErrorRateBasedDegradation(t *testing.T) {
 	dm := NewDegradationManager(Config{
-		Strategy:            StrategyErrorRateBased,
+		Strategy:           StrategyErrorRateBased,
 		ErrorRateThreshold: 0.2,
 		RecoveryInterval:   time.Hour,
 		Name:               "error-test",

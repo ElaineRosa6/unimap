@@ -104,4 +104,3 @@ func (w *WebOnlyAdapterBase) GetQuota() (*model.QuotaInfo, error) {
 func (w *WebOnlyAdapterBase) IsWebOnly() bool {
 	return true
 }
-

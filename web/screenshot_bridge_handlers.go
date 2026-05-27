@@ -847,4 +847,3 @@ func (s *Server) screenshotRouterExtHealthy() bool {
 	}
 	return false
 }
-

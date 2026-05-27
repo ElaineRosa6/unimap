@@ -528,8 +528,8 @@ func TestStatusLabel(t *testing.T) {
 		{"success", "执行成功"},
 		{"failed", "执行失败"},
 		{"timeout", "执行超时"},
-		{"unknown", "unknown"},  // returns input as-is for unknown
-		{"", ""},                // returns empty string
+		{"unknown", "unknown"}, // returns input as-is for unknown
+		{"", ""},               // returns empty string
 	}
 	for _, tt := range tests {
 		got := statusLabel(tt.status)

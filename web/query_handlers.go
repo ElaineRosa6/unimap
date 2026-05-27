@@ -456,4 +456,3 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{"success": "password updated"})
 }
-

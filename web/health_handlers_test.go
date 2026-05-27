@@ -74,4 +74,3 @@ func TestLivenessCheck(t *testing.T) {
 		t.Fatal("expected liveness check to return true")
 	}
 }
-

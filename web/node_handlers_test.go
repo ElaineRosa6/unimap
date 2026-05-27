@@ -250,4 +250,3 @@ func TestNodeDeregister_AdminTokenFallback(t *testing.T) {
 		t.Fatalf("expected 200 with admin token, got %d, body=%s", authW.Code, authW.Body.String())
 	}
 }
-

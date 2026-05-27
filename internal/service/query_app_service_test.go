@@ -106,4 +106,3 @@ func TestRunBrowserQueryAsync_CollectsStructuredAssets(t *testing.T) {
 		t.Fatalf("unexpected asset: %#v", outcome.CollectedResults[0].Assets[0])
 	}
 }
-

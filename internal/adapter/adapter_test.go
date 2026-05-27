@@ -128,7 +128,7 @@ func TestFofaAdapter_Translate(t *testing.T) {
 		{
 			name: "simple condition",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "port",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "="},
@@ -140,7 +140,7 @@ func TestFofaAdapter_Translate(t *testing.T) {
 		{
 			name: "not equal condition",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "country",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "!="},
@@ -152,7 +152,7 @@ func TestFofaAdapter_Translate(t *testing.T) {
 		{
 			name: "AND logical",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "logical",
+				Type:  "logical",
 				Value: "AND",
 				Children: []*model.UQLNode{
 					{Type: "condition", Value: "port", Children: []*model.UQLNode{
@@ -170,7 +170,7 @@ func TestFofaAdapter_Translate(t *testing.T) {
 		{
 			name: "OR logical",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "logical",
+				Type:  "logical",
 				Value: "OR",
 				Children: []*model.UQLNode{
 					{Type: "condition", Value: "protocol", Children: []*model.UQLNode{
@@ -188,7 +188,7 @@ func TestFofaAdapter_Translate(t *testing.T) {
 		{
 			name: "IN operator",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "port",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "IN"},
@@ -200,7 +200,7 @@ func TestFofaAdapter_Translate(t *testing.T) {
 		{
 			name: "unknown field passthrough",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "unknown_field",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "="},
@@ -212,7 +212,7 @@ func TestFofaAdapter_Translate(t *testing.T) {
 		{
 			name: "nested logical",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "logical",
+				Type:  "logical",
 				Value: "AND",
 				Children: []*model.UQLNode{
 					{Type: "logical", Value: "OR", Children: []*model.UQLNode{
@@ -472,7 +472,7 @@ func TestHunterAdapter_Translate(t *testing.T) {
 		{
 			name: "simple condition",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "port",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "="},
@@ -484,7 +484,7 @@ func TestHunterAdapter_Translate(t *testing.T) {
 		{
 			name: "not equal",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "country",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "!="},
@@ -496,7 +496,7 @@ func TestHunterAdapter_Translate(t *testing.T) {
 		{
 			name: "AND",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "logical",
+				Type:  "logical",
 				Value: "AND",
 				Children: []*model.UQLNode{
 					{Type: "condition", Value: "port", Children: []*model.UQLNode{
@@ -514,7 +514,7 @@ func TestHunterAdapter_Translate(t *testing.T) {
 		{
 			name: "IN operator",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "protocol",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "IN"},
@@ -526,7 +526,7 @@ func TestHunterAdapter_Translate(t *testing.T) {
 		{
 			name: "field mapping port",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "port",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "="},
@@ -616,13 +616,13 @@ func TestHunterAdapter_Normalize(t *testing.T) {
 	t.Run("nested data format", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
 			map[string]interface{}{
-				"ip":       "5.6.7.8",
-				"port":     float64(443),
-				"protocol": "https",
+				"ip":        "5.6.7.8",
+				"port":      float64(443),
+				"protocol":  "https",
 				"web_title": "Secure Site",
-				"country":  "China",
-				"province": "Shanghai",
-				"city":     "Shanghai",
+				"country":   "China",
+				"province":  "Shanghai",
+				"city":      "Shanghai",
 			},
 		}}
 		assets, err := a.Normalize(result)
@@ -739,7 +739,7 @@ func TestShodanAdapter_Translate(t *testing.T) {
 		{
 			name: "simple condition",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "port",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "="},
@@ -751,7 +751,7 @@ func TestShodanAdapter_Translate(t *testing.T) {
 		{
 			name: "not equal",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "country",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "!="},
@@ -763,7 +763,7 @@ func TestShodanAdapter_Translate(t *testing.T) {
 		{
 			name: "AND logical",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "logical",
+				Type:  "logical",
 				Value: "AND",
 				Children: []*model.UQLNode{
 					{Type: "condition", Value: "port", Children: []*model.UQLNode{
@@ -781,7 +781,7 @@ func TestShodanAdapter_Translate(t *testing.T) {
 		{
 			name: "IN operator",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "port",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "IN"},
@@ -793,7 +793,7 @@ func TestShodanAdapter_Translate(t *testing.T) {
 		{
 			name: "field mapping port",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "port",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "="},
@@ -805,7 +805,7 @@ func TestShodanAdapter_Translate(t *testing.T) {
 		{
 			name: "field mapping title",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "title",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "="},
@@ -856,15 +856,15 @@ func TestShodanAdapter_Normalize(t *testing.T) {
 	t.Run("full fields", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
 			map[string]interface{}{
-				"ip":          "1.2.3.4",
-				"port":        float64(80),
-				"transport":   "tcp",
-				"product":     "nginx",
-				"title":       "Example",
+				"ip":           "1.2.3.4",
+				"port":         float64(80),
+				"transport":    "tcp",
+				"product":      "nginx",
+				"title":        "Example",
 				"country_name": "United States",
-				"city":        "San Francisco",
-				"org":         "Cloudflare",
-				"hostnames":   []interface{}{"example.com"},
+				"city":         "San Francisco",
+				"org":          "Cloudflare",
+				"hostnames":    []interface{}{"example.com"},
 			},
 		}}
 		assets, err := a.Normalize(result)
@@ -984,7 +984,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 		{
 			name: "simple condition",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "port",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "="},
@@ -996,7 +996,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 		{
 			name: "not equal",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "country",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "!="},
@@ -1008,7 +1008,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 		{
 			name: "AND logical",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "logical",
+				Type:  "logical",
 				Value: "AND",
 				Children: []*model.UQLNode{
 					{Type: "condition", Value: "port", Children: []*model.UQLNode{
@@ -1026,7 +1026,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 		{
 			name: "IN operator",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "port",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "IN"},
@@ -1038,7 +1038,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 		{
 			name: "field mapping body->response",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "body",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "="},
@@ -1050,7 +1050,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 		{
 			name: "field mapping header->headers",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "header",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "="},
@@ -1251,7 +1251,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 		{
 			name: "simple condition",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "port",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "="},
@@ -1263,7 +1263,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 		{
 			name: "not equal",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "country",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "!="},
@@ -1275,7 +1275,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 		{
 			name: "AND logical",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "logical",
+				Type:  "logical",
 				Value: "AND",
 				Children: []*model.UQLNode{
 					{Type: "condition", Value: "port", Children: []*model.UQLNode{
@@ -1293,7 +1293,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 		{
 			name: "OR logical",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "logical",
+				Type:  "logical",
 				Value: "OR",
 				Children: []*model.UQLNode{
 					{Type: "condition", Value: "port", Children: []*model.UQLNode{
@@ -1311,7 +1311,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 		{
 			name: "IN operator",
 			ast: &model.UQLAST{Root: &model.UQLNode{
-				Type: "condition",
+				Type:  "condition",
 				Value: "port",
 				Children: []*model.UQLNode{
 					{Type: "operator", Value: "IN"},
@@ -1541,4 +1541,3 @@ func TestNewZoomEyeAdapterWebOnly(t *testing.T) {
 		t.Error("expected IsWebOnly() = true")
 	}
 }
-

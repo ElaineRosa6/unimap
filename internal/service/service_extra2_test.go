@@ -387,4 +387,3 @@ func (m *mockScreenshotProvider) CollectSearchEngineResult(ctx context.Context, 
 	m.collectedQueries = append(m.collectedQueries, query)
 	return []screenshot.CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query}}, nil
 }
-

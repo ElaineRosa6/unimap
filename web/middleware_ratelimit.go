@@ -14,12 +14,12 @@ import (
 
 // RateLimiter 滑动窗口限流器
 type RateLimiter struct {
-	requests   map[string][]time.Time // 每个客户端的请求时间戳列表
-	mu         sync.RWMutex
-	rate       int           // 窗口内最大请求数
-	window     time.Duration // 滑动窗口大小
-	stopChan   chan struct{} // 停止信号
-	stopped    bool
+	requests map[string][]time.Time // 每个客户端的请求时间戳列表
+	mu       sync.RWMutex
+	rate     int           // 窗口内最大请求数
+	window   time.Duration // 滑动窗口大小
+	stopChan chan struct{} // 停止信号
+	stopped  bool
 }
 
 // NewRateLimiter 创建限流器
@@ -257,4 +257,3 @@ func SetRateLimitConfig(rate int, window time.Duration) {
 func SetRateLimitEnabled(enabled bool) {
 	rateLimitEnabled.Store(enabled)
 }
-

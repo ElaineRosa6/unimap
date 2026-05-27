@@ -165,4 +165,3 @@ func (p *InterfaceMapPool) Put(m map[string]interface{}) {
 		p.pool.Put(m)
 	}
 }
-

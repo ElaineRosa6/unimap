@@ -22,9 +22,9 @@ func TestNewAppError(t *testing.T) {
 
 func TestAppError_Error(t *testing.T) {
 	tests := []struct {
-		name     string
-		appErr   *AppError
-		wantMsg  string
+		name    string
+		appErr  *AppError
+		wantMsg string
 	}{
 		{
 			name: "with underlying error",
@@ -77,9 +77,9 @@ func TestAppError_Unwrap(t *testing.T) {
 
 func TestClassifyError(t *testing.T) {
 	tests := []struct {
-		name      string
-		err       error
-		wantType  string
+		name     string
+		err      error
+		wantType string
 	}{
 		{
 			name:     "nil error",
@@ -334,11 +334,11 @@ func TestRetry_ErrorHandlerCalled(t *testing.T) {
 
 func TestCalculateDelay(t *testing.T) {
 	tests := []struct {
-		name      string
-		attempt   int
-		config    RetryConfig
-		wantMin   time.Duration
-		wantMax   time.Duration
+		name    string
+		attempt int
+		config  RetryConfig
+		wantMin time.Duration
+		wantMax time.Duration
 	}{
 		{
 			name:    "exponential attempt 0",
