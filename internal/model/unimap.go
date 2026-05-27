@@ -1,5 +1,7 @@
 package model
 
+import "context"
+
 // FOFAOfficialWebURL FOFA 官方 Web 域名，所有 Web/截图/扩展链路仅允许读此常量或配置中的 WebBaseURL。
 const FOFAOfficialWebURL = "https://fofa.info"
 
@@ -70,7 +72,7 @@ type QuotaInfo struct {
 type EngineAdapter interface {
 	Name() string
 	Translate(ast *UQLAST) (string, error)
-	Search(query string, page, pageSize int) (*EngineResult, error)
+	Search(ctx context.Context, query string, page, pageSize int) (*EngineResult, error)
 	Normalize(raw *EngineResult) ([]UnifiedAsset, error)
 	GetQuota() (*QuotaInfo, error) // 获取配额信息
 }

@@ -401,7 +401,9 @@ func (s *Server) validateBridgeCallbackSignatureIfRequired(r *http.Request, body
 	bodyHash := sha256.Sum256(body)
 	canonical := fmt.Sprintf("%d\n%s\n%s", ts, nonce, hex.EncodeToString(bodyHash[:]))
 	mac := hmac.New(sha256.New, []byte(token))
-	_, _ = mac.Write([]byte(canonical))
+	if _, err := mac.Write([]byte(canonical)); err != nil {
+		return fmt.Errorf("bridge HMAC write failed: %w", err)
+	}
 	expected := mac.Sum(nil)
 	if !hmac.Equal(provided, expected) {
 		return fmt.Errorf("bridge signature mismatch")

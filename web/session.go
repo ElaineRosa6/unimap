@@ -134,6 +134,15 @@ func (s *Server) decryptToken(encrypted string) (string, error) {
 	return string(plaintext), nil
 }
 
+// isSecure returns true if the request arrived over TLS directly or via a
+// reverse proxy that sets the X-Forwarded-Proto header to "https".
+func isSecure(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
 // setSessionCookie creates a new session with a random session ID and encrypted admin token.
 // Cookie format: "sessionID:encryptedToken"
 func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request) error {
@@ -143,7 +152,7 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request) error 
 		return fmt.Errorf("encrypt token: %w", err)
 	}
 	cookieValue := sessionID + ":" + encrypted
-	secure := r.TLS != nil
+	secure := isSecure(r)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    cookieValue,
@@ -196,7 +205,7 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	if s.revocationStore != nil && sessionID != "" {
 		s.revocationStore.Revoke(sessionID, 24*time.Hour)
 	}
-	secure := r.TLS != nil
+	secure := isSecure(r)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
@@ -227,7 +236,7 @@ func generateCSRFToken() string {
 
 // setCSRFCookie sets the CSRF cookie (readable by JS).
 func (s *Server) setCSRFCookie(w http.ResponseWriter, r *http.Request, token string) {
-	secure := r.TLS != nil
+	secure := isSecure(r)
 	http.SetCookie(w, &http.Cookie{
 		Name:     csrfCookieName,
 		Value:    token,

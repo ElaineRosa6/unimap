@@ -171,7 +171,7 @@ func (a *ICPAdapter) Translate(ast *model.UQLAST) (string, error) {
 	return query, nil
 }
 
-func (a *ICPAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (a *ICPAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	return a.SearchWithContext(context.Background(), query, page, pageSize)
 }
 

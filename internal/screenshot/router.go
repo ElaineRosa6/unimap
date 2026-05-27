@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 )
 
@@ -94,8 +95,7 @@ func NewScreenshotRouter(cfg RouterConfig, cdp Provider, extBridge *BridgeServic
 		r.cdpHealthy.Store(false)
 	}
 
-	isMock := extBridge != nil && isMockBridgeClient(extBridge)
-	r.extChecker = &ExtensionHealthChecker{BridgeService: extBridge, IsMock: isMock}
+	r.extChecker = &ExtensionHealthChecker{BridgeService: extBridge}
 	r.extHealthy.Store(extBridge != nil)
 
 	// Set initial mode
@@ -123,6 +123,12 @@ func (r *ScreenshotRouter) Stop() {
 }
 
 func (r *ScreenshotRouter) probeLoop(ctx context.Context) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			logger.Errorf("panic in screenshot probeLoop: %v", rec)
+		}
+	}()
+
 	ticker := time.NewTicker(r.cfg.ProbeInterval)
 	defer ticker.Stop()
 
@@ -656,13 +662,6 @@ func normalizeURL(raw string) string {
 		trimmed = "http://" + trimmed
 	}
 	return trimmed
-}
-
-// isMockBridgeClient detects if the BridgeService wraps a mock client.
-// Since we cannot inspect the wrapped client type from the BridgeService,
-// this is handled at creation time via the ExtensionHealthChecker.
-func isMockBridgeClient(svc *BridgeService) bool {
-	return false
 }
 
 // urlBase64 encodes a string as URL-safe base64.

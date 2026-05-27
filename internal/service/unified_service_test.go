@@ -342,7 +342,7 @@ type testMockAdapter struct {
 
 func (m *testMockAdapter) Name() string                                          { return m.name }
 func (m *testMockAdapter) Translate(ast *model.UQLAST) (string, error)           { return "translated", nil }
-func (m *testMockAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (m *testMockAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	return &model.EngineResult{EngineName: m.name}, nil
 }
 func (m *testMockAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {

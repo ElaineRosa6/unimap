@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -135,7 +136,7 @@ func (s *ShodanAdapter) mapField(field string) string {
 }
 
 // Search 执行Shodan搜索
-func (s *ShodanAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (s *ShodanAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if s.apiKey == "" {
 		return &model.EngineResult{
 			EngineName: s.Name(),
@@ -386,7 +387,7 @@ func (s *ShodanAdapter) GetQuota() (*model.QuotaInfo, error) {
 		Get(url)
 
 	if err != nil {
-		return nil, fmt.Errorf("request error: %v", err)
+		return nil, fmt.Errorf("request error: %w", err)
 	}
 
 	if resp.StatusCode() != 200 {
@@ -414,7 +415,7 @@ func (s *ShodanAdapter) GetQuota() (*model.QuotaInfo, error) {
 	}
 
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("parse error: %v", err)
+		return nil, fmt.Errorf("parse error: %w", err)
 	}
 	if strings.TrimSpace(result.Error) != "" {
 		return nil, fmt.Errorf("Shodan API error: %s", strings.TrimSpace(result.Error))

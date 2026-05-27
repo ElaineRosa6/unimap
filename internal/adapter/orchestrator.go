@@ -494,7 +494,7 @@ func (t *SearchTask) Execute() error {
 		if page <= 0 {
 			page = 1
 		}
-		result, err = adapter.Search(t.query.Query, page, t.pageSize)
+		result, err = adapter.Search(t.ctx, t.query.Query, page, t.pageSize)
 		if err == nil {
 			break
 		}
@@ -506,7 +506,7 @@ func (t *SearchTask) Execute() error {
 			metrics.IncEngineErrorByName(t.query.EngineName)
 			t.orchestrator.RecordEngineFailure(t.query.EngineName)
 			select {
-			case t.errorChan <- fmt.Errorf("%s search error: %v", t.query.EngineName, err):
+			case t.errorChan <- fmt.Errorf("%s search error: %w", t.query.EngineName, err):
 			default:
 				logger.CtxErrorf(t.ctx, "failed to send error: %s search error: %v", t.query.EngineName, err)
 			}
@@ -730,7 +730,7 @@ func (t *PaginatedSearchTask) Execute() error {
 			continue
 		}
 
-		result, err := adapter.Search(t.query.Query, page, t.pageSize)
+		result, err := adapter.Search(t.ctx, t.query.Query, page, t.pageSize)
 		if err != nil {
 			select {
 			case t.resultChan <- &model.EngineResult{
@@ -887,19 +887,19 @@ func (o *EngineOrchestrator) ExecuteUnifiedQuery(ast *model.UQLAST, engineNames 
 	// 1. 翻译查询
 	queries, err := o.TranslateQuery(ast, engineNames)
 	if err != nil {
-		return nil, fmt.Errorf("translate error: %v", err)
+		return nil, fmt.Errorf("translate error: %w", err)
 	}
 
 	// 2. 并行搜索
 	engineResults, err := o.SearchEnginesWithPagination(queries, pageSize, maxPages)
 	if err != nil {
-		return nil, fmt.Errorf("search error: %v", err)
+		return nil, fmt.Errorf("search error: %w", err)
 	}
 
 	// 3. 标准化
 	assets, err := o.NormalizeResults(engineResults)
 	if err != nil {
-		return nil, fmt.Errorf("normalize error: %v", err)
+		return nil, fmt.Errorf("normalize error: %w", err)
 	}
 
 	return assets, nil

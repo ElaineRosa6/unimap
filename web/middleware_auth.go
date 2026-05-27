@@ -96,8 +96,7 @@ func (s *Server) isPublicPath(path string) bool {
 func generateRandomToken() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		// Fallback: use timestamp-based token (not secure, but prevents startup failure)
-		return "fallback-token-" + string(rune(48)) + string(rune(48)) + string(rune(48)) + string(rune(48))
+		logger.Fatalf("failed to generate cryptographically secure random token: %v", err)
 	}
 	return hex.EncodeToString(b)
 }

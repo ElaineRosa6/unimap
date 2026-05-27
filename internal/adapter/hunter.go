@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -144,7 +145,7 @@ func (h *HunterAdapter) buildCondition(field, op, value string) string {
 }
 
 // Search 执行Hunter搜索
-func (h *HunterAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (h *HunterAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if h.apiKey == "" {
 		return &model.EngineResult{
 			EngineName: h.Name(),
@@ -188,7 +189,7 @@ func (h *HunterAdapter) Search(query string, page, pageSize int) (*model.EngineR
 			Get(url)
 
 		if err != nil {
-			return fmt.Errorf("hunter request error: %v", err)
+			return fmt.Errorf("hunter request error: %w", err)
 		}
 
 		if resp.StatusCode() != 200 {
@@ -206,7 +207,7 @@ func (h *HunterAdapter) Search(query string, page, pageSize int) (*model.EngineR
 		}
 
 		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return fmt.Errorf("hunter response parse error: %v", err)
+			return fmt.Errorf("hunter response parse error: %w", err)
 		}
 
 		if result.Code != 200 {
@@ -399,15 +400,15 @@ func (h *HunterAdapter) GetQuota() (*model.QuotaInfo, error) {
 		Get(url)
 
 	if err != nil {
-		return nil, fmt.Errorf("request error: %v", err)
+		return nil, fmt.Errorf("request error: %w", err)
 	}
 
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
 	}
 
 	// 打印响应体，方便调试
-	logger.Debugf("Hunter quota response: %s", resp.String())
+	logger.Debugf("Hunter quota response: %s", sanitizeBody(resp.String()))
 
 	// Hunter quota response structure
 	var result struct {
@@ -421,7 +422,7 @@ func (h *HunterAdapter) GetQuota() (*model.QuotaInfo, error) {
 	}
 
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("parse error: %v", err)
+		return nil, fmt.Errorf("parse error: %w", err)
 	}
 
 	if result.Code != 200 {

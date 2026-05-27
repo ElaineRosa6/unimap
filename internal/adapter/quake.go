@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -145,7 +146,7 @@ func (q *QuakeAdapter) buildCondition(field, op, value string) string {
 }
 
 // Search 执行搜索
-func (q *QuakeAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (q *QuakeAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	var engineResult *model.EngineResult
 
 	retryConfig := utils.RetryConfig{
@@ -301,7 +302,7 @@ func (q *QuakeAdapter) GetQuota() (*model.QuotaInfo, error) {
 		Get(url)
 
 	if err != nil {
-		return nil, fmt.Errorf("request error: %v", err)
+		return nil, fmt.Errorf("request error: %w", err)
 	}
 
 	if resp.StatusCode() != 200 {
@@ -312,7 +313,7 @@ func (q *QuakeAdapter) GetQuota() (*model.QuotaInfo, error) {
 	// returning 0/0/0 when the schema changes.
 	var raw map[string]interface{}
 	if err := json.Unmarshal(resp.Body(), &raw); err != nil {
-		return nil, fmt.Errorf("parse error: %v", err)
+		return nil, fmt.Errorf("parse error: %w", err)
 	}
 
 	code := raw["code"]

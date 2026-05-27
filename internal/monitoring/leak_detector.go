@@ -18,9 +18,13 @@ type ResourceLeak struct {
 	StackTrace   string    `json:"stack_trace"`
 }
 
+// maxDetectedLeaks 是 detectedLeaks 切片的最大容量，防止无限增长。
+const maxDetectedLeaks = 1000
+
 // LeakDetector 资源泄漏检测器
 type LeakDetector struct {
-	mutex           sync.RWMutex
+	mutex             sync.RWMutex
+	stopOnce          sync.Once
 	acquiredResources map[string]*ResourceLeak
 	detectedLeaks     []ResourceLeak
 	monitorInterval   time.Duration
@@ -67,8 +71,10 @@ func (d *LeakDetector) Start() {
 
 // Stop 停止泄漏检测
 func (d *LeakDetector) Stop() {
-	close(d.stopChan)
-	logger.Info("Resource leak detector stopped")
+	d.stopOnce.Do(func() {
+		close(d.stopChan)
+		logger.Info("Resource leak detector stopped")
+	})
 }
 
 // Acquire 记录资源获取
@@ -98,13 +104,22 @@ func (d *LeakDetector) Release(resourceID string) {
 		
 		// 如果使用时间超过阈值，记录为潜在泄漏
 		if leak.LeakDuration > d.maxLeakDuration {
-			d.detectedLeaks = append(d.detectedLeaks, *leak)
+			d.recordLeak(*leak)
 			logger.Warnf("Potential resource leak detected: %s (ID: %s), duration: %v", 
 				leak.ResourceType, leak.ResourceID, leak.LeakDuration)
 		}
 		
 		delete(d.acquiredResources, resourceID)
 	}
+}
+
+// recordLeak 将泄漏记录追加到 detectedLeaks，超过上限时丢弃最旧的条目。
+// 调用方必须持有 d.mutex 写锁。
+func (d *LeakDetector) recordLeak(leak ResourceLeak) {
+	if len(d.detectedLeaks) >= maxDetectedLeaks {
+		d.detectedLeaks = d.detectedLeaks[1:]
+	}
+	d.detectedLeaks = append(d.detectedLeaks, leak)
 }
 
 // detectLeaks 检测资源泄漏
@@ -119,7 +134,7 @@ func (d *LeakDetector) detectLeaks() {
 		duration := now.Sub(leak.AcquireTime)
 		if duration > d.maxLeakDuration {
 			leak.LeakDuration = duration
-			d.detectedLeaks = append(d.detectedLeaks, *leak)
+			d.recordLeak(*leak)
 			leaksToRemove = append(leaksToRemove, resourceID)
 			
 			logger.Warnf("Resource leak detected: %s (ID: %s), duration: %v",

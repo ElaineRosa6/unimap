@@ -135,6 +135,7 @@ func (r *RateLimiter) cleanup() {
 // 全局限流器实例
 var (
 	globalLimiter     *RateLimiter
+	globalLimiterMu   sync.RWMutex
 	globalLimiterOnce sync.Once
 	rateLimitEnabled  atomic.Bool
 )
@@ -146,18 +147,26 @@ func init() {
 // getGlobalLimiter 获取全局限流器（懒加载）
 func getGlobalLimiter() *RateLimiter {
 	globalLimiterOnce.Do(func() {
-		// 默认: 每分钟 60 次请求
+		globalLimiterMu.Lock()
 		globalLimiter = NewRateLimiter(60, time.Minute)
+		globalLimiterMu.Unlock()
 	})
-	return globalLimiter
+	globalLimiterMu.RLock()
+	limiter := globalLimiter
+	globalLimiterMu.RUnlock()
+	return limiter
 }
 
 // rateLimitMiddleware 限流中间件
 func rateLimitMiddleware(next http.Handler) http.Handler {
-	limiter := getGlobalLimiter()
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !rateLimitEnabled.Load() {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		limiter := getGlobalLimiter()
+		if limiter == nil {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -231,11 +240,17 @@ func SetRateLimitConfig(rate int, window time.Duration) {
 	if window <= 0 {
 		window = time.Minute
 	}
-	// 停止旧的限流器
-	if globalLimiter != nil {
-		globalLimiter.Stop()
+
+	newLimiter := NewRateLimiter(rate, window)
+
+	globalLimiterMu.Lock()
+	old := globalLimiter
+	globalLimiter = newLimiter
+	globalLimiterMu.Unlock()
+
+	if old != nil {
+		old.Stop()
 	}
-	globalLimiter = NewRateLimiter(rate, window)
 }
 
 // SetRateLimitEnabled 设置是否启用限流

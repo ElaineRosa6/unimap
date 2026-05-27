@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -383,7 +382,7 @@ func (s *Scheduler) Load() error {
 		s.tasks[t.ID] = t
 		if t.Enabled {
 			if err := s.scheduleTask(t); err != nil {
-				log.Printf("[scheduler] failed to schedule persisted task %s (%s): %v — task loaded but will not auto-fire", t.ID, t.Name, err)
+				logger.Errorf("[scheduler] failed to schedule persisted task %s (%s): %v — task loaded but will not auto-fire", t.ID, t.Name, err)
 			}
 		}
 	}
@@ -413,7 +412,7 @@ func (s *Scheduler) saveLocked() error {
 		if cp.Payload != nil {
 			raw, err := json.Marshal(t.Payload)
 			if err != nil {
-				log.Printf("[scheduler] failed to deep-copy payload for task %s: %v", t.ID, err)
+				logger.Warnf("[scheduler] failed to deep-copy payload for task %s: %v", t.ID, err)
 				cp.Payload = make(map[string]interface{})
 			} else {
 				_ = json.Unmarshal(raw, &cp.Payload)
@@ -791,7 +790,7 @@ func (s *Scheduler) scheduleTask(task *ScheduledTask) error {
 	}
 	handler := s.handlers[task.Type]
 	if handler == nil {
-		log.Printf("[scheduler] no handler registered for task type %s (id=%s)", task.Type, task.ID)
+		logger.Warnf("[scheduler] no handler registered for task type %s (id=%s)", task.Type, task.ID)
 		return nil
 	}
 
@@ -802,7 +801,7 @@ func (s *Scheduler) scheduleTask(task *ScheduledTask) error {
 	cronExpr := normalizeCronExpr(task.CronExpr)
 	entryID, err := s.cron.AddFunc(cronExpr, schedule)
 	if err != nil {
-		log.Printf("[scheduler] failed to schedule task %s (cron=%q): %v", task.ID, task.CronExpr, err)
+		logger.Errorf("[scheduler] failed to schedule task %s (cron=%q): %v", task.ID, task.CronExpr, err)
 		return err
 	}
 	s.cronIDs[task.ID] = entryID
@@ -823,14 +822,14 @@ func (s *Scheduler) executeTask(task *ScheduledTask, handler TaskHandler, timeou
 
 	// 检查依赖链
 	if !s.areDependenciesMet(task) {
-		log.Printf("[scheduler] task %s (%s) skipped: dependencies not met", task.ID, task.Name)
+		logger.Infof("[scheduler] task %s (%s) skipped: dependencies not met", task.ID, task.Name)
 		s.recordSkippedExecution(task, "dependencies_not_met", "dependency tasks not yet successful")
 		return
 	}
 
 	// 检查执行窗口
 	if task.ExecutionWindow != nil && !s.isWithinExecutionWindow(task.ExecutionWindow) {
-		log.Printf("[scheduler] task %s (%s) skipped: outside execution window", task.ID, task.Name)
+		logger.Infof("[scheduler] task %s (%s) skipped: outside execution window", task.ID, task.Name)
 		s.recordSkippedExecution(task, "outside_window", "current time outside execution window")
 		return
 	}
@@ -934,14 +933,14 @@ func (s *Scheduler) areDependenciesMet(task *ScheduledTask) bool {
 	for _, depID := range task.DependsOn {
 		_, exists := s.tasks[depID]
 		if !exists {
-			log.Printf("[scheduler] dependency task %s not found for task %s", depID, task.ID)
+			logger.Warnf("[scheduler] dependency task %s not found for task %s", depID, task.ID)
 			return false
 		}
 
 		// Find last execution record for this dependency
 		lastRecord := s.findLastExecutionRecord(depID)
 		if lastRecord == nil || lastRecord.Status != "success" {
-			log.Printf("[scheduler] dependency task %s last status: %v (need success)", depID, lastRecord)
+			logger.Debugf("[scheduler] dependency task %s last status: %v (need success)", depID, lastRecord)
 			return false
 		}
 	}
@@ -964,7 +963,7 @@ func (s *Scheduler) isWithinExecutionWindow(window *ExecutionWindow) bool {
 	if window.Timezone != "" {
 		loc, err := time.LoadLocation(window.Timezone)
 		if err != nil {
-			log.Printf("[scheduler] invalid timezone %q, using local time: %v", window.Timezone, err)
+			logger.Warnf("[scheduler] invalid timezone %q, using local time: %v", window.Timezone, err)
 		} else {
 			now = now.In(loc)
 		}
@@ -1093,13 +1092,13 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 				}()
 				ch, err := notify.NewGenericWebhookChannel("__inline__", url, nil, true, false)
 				if err != nil {
-					log.Printf("[scheduler] inline webhook URL blocked: %v", err)
+					logger.Errorf("[scheduler] inline webhook URL blocked: %v", err)
 					return
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), timeout)
 				defer cancel()
 				if err := ch.Send(ctx, msg); err != nil {
-					log.Printf("[scheduler] notify inline webhook failed: %v", err)
+					logger.Errorf("[scheduler] notify inline webhook failed: %v", err)
 					metrics.IncSchedulerNotifyFail("webhook")
 				} else {
 					metrics.IncSchedulerNotifySuccess("webhook")
@@ -1113,7 +1112,7 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 		}
 		ch := s.notifyRegistry.Get(chID)
 		if ch == nil {
-			log.Printf("[scheduler] notify channel %q not registered, skipping", chID)
+			logger.Warnf("[scheduler] notify channel %q not registered, skipping", chID)
 			continue
 		}
 		if !ch.IsEnabled() {
@@ -1137,7 +1136,7 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			if err := ch.Send(ctx, msg); err != nil {
-				log.Printf("[scheduler] notify %s (%s) failed: %v", ch.ID(), ch.Type(), err)
+				logger.Errorf("[scheduler] notify %s (%s) failed: %v", ch.ID(), ch.Type(), err)
 				metrics.IncSchedulerNotifyFail(ch.Type())
 			} else {
 				metrics.IncSchedulerNotifySuccess(ch.Type())
@@ -1161,10 +1160,10 @@ func migrateChannelIDs(nc *NotificationConfig) []string {
 			if nc.WebhookURL != "" {
 				ids = append(ids, "__task_inline_webhook__")
 			} else {
-				log.Printf("[scheduler] task webhook channel without URL skipped")
+				logger.Warnf("[scheduler] task webhook channel without URL skipped")
 			}
 		case "email":
-			log.Printf("[scheduler] email channel not supported, skipped")
+			logger.Warnf("[scheduler] email channel not supported, skipped")
 		}
 	}
 	return ids
@@ -1187,13 +1186,13 @@ func (s *Scheduler) sendWebhookNotification(webhookURL string, payload map[strin
 
 		jsonData, err := json.Marshal(payload)
 		if err != nil {
-			log.Printf("[scheduler] failed to marshal webhook payload: %v", err)
+			logger.Errorf("[scheduler] failed to marshal webhook payload: %v", err)
 			return
 		}
 
 		req, err := http.NewRequestWithContext(ctx, "POST", webhookURL, bytes.NewBuffer(jsonData))
 		if err != nil {
-			log.Printf("[scheduler] failed to create webhook request: %v", err)
+			logger.Errorf("[scheduler] failed to create webhook request: %v", err)
 			return
 		}
 
@@ -1203,13 +1202,13 @@ func (s *Scheduler) sendWebhookNotification(webhookURL string, payload map[strin
 		client := safeWebhookClient()
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Printf("[scheduler] failed to send webhook to %s: %v", webhookURL, err)
+			logger.Errorf("[scheduler] failed to send webhook to %s: %v", webhookURL, err)
 			return
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			log.Printf("[scheduler] webhook to %s returned non-success status: %d", webhookURL, resp.StatusCode)
+			logger.Warnf("[scheduler] webhook to %s returned non-success status: %d", webhookURL, resp.StatusCode)
 		}
 	}()
 }
@@ -1230,7 +1229,7 @@ func (s *Scheduler) saveAsync() {
 			}
 		}()
 		if err := s.Save(); err != nil {
-			log.Printf("[scheduler] saveAsync failed: %v", err)
+			logger.Errorf("[scheduler] saveAsync failed: %v", err)
 		}
 	}()
 }

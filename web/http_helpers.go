@@ -11,10 +11,78 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/unimap/project/internal/logger"
 )
+
+// Chrome extension origin restriction state.
+// SetAllowedExtensionIDs must be called during server startup before serving requests.
+// If not called (e.g., in tests), all chrome-extension:// origins are allowed for backward compatibility.
+var (
+	extIDMu     sync.RWMutex
+	extIDSet    map[string]struct{} // non-nil + non-empty = restrict to these IDs
+	extIDLoaded bool
+)
+
+// SetAllowedExtensionIDs configures which chrome-extension:// origin IDs are permitted.
+// Pass nil or an empty slice to allow all extensions (backward-compatible default).
+func SetAllowedExtensionIDs(ids []string) {
+	m := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			m[id] = struct{}{}
+		}
+	}
+	extIDMu.Lock()
+	extIDSet = m
+	extIDLoaded = true
+	extIDMu.Unlock()
+	if len(m) == 0 {
+		logger.Warn("web.cors.allowed_extension_ids is empty; all chrome-extension:// origins will be allowed (backward compatibility). Configure allowed_extension_ids to restrict.")
+	} else {
+		snapshot := make([]string, 0, len(m))
+		for k := range m {
+			snapshot = append(snapshot, k)
+		}
+		logger.Infof("Chrome extension origin restriction enabled, allowed IDs: %v", snapshot)
+	}
+}
+
+// extractExtensionID parses the extension ID from a chrome-extension:// origin.
+// Returns "" if the origin is not a valid chrome-extension:// URL.
+func extractExtensionID(origin string) string {
+	const prefix = "chrome-extension://"
+	if !strings.HasPrefix(origin, prefix) {
+		return ""
+	}
+	rest := origin[len(prefix):]
+	if idx := strings.Index(rest, "/"); idx != -1 {
+		rest = rest[:idx]
+	}
+	return strings.TrimSpace(rest)
+}
+
+// isChromeExtensionAllowed checks whether a chrome-extension:// origin is permitted.
+// Returns true if no restriction is configured (backward compatible).
+func isChromeExtensionAllowed(origin string) bool {
+	extIDMu.RLock()
+	loaded := extIDLoaded
+	ids := extIDSet
+	extIDMu.RUnlock()
+
+	if !loaded || len(ids) == 0 {
+		return true // not configured or empty — allow all (backward compat)
+	}
+	id := extractExtensionID(origin)
+	if id == "" {
+		return false
+	}
+	_, allowed := ids[id]
+	return allowed
+}
 
 type apiErrorPayload struct {
 	Code    string      `json:"code"`
@@ -141,9 +209,9 @@ func isOriginAllowed(origin, host string, allowedOrigins []string) bool {
 	if isSameHostURL(origin, host) {
 		return true
 	}
-	// Allow Chrome extension origins (chrome-extension://<id>)
+	// Allow Chrome extension origins only if the extension ID is permitted.
 	if strings.HasPrefix(origin, "chrome-extension://") {
-		return true
+		return isChromeExtensionAllowed(origin)
 	}
 	return originAllowedByList(origin, allowedOrigins)
 }
