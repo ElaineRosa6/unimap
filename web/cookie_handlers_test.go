@@ -349,4 +349,3 @@ func TestVerifyEngineSession_UnknownEngine(t *testing.T) {
 	}
 	_ = hint // hint varies by implementation
 }
-

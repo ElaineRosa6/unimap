@@ -276,8 +276,8 @@ func TestGenerateCacheKey_DifferentInputs(t *testing.T) {
 
 func TestNormalizeQuery(t *testing.T) {
 	tests := []struct {
-		input  string
-		want   string
+		input string
+		want  string
 	}{
 		{"  Domain=\"test\"  ", "domain=\"test\""},
 		{"DOMAIN=\"TEST\"", "domain=\"test\""},

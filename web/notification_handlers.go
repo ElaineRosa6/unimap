@@ -416,4 +416,3 @@ func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request)
 		"message": "test message sent successfully",
 	})
 }
-

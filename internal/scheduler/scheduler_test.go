@@ -573,7 +573,7 @@ func TestExecutionWindow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := NewScheduler("", "", 100)
-	s.Start()
+			s.Start()
 			defer s.Stop()
 
 			if tt.window != nil {

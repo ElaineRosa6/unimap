@@ -434,4 +434,3 @@ func (p *UQLParser) Simplify(query string) string {
 	query = strings.ReplaceAll(query, "\n", " ")
 	return strings.TrimSpace(query)
 }
-

@@ -39,19 +39,19 @@ type EngineCacheTTLConfig struct {
 type CircuitState string
 
 const (
-	CircuitClosed   CircuitState = "closed"   // 正常状态
-	CircuitOpen     CircuitState = "open"     // 熔断状态，跳过该引擎
+	CircuitClosed   CircuitState = "closed"    // 正常状态
+	CircuitOpen     CircuitState = "open"      // 熔断状态，跳过该引擎
 	CircuitHalfOpen CircuitState = "half_open" // 半开状态，尝试恢复
 )
 
 // CircuitBreaker 简单熔断器
 type CircuitBreaker struct {
-	mu             sync.Mutex
-	State          CircuitState
-	Failures       int
-	LastFailure    time.Time
-	Threshold      int
-	ResetDuration  time.Duration
+	mu            sync.Mutex
+	State         CircuitState
+	Failures      int
+	LastFailure   time.Time
+	Threshold     int
+	ResetDuration time.Duration
 }
 
 func (cb *CircuitBreaker) AllowRequest() bool {
@@ -296,10 +296,10 @@ func (o *EngineOrchestrator) GetCircuitBreakerStats() map[string]map[string]inte
 	for name, cb := range o.circuitBreakers {
 		state, failures, threshold, lastFailure, resetDuration := cb.GetStats()
 		stats[name] = map[string]interface{}{
-			"state":         string(state),
-			"failures":      failures,
-			"threshold":     threshold,
-			"last_failure":  lastFailure,
+			"state":          string(state),
+			"failures":       failures,
+			"threshold":      threshold,
+			"last_failure":   lastFailure,
 			"reset_duration": resetDuration,
 		}
 	}
@@ -904,4 +904,3 @@ func (o *EngineOrchestrator) ExecuteUnifiedQuery(ast *model.UQLAST, engineNames 
 
 	return assets, nil
 }
-

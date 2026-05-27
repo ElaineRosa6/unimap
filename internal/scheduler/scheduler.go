@@ -265,8 +265,8 @@ type NotificationConfig struct {
 	OnSuccess  bool     `json:"on_success"`
 	OnFailure  bool     `json:"on_failure"`
 	OnTimeout  bool     `json:"on_timeout"`
-	ChannelIDs []string `json:"channel_ids"`          // 新字段：引用全局 channel ID
-	Channels   []string `json:"channels,omitempty"`   // 旧字段：向后兼容
+	ChannelIDs []string `json:"channel_ids"`           // 新字段：引用全局 channel ID
+	Channels   []string `json:"channels,omitempty"`    // 旧字段：向后兼容
 	WebhookURL string   `json:"webhook_url,omitempty"` // 旧字段：任务级 inline webhook
 	Recipients []string `json:"recipients,omitempty"`
 }
@@ -1395,4 +1395,3 @@ func sortInt64(s []int64) {
 		return s[i] < s[j]
 	})
 }
-

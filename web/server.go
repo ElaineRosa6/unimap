@@ -314,10 +314,10 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 			NodeRegistry:  nodeRegistry,
 			NodeTaskQueue: nodeTaskQueue,
 		},
-		apiAuth:        auth.NewAuthMiddleware(auth.NewAPIKeyManager("./data/api_keys.json")),
-		shutdownCtx:    shutdownCtx,
-		shutdownCancel:   shutdownCancel,
-		revocationStore:  newSessionRevocationStore(),
+		apiAuth:         auth.NewAuthMiddleware(auth.NewAPIKeyManager("./data/api_keys.json")),
+		shutdownCtx:     shutdownCtx,
+		shutdownCancel:  shutdownCancel,
+		revocationStore: newSessionRevocationStore(),
 	}
 
 	// 初始化 ICP 结果数据库（持久化 + 变更告警依赖此 DB）
@@ -1116,4 +1116,3 @@ func maskAPIKey(apiKey string) string {
 	}
 	return apiKey[:4] + "****" + apiKey[len(apiKey)-4:]
 }
-

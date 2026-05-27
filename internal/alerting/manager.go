@@ -397,4 +397,3 @@ func (m *Manager) CleanupOldRecords(maxAge time.Duration) {
 		}
 	}
 }
-

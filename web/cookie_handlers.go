@@ -654,4 +654,3 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 		"engines":       results,
 	})
 }
-

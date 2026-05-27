@@ -41,4 +41,3 @@ func (s *Server) renderTemplateWithNonce(r *http.Request, w http.ResponseWriter,
 
 	return true
 }
-

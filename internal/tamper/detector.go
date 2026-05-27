@@ -1792,4 +1792,3 @@ func (s *HashStorage) DeleteCheckRecords(url string) error {
 	recordsDir := filepath.Join(s.baseDir, "records", sanitizeFilenameForStorage(url))
 	return os.RemoveAll(recordsDir)
 }
-

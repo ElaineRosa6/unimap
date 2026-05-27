@@ -234,4 +234,3 @@ func scanResults(rows *sql.Rows) ([]*ICPResultRow, error) {
 	}
 	return results, rows.Err()
 }
-

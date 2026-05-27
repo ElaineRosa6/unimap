@@ -13,13 +13,13 @@ import (
 
 // ShutdownManager 优雅关闭管理器
 type ShutdownManager struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	signals   chan os.Signal
-	wg        sync.WaitGroup
-	handlers  []ShutdownHandler
-	mu        sync.RWMutex
-	timeout   time.Duration
+	ctx      context.Context
+	cancel   context.CancelFunc
+	signals  chan os.Signal
+	wg       sync.WaitGroup
+	handlers []ShutdownHandler
+	mu       sync.RWMutex
+	timeout  time.Duration
 }
 
 // ShutdownHandler 关闭处理函数类型
@@ -131,13 +131,14 @@ func (s *ShutdownManager) Stop() {
 
 // GracefulShutdown 简化的优雅关闭辅助函数
 // 使用示例:
-//   utils.GracefulShutdown(30*time.Second, func(ctx context.Context) error {
-//       // 关闭数据库连接
-//       return db.Close()
-//   }, func(ctx context.Context) error {
-//       // 关闭HTTP服务器
-//       return server.Shutdown(ctx)
-//   })
+//
+//	utils.GracefulShutdown(30*time.Second, func(ctx context.Context) error {
+//	    // 关闭数据库连接
+//	    return db.Close()
+//	}, func(ctx context.Context) error {
+//	    // 关闭HTTP服务器
+//	    return server.Shutdown(ctx)
+//	})
 func GracefulShutdown(timeout time.Duration, handlers ...ShutdownHandler) {
 	manager := NewShutdownManager(timeout)
 
@@ -148,4 +149,3 @@ func GracefulShutdown(timeout time.Duration, handlers ...ShutdownHandler) {
 	manager.Start()
 	manager.Wait()
 }
-

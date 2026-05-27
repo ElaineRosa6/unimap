@@ -28,11 +28,11 @@ func TestNewCircuitBreaker(t *testing.T) {
 
 	t.Run("respects provided values", func(t *testing.T) {
 		cfg := Config{
-			FailureThreshold:  80,
-			RecoveryTimeout:   5 * time.Second,
+			FailureThreshold:    80,
+			RecoveryTimeout:     5 * time.Second,
 			HalfOpenMaxRequests: 3,
-			MinRequests:       5,
-			Name:              "test-cb",
+			MinRequests:         5,
+			Name:                "test-cb",
 		}
 		cb := NewCircuitBreaker(cfg).(*circuitBreaker)
 		if cb.config.FailureThreshold != 80 {
@@ -150,9 +150,9 @@ func TestCircuitBreaker_TransitionsToHalfOpen(t *testing.T) {
 
 func TestCircuitBreaker_HalfOpenClosesOnSuccess(t *testing.T) {
 	cb := NewCircuitBreaker(Config{
-		FailureThreshold: 50,
-		MinRequests:      5,
-		RecoveryTimeout:  50 * time.Millisecond,
+		FailureThreshold:    50,
+		MinRequests:         5,
+		RecoveryTimeout:     50 * time.Millisecond,
 		HalfOpenMaxRequests: 2,
 	}).(*circuitBreaker)
 

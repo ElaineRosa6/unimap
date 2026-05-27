@@ -275,4 +275,3 @@ func TestRequireNodeOrAdminToken_NodePasses(t *testing.T) {
 		t.Fatal("expected true for valid node token")
 	}
 }
-

@@ -533,4 +533,3 @@ func NewZoomEyeAdapterWebOnly() *ZoomEyeAdapterWebOnly {
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "zoomeye"),
 	}
 }
-

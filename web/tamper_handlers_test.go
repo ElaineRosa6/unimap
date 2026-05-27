@@ -287,4 +287,3 @@ func TestTamperAllocatorFactory_NilMgr(t *testing.T) {
 		t.Fatal("expected nil factory when screenshotMgr is nil")
 	}
 }
-

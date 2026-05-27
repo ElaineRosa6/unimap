@@ -11,36 +11,36 @@ type Permission string
 
 const (
 	// 系统权限
-	PermissionAdmin        Permission = "admin"
-	PermissionRead         Permission = "read"
-	PermissionWrite        Permission = "write"
-	PermissionDelete       Permission = "delete"
-	
+	PermissionAdmin  Permission = "admin"
+	PermissionRead   Permission = "read"
+	PermissionWrite  Permission = "write"
+	PermissionDelete Permission = "delete"
+
 	// API权限
-	PermissionAPIExecute   Permission = "api:execute"
-	PermissionAPIRead      Permission = "api:read"
-	PermissionAPIWrite     Permission = "api:write"
-	
+	PermissionAPIExecute Permission = "api:execute"
+	PermissionAPIRead    Permission = "api:read"
+	PermissionAPIWrite   Permission = "api:write"
+
 	// 任务权限
-	PermissionTaskCreate   Permission = "task:create"
-	PermissionTaskRead     Permission = "task:read"
-	PermissionTaskUpdate   Permission = "task:update"
-	PermissionTaskDelete   Permission = "task:delete"
-	
+	PermissionTaskCreate Permission = "task:create"
+	PermissionTaskRead   Permission = "task:read"
+	PermissionTaskUpdate Permission = "task:update"
+	PermissionTaskDelete Permission = "task:delete"
+
 	// 节点权限
 	PermissionNodeRegister Permission = "node:register"
 	PermissionNodeManage   Permission = "node:manage"
-	
+
 	// 插件权限
 	PermissionPluginExecute Permission = "plugin:execute"
 	PermissionPluginManage  Permission = "plugin:manage"
-	
+
 	// 配置权限
-	PermissionConfigRead   Permission = "config:read"
-	PermissionConfigWrite  Permission = "config:write"
-	
+	PermissionConfigRead  Permission = "config:read"
+	PermissionConfigWrite Permission = "config:write"
+
 	// 审计权限
-	PermissionAuditRead    Permission = "audit:read"
+	PermissionAuditRead Permission = "audit:read"
 )
 
 // Role 角色定义
@@ -121,8 +121,8 @@ var (
 
 // PermissionManager 权限管理器
 type PermissionManager struct {
-	roles      map[string]*Role
-	mutex      sync.RWMutex
+	roles map[string]*Role
+	mutex sync.RWMutex
 }
 
 // NewPermissionManager 创建权限管理器
@@ -130,13 +130,13 @@ func NewPermissionManager() *PermissionManager {
 	manager := &PermissionManager{
 		roles: make(map[string]*Role),
 	}
-	
+
 	// 注册预定义角色
 	manager.RegisterRole(RoleAdmin)
 	manager.RegisterRole(RoleOperator)
 	manager.RegisterRole(RoleReadOnly)
 	manager.RegisterRole(RoleNode)
-	
+
 	return manager
 }
 
@@ -144,7 +144,7 @@ func NewPermissionManager() *PermissionManager {
 func (m *PermissionManager) RegisterRole(role Role) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	
+
 	m.roles[role.Name] = &role
 }
 
@@ -152,7 +152,7 @@ func (m *PermissionManager) RegisterRole(role Role) {
 func (m *PermissionManager) GetRole(name string) *Role {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	return m.roles[name]
 }
 
@@ -162,13 +162,13 @@ func (m *PermissionManager) HasPermission(roleName string, permission Permission
 	if role == nil {
 		return false
 	}
-	
+
 	for _, p := range role.Permissions {
 		if p == permission || p == PermissionAdmin {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -179,7 +179,7 @@ func (m *PermissionManager) HasAnyPermission(roleName string, permissions ...Per
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -190,7 +190,7 @@ func (m *PermissionManager) HasAllPermissions(roleName string, permissions ...Pe
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -199,7 +199,7 @@ func (m *PermissionManager) CheckPermission(roleName string, permission Permissi
 	if !m.HasPermission(roleName, permission) {
 		return unierror.APIForbidden("Insufficient permissions for: %s", permission)
 	}
-	
+
 	return nil
 }
 
@@ -208,7 +208,7 @@ func (m *PermissionManager) CheckAnyPermission(roleName string, permissions ...P
 	if !m.HasAnyPermission(roleName, permissions...) {
 		return unierror.APIForbidden("Insufficient permissions")
 	}
-	
+
 	return nil
 }
 
@@ -217,7 +217,7 @@ func (m *PermissionManager) CheckAllPermissions(roleName string, permissions ...
 	if !m.HasAllPermissions(roleName, permissions...) {
 		return unierror.APIForbidden("Insufficient permissions")
 	}
-	
+
 	return nil
 }
 
@@ -227,7 +227,7 @@ func (m *PermissionManager) GetPermissions(roleName string) []Permission {
 	if role == nil {
 		return []Permission{}
 	}
-	
+
 	return role.Permissions
 }
 
@@ -235,12 +235,12 @@ func (m *PermissionManager) GetPermissions(roleName string) []Permission {
 func (m *PermissionManager) GetAllRoles() []*Role {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	var roles []*Role
 	for _, role := range m.roles {
 		roles = append(roles, role)
 	}
-	
+
 	return roles
 }
 
@@ -251,7 +251,7 @@ func (m *PermissionManager) CreateCustomRole(name, description string, permissio
 		Description: description,
 		Permissions: permissions,
 	}
-	
+
 	m.RegisterRole(*role)
 	return role
 }
@@ -260,12 +260,12 @@ func (m *PermissionManager) CreateCustomRole(name, description string, permissio
 func (m *PermissionManager) UpdateRole(name string, permissions []Permission) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	
+
 	role, exists := m.roles[name]
 	if !exists {
 		return false
 	}
-	
+
 	role.Permissions = permissions
 	return true
 }
@@ -274,17 +274,17 @@ func (m *PermissionManager) UpdateRole(name string, permissions []Permission) bo
 func (m *PermissionManager) DeleteRole(name string) bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	
+
 	// 不允许删除预定义角色
 	if name == RoleAdmin.Name || name == RoleOperator.Name || name == RoleReadOnly.Name || name == RoleNode.Name {
 		return false
 	}
-	
+
 	_, exists := m.roles[name]
 	if !exists {
 		return false
 	}
-	
+
 	delete(m.roles, name)
 	return true
 }

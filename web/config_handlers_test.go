@@ -41,7 +41,7 @@ func TestHandleGetConfig_MasksSecrets(t *testing.T) {
 	}
 
 	var out struct {
-		ICP map[string]interface{} `json:"icp"`
+		ICP     map[string]interface{}            `json:"icp"`
 		Engines map[string]map[string]interface{} `json:"engines"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
@@ -248,4 +248,3 @@ func TestIsMaskedSecret(t *testing.T) {
 		}
 	}
 }
-

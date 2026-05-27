@@ -454,4 +454,3 @@ func NewQuakeAdapterWebOnly() *QuakeAdapterWebOnly {
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "quake"),
 	}
 }
-

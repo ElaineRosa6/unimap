@@ -524,4 +524,3 @@ func TestParseEnginesParam_SingleValue(t *testing.T) {
 		t.Fatalf("expected [quake], got %v", engines)
 	}
 }
-

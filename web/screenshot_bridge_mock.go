@@ -142,4 +142,3 @@ func (m *bridgeMockClient) removeFromOrderLocked(requestID string) {
 		}
 	}
 }
-

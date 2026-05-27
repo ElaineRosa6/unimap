@@ -463,4 +463,3 @@ func isLikelyCDNIP(ipText string) bool {
 	}
 	return false
 }
-

@@ -16,11 +16,11 @@ var reValidURL = regexp.MustCompile(`^https?://[^\s/$.?#].[^\s]*$`)
 
 // ValidationProcessor 数据验证处理器
 type ValidationProcessor struct {
-	strictMode      bool
-	validateIP      bool
-	validatePort    bool
-	validateURL     bool
-	allowPrivateIP  bool
+	strictMode     bool
+	validateIP     bool
+	validatePort   bool
+	validateURL    bool
+	allowPrivateIP bool
 }
 
 // NewValidationProcessor 创建数据验证处理器
@@ -345,4 +345,3 @@ func (p *EnrichmentProcessor) guessServiceType(asset model.UnifiedAsset) string 
 		return "unknown"
 	}
 }
-

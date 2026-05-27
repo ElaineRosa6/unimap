@@ -792,4 +792,3 @@ func (s *Server) handleSetScreenshotMode(w http.ResponseWriter, r *http.Request)
 		"router_mode": routerMode,
 	})
 }
-

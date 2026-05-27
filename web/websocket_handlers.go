@@ -440,4 +440,3 @@ func (s *Server) updateQueryProgress(queryID string, progress float64) {
 		})
 	}
 }
-

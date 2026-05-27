@@ -150,4 +150,3 @@ func formatBackupSize(size int64) string {
 		return fmt.Sprintf("%d B", size)
 	}
 }
-

@@ -463,4 +463,3 @@ func ICPSearchWithContext(ctx context.Context, baseURL string, apiKey string, re
 func requestIDFromContext(ctx context.Context) string {
 	return requestid.FromContext(ctx)
 }
-

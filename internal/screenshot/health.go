@@ -83,4 +83,3 @@ func (e *ExtensionHealthChecker) Check(ctx context.Context) (bool, error) {
 	}
 	return true, nil
 }
-

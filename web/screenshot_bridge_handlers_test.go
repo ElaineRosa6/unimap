@@ -206,4 +206,3 @@ func TestIsLoopbackRequestRejectsNonLoopbackHost(t *testing.T) {
 		t.Fatalf("expected non-loopback host to be rejected")
 	}
 }
-

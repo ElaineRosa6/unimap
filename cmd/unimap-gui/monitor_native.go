@@ -2206,4 +2206,3 @@ func openPathInSystem(path string) error {
 	}
 	return cmd.Start()
 }
-

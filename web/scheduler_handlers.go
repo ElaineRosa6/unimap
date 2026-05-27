@@ -80,13 +80,13 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name         string                    `json:"name"`
-		Type         string                    `json:"type"`
-		Enabled      bool                      `json:"enabled"`
-		CronExpr     string                    `json:"cron_expr"`
-		Payload      map[string]interface{}    `json:"payload"`
-		TimeoutSec   int                       `json:"timeout_seconds"`
-		MaxRetries   int                       `json:"max_retries"`
+		Name          string                        `json:"name"`
+		Type          string                        `json:"type"`
+		Enabled       bool                          `json:"enabled"`
+		CronExpr      string                        `json:"cron_expr"`
+		Payload       map[string]interface{}        `json:"payload"`
+		TimeoutSec    int                           `json:"timeout_seconds"`
+		MaxRetries    int                           `json:"max_retries"`
 		Notifications *scheduler.NotificationConfig `json:"notifications,omitempty"`
 	}
 
@@ -196,14 +196,14 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ID           string                    `json:"id"`
-		Name         string                    `json:"name"`
-		Type         string                    `json:"type"`
-		Enabled      bool                      `json:"enabled"`
-		CronExpr     string                    `json:"cron_expr"`
-		Payload      map[string]interface{}    `json:"payload"`
-		TimeoutSec   int                       `json:"timeout_seconds"`
-		MaxRetries   int                       `json:"max_retries"`
+		ID            string                        `json:"id"`
+		Name          string                        `json:"name"`
+		Type          string                        `json:"type"`
+		Enabled       bool                          `json:"enabled"`
+		CronExpr      string                        `json:"cron_expr"`
+		Payload       map[string]interface{}        `json:"payload"`
+		TimeoutSec    int                           `json:"timeout_seconds"`
+		MaxRetries    int                           `json:"max_retries"`
 		Notifications *scheduler.NotificationConfig `json:"notifications,omitempty"`
 	}
 
@@ -423,4 +423,3 @@ func (s *Server) handleTaskHistory(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, history)
 }
-

@@ -8,12 +8,12 @@ import (
 // ErrorAlertHook 是日志 ERROR 级别的告警钩子。
 // 在滑动窗口内累计 ERROR 数量，超过阈值时触发回调。
 type ErrorAlertHook struct {
-	mu          sync.Mutex
-	window      time.Duration
-	threshold   int
-	timestamps  []time.Time
-	triggered   int
-	onTrigger   func(windowErrors int, triggerCount int)
+	mu         sync.Mutex
+	window     time.Duration
+	threshold  int
+	timestamps []time.Time
+	triggered  int
+	onTrigger  func(windowErrors int, triggerCount int)
 }
 
 // NewErrorAlertHook 创建 ERROR 告警钩子。

@@ -248,7 +248,7 @@ func requestSizeLimitMiddleware(maxBodyBytes int64) func(http.Handler) http.Hand
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			isWebSocket := strings.Contains(r.Header.Get("Connection"), "Upgrade") &&
 				strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-			
+
 			if !isWebSocket {
 				switch r.Method {
 				case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
@@ -326,7 +326,7 @@ func corsMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeade
 	headerHeader := strings.Join(allowedHeaders, ", ")
 	exposedHeader := strings.Join(exposedHeaders, ", ")
 
-		return func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Bridge routes have their own auth (loopback + bearer token),
 			// skip CORS restrictions for them (needed for browser extensions).
@@ -399,4 +399,3 @@ func sanitizeError(err string) string {
 	}
 	return sanitized
 }
-

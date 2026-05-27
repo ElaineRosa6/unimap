@@ -45,4 +45,3 @@ type EngineAdapter interface {
 	// IsWebOnly 检查是否为 Web-only 模式
 	IsWebOnly() bool
 }
-

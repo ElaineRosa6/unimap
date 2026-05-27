@@ -91,11 +91,11 @@ func TestExponentialBackoffStrategy_ShouldRetry(t *testing.T) {
 	strategy := NewExponentialBackoffStrategy(3, 100*time.Millisecond, 5*time.Second, 0.2)
 
 	tests := []struct {
-		name     string
-		attempt  int
-		err      error
-		resp     *http.Response
-		want     bool
+		name    string
+		attempt int
+		err     error
+		resp    *http.Response
+		want    bool
 	}{
 		{
 			name:    "within max retries with error",
@@ -396,9 +396,9 @@ func TestExponentialBackoffStrategy_NetError(t *testing.T) {
 	strategy := NewExponentialBackoffStrategy(3, 100*time.Millisecond, 5*time.Second, 0.2)
 
 	tests := []struct {
-		name    string
-		err     error
-		want    bool
+		name string
+		err  error
+		want bool
 	}{
 		{
 			name: "timeout net error",

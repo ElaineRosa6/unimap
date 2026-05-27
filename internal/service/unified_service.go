@@ -23,21 +23,21 @@ import (
 
 // UnifiedService 统一服务层 - 为 CLI、GUI 和 Web 提供统一接口
 type UnifiedService struct {
-	pluginManager     *plugin.PluginManager
-	orchestrator      *adapter.EngineOrchestrator
-	parser            *unimap.UQLParser
-	merger            *unimap.ResultMerger
-	cache             utils.QueryCache
-	cacheTTL          time.Duration
-	cacheMaxSize      int
-	cacheCleanup      time.Duration
-	cacheBackend      string
-	strategyManager   *utils.CacheStrategyManager
-	mu                sync.RWMutex
-	maxMemoryMB       int        // 最大内存使用限制（MB）
-	maxConcurrent     int        // 最大并发查询数
-	activeQueries     int        // 当前活跃查询数
-	queryMutex        sync.Mutex // 查询并发控制锁
+	pluginManager   *plugin.PluginManager
+	orchestrator    *adapter.EngineOrchestrator
+	parser          *unimap.UQLParser
+	merger          *unimap.ResultMerger
+	cache           utils.QueryCache
+	cacheTTL        time.Duration
+	cacheMaxSize    int
+	cacheCleanup    time.Duration
+	cacheBackend    string
+	strategyManager *utils.CacheStrategyManager
+	mu              sync.RWMutex
+	maxMemoryMB     int        // 最大内存使用限制（MB）
+	maxConcurrent   int        // 最大并发查询数
+	activeQueries   int        // 当前活跃查询数
+	queryMutex      sync.Mutex // 查询并发控制锁
 }
 
 // NewUnifiedService 创建统一服务
@@ -669,4 +669,3 @@ func (a *enginePluginAdapter) IsWebOnly() bool {
 	// 如果引擎插件没有实现IsWebOnly方法，返回默认值
 	return false
 }
-

@@ -149,4 +149,3 @@ func TestAdminToken(t *testing.T) {
 		t.Fatalf("expected empty when config nil, got %q", got)
 	}
 }
-

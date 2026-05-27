@@ -278,4 +278,3 @@ func TestAllowedOriginsFromConfig_TrimsWhitespace(t *testing.T) {
 		t.Fatalf("expected 'https://myapp.com', got %q", got[0])
 	}
 }
-

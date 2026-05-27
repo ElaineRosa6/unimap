@@ -176,4 +176,3 @@ func TestHandleICPQuery_RejectsNonGET(t *testing.T) {
 		t.Fatalf("expected 405, got %d (body=%q)", w.Code, w.Body.String())
 	}
 }
-

@@ -516,5 +516,3 @@ func TestHandleScreenshotFileDelete_WrongMethod(t *testing.T) {
 		t.Fatalf("expected 405, got %d", w.Code)
 	}
 }
-
-

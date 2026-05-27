@@ -220,4 +220,3 @@ func TestHandleNodeTaskDelete_NotFound(t *testing.T) {
 		t.Fatalf("expected 404 for nonexistent task, got %d", w.Code)
 	}
 }
-

@@ -46,9 +46,9 @@ type Config struct {
 			Enabled         bool     `yaml:"enabled"`
 			APIKey          string   `yaml:"api_key"`
 			Email           string   `yaml:"email"`
-			BaseURL         string   `yaml:"base_url,omitempty"`          // 废弃，保留兼容
-			APIBaseURL      string   `yaml:"api_base_url"`                 // API 模式使用
-			WebBaseURL      string   `yaml:"web_base_url"`                 // Web 模式使用（本期锁死官方域名）
+			BaseURL         string   `yaml:"base_url,omitempty"` // 废弃，保留兼容
+			APIBaseURL      string   `yaml:"api_base_url"`       // API 模式使用
+			WebBaseURL      string   `yaml:"web_base_url"`       // Web 模式使用（本期锁死官方域名）
 			QPS             int      `yaml:"qps"`
 			Timeout         int      `yaml:"timeout"`
 			UseWebAPI       bool     `yaml:"use_web_api"`
@@ -99,7 +99,7 @@ type Config struct {
 			Enabled                      bool   `yaml:"enabled"`
 			ListenAddr                   string `yaml:"listen_addr"`
 			PairingRequired              bool   `yaml:"pairing_required"`
-			PairCode                    string `yaml:"pair_code"` // optional, if set pairing must provide matching pair_code
+			PairCode                     string `yaml:"pair_code"` // optional, if set pairing must provide matching pair_code
 			TokenTTLSeconds              int    `yaml:"token_ttl_seconds"`
 			TaskTimeoutSeconds           int    `yaml:"task_timeout_seconds"`
 			MaxConcurrency               int    `yaml:"max_concurrency"`
@@ -192,11 +192,11 @@ type Config struct {
 
 	// ICP 备案查询配置
 	ICP struct {
-		Enabled     bool   `yaml:"enabled"`      // 是否启用 ICP 查询
-		BaseURL     string `yaml:"base_url"`     // sidecar 服务地址，默认 http://localhost:16181
-		APIKey      string `yaml:"api_key"`      // 可选 API Key，支持 ${ENV_VAR}
-		Timeout     int    `yaml:"timeout"`      // 请求超时（秒）
-		DefaultType  string `yaml:"default_type"` // web/app/mapp/kapp/bweb/bapp/bmapp/bkapp
+		Enabled      bool   `yaml:"enabled"`       // 是否启用 ICP 查询
+		BaseURL      string `yaml:"base_url"`      // sidecar 服务地址，默认 http://localhost:16181
+		APIKey       string `yaml:"api_key"`       // 可选 API Key，支持 ${ENV_VAR}
+		Timeout      int    `yaml:"timeout"`       // 请求超时（秒）
+		DefaultType  string `yaml:"default_type"`  // web/app/mapp/kapp/bweb/bapp/bmapp/bkapp
 		DatabasePath string `yaml:"database_path"` // SQLite 持久化路径，默认 ./data/icp_results.db
 	} `yaml:"icp"`
 
@@ -217,10 +217,10 @@ type Config struct {
 
 	// Notifications 通知配置
 	Notifications struct {
-		Enabled        bool                    `yaml:"enabled"`
+		Enabled        bool                     `yaml:"enabled"`
 		Channels       []NotificationChannelCfg `yaml:"channels"`
-		SendTimeoutSec int                    `yaml:"send_timeout_sec"`
-		MaxRetries     int                    `yaml:"max_retries"`
+		SendTimeoutSec int                      `yaml:"send_timeout_sec"`
+		MaxRetries     int                      `yaml:"max_retries"`
 	} `yaml:"notifications"`
 
 	// 缓存配置
@@ -1301,4 +1301,3 @@ func HashPassword(password string) (string, error) {
 func CheckPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
-

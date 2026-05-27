@@ -137,4 +137,3 @@ func (c *WebhookChannel) IsEnabled() bool {
 func (c *WebhookChannel) Close() error {
 	return nil
 }
-

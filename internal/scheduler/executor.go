@@ -1326,13 +1326,13 @@ func (r *ICPImportRunner) Execute(ctx context.Context, payload map[string]interf
 
 	if r.scheduler != nil {
 		task := &ScheduledTask{
-			Name:        fmt.Sprintf("ICP import batch %s", filePattern),
-			Type:        TaskICPQuery,
-			CronExpr:    "0 0 * * * *", // run once immediately
-			Payload:     map[string]interface{}{"queries": queries, "type": queryType},
-			TimeoutSec:  600,
-			MaxRetries:  1,
-			Enabled:     true,
+			Name:       fmt.Sprintf("ICP import batch %s", filePattern),
+			Type:       TaskICPQuery,
+			CronExpr:   "0 0 * * * *", // run once immediately
+			Payload:    map[string]interface{}{"queries": queries, "type": queryType},
+			TimeoutSec: 600,
+			MaxRetries: 1,
+			Enabled:    true,
 		}
 		if err := r.scheduler.AddTask(task); err != nil {
 			return "", fmt.Errorf("failed to create ICP task: %w", err)
@@ -1389,4 +1389,3 @@ func isCSVHeader(s string) bool {
 	lower := strings.ToLower(s)
 	return lower == "keyword" || lower == "domain" || lower == "company" || lower == "query" || lower == "name"
 }
-

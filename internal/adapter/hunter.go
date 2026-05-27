@@ -483,4 +483,3 @@ func NewHunterAdapterWebOnly() *HunterAdapterWebOnly {
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "hunter"),
 	}
 }
-

@@ -10,12 +10,12 @@ import (
 
 // ResourceLeak 资源泄漏记录
 type ResourceLeak struct {
-	ResourceType string    `json:"resource_type"`
-	ResourceID   string    `json:"resource_id"`
-	AcquireTime  time.Time `json:"acquire_time"`
-	ReleaseTime  time.Time `json:"release_time"`
+	ResourceType string        `json:"resource_type"`
+	ResourceID   string        `json:"resource_id"`
+	AcquireTime  time.Time     `json:"acquire_time"`
+	ReleaseTime  time.Time     `json:"release_time"`
 	LeakDuration time.Duration `json:"leak_duration"`
-	StackTrace   string    `json:"stack_trace"`
+	StackTrace   string        `json:"stack_trace"`
 }
 
 // maxDetectedLeaks 是 detectedLeaks 切片的最大容量，防止无限增长。
@@ -40,7 +40,7 @@ func NewLeakDetector(interval, maxLeakDuration time.Duration) *LeakDetector {
 	if maxLeakDuration <= 0 {
 		maxLeakDuration = 5 * time.Minute
 	}
-	
+
 	return &LeakDetector{
 		acquiredResources: make(map[string]*ResourceLeak),
 		detectedLeaks:     make([]ResourceLeak, 0),
@@ -55,7 +55,7 @@ func (d *LeakDetector) Start() {
 	go func() {
 		ticker := time.NewTicker(d.monitorInterval)
 		defer ticker.Stop()
-		
+
 		for {
 			select {
 			case <-ticker.C:
@@ -65,7 +65,7 @@ func (d *LeakDetector) Start() {
 			}
 		}
 	}()
-	
+
 	logger.Info("Resource leak detector started")
 }
 
@@ -81,10 +81,10 @@ func (d *LeakDetector) Stop() {
 func (d *LeakDetector) Acquire(resourceType, resourceID string) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
-	
+
 	// 获取堆栈信息
 	stackTrace := getStackTrace()
-	
+
 	d.acquiredResources[resourceID] = &ResourceLeak{
 		ResourceType: resourceType,
 		ResourceID:   resourceID,
@@ -97,18 +97,18 @@ func (d *LeakDetector) Acquire(resourceType, resourceID string) {
 func (d *LeakDetector) Release(resourceID string) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
-	
+
 	if leak, exists := d.acquiredResources[resourceID]; exists {
 		leak.ReleaseTime = time.Now()
 		leak.LeakDuration = leak.ReleaseTime.Sub(leak.AcquireTime)
-		
+
 		// 如果使用时间超过阈值，记录为潜在泄漏
 		if leak.LeakDuration > d.maxLeakDuration {
 			d.recordLeak(*leak)
-			logger.Warnf("Potential resource leak detected: %s (ID: %s), duration: %v", 
+			logger.Warnf("Potential resource leak detected: %s (ID: %s), duration: %v",
 				leak.ResourceType, leak.ResourceID, leak.LeakDuration)
 		}
-		
+
 		delete(d.acquiredResources, resourceID)
 	}
 }
@@ -126,22 +126,22 @@ func (d *LeakDetector) recordLeak(leak ResourceLeak) {
 func (d *LeakDetector) detectLeaks() {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
-	
+
 	now := time.Now()
 	var leaksToRemove []string
-	
+
 	for resourceID, leak := range d.acquiredResources {
 		duration := now.Sub(leak.AcquireTime)
 		if duration > d.maxLeakDuration {
 			leak.LeakDuration = duration
 			d.recordLeak(*leak)
 			leaksToRemove = append(leaksToRemove, resourceID)
-			
+
 			logger.Warnf("Resource leak detected: %s (ID: %s), duration: %v",
 				leak.ResourceType, leak.ResourceID, duration)
 		}
 	}
-	
+
 	// 移除检测到的泄漏资源
 	for _, resourceID := range leaksToRemove {
 		delete(d.acquiredResources, resourceID)
@@ -152,7 +152,7 @@ func (d *LeakDetector) detectLeaks() {
 func (d *LeakDetector) GetDetectedLeaks() []ResourceLeak {
 	d.mutex.RLock()
 	defer d.mutex.RUnlock()
-	
+
 	// 返回副本，避免并发修改
 	leaks := make([]ResourceLeak, len(d.detectedLeaks))
 	copy(leaks, d.detectedLeaks)
@@ -163,7 +163,7 @@ func (d *LeakDetector) GetDetectedLeaks() []ResourceLeak {
 func (d *LeakDetector) GetActiveResources() []ResourceLeak {
 	d.mutex.RLock()
 	defer d.mutex.RUnlock()
-	
+
 	var activeResources []ResourceLeak
 	for _, leak := range d.acquiredResources {
 		activeResources = append(activeResources, *leak)
@@ -175,7 +175,7 @@ func (d *LeakDetector) GetActiveResources() []ResourceLeak {
 func (d *LeakDetector) ClearDetectedLeaks() {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
-	
+
 	d.detectedLeaks = make([]ResourceLeak, 0)
 }
 
@@ -208,11 +208,11 @@ func (d *LeakDetector) GetLeakReport() map[string]interface{} {
 func getStackTrace() string {
 	var buf [4096]byte
 	n := runtime.Stack(buf[:], false)
-	
+
 	// 过滤掉泄漏检测器自身的调用栈
 	stack := string(buf[:n])
 	lines := splitLines(stack)
-	
+
 	// 找到第一个不是泄漏检测器的调用
 	for i, line := range lines {
 		if !contains(line, "internal/monitoring/leak_detector.go") {
@@ -220,7 +220,7 @@ func getStackTrace() string {
 			return joinLines(lines[i:])
 		}
 	}
-	
+
 	return stack
 }
 
@@ -228,7 +228,7 @@ func getStackTrace() string {
 func splitLines(s string) []string {
 	var lines []string
 	var currentLine []rune
-	
+
 	for _, r := range s {
 		if r == '\n' {
 			lines = append(lines, string(currentLine))
@@ -237,11 +237,11 @@ func splitLines(s string) []string {
 			currentLine = append(currentLine, r)
 		}
 	}
-	
+
 	if len(currentLine) > 0 {
 		lines = append(lines, string(currentLine))
 	}
-	
+
 	return lines
 }
 

@@ -375,4 +375,3 @@ func TestParseNoValidTokens(t *testing.T) {
 		t.Error("expected error for whitespace-only query")
 	}
 }
-

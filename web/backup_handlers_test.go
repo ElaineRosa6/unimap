@@ -160,4 +160,3 @@ func TestDirExists(t *testing.T) {
 		t.Error("dirExists should return false for file")
 	}
 }
-
