@@ -2,6 +2,7 @@
 
 ## 工作进展
 
+- [全量代码审查与修复计划 2026-05-27](project_code_review_fix_plan_2026-05-27.md) — 4阶段修复计划（6 Critical / 5 High / 10 Medium / 7 Low + 5死代码包），rev.2已剔除H-04/H-08误报、H-01/C-08降级、修正C-04描述和计数，待执行
 - [跨平台适配 2026-04-13](project_crossplatform_2026-04-13.md) — macOS/Linux适配：自动查询检查、定时任务渲染、SIGHUP兼容性、Chrome路径、CI多平台
 - [实施进度 2026-04-15](project_implementation_progress_2026-04-15.md) — 安全重构步骤1-3完成，P0清零
 - [实施指导完成 2026-04-16](project_implementation_guide_progress_2026-04-16.md) — 10步全部完成：20个Runner、E2E测试、Runbook、Grafana面板

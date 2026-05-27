@@ -646,6 +646,20 @@ func (s *Server) Start() error {
 	}
 
 	allowedOrigins := allowedOriginsFromConfig(s.config)
+
+	// Initialize Chrome extension ID restriction from config or env var
+	extIDs := allowedExtensionIDsFromConfig(s.config)
+	if len(extIDs) == 0 {
+		if envVal := os.Getenv("UNIMAP_ALLOWED_EXTENSION_IDS"); envVal != "" {
+			for _, part := range strings.Split(envVal, ",") {
+				part = strings.TrimSpace(part)
+				if part != "" {
+					extIDs = append(extIDs, part)
+				}
+			}
+		}
+	}
+	SetAllowedExtensionIDs(extIDs)
 	allowedMethods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 	allowedHeaders := []string{"Content-Type", "Authorization", "X-Admin-Token", "X-Requested-With", "X-WebSocket-Token", "X-Bridge-Timestamp", "X-Bridge-Nonce", "X-Bridge-Signature", requestid.HeaderName}
 	exposedHeaders := []string{requestid.HeaderName}
@@ -720,8 +734,11 @@ func (s *Server) Start() error {
 
 	addr := fmt.Sprintf("%s:%d", s.bindAddr(), s.port)
 	s.httpServer = &http.Server{
-		Addr:    addr,
-		Handler: rootHandler,
+		Addr:         addr,
+		Handler:      rootHandler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	go s.cleanupStaleQueries()
@@ -758,6 +775,20 @@ func allowedOriginsFromConfig(cfg *config.Config) []string {
 		return []string{fmt.Sprintf("http://localhost:%d", port), fmt.Sprintf("http://127.0.0.1:%d", port)}
 	}
 	return origins
+}
+
+func allowedExtensionIDsFromConfig(cfg *config.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(cfg.Web.CORS.AllowedExtensionIDs))
+	for _, id := range cfg.Web.CORS.AllowedExtensionIDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 // Shutdown 优雅关闭Web服务器

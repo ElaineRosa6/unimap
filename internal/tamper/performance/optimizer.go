@@ -69,6 +69,7 @@ type CacheManager struct {
 	mu         sync.RWMutex
 	maxSize    int
 	cleanupInterval time.Duration
+	stop       chan struct{}
 }
 
 // CacheItem 缓存项
@@ -85,6 +86,7 @@ func NewCacheManager() *CacheManager {
 		cache:           make(map[string]*CacheItem),
 		maxSize:         1000,
 		cleanupInterval: time.Minute * 10,
+		stop:            make(chan struct{}),
 	}
 	
 	// 启动定期清理
@@ -186,10 +188,20 @@ func (cm *CacheManager) evictLFU() {
 func (cm *CacheManager) startCleanup() {
 	ticker := time.NewTicker(cm.cleanupInterval)
 	defer ticker.Stop()
-	
-	for range ticker.C {
-		cm.cleanup()
+
+	for {
+		select {
+		case <-ticker.C:
+			cm.cleanup()
+		case <-cm.stop:
+			return
+		}
 	}
+}
+
+// Close 停止缓存管理器的后台清理协程
+func (cm *CacheManager) Close() {
+	close(cm.stop)
 }
 
 // cleanup 清理过期缓存

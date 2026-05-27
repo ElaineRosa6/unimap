@@ -30,7 +30,7 @@ type EnginePlugin interface {
 	
 	// 查询能力
 	Translate(ast *model.UQLAST) (string, error)
-	Search(query string, page, pageSize int) (*model.EngineResult, error)
+	Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error)
 	Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error)
 	
 	// 引擎特性

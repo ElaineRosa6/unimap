@@ -128,9 +128,18 @@ func createMonitorTab(window fyne.Window, state *AppState) fyne.CanvasObject {
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			item := targets[id]
-			box := obj.(*fyne.Container)
-			box.Objects[0].(*widget.Label).SetText(monitorTargetTitle(item))
-			box.Objects[1].(*widget.Label).SetText(monitorTargetSubtitle(item))
+			box, ok := obj.(*fyne.Container)
+			if !ok || len(box.Objects) < 2 {
+				return
+			}
+			primary, ok := box.Objects[0].(*widget.Label)
+			if ok {
+				primary.SetText(monitorTargetTitle(item))
+			}
+			secondary, ok := box.Objects[1].(*widget.Label)
+			if ok {
+				secondary.SetText(monitorTargetSubtitle(item))
+			}
 		},
 	)
 	targetList.OnSelected = func(id widget.ListItemID) {
@@ -148,9 +157,18 @@ func createMonitorTab(window fyne.Window, state *AppState) fyne.CanvasObject {
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			baselineURL := baselines[id]
-			box := obj.(*fyne.Container)
-			box.Objects[0].(*widget.Label).SetText(baselineURL)
-			box.Objects[1].(*widget.Label).SetText(baselineMetaText(state, baselineURL))
+			box, ok := obj.(*fyne.Container)
+			if !ok || len(box.Objects) < 2 {
+				return
+			}
+			primary, ok := box.Objects[0].(*widget.Label)
+			if ok {
+				primary.SetText(baselineURL)
+			}
+			secondary, ok := box.Objects[1].(*widget.Label)
+			if ok {
+				secondary.SetText(baselineMetaText(state, baselineURL))
+			}
 		},
 	)
 	baselineList.OnSelected = func(id widget.ListItemID) {
@@ -511,9 +529,18 @@ func createHistoryTab(window fyne.Window, state *AppState) fyne.CanvasObject {
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			item := urlItems[id]
-			box := obj.(*fyne.Container)
-			box.Objects[0].(*widget.Label).SetText(item.URL)
-			box.Objects[1].(*widget.Label).SetText(fmt.Sprintf("记录 %d | 基线 %s | 最近 %s", item.RecordCount, yesNo(item.HasBaseline), formatTimestamp(item.LastCheckAt)))
+			box, ok := obj.(*fyne.Container)
+			if !ok || len(box.Objects) < 2 {
+				return
+			}
+			primary, ok := box.Objects[0].(*widget.Label)
+			if ok {
+				primary.SetText(item.URL)
+			}
+			secondary, ok := box.Objects[1].(*widget.Label)
+			if ok {
+				secondary.SetText(fmt.Sprintf("记录 %d | 基线 %s | 最近 %s", item.RecordCount, yesNo(item.HasBaseline), formatTimestamp(item.LastCheckAt)))
+			}
 		},
 	)
 
@@ -527,9 +554,18 @@ func createHistoryTab(window fyne.Window, state *AppState) fyne.CanvasObject {
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			record := records[id]
-			box := obj.(*fyne.Container)
-			box.Objects[0].(*widget.Label).SetText(fmt.Sprintf("%s | %s", record.CheckType, formatTimestamp(record.Timestamp)))
-			box.Objects[1].(*widget.Label).SetText(historyRecordSummary(record))
+			box, ok := obj.(*fyne.Container)
+			if !ok || len(box.Objects) < 2 {
+				return
+			}
+			primary, ok := box.Objects[0].(*widget.Label)
+			if ok {
+				primary.SetText(fmt.Sprintf("%s | %s", record.CheckType, formatTimestamp(record.Timestamp)))
+			}
+			secondary, ok := box.Objects[1].(*widget.Label)
+			if ok {
+				secondary.SetText(historyRecordSummary(record))
+			}
 		},
 	)
 
@@ -719,7 +755,9 @@ func createHistoryTab(window fyne.Window, state *AppState) fyne.CanvasObject {
 	right.Offset = 0.33
 	content := container.NewHSplit(container.NewHSplit(left, middle), right)
 	content.Offset = 0.58
-	content.Leading.(*container.Split).Offset = 0.42
+	if s, ok := content.Leading.(*container.Split); ok {
+		s.Offset = 0.42
+	}
 
 	refreshURLs()
 	refreshDetail()
@@ -778,9 +816,18 @@ func createScreenshotTab(window fyne.Window, state *AppState) fyne.CanvasObject 
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			item := files[id]
-			box := obj.(*fyne.Container)
-			box.Objects[0].(*widget.Label).SetText(item.Name)
-			box.Objects[1].(*widget.Label).SetText(fmt.Sprintf("%s | %s", formatFileSize(item.Size), item.UpdatedAt.Format("2006-01-02 15:04:05")))
+			box, ok := obj.(*fyne.Container)
+			if !ok || len(box.Objects) < 2 {
+				return
+			}
+			primary, ok := box.Objects[0].(*widget.Label)
+			if ok {
+				primary.SetText(item.Name)
+			}
+			secondary, ok := box.Objects[1].(*widget.Label)
+			if ok {
+				secondary.SetText(fmt.Sprintf("%s | %s", formatFileSize(item.Size), item.UpdatedAt.Format("2006-01-02 15:04:05")))
+			}
 		},
 	)
 	fileList.OnSelected = func(id widget.ListItemID) {
@@ -818,9 +865,18 @@ func createScreenshotTab(window fyne.Window, state *AppState) fyne.CanvasObject 
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			item := batches[id]
-			box := obj.(*fyne.Container)
-			box.Objects[0].(*widget.Label).SetText(item.Name)
-			box.Objects[1].(*widget.Label).SetText(fmt.Sprintf("文件 %d | %s", item.FileCount, item.UpdatedAt.Format("2006-01-02 15:04:05")))
+			box, ok := obj.(*fyne.Container)
+			if !ok || len(box.Objects) < 2 {
+				return
+			}
+			primary, ok := box.Objects[0].(*widget.Label)
+			if ok {
+				primary.SetText(item.Name)
+			}
+			secondary, ok := box.Objects[1].(*widget.Label)
+			if ok {
+				secondary.SetText(fmt.Sprintf("文件 %d | %s", item.FileCount, item.UpdatedAt.Format("2006-01-02 15:04:05")))
+			}
 		},
 	)
 	batchList.OnSelected = func(id widget.ListItemID) {
@@ -919,7 +975,9 @@ func createScreenshotTab(window fyne.Window, state *AppState) fyne.CanvasObject 
 		),
 	)
 	content.Offset = 0.34
-	content.Trailing.(*container.Split).Offset = 0.45
+	if s, ok := content.Trailing.(*container.Split); ok {
+		s.Offset = 0.45
+	}
 
 	refreshBatches()
 	refreshDetail()

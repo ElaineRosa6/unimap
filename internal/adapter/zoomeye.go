@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -134,7 +135,7 @@ func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
 }
 
 // Search 执行搜索
-func (z *ZoomEyeAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (z *ZoomEyeAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	var engineResult *model.EngineResult
 
 	retryConfig := utils.RetryConfig{
@@ -459,7 +460,7 @@ func (z *ZoomEyeAdapter) GetQuota() (*model.QuotaInfo, error) {
 		Get(url)
 
 	if err != nil {
-		return nil, fmt.Errorf("request error: %v", err)
+		return nil, fmt.Errorf("request error: %w", err)
 	}
 
 	if resp.StatusCode() != 200 {
@@ -490,7 +491,7 @@ func (z *ZoomEyeAdapter) GetQuota() (*model.QuotaInfo, error) {
 	}
 
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("parse error: %v", err)
+		return nil, fmt.Errorf("parse error: %w", err)
 	}
 
 	if result.Code != 60000 {

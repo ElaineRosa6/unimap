@@ -31,14 +31,14 @@ func validateTaskPayload(payload map[string]interface{}) error {
 	}
 	serialized, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("payload serialization failed: %v", err)
+		return fmt.Errorf("payload serialization failed: %w", err)
 	}
 	if len(serialized) > maxPayloadSizeBytes {
 		return fmt.Errorf("payload exceeds maximum size of %d bytes", maxPayloadSizeBytes)
 	}
 	if webhookURL, ok := payload["webhook_url"].(string); ok && webhookURL != "" {
 		if err := scheduler.ValidateWebhookURLPublic(webhookURL); err != nil {
-			return fmt.Errorf("payload webhook_url invalid: %v", err)
+			return fmt.Errorf("payload webhook_url invalid: %w", err)
 		}
 	}
 	return nil

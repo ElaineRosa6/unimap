@@ -634,8 +634,8 @@ func (a *enginePluginAdapter) Translate(ast *model.UQLAST) (string, error) {
 	return a.engine.Translate(ast)
 }
 
-func (a *enginePluginAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
-	return a.engine.Search(query, page, pageSize)
+func (a *enginePluginAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
+	return a.engine.Search(ctx, query, page, pageSize)
 }
 
 func (a *enginePluginAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {

@@ -35,10 +35,19 @@ func NewRegistry(heartbeatTimeout time.Duration) *Registry {
 		failoverStrategy: FailoverStrategyHealthBased, // 默认基于健康状态的故障转移
 	}
 	go r.startBackgroundCleanup()
+	// Finalizer is a safety net only — GC timing is non-deterministic, so callers
+	// must call Close() explicitly to guarantee cleanup.
 	runtime.SetFinalizer(r, func(r *Registry) {
 		r.Stop()
 	})
 	return r
+}
+
+// Close stops the background cleanup goroutine and clears the finalizer.
+// This is the primary cleanup mechanism and must be called explicitly by callers.
+func (r *Registry) Close() {
+	runtime.SetFinalizer(r, nil)
+	r.Stop()
 }
 
 // SetTaskQueue sets the task queue for releasing tasks when nodes go offline

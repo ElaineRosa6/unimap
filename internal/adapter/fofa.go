@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -154,7 +155,7 @@ func (f *FofaAdapter) mapField(field string) string {
 }
 
 // Search 执行FOFA搜索
-func (f *FofaAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (f *FofaAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if f.apiKey == "" || f.email == "" {
 		return &model.EngineResult{
 			EngineName: f.Name(),
@@ -418,15 +419,15 @@ func (f *FofaAdapter) GetQuota() (*model.QuotaInfo, error) {
 		Get(url)
 
 	if err != nil {
-		return nil, fmt.Errorf("request error: %v", err)
+		return nil, fmt.Errorf("request error: %w", err)
 	}
 
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
 	}
 
 	// 记录响应体，方便调试
-	logger.Debugf("FOFA quota response: %s", resp.String())
+	logger.Debugf("FOFA quota response: %s", sanitizeBody(resp.String()))
 
 	// FOFA quota response structure
 	var result struct {
@@ -443,7 +444,7 @@ func (f *FofaAdapter) GetQuota() (*model.QuotaInfo, error) {
 	}
 
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("parse error: %v", err)
+		return nil, fmt.Errorf("parse error: %w", err)
 	}
 
 	if result.Error {

@@ -126,12 +126,13 @@ type Config struct {
 		Port        int    `yaml:"port"`         // 监听端口
 		BindAddress string `yaml:"bind_address"` // 监听地址
 		CORS        struct {
-			AllowedOrigins   []string `yaml:"allowed_origins"`
-			AllowedMethods   []string `yaml:"allowed_methods"`
-			AllowedHeaders   []string `yaml:"allowed_headers"`
-			ExposedHeaders   []string `yaml:"exposed_headers"`
-			AllowCredentials bool     `yaml:"allow_credentials"`
-			MaxAge           int      `yaml:"max_age"`
+			AllowedOrigins      []string `yaml:"allowed_origins"`
+			AllowedMethods      []string `yaml:"allowed_methods"`
+			AllowedHeaders      []string `yaml:"allowed_headers"`
+			ExposedHeaders      []string `yaml:"exposed_headers"`
+			AllowCredentials    bool     `yaml:"allow_credentials"`
+			MaxAge              int      `yaml:"max_age"`
+			AllowedExtensionIDs []string `yaml:"allowed_extension_ids"` // chrome-extension:// 允许的扩展 ID，空表示全部允许（向后兼容）
 		} `yaml:"cors"`
 		RateLimit struct {
 			Enabled           bool `yaml:"enabled"`
@@ -315,6 +316,7 @@ func (c *Config) Clone() *Config {
 	clone.Web.CORS.AllowedMethods = cloneStringSlice(c.Web.CORS.AllowedMethods)
 	clone.Web.CORS.AllowedHeaders = cloneStringSlice(c.Web.CORS.AllowedHeaders)
 	clone.Web.CORS.ExposedHeaders = cloneStringSlice(c.Web.CORS.ExposedHeaders)
+	clone.Web.CORS.AllowedExtensionIDs = cloneStringSlice(c.Web.CORS.AllowedExtensionIDs)
 	clone.Web.Auth = c.Web.Auth
 
 	// Network (has slice: Proxies)

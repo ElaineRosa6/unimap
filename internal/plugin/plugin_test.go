@@ -87,7 +87,7 @@ func TestExampleEnginePlugin_Search_NotStarted(t *testing.T) {
 	plugin := NewExampleEnginePlugin()
 
 	// Search without start should fail
-	if _, err := plugin.Search("test", 1, 10); err == nil {
+	if _, err := plugin.Search(context.Background(), "test", 1, 10); err == nil {
 		t.Fatal("expected error when searching before start")
 	}
 }

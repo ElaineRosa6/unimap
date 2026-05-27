@@ -1,6 +1,7 @@
 package web
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strings"
 	"time"
@@ -126,21 +127,6 @@ func (s *Server) handleLogoutAPI(w http.ResponseWriter, r *http.Request) {
 
 // secureCompare performs constant-time string comparison.
 func secureCompare(a, b string) bool {
-	if len(a) != len(b) {
-		// Still do comparison to avoid timing leak on length
-		result := byte(0)
-		for i := 0; i < len(a); i++ {
-			result |= a[i]
-		}
-		for i := 0; i < len(b); i++ {
-			result |= b[i]
-		}
-		return false
-	}
-	result := byte(0)
-	for i := 0; i < len(a); i++ {
-		result |= a[i] ^ b[i]
-	}
-	return result == 0
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 

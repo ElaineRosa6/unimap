@@ -26,7 +26,7 @@ func (m *mockAdapter) Translate(ast *model.UQLAST) (string, error) {
 	return m.translate, nil
 }
 
-func (m *mockAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (m *mockAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if m.searchErr != nil {
 		return nil, m.searchErr
 	}

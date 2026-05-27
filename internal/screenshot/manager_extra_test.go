@@ -178,24 +178,3 @@ func min(a, b int) int {
 	}
 	return b
 }
-
-// ===== isMockBridgeClient =====
-
-func TestIsMockBridgeClient(t *testing.T) {
-	// The mock client from scheduler tests won't be available here,
-	// but we can test the function directly if it exists in the package.
-	// isMockBridgeClient checks the type name via reflection.
-	// This is a minimal test to verify the function doesn't panic.
-	// Real mock detection is tested via integration in scheduler.
-
-	// Test with nil - should not panic
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("isMockBridgeClient panicked: %v", r)
-		}
-	}()
-
-	// We can't easily construct a mockBridgeClient in this package,
-	// so we just verify the function exists and is callable.
-	// The actual mock detection is verified in scheduler tests.
-}

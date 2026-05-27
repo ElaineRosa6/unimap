@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -71,7 +72,7 @@ func TestWebOnlyAdapterBase_Translate(t *testing.T) {
 
 func TestWebOnlyAdapterBase_Search_NoBackend(t *testing.T) {
 	base := NewWebOnlyAdapterBase(&mockAdapter{}, "test")
-	_, err := base.Search("test", 1, 10)
+	_, err := base.Search(context.Background(), "test", 1, 10)
 	if err == nil {
 		t.Error("expected error when no browser backend configured")
 	}
@@ -376,7 +377,7 @@ func TestFofaAdapter_Normalize(t *testing.T) {
 func TestFofaAdapter_Search(t *testing.T) {
 	t.Run("empty api key returns error result", func(t *testing.T) {
 		a := NewFofaAdapter("https://fofa.info", "", "", 3, 30*time.Second)
-		result, err := a.Search("test", 1, 10)
+		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -393,7 +394,7 @@ func TestFofaAdapter_Search(t *testing.T) {
 		defer server.Close()
 
 		a := NewFofaAdapter(server.URL, "key", "email@test.com", 3, 30*time.Second)
-		result, err := a.Search("port=80", 1, 10)
+		result, err := a.Search(context.Background(), "port=80", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -413,7 +414,7 @@ func TestFofaAdapter_Search(t *testing.T) {
 		defer server.Close()
 
 		a := NewFofaAdapter(server.URL, "key", "email@test.com", 3, 30*time.Second)
-		result, err := a.Search("test", 1, 10)
+		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -645,7 +646,7 @@ func TestHunterAdapter_Normalize(t *testing.T) {
 func TestHunterAdapter_Search(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
 		a := NewHunterAdapter("https://hunter.io", "", 3, 30*time.Second)
-		result, err := a.Search("test", 1, 10)
+		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -662,7 +663,7 @@ func TestHunterAdapter_Search(t *testing.T) {
 		defer server.Close()
 
 		a := NewHunterAdapter(server.URL, "key", 3, 30*time.Second)
-		result, err := a.Search("port=80", 1, 10)
+		result, err := a.Search(context.Background(), "port=80", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -681,7 +682,7 @@ func TestHunterAdapter_Search(t *testing.T) {
 		defer server.Close()
 
 		a := NewHunterAdapter(server.URL, "key", 3, 30*time.Second)
-		result, err := a.Search("test", 1, 10)
+		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -890,7 +891,7 @@ func TestShodanAdapter_Normalize(t *testing.T) {
 func TestShodanAdapter_Search(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
 		a := NewShodanAdapter("https://api.shodan.io", "", 3, 30*time.Second)
-		result, err := a.Search("test", 1, 10)
+		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -906,7 +907,7 @@ func TestShodanAdapter_Search(t *testing.T) {
 		defer server.Close()
 
 		a := NewShodanAdapter(server.URL, "key", 3, 30*time.Second)
-		result, err := a.Search("port:80", 1, 10)
+		result, err := a.Search(context.Background(), "port:80", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1166,7 +1167,7 @@ func TestQuakeAdapter_Normalize(t *testing.T) {
 func TestQuakeAdapter_Search(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
 		a := NewQuakeAdapter("https://quake.io", "", 3, 30*time.Second)
-		result, err := a.Search("test", 1, 10)
+		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1183,7 +1184,7 @@ func TestQuakeAdapter_Search(t *testing.T) {
 		defer server.Close()
 
 		a := NewQuakeAdapter(server.URL, "key", 3, 30*time.Second)
-		result, err := a.Search("port:80", 1, 10)
+		result, err := a.Search(context.Background(), "port:80", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1428,7 +1429,7 @@ func TestZoomEyeAdapter_Normalize(t *testing.T) {
 func TestZoomEyeAdapter_Search(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
 		a := NewZoomEyeAdapter("https://api.zoomeye.org", "", 3, 30*time.Second)
-		result, err := a.Search("test", 1, 10)
+		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1445,7 +1446,7 @@ func TestZoomEyeAdapter_Search(t *testing.T) {
 		defer server.Close()
 
 		a := NewZoomEyeAdapter(server.URL, "key", 3, 30*time.Second)
-		result, err := a.Search("port:80", 1, 10)
+		result, err := a.Search(context.Background(), "port:80", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
