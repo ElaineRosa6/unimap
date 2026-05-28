@@ -6,12 +6,29 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/requestid"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
+
+// ensureUTF8 converts GBK-encoded strings to UTF-8.
+// On Windows, curl and some HTTP clients send Chinese characters in GBK encoding.
+// The ICP sidecar expects UTF-8, so we need to normalize.
+func ensureUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	decoded, _, err := transform.String(simplifiedchinese.GBK.NewDecoder(), s)
+	if err != nil {
+		return s
+	}
+	return decoded
+}
 
 type ICPQueryType string
 
@@ -172,7 +189,7 @@ func (a *ICPAdapter) Translate(ast *model.UQLAST) (string, error) {
 }
 
 func (a *ICPAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
-	return a.SearchWithContext(context.Background(), query, page, pageSize)
+	return a.SearchWithContext(ctx, query, page, pageSize)
 }
 
 func (a *ICPAdapter) SearchWithContext(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
@@ -267,7 +284,7 @@ func (a *ICPAdapter) doSearch(ctx context.Context, query string, page, pageSize 
 		pageSize = 20
 	}
 	req := a.client.R().SetContext(ctx).
-		SetQueryParam("search", query).
+		SetQueryParam("search", ensureUTF8(query)).
 		SetQueryParam("pageNum", fmt.Sprintf("%d", page)).
 		SetQueryParam("pageSize", fmt.Sprintf("%d", pageSize)).
 		SetResult(&resp)
@@ -393,19 +410,12 @@ func IsValidICPQueryType(raw string) bool {
 }
 
 func (a *ICPAdapter) HealthCheck(ctx context.Context) error {
-	var health struct {
-		Status  string `json:"status"`
-		Service string `json:"service"`
-	}
-	resp, err := a.client.R().SetContext(ctx).SetResult(&health).Get(fmt.Sprintf("%s/health", a.baseURL))
+	resp, err := a.client.R().SetContext(ctx).Get(strings.TrimRight(a.baseURL, "/"))
 	if err != nil {
 		return fmt.Errorf("ICP health check failed: %w", err)
 	}
 	if resp.StatusCode() != 200 {
 		return fmt.Errorf("ICP health check returned HTTP %d", resp.StatusCode())
-	}
-	if health.Status != "ok" {
-		return fmt.Errorf("ICP service unhealthy: %s", health.Status)
 	}
 	return nil
 }
@@ -438,7 +448,7 @@ func ICPSearchWithContext(ctx context.Context, baseURL string, apiKey string, re
 	}
 	var resp icpAPIResponse
 	httpResp, err := client.R().SetContext(ctx).
-		SetQueryParam("search", req.Query).
+		SetQueryParam("search", ensureUTF8(req.Query)).
 		SetQueryParam("pageNum", fmt.Sprintf("%d", req.Page)).
 		SetQueryParam("pageSize", fmt.Sprintf("%d", req.PageSize)).
 		SetResult(&resp).

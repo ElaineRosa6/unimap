@@ -56,4 +56,89 @@
 		</section>
 	</main>
 
+<script nonce="{{.CSPNonce}}">
+document.addEventListener('DOMContentLoaded', function() {
+	const urlList = document.getElementById('url-list');
+	const concurrency = document.getElementById('concurrency');
+	const batchId = document.getElementById('batch-id');
+	const progressContainer = document.getElementById('progress-container');
+	const progressBarFill = document.getElementById('progress-bar-fill');
+	const progressText = document.getElementById('progress-text');
+	const resultsContainer = document.getElementById('results-container');
+	const resultsList = document.getElementById('results-list');
+
+	// URL 统计
+	urlList.addEventListener('input', function() {
+		const lines = urlList.value.split('\n').filter(l => l.trim());
+		document.getElementById('total-urls').textContent = lines.length;
+		const valid = lines.filter(l => /^(https?:\/\/|[\w.-]+:\d+)/.test(l.trim()));
+		document.getElementById('valid-urls').textContent = valid.length;
+		document.getElementById('invalid-urls').textContent = lines.length - valid.length;
+	});
+
+	// 加载示例
+	document.getElementById('btn-load-example').addEventListener('click', function() {
+		urlList.value = 'https://www.example.com\nhttps://www.baidu.com\nhttp://test.example.org\n192.168.1.1:8080';
+		urlList.dispatchEvent(new Event('input'));
+	});
+
+	// 清空
+	document.getElementById('btn-clear-urls').addEventListener('click', function() {
+		urlList.value = '';
+		urlList.dispatchEvent(new Event('input'));
+		resultsContainer.classList.add('hidden');
+	});
+
+	// 导入文件
+	document.getElementById('btn-import-file').addEventListener('click', function() {
+		document.getElementById('file-input').click();
+	});
+	document.getElementById('file-input').addEventListener('change', function(e) {
+		const file = e.target.files[0];
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = function(ev) {
+			urlList.value = ev.target.result;
+			urlList.dispatchEvent(new Event('input'));
+		};
+		reader.readAsText(file);
+		e.target.value = '';
+	});
+
+	// 开始截图
+	document.getElementById('btn-start-batch').addEventListener('click', async function() {
+		const urls = urlList.value.split('\n').map(l => l.trim()).filter(Boolean);
+		if (urls.length === 0) { alert('请输入至少一个URL'); return; }
+		const btn = this;
+		btn.disabled = true; btn.textContent = '截图中...';
+		progressContainer.style.display = 'block';
+		progressBarFill.style.width = '0%';
+		progressText.textContent = '正在截图...';
+		resultsContainer.classList.add('hidden');
+		try {
+			const resp = await fetch('/api/screenshot/batch-urls', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({ urls, concurrency: parseInt(concurrency.value)||5, batch_id: batchId.value||'' })
+			});
+			const data = await resp.json();
+			progressBarFill.style.width = '100%';
+			progressText.textContent = '截图完成';
+			resultsContainer.classList.remove('hidden');
+			resultsList.innerHTML = '';
+			(data.results || []).forEach(r => {
+				const div = document.createElement('div');
+				div.className = 'result-item';
+				const status = r.success ? '✅ 成功' : '❌ 失败';
+				const link = r.file_path ? ` <a href="${r.file_path}" target="_blank">查看</a>` : '';
+				div.innerHTML = `<strong>${r.url}</strong> — ${status} ${r.error || ''}${link}`;
+				resultsList.appendChild(div);
+			});
+		} catch(e) {
+			progressText.textContent = '截图失败: ' + e.message;
+		}
+		btn.disabled = false; btn.textContent = '开始截图';
+	});
+});
+</script>
 {{template "footer" .}}

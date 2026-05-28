@@ -143,6 +143,7 @@ func (r *Router) RegisterRoutes() http.Handler {
 	r.addRoute("account-change-password", "POST", "/api/account/change-password", r.server.handleChangePassword, false)
 
 	// API 路由 - ICP 备案查询
+	r.addRoute("icp-health", "GET", "/api/icp/health", r.server.handleICPHealth, true)
 	r.addRoute("icp-query", "GET", "/api/icp/query", r.server.handleICPQuery, true)
 
 	// API 路由 - ICP 历史与对比

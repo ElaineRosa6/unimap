@@ -51,19 +51,24 @@
 			<div class="config-grid">
 				<!-- Execution Options card -->
 				<section class="config-card">
-					<h3 class="config-card-title">执行选项</h3>
+					<h3 class="config-card-title">浏览器查询</h3>
 
 					<div class="form-group">
 						<div class="query-options query-options--stacked">
 							<label class="option-label">
-								<input type="checkbox" name="use-cache" value="true" checked>
-								使用缓存
+								<input type="radio" name="browser-action" value="open">
+								打开引擎页面（仅登录，不抓取）
 							</label>
 							<label class="option-label">
-								<input type="checkbox" name="process-data" value="true" checked>
-								处理数据（去重、清洗）
+								<input type="radio" name="browser-action" value="capture">
+								抓取结果（浏览器直接访问引擎网页）
+							</label>
+							<label class="option-label">
+								<input type="radio" name="browser-action" value="collect">
+								采集数据（抓取 + 截图）
 							</label>
 						</div>
+						<small class="form-text">需要 CDP 浏览器已连接或扩展桥接在线，适用于 API 配额不足时</small>
 					</div>
 				</section>
 			</div>
