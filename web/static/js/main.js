@@ -1562,25 +1562,28 @@ function getSavedQueries() {
 
 // 检查引擎状态
 function checkEngineStatus() {
-	// 这里可以添加实际的引擎状态检查逻辑
-	// 例如：通过API检查引擎是否可用，API密钥是否有效等
-	
-	// 模拟引擎状态检查
-	const engines = ['fofa', 'hunter', 'zoomeye', 'quake'];
-	engines.forEach(engine => {
-		const statusElement = document.getElementById(`status-${engine}`);
-		if (statusElement) {
-			// 随机模拟状态（实际应用中应该通过API检查）
-			const isAvailable = Math.random() > 0.1; // 90%的概率可用
-			if (isAvailable) {
-				statusElement.textContent = '✓';
-				statusElement.style.color = '#27ae60';
-			} else {
-				statusElement.textContent = '✗';
-				statusElement.style.color = '#e74c3c';
-			}
-		}
-	});
+	fetch('/api/config')
+		.then(r => r.json())
+		.then(data => {
+			if (!data.engines) return;
+			Object.entries(data.engines).forEach(([name, eng]) => {
+				const el = document.getElementById(`status-${name}`);
+				if (!el) return;
+				const hasKey = !!(eng.api_key && eng.api_key !== '****');
+				const enabled = eng.enabled !== false;
+				if (enabled && hasKey) {
+					el.textContent = '✓';
+					el.style.color = '#27ae60';
+				} else if (enabled) {
+					el.textContent = '!';
+					el.style.color = '#f39c12';
+				} else {
+					el.textContent = '✗';
+					el.style.color = '#e74c3c';
+				}
+			});
+		})
+		.catch(() => {});
 }
 
 // 初始化结果表格
@@ -1843,35 +1846,54 @@ function resetFilters() {
 	}
 }
 
-// 初始化分页功能
+// 初始化分页功能（客户端分页）
 function initPagination() {
 	const prevBtn = document.getElementById('btn-prev-page');
 	const nextBtn = document.getElementById('btn-next-page');
 	const pageSizeSelect = document.getElementById('page-size');
-	
+	const tbody = document.getElementById('results-body');
+	if (!tbody) return;
+
+	const allRows = Array.from(tbody.querySelectorAll('tr'));
+	let currentPage = 1;
+	let pageSize = parseInt(pageSizeSelect?.value) || 50;
+	let totalPages = Math.max(1, Math.ceil(allRows.length / pageSize));
+
+	function renderPage() {
+		const start = (currentPage - 1) * pageSize;
+		const end = start + pageSize;
+		allRows.forEach((row, i) => {
+			row.style.display = (i >= start && i < end) ? '' : 'none';
+		});
+		if (prevBtn) prevBtn.disabled = currentPage <= 1;
+		if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+		const cp = document.getElementById('current-page');
+		const tp = document.getElementById('total-pages');
+		if (cp) cp.textContent = currentPage;
+		if (tp) tp.textContent = totalPages;
+		if (typeof initAssetDetail === 'function') initAssetDetail();
+	}
+
 	if (prevBtn) {
 		prevBtn.addEventListener('click', function() {
-			// 这里可以添加实际的分页逻辑
-			// 例如：通过API获取上一页数据
-			showMessage('上一页功能开发中', 'info');
+			if (currentPage > 1) { currentPage--; renderPage(); }
 		});
 	}
-	
 	if (nextBtn) {
 		nextBtn.addEventListener('click', function() {
-			// 这里可以添加实际的分页逻辑
-			// 例如：通过API获取下一页数据
-			showMessage('下一页功能开发中', 'info');
+			if (currentPage < totalPages) { currentPage++; renderPage(); }
 		});
 	}
-	
 	if (pageSizeSelect) {
 		pageSizeSelect.addEventListener('change', function() {
-			// 这里可以添加实际的分页逻辑
-			// 例如：通过API获取指定页大小的数据
-			showMessage('每页显示条数功能开发中', 'info');
+			pageSize = parseInt(this.value) || 50;
+			totalPages = Math.max(1, Math.ceil(allRows.length / pageSize));
+			currentPage = 1;
+			renderPage();
 		});
 	}
+
+	if (allRows.length > 0) renderPage();
 }
 
 // 初始化资产详情功能
@@ -1941,53 +1963,46 @@ function fallbackCopy(text) {
 function showAssetDetail(ip, port) {
 	const modal = document.getElementById('asset-detail');
 	const content = document.getElementById('asset-detail-content');
-	
-	// 显示加载状态
-	content.innerHTML = '<div class="loading">加载中...</div>';
+	if (!modal || !content) return;
+
+	// 从表格行读取真实数据
+	const row = document.querySelector(`tr[data-ip="${ip}"][data-port="${port}"]`);
+	const d = row ? row.dataset : {};
+
+	const fields = [
+		['IP地址', ip],
+		['端口', port],
+		['协议', d.protocol],
+		['主机', d.host],
+		['标题', d.title],
+		['服务器', d.server],
+		['状态码', d.status],
+		['来源', d.source],
+		['国家', d.country],
+		['地区', d.region],
+		['城市', d.city],
+		['ASN', d.asn],
+		['组织', d.org],
+		['ISP', d.isp],
+		['URL', d.url],
+	];
+
+	content.innerHTML = fields.filter(f => f[1] && f[1] !== '0' && f[1] !== 'undefined').map(f => `
+		<div class="asset-detail-item">
+			<span class="asset-detail-label">${f[0]}：</span>
+			<span class="asset-detail-value"><code>${escapeHtml(f[1])}</code></span>
+		</div>
+	`).join('');
+
 	modal.style.display = 'block';
-	
-	// 模拟资产详情数据
-	setTimeout(() => {
-		content.innerHTML = `
-			<div class="asset-detail-item">
-				<span class="asset-detail-label">IP地址：</span>
-				<span class="asset-detail-value"><code>${ip}</code></span>
-			</div>
-			<div class="asset-detail-item">
-				<span class="asset-detail-label">端口：</span>
-				<span class="asset-detail-value">${port}</span>
-			</div>
-			<div class="asset-detail-item">
-				<span class="asset-detail-label">地理位置：</span>
-				<span class="asset-detail-value">中国 北京</span>
-			</div>
-			<div class="asset-detail-item">
-				<span class="asset-detail-label">运营商：</span>
-				<span class="asset-detail-value">中国联通</span>
-			</div>
-			<div class="asset-detail-item">
-				<span class="asset-detail-label">ASN：</span>
-				<span class="asset-detail-value">AS4808</span>
-			</div>
-			<div class="asset-detail-item">
-				<span class="asset-detail-label">风险等级：</span>
-				<span class="asset-detail-value">低</span>
-			</div>
-		`;
-	}, 500);
-	
-	// 关闭按钮事件
-	const closeBtns = modal.querySelectorAll('.close-btn');
-	closeBtns.forEach(btn => {
-		btn.addEventListener('click', function() {
-			modal.style.display = 'none';
-		});
+
+	modal.querySelectorAll('.close-btn').forEach(btn => {
+		btn.onclick = function() { modal.style.display = 'none'; };
 	});
-	
-	// 点击模态框外部关闭
-	window.addEventListener('click', function(e) {
+	window.addEventListener('click', function handler(e) {
 		if (e.target === modal) {
 			modal.style.display = 'none';
+			window.removeEventListener('click', handler);
 		}
 	});
 }
@@ -2205,31 +2220,49 @@ function exportQuota() {
 function openQuotaSettings() {
 	const modal = document.getElementById('quota-settings-modal');
 	if (!modal) return;
-	
+
+	// 加载已保存的设置
+	try {
+		const saved = JSON.parse(localStorage.getItem('unimap_quota_settings') || '{}');
+		const ri = modal.querySelector('[name="refresh-interval"]');
+		const dt = modal.querySelector('[name="default-threshold"]');
+		const ea = modal.querySelector('[name="email-alert"]');
+		const em = modal.querySelector('[name="alert-email"]');
+		if (ri && saved.refreshInterval) ri.value = saved.refreshInterval;
+		if (dt && saved.defaultThreshold) dt.value = saved.defaultThreshold;
+		if (ea) ea.checked = !!saved.emailAlert;
+		if (em && saved.alertEmail) em.value = saved.alertEmail;
+	} catch(e) {}
+
 	modal.style.display = 'block';
-	
-	// 关闭按钮事件
-	const closeBtns = modal.querySelectorAll('.close-btn');
-	closeBtns.forEach(btn => {
-		btn.addEventListener('click', function() {
-			modal.style.display = 'none';
-		});
+
+	modal.querySelectorAll('.close-btn').forEach(btn => {
+		btn.onclick = function() { modal.style.display = 'none'; };
 	});
-	
-	// 保存设置按钮
+
 	const saveBtn = document.getElementById('btn-save-settings');
 	if (saveBtn) {
-		saveBtn.addEventListener('click', function() {
-			// 模拟保存设置
-			showMessage('设置保存成功', 'success');
+		saveBtn.onclick = function() {
+			const settings = {
+				refreshInterval: modal.querySelector('[name="refresh-interval"]')?.value || '60000',
+				defaultThreshold: modal.querySelector('[name="default-threshold"]')?.value || '80',
+				emailAlert: modal.querySelector('[name="email-alert"]')?.checked || false,
+				alertEmail: modal.querySelector('[name="alert-email"]')?.value || '',
+			};
+			try {
+				localStorage.setItem('unimap_quota_settings', JSON.stringify(settings));
+				showMessage('设置已保存', 'success');
+			} catch(e) {
+				showMessage('保存失败: ' + e.message, 'error');
+			}
 			modal.style.display = 'none';
-		});
+		};
 	}
-	
-	// 点击模态框外部关闭
-	window.addEventListener('click', function(e) {
+
+	window.addEventListener('click', function handler(e) {
 		if (e.target === modal) {
 			modal.style.display = 'none';
+			window.removeEventListener('click', handler);
 		}
 	});
 }
@@ -2437,18 +2470,28 @@ function viewScreenshot(url, ip, port, protocol) {
 	linkBtn.href = target;
 	modal.style.display = 'block';
 	
-	// 请求截图
-	const apiUrl = `/api/screenshot?url=${encodeURIComponent(target)}`;
-	const img = new Image();
-	img.onload = function() {
+	// 请求截图 (POST)
+	fetch('/api/screenshot', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: `url=${encodeURIComponent(target)}`
+	})
+	.then(resp => {
+		if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+		return resp.blob();
+	})
+	.then(blob => {
+		const imgUrl = URL.createObjectURL(blob);
 		body.innerHTML = '';
+		const img = document.createElement('img');
+		img.src = imgUrl;
 		img.style.maxWidth = '100%';
 		img.style.maxHeight = '600px';
 		img.style.border = '1px solid #ddd';
 		img.style.boxShadow = '0 0 10px rgba(0,0,0,0.1)';
 		body.appendChild(img);
-	};
-	img.onerror = function() {
+	})
+	.catch(() => {
 		body.innerHTML = `
 			<div style="color:#721c24; background:#f8d7da; padding:20px; border-radius:5px;">
 				<h4>截图失败</h4>
@@ -2456,8 +2499,7 @@ function viewScreenshot(url, ip, port, protocol) {
 				<p>URL: ${target}</p>
 			</div>
 		`;
-	};
-	img.src = apiUrl;
+	});
 }
 
 // 截图搜索引擎结果页面

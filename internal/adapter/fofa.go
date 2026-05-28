@@ -154,6 +154,20 @@ func (f *FofaAdapter) mapField(field string) string {
 	return field
 }
 
+// searchWithFields 使用指定字段执行FOFA搜索
+func (f *FofaAdapter) searchWithFields(url, encodedQuery string, page, pageSize int, fields string) (*resty.Response, error) {
+	return f.client.R().
+		SetQueryParams(map[string]string{
+			"email":   f.email,
+			"key":     f.apiKey,
+			"qbase64": encodedQuery,
+			"page":    fmt.Sprintf("%d", page),
+			"size":    fmt.Sprintf("%d", pageSize),
+			"fields":  fields,
+		}).
+		Get(url)
+}
+
 // Search 执行FOFA搜索
 func (f *FofaAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if f.apiKey == "" || f.email == "" {
@@ -183,16 +197,32 @@ func (f *FofaAdapter) Search(ctx context.Context, query string, page, pageSize i
 
 		url := fmt.Sprintf("%s/api/v1/search/all", f.baseURL)
 
-		resp, err := f.client.R().
-			SetQueryParams(map[string]string{
-				"email":   f.email,
-				"key":     f.apiKey,
-				"qbase64": encodedQuery,
-				"page":    fmt.Sprintf("%d", page),
-				"size":    fmt.Sprintf("%d", pageSize),
-				"fields":  "ip,port,protocol,domain,title,server,header,country,region,city,asn,org,isp,status_code",
-			}).
-			Get(url)
+		// 基础字段（免费账户可用），高级字段（header,region,city,asn,org,isp,status_code）需付费
+		// 先尝试完整字段，遇到权限错误时降级到基础字段重试
+		allFields := "ip,port,protocol,domain,title,server,header,country,region,city,asn,org,isp,status_code"
+		activeFields := allFields
+		resp, err := f.searchWithFields(url, encodedQuery, page, pageSize, allFields)
+
+		// 检查是否为字段权限错误，降级重试
+		if err == nil && resp.StatusCode() == 200 {
+			var errCheck struct {
+				Err    interface{} `json:"error"`
+				ErrMsg string      `json:"errmsg"`
+			}
+			if json.Unmarshal(resp.Body(), &errCheck) == nil {
+				errMsg := errCheck.ErrMsg
+				if errMsg == "" {
+					if s, ok := errCheck.Err.(string); ok {
+						errMsg = s
+					}
+				}
+				if strings.Contains(errMsg, "没有权限") || strings.Contains(errMsg, "820001") {
+					logger.Warnf("fofa: 字段权限不足，降级到基础字段重试: %s", errMsg)
+					activeFields = "ip,port,protocol,domain,title,server,country"
+					resp, err = f.searchWithFields(url, encodedQuery, page, pageSize, activeFields)
+				}
+			}
+		}
 
 		if err != nil {
 			return err
@@ -234,29 +264,13 @@ func (f *FofaAdapter) Search(ctx context.Context, query string, page, pageSize i
 			return fmt.Errorf("FOFA API error: %s", errMsg)
 		}
 
-		// 转换为通用格式
+		// 根据实际返回的字段动态映射结果
+		fieldNames := strings.Split(activeFields, ",")
 		rawData := []interface{}{}
 		for _, row := range result.Results {
-			// New fields: ip,port,protocol,domain,title,server,header,country,region,city,asn,org,isp,status_code
-			// Total 14 fields expected, but parse what we can if fewer are available
-			if len(row) < 14 {
-				logger.Warnf("fofa: unexpected row length %d (expected >= 14), parsing with available fields", len(row))
-			}
-			data := map[string]interface{}{
-				"ip":          safeRowField(row, 0),
-				"port":        safeRowField(row, 1),
-				"protocol":    safeRowField(row, 2),
-				"domain":      safeRowField(row, 3),
-				"title":       safeRowField(row, 4),
-				"server":      safeRowField(row, 5),
-				"header":      safeRowField(row, 6),
-				"country":     safeRowField(row, 7),
-				"region":      safeRowField(row, 8),
-				"city":        safeRowField(row, 9),
-				"asn":         safeRowField(row, 10),
-				"org":         safeRowField(row, 11),
-				"isp":         safeRowField(row, 12),
-				"status_code": safeRowField(row, 13),
+			data := map[string]interface{}{}
+			for i, name := range fieldNames {
+				data[name] = safeRowField(row, i)
 			}
 			rawData = append(rawData, data)
 		}

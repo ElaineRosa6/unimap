@@ -174,28 +174,23 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 
 				// Action-specific follow-up
 				switch action {
+				case "open":
+					// Already opened above — nothing more to do.
+
 				case "capture":
-					// Open + screenshot (existing behavior)
-					if outcome.AutoCaptureEnabled && captureAvailable {
-						path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, browserQuery, outcome.AutoCaptureQueryID)
+					// Parse DOM to extract structured asset data (no screenshot).
+					if browserRouter != nil {
+						collected, err := browserRouter.CollectSearchEngineResult(ctx, engine, browserQuery, queryID)
 						if err != nil {
 							engineErr = err
-							outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture failed for %s: %v", engine, err))
-							return
+							outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser capture failed for %s: %v", engine, err))
+						} else {
+							outcome.CollectedResults = append(outcome.CollectedResults, collected...)
 						}
-						if previewURLBuilder == nil {
-							return
-						}
-						previewURL := previewURLBuilder(path)
-						if previewURL == "" {
-							outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture preview unavailable for %s", engine))
-							return
-						}
-						outcome.AutoCapturedPaths[engine] = previewURL
 					}
 
 				case "collect":
-					// Open + collect structured DOM data, then capture evidence when enabled.
+					// Parse DOM to extract structured data + take screenshot as evidence.
 					if browserRouter != nil {
 						collected, err := browserRouter.CollectSearchEngineResult(ctx, engine, browserQuery, queryID)
 						if err != nil {
@@ -205,22 +200,20 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 							outcome.CollectedResults = append(outcome.CollectedResults, collected...)
 						}
 					}
-					if outcome.AutoCaptureEnabled && captureAvailable {
-						path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, browserQuery, outcome.AutoCaptureQueryID)
+					// Take evidence screenshot
+					if captureAvailable {
+						captureQueryID := queryID
+						if captureQueryID == "" {
+							captureQueryID = fmt.Sprintf("query_%d", time.Now().UnixNano())
+						}
+						path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, browserQuery, captureQueryID)
 						if err != nil {
-							engineErr = err
-							outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture failed for %s: %v", engine, err))
-							return
+							outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("screenshot failed for %s: %v", engine, err))
+						} else if previewURLBuilder != nil {
+							if previewURL := previewURLBuilder(path); previewURL != "" {
+								outcome.AutoCapturedPaths[engine] = previewURL
+							}
 						}
-						if previewURLBuilder == nil {
-							return
-						}
-						previewURL := previewURLBuilder(path)
-						if previewURL == "" {
-							outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("auto capture preview unavailable for %s", engine))
-							return
-						}
-						outcome.AutoCapturedPaths[engine] = previewURL
 					}
 				}
 			}(engine)

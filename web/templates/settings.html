@@ -355,6 +355,7 @@
 
 				<div class="cfg-actions">
 					<button class="cfg-btn cfg-btn-save" id="btn-icp-save">保存配置</button>
+					<button class="cfg-btn cfg-btn-test" id="btn-icp-test" style="margin-left:8px;">测试连接</button>
 					<span class="cfg-result" id="icp-result"></span>
 				</div>
 			</div>
@@ -615,7 +616,7 @@
 				var ct = document.getElementById('cache-ttl');
 				if (ct) ct.value = data.system.cache_ttl || 3600;
 				var cs = document.getElementById('cache-max-size');
-				if (cs) cs.value = data.system.cache_max_size || 1000;
+				if (cs) cs.value = data.system.cache_max_entries || 1000;
 			}
 		} catch (e) { console.error('Config load error:', e); }
 	}
@@ -681,6 +682,27 @@
 		} catch (e) { showResult('icp-result', 'fail', '保存失败: ' + e.message); }
 	};
 
+	window.testICP = async function() {
+		var btn = document.getElementById('btn-icp-test');
+		var originalText = btn.textContent;
+		btn.textContent = '检测中…';
+		btn.disabled = true;
+		try {
+			var resp = await fetch('/api/icp/health', { headers: { 'Authorization': 'Bearer ' + tok() } });
+			var data = await resp.json();
+			if (data.success) {
+				showResult('icp-result', 'ok', '连接成功: ' + (data.base_url || ''));
+			} else {
+				showResult('icp-result', 'fail', '连接失败: ' + (data.error || '未知错误'));
+			}
+		} catch (e) {
+			showResult('icp-result', 'fail', '检测失败: ' + e.message);
+		} finally {
+			btn.textContent = originalText;
+			btn.disabled = false;
+		}
+	};
+
 	window.saveScreenshot = async function() {
 		try {
 			var resp = await fetch('/api/config', {
@@ -706,7 +728,7 @@
 				body: JSON.stringify({ section: 'system', data: {
 					max_concurrent: parseInt(document.getElementById('max-concurrent').value),
 					cache_ttl: parseInt(document.getElementById('cache-ttl').value),
-					cache_max_size: parseInt(document.getElementById('cache-max-size').value)
+					cache_max_entries: parseInt(document.getElementById('cache-max-size').value)
 				}})
 			});
 			var result = await resp.json();
@@ -825,7 +847,7 @@
 			var data = await resp.json();
 			var el = document.getElementById('sess-cdp-status');
 			if (!el) return;
-			el.textContent = data.connected ? ('已连接 ' + (data.url || '')) : '未连接';
+			el.textContent = data.online ? ('已连接 ' + (data.url || '')) : '未连接';
 		} catch (e) {
 			var el2 = document.getElementById('sess-cdp-status');
 			if (el2) el2.textContent = '检测失败';
@@ -1099,6 +1121,8 @@
 	if (btnEnginesSave) btnEnginesSave.addEventListener('click', window.saveAllEngines);
 	var btnIcpSave = document.getElementById('btn-icp-save');
 	if (btnIcpSave) btnIcpSave.addEventListener('click', window.saveICP);
+	var btnIcpTest = document.getElementById('btn-icp-test');
+	if (btnIcpTest) btnIcpTest.addEventListener('click', window.testICP);
 	var btnScreenshotSave = document.getElementById('btn-screenshot-save');
 	if (btnScreenshotSave) btnScreenshotSave.addEventListener('click', window.saveScreenshot);
 	var btnSystemSave = document.getElementById('btn-system-save');

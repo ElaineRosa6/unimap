@@ -1,9 +1,11 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/unimap/project/internal/adapter"
 	icpdb "github.com/unimap/project/internal/icp/database"
@@ -135,6 +137,52 @@ func parsePositiveInt(raw string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// handleICPHealth handles GET /api/icp/health — tests connectivity to the ICP sidecar.
+func (s *Server) handleICPHealth(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	if s.config == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "config_not_loaded", "config not loaded", nil)
+		return
+	}
+
+	s.configMutex.Lock()
+	baseURL := strings.TrimSpace(s.config.ICP.BaseURL)
+	apiKey := s.config.ICP.APIKey
+	timeout := s.config.ICP.Timeout
+	s.configMutex.Unlock()
+
+	if baseURL == "" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"error":   "base_url is not configured",
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	icpCfg := adapter.ICPConfig{BaseURL: baseURL, APIKey: apiKey, Timeout: timeout}
+	icpAdapter := adapter.NewICPAdapter(icpCfg, adapter.ICPWeb)
+
+	if err := icpAdapter.HealthCheck(ctx); err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":   true,
+		"base_url":  baseURL,
+		"message":   "ICP sidecar is healthy",
+	})
 }
 
 // handleICPHistory handles GET /api/icp/history?task_id=xxx&keyword=xxx&type=web&limit=20.

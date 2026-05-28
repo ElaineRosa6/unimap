@@ -167,6 +167,51 @@ func TestHandleICPQuery_DefaultTypeFallback(t *testing.T) {
 	}
 }
 
+func TestHandleICPHealth_Success(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<html><body>ICP备案批量查询系统</body></html>"))
+	}))
+	defer mock.Close()
+
+	s := newServerWithICP(true, mock.URL)
+	req := httptest.NewRequest(http.MethodGet, "/api/icp/health", nil)
+	w := httptest.NewRecorder()
+	s.handleICPHealth(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%q)", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Success bool   `json:"success"`
+		BaseURL string `json:"base_url"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("expected success=true, got body=%q", w.Body.String())
+	}
+	if resp.BaseURL != mock.URL {
+		t.Fatalf("expected base_url=%q, got %q", mock.URL, resp.BaseURL)
+	}
+}
+
+func TestHandleICPHealth_SidecarDown(t *testing.T) {
+	s := newServerWithICP(true, "http://localhost:19999")
+	req := httptest.NewRequest(http.MethodGet, "/api/icp/health", nil)
+	w := httptest.NewRecorder()
+	s.handleICPHealth(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%q)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "ICP health check failed") {
+		t.Fatalf("expected health check failure, got %q", w.Body.String())
+	}
+}
+
 func TestHandleICPQuery_RejectsNonGET(t *testing.T) {
 	s := newServerWithICP(true, "http://localhost:16181")
 	req := httptest.NewRequest(http.MethodPost, "/api/icp/query", nil)

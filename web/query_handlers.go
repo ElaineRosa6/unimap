@@ -37,9 +37,31 @@ func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines
 }
 
 func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string, explicitErrors ...string) map[string]interface{} {
+	// Build set of engines that browser query successfully handled
+	browserOK := make(map[string]bool)
+	for _, e := range browserOutcome.OpenedEngines {
+		browserOK[strings.ToLower(e)] = true
+	}
+	for _, cr := range browserOutcome.CollectedResults {
+		browserOK[strings.ToLower(cr.Engine)] = true
+	}
+
+	// Filter API errors: suppress errors for engines where browser query succeeded
 	combinedErrors := []string{}
 	if resp != nil {
-		combinedErrors = append(combinedErrors, resp.Errors...)
+		for _, e := range resp.Errors {
+			lower := strings.ToLower(e)
+			suppressed := false
+			for eng := range browserOK {
+				if strings.Contains(lower, "engine "+eng) && browserAction != "" {
+					suppressed = true
+					break
+				}
+			}
+			if !suppressed {
+				combinedErrors = append(combinedErrors, e)
+			}
+		}
 	}
 	combinedErrors = appendUniqueStrings(combinedErrors, browserOutcome.Errors)
 	combinedErrors = appendUniqueStrings(combinedErrors, browserOutcome.AutoCaptureErrors)
