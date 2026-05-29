@@ -11,6 +11,7 @@ import (
 
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 )
 
@@ -31,9 +32,25 @@ func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines
 		s.screenshotApp,
 		s.screenshotMgr,
 		s.screenshotPathToPreviewURL,
-		s.screenshotRouter,
+		s.browserQueryProvider(),
 		progress,
 	)
+}
+
+func (s *Server) browserQueryProvider() screenshot.Provider {
+	if s == nil {
+		return nil
+	}
+	if s.screenshotRouter != nil {
+		return s.screenshotRouter
+	}
+	if s.bridge != nil && s.bridge.Service != nil {
+		return screenshot.NewExtensionProvider(s.bridge.Service, s.screenshotMgr)
+	}
+	if s.screenshotMgr != nil {
+		return screenshot.NewCDPProvider(s.screenshotMgr)
+	}
+	return nil
 }
 
 func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string, explicitErrors ...string) map[string]interface{} {

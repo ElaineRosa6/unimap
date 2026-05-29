@@ -2,10 +2,12 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/model"
@@ -80,7 +82,7 @@ func TestHandleQuery_EmptyQuery_ReturnsError(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	s.handleQuery(rec, req)
 
-	// 由于模板解析可能失败，至少应该尝试渲染错误页面
+	// Since template parsing may fail, at least it should attempt rendering
 	if rec.Code == 0 {
 		t.Fatal("expected response")
 	}
@@ -95,8 +97,8 @@ func TestHandleQuery_NoEngines_ReturnsError(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	s.handleQuery(rec, req)
 
-	// 尝试渲染 error.html，模板不存在时 code 可能是 500 或 0
-	// 关键是它不会 panic
+	// Attempts to render error.html; when template is missing, code may be 500 or 0
+	// Key point: it must not panic
 }
 
 func TestHandleResults_GET_RendersTemplate(t *testing.T) {
@@ -107,7 +109,7 @@ func TestHandleResults_GET_RendersTemplate(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/results?query=test", nil)
 	s.handleResults(rec, req)
 
-	// 模板可能不存在，但不应 panic
+	// Template may not exist, but should not panic
 }
 
 func TestHandleQuota_RendersTemplate(t *testing.T) {
@@ -118,7 +120,7 @@ func TestHandleQuota_RendersTemplate(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/quota", nil)
 	s.handleQuota(rec, req)
 
-	// 模板可能不存在，但不应 panic
+	// Template may not exist, but should not panic
 }
 
 func TestHandleQueryStatus_MissingQueryID_Returns400(t *testing.T) {
@@ -172,7 +174,6 @@ func TestParseEnginesParam_DuplicateRemoval(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/?engines=quake,fofa&engines=quake,hunter", nil)
 	engines := parseEnginesParam(req)
 
-	// 应该去重
 	seen := make(map[string]bool)
 	for _, e := range engines {
 		if seen[e] {
@@ -364,7 +365,6 @@ func TestHandleHealth_OK(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
-	// 验证响应包含 status: "ok"
 	body := rec.Body.String()
 	if !strings.Contains(body, `"status"`) {
 		t.Fatalf("expected status in response, got: %s", body)
@@ -472,14 +472,12 @@ func TestHandleAPIQuery_PageSizeParsing(t *testing.T) {
 		queryApp:     service.NewQueryAppService(nil, orch),
 		orchestrator: orch,
 	}
-	// 有效 query 但无引擎 -> 503
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/query?query=country%3D%22CN%22&page_size=abc", nil)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)
 
-	// page_size 无效时应该回退到默认值，最终因为无引擎返回 503
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", rec.Code)
 	}
@@ -493,7 +491,7 @@ func TestHandleResults_EmptyQuery_RendersTemplate(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/results", nil)
 	s.handleResults(rec, req)
 
-	// 模板可能不存在，但不应 panic
+	// Template may not exist, but should not panic
 }
 
 func TestHandleQuota_NoEngines_RendersEmptyTemplate(t *testing.T) {
@@ -504,7 +502,7 @@ func TestHandleQuota_NoEngines_RendersEmptyTemplate(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/quota", nil)
 	s.handleQuota(rec, req)
 
-	// 模板可能不存在，但不应 panic
+	// Template may not exist, but should not panic
 }
 
 func TestParseEnginesParam_CombinedFormat(t *testing.T) {
@@ -522,5 +520,278 @@ func TestParseEnginesParam_SingleValue(t *testing.T) {
 
 	if len(engines) != 1 || engines[0] != "quake" {
 		t.Fatalf("expected [quake], got %v", engines)
+	}
+}
+
+// --- browserQueryProvider tests ---
+
+// newTestScreenshotMgr creates a lightweight screenshot.Manager for testing
+// without requiring a real Chrome instance.
+func newTestScreenshotMgr(t *testing.T) *screenshot.Manager {
+	t.Helper()
+	return screenshot.NewManager(screenshot.Config{
+		BaseDir:  t.TempDir(),
+		Timeout:  5 * time.Second,
+		WaitTime: 100 * time.Millisecond,
+	})
+}
+
+// newTestRouter creates a ScreenshotRouter for testing without real Chrome.
+func newTestRouter() *screenshot.ScreenshotRouter {
+	cfg := screenshot.RouterConfig{
+		Priority:      screenshot.ModeCDP,
+		Fallback:      true,
+		ProbeInterval: 30 * time.Second,
+		ProbeTimeout:  5 * time.Second,
+	}
+	return screenshot.NewScreenshotRouter(cfg, nil, nil, nil)
+}
+
+// newTestBridgeService creates a BridgeService with a mock client for testing.
+func newTestBridgeService() *screenshot.BridgeService {
+	mockClient := newBridgeMockClient()
+	return screenshot.NewBridgeService(mockClient, 2, 5*time.Second)
+}
+
+func TestBrowserQueryProvider_NilServer_ReturnsNil(t *testing.T) {
+	// Arrange
+	var s *Server
+
+	// Act
+	provider := s.browserQueryProvider()
+
+	// Assert
+	if provider != nil {
+		t.Fatalf("expected nil provider for nil server, got %T", provider)
+	}
+}
+
+func TestBrowserQueryProvider_EmptyServer_ReturnsNil(t *testing.T) {
+	// Arrange
+	s := &Server{}
+
+	// Act
+	provider := s.browserQueryProvider()
+
+	// Assert
+	if provider != nil {
+		t.Fatalf("expected nil provider for empty server, got %T", provider)
+	}
+}
+
+func TestBrowserQueryProvider_ScreenshotRouterAvailable_ReturnsRouter(t *testing.T) {
+	// Arrange
+	s := &Server{
+		screenshotRouter: newTestRouter(),
+		screenshotMgr:    nil,
+		bridge:           &BridgeState{},
+	}
+
+	// Act
+	provider := s.browserQueryProvider()
+
+	// Assert
+	if provider == nil {
+		t.Fatal("expected non-nil provider when screenshotRouter is set")
+	}
+	if _, ok := provider.(*screenshot.ScreenshotRouter); !ok {
+		t.Fatalf("expected *screenshot.ScreenshotRouter, got %T", provider)
+	}
+}
+
+func TestBrowserQueryProvider_ExtensionAvailable_ReturnsExtensionProvider(t *testing.T) {
+	// Arrange: no router, but bridge.Service is set
+	s := &Server{
+		screenshotRouter: nil,
+		screenshotMgr:    nil,
+		bridge: &BridgeState{
+			Service: newTestBridgeService(),
+		},
+	}
+
+	// Act
+	provider := s.browserQueryProvider()
+
+	// Assert
+	if provider == nil {
+		t.Fatal("expected non-nil provider when bridge.Service is set")
+	}
+	if _, ok := provider.(*screenshot.ExtensionProvider); !ok {
+		t.Fatalf("expected *screenshot.ExtensionProvider, got %T", provider)
+	}
+}
+
+func TestBrowserQueryProvider_CDPOnly_ReturnsCDPProvider(t *testing.T) {
+	// Arrange: no router, no bridge service, but screenshotMgr is set
+	s := &Server{
+		screenshotRouter: nil,
+		screenshotMgr:    newTestScreenshotMgr(t),
+		bridge:           &BridgeState{},
+	}
+
+	// Act
+	provider := s.browserQueryProvider()
+
+	// Assert
+	if provider == nil {
+		t.Fatal("expected non-nil provider when screenshotMgr is set")
+	}
+	if _, ok := provider.(*screenshot.CDPProvider); !ok {
+		t.Fatalf("expected *screenshot.CDPProvider, got %T", provider)
+	}
+}
+
+func TestBrowserQueryProvider_PriorityRouterOverExtension(t *testing.T) {
+	// Arrange: both router and bridge.Service are set
+	s := &Server{
+		screenshotRouter: newTestRouter(),
+		bridge: &BridgeState{
+			Service: newTestBridgeService(),
+		},
+		screenshotMgr: newTestScreenshotMgr(t),
+	}
+
+	// Act
+	provider := s.browserQueryProvider()
+
+	// Assert: router takes priority over extension and CDP
+	if _, ok := provider.(*screenshot.ScreenshotRouter); !ok {
+		t.Fatalf("expected *screenshot.ScreenshotRouter (highest priority), got %T", provider)
+	}
+}
+
+func TestBrowserQueryProvider_PriorityExtensionOverCDP(t *testing.T) {
+	// Arrange: no router, but both bridge.Service and screenshotMgr are set
+	s := &Server{
+		screenshotRouter: nil,
+		bridge: &BridgeState{
+			Service: newTestBridgeService(),
+		},
+		screenshotMgr: newTestScreenshotMgr(t),
+	}
+
+	// Act
+	provider := s.browserQueryProvider()
+
+	// Assert: extension takes priority over CDP when router is absent
+	if _, ok := provider.(*screenshot.ExtensionProvider); !ok {
+		t.Fatalf("expected *screenshot.ExtensionProvider (priority over CDP), got %T", provider)
+	}
+}
+
+func TestBrowserQueryProvider_BridgeWithoutService_ReturnsNil(t *testing.T) {
+	// Arrange: bridge exists but Service is nil, no screenshotMgr
+	s := &Server{
+		screenshotRouter: nil,
+		bridge:           &BridgeState{},
+		screenshotMgr:    nil,
+	}
+
+	// Act
+	provider := s.browserQueryProvider()
+
+	// Assert
+	if provider != nil {
+		t.Fatalf("expected nil provider when bridge has no Service and no screenshotMgr, got %T", provider)
+	}
+}
+
+func TestBrowserQueryProvider_BridgeWithoutService_CDPFallback(t *testing.T) {
+	// Arrange: bridge exists but Service is nil, screenshotMgr is set
+	s := &Server{
+		screenshotRouter: nil,
+		bridge:           &BridgeState{},
+		screenshotMgr:    newTestScreenshotMgr(t),
+	}
+
+	// Act
+	provider := s.browserQueryProvider()
+
+	// Assert: falls through to CDP when bridge.Service is nil
+	if _, ok := provider.(*screenshot.CDPProvider); !ok {
+		t.Fatalf("expected *screenshot.CDPProvider (fallback), got %T", provider)
+	}
+}
+
+func TestBrowserQueryProvider_Table(t *testing.T) {
+	tests := []struct {
+		name             string
+		hasRouter        bool
+		hasBridgeService bool
+		hasScreenshotMgr bool
+		expectedType     string
+		expectedNil      bool
+	}{
+		{
+			name:             "router takes priority over all",
+			hasRouter:        true,
+			hasBridgeService: true,
+			hasScreenshotMgr: true,
+			expectedType:     "*screenshot.ScreenshotRouter",
+		},
+		{
+			name:         "router only",
+			hasRouter:    true,
+			expectedType: "*screenshot.ScreenshotRouter",
+		},
+		{
+			name:             "extension when no router",
+			hasBridgeService: true,
+			expectedType:     "*screenshot.ExtensionProvider",
+		},
+		{
+			name:             "extension over CDP when no router",
+			hasBridgeService: true,
+			hasScreenshotMgr: true,
+			expectedType:     "*screenshot.ExtensionProvider",
+		},
+		{
+			name:             "CDP only fallback",
+			hasScreenshotMgr: true,
+			expectedType:     "*screenshot.CDPProvider",
+		},
+		{
+			name:        "all nil returns nil",
+			expectedNil: true,
+		},
+		{
+			name:        "bridge without service and no mgr returns nil",
+			expectedNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			s := &Server{bridge: &BridgeState{}}
+
+			if tt.hasRouter {
+				s.screenshotRouter = newTestRouter()
+			}
+			if tt.hasBridgeService {
+				s.bridge.Service = newTestBridgeService()
+			}
+			if tt.hasScreenshotMgr {
+				s.screenshotMgr = newTestScreenshotMgr(t)
+			}
+
+			// Act
+			provider := s.browserQueryProvider()
+
+			// Assert
+			if tt.expectedNil {
+				if provider != nil {
+					t.Fatalf("expected nil, got %T", provider)
+				}
+				return
+			}
+			if provider == nil {
+				t.Fatalf("expected %s, got nil", tt.expectedType)
+			}
+			actualType := fmt.Sprintf("%T", provider)
+			if actualType != tt.expectedType {
+				t.Fatalf("expected %s, got %s", tt.expectedType, actualType)
+			}
+		})
 	}
 }

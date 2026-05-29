@@ -10,6 +10,7 @@ import (
 
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/core/unimap"
+	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/screenshot"
 )
 
@@ -109,9 +110,24 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 	}
 
 	// Anti-corruption: old clients send browser_query=true without browser_action;
-	// fallback to "capture" semantics (the previous default behavior).
+	// fallback to "collect" semantics (the previous default behavior).
 	if action == "" {
-		action = "capture"
+		action = "collect"
+	}
+
+	// Backward compatibility: map old action names to the canonical ones.
+	//   - Old "capture" (was: collect-only) → "collect"
+	//   - Old "collect" with screenshot context (was: collect+截图) → "collect_and_capture"
+	// Heuristic: autoCaptureEnabled serves as the "screenshot context" signal.
+	switch action {
+	case "capture":
+		logger.CtxInfof(ctx, "legacy browser_action 'capture' mapped to 'collect'")
+		action = "collect"
+	case "collect":
+		if autoCaptureEnabled {
+			logger.CtxInfof(ctx, "legacy browser_action 'collect' with screenshot context mapped to 'collect_and_capture'")
+			action = "collect_and_capture"
+		}
 	}
 
 	resultCh := make(chan BrowserQueryOutcome, 1)
@@ -119,7 +135,7 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 		defer close(resultCh)
 		outcome := BrowserQueryOutcome{Enabled: true}
 
-		if autoCaptureEnabled && (action == "capture" || action == "collect") {
+		if autoCaptureEnabled && (action == "collect" || action == "collect_and_capture") {
 			if strings.TrimSpace(queryID) == "" {
 				queryID = fmt.Sprintf("query_%d", time.Now().UnixNano())
 			}
@@ -177,26 +193,28 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 				case "open":
 					// Already opened above — nothing more to do.
 
-				case "capture":
-					// Parse DOM to extract structured asset data (no screenshot).
-					if browserRouter != nil {
-						collected, err := browserRouter.CollectSearchEngineResult(ctx, engine, browserQuery, queryID)
-						if err != nil {
-							engineErr = err
-							outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser capture failed for %s: %v", engine, err))
-						} else {
-							outcome.CollectedResults = append(outcome.CollectedResults, collected...)
-						}
-					}
-
 				case "collect":
-					// Parse DOM to extract structured data + take screenshot as evidence.
+					// Collect structured asset data from DOM (no screenshot).
 					if browserRouter != nil {
 						collected, err := browserRouter.CollectSearchEngineResult(ctx, engine, browserQuery, queryID)
 						if err != nil {
 							engineErr = err
 							outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser collect failed for %s: %v", engine, err))
 						} else {
+							tagBrowserAssets(collected)
+							outcome.CollectedResults = append(outcome.CollectedResults, collected...)
+						}
+					}
+
+				case "collect_and_capture":
+					// Collect structured data from DOM + take evidence screenshot.
+					if browserRouter != nil {
+						collected, err := browserRouter.CollectSearchEngineResult(ctx, engine, browserQuery, queryID)
+						if err != nil {
+							engineErr = err
+							outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser collect failed for %s: %v", engine, err))
+						} else {
+							tagBrowserAssets(collected)
 							outcome.CollectedResults = append(outcome.CollectedResults, collected...)
 						}
 					}
@@ -222,6 +240,19 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 	}()
 
 	return resultCh
+}
+
+// tagBrowserAssets marks every asset inside collected results as browser-sourced.
+func tagBrowserAssets(collected []screenshot.CollectResult) {
+	for i := range collected {
+		for j := range collected[i].Assets {
+			a := &collected[i].Assets[j]
+			if a.Extra == nil {
+				a.Extra = make(map[string]interface{})
+			}
+			a.Extra["collection_method"] = "browser"
+		}
+	}
 }
 
 // BrowserRouter is the minimal interface needed for browser query operations.

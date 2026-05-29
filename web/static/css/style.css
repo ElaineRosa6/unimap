@@ -1104,6 +1104,11 @@ td:first-child {
 .status-timeout { background: var(--warning-bg); color: var(--warning); }
 .status-skipped { background: var(--bg-elevated); color: var(--text-muted); }
 
+/* Collection method badges (asset.extra.collection_method) */
+.method-api { background: var(--success-bg); color: var(--success); }
+.method-browser { background: var(--bg-elevated); color: var(--text-muted); }
+.method-browser-fallback { background: var(--warning-bg); color: var(--warning); }
+
 /* ============================================================
    Modals
    ============================================================ */

@@ -10,6 +10,7 @@ import (
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/notify"
+	"github.com/unimap/project/internal/service"
 )
 
 func (s *Server) handleNotificationChannels(w http.ResponseWriter, r *http.Request) {
@@ -167,8 +168,25 @@ func (s *Server) reloadEngineAdapters() {
 		}
 	}
 
-	if s.screenshotRouter != nil {
-		s.orchestrator.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: s.screenshotRouter})
+	if provider := s.browserQueryProvider(); provider != nil {
+		s.orchestrator.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: provider})
+	}
+
+	if s.service != nil && s.config != nil {
+		if s.config.Query.BrowserFallback.Enabled {
+			bfEngines := make(map[string]bool)
+			for _, e := range s.config.Query.BrowserFallback.Engines {
+				bfEngines[strings.ToLower(e)] = true
+			}
+			s.service.SetBrowserFallbackConfig(service.BrowserFallbackConfig{
+				Enabled:       true,
+				OnAPIError:    s.config.Query.BrowserFallback.OnAPIError,
+				OnEmptyResult: s.config.Query.BrowserFallback.OnEmptyResult,
+				Engines:       bfEngines,
+			})
+		} else {
+			s.service.SetBrowserFallbackConfig(service.BrowserFallbackConfig{Enabled: false})
+		}
 	}
 }
 
