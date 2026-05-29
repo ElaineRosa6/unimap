@@ -434,6 +434,7 @@ function connectCDP(button, statusBadge, statusInfo) {
 					statusInfo.textContent = url ? `在线: ${url}` : '在线';
 				} else if (data && data.error) {
 					statusInfo.textContent = data.error;
+					handleBrowserError(data.error);
 				} else {
 					statusInfo.textContent = '连接失败';
 				}
@@ -471,7 +472,7 @@ function isBrowserQueryModeEnabled() {
 	return !!(checkbox && checkbox.checked);
 }
 
-// Returns the selected browser action: 'open', 'capture', 'collect', or '' if none selected.
+// Returns the selected browser action: 'open', 'collect', 'collect_and_capture', or '' if none selected.
 function getBrowserAction() {
 	const radios = document.querySelectorAll('input[name="browser-action"]');
 	for (const radio of radios) {
@@ -479,7 +480,7 @@ function getBrowserAction() {
 	}
 	// Legacy fallback
 	const checkbox = document.getElementById('browser-query-mode');
-	if (checkbox && checkbox.checked) return 'capture';
+	if (checkbox && checkbox.checked) return 'collect';
 	return '';
 }
 
@@ -1120,6 +1121,7 @@ function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, b
 		
 		// 显示结果
 		if (data.error) {
+			handleBrowserError(data.error);
 			showResultsError(data.error);
 		} else {
 			showResults(data);
@@ -1176,6 +1178,26 @@ function showResults(data) {
 				if (obj[key] !== undefined && obj[key] !== null) return obj[key];
 			}
 			return '';
+		}
+
+		// renderCollectionMethodBadge surfaces how a single asset was collected
+		// (API, browser collection, or browser fallback after API failure) so
+		// the user can tell at a glance which path produced the result.
+		function renderCollectionMethodBadge(asset) {
+			if (!asset) return '';
+			const extra = asset.extra || asset.Extra || {};
+			const method = String(extra.collection_method || '').toLowerCase();
+			if (!method) return '';
+			let cls = 'method-api';
+			let label = 'API';
+			if (method === 'browser') {
+				cls = 'method-browser';
+				label = '浏览器采集';
+			} else if (method === 'browser_fallback') {
+				cls = 'method-browser-fallback';
+				label = 'API 失败后浏览器补采';
+			}
+			return ` <span class="status-badge ${cls}" title="${escapeAttr(method)}">${escapeHtml(label)}</span>`;
 		}
 
 		// 构建结果HTML
@@ -1300,6 +1322,7 @@ function showResults(data) {
 								const source = pick(asset, 'source', 'Source');
 								const targetURL = pick(asset, 'url', 'URL');
 								const engineHref = escapeAttr(getEngineLink(source, ip));
+								const methodBadge = renderCollectionMethodBadge(asset);
 								return `
 									<tr>
 										<td>${escapeHtml(ip)}</td>
@@ -1309,7 +1332,7 @@ function showResults(data) {
 										<td>${escapeHtml(title)}</td>
 										<td>${escapeHtml(server)}</td>
 										<td>${escapeHtml(statusCode)}</td>
-										<td>${escapeHtml(source)}</td>
+										<td>${escapeHtml(source)}${methodBadge}</td>
 										<td>
 											<button type="button" class="btn btn-sm btn-info btn-detail" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}">详情</button>
 											<button type="button" class="btn btn-sm btn-success btn-copy" data-ip="${escapeAttr(ip)}">复制IP</button>
@@ -2346,7 +2369,30 @@ function scrollToElement(elementId) {
 }
 
 // 显示消息提示
-function showMessage(message, type = 'info') {
+function handleBrowserError(err) {
+	const s = typeof err === 'string' ? err : (err && err.message ? err.message : '');
+	if (!s) return false;
+	const lower = s.toLowerCase();
+	let msg = null;
+	if (lower.includes('cdp not available') || lower.includes('invalid_chrome_path')) {
+		msg = 'Chrome 浏览器不可用，截图功能暂不可用。请检查 Chrome 是否已安装。';
+	} else if (lower.includes('extension_not_paired') || lower.includes('extension not paired')) {
+		msg = '浏览器扩展未连接，截图功能暂不可用。请检查扩展是否已安装并运行。';
+	} else if (lower.includes('bridge_unavailable') || lower.includes('bridge unavailable')) {
+		msg = '浏览器桥接服务不可用，扩展截图功能暂不可用。请检查桥接服务状态。';
+	} else if (lower.includes('screenshot_failed') && lower.includes('chrome')) {
+		msg = 'Chrome 浏览器不可用，截图功能暂不可用。请检查 Chrome 是否已安装。';
+	} else if (lower.includes('screenshot_failed') || lower.includes('cdp') || lower.includes('bridge') || lower.includes('browser') || lower.includes('extension')) {
+		msg = '浏览器服务暂不可用，请稍后重试。';
+	}
+	if (msg) {
+		showMessage(msg, 'warning', 5000);
+		return true;
+	}
+	return false;
+}
+
+function showMessage(message, type = 'info', duration = 3000) {
 	const messageDiv = document.createElement('div');
 	messageDiv.className = `message message-${type}`;
 	messageDiv.textContent = message;
@@ -2384,14 +2430,14 @@ function showMessage(message, type = 'info') {
 	
 	document.body.appendChild(messageDiv);
 	
-	// 2秒后自动消失
+	// 自动消失
 	setTimeout(() => {
 		messageDiv.style.opacity = '0';
 		messageDiv.style.transform = 'translateX(100%)';
 		setTimeout(() => {
 			document.body.removeChild(messageDiv);
 		}, 300);
-	}, 3000);
+	}, duration);
 }
 
 // 获取引擎跳转链接
@@ -2491,14 +2537,16 @@ function viewScreenshot(url, ip, port, protocol) {
 		img.style.boxShadow = '0 0 10px rgba(0,0,0,0.1)';
 		body.appendChild(img);
 	})
-	.catch(() => {
-		body.innerHTML = `
-			<div style="color:#721c24; background:#f8d7da; padding:20px; border-radius:5px;">
-				<h4>截图失败</h4>
-				<p>目标可能无法访问或响应超时。</p>
-				<p>URL: ${target}</p>
-			</div>
-		`;
+	.catch((err) => {
+		if (!handleBrowserError(err)) {
+			body.innerHTML = `
+				<div style="color:#721c24; background:#f8d7da; padding:20px; border-radius:5px;">
+					<h4>截图失败</h4>
+					<p>目标可能无法访问或响应超时。</p>
+					<p>URL: ${target}</p>
+				</div>
+			`;
+		}
 	});
 }
 

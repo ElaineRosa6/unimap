@@ -18,6 +18,7 @@ import (
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/utils"
 )
@@ -385,6 +386,7 @@ func (m *Manager) CheckEngineLoginStatus(ctx context.Context, engine, query stri
 		text := strings.ToLower(html)
 		if strings.Contains(text, "login") || strings.Contains(text, "sign in") ||
 			strings.Contains(text, "\u767b\u5f55") || strings.Contains(text, "\u8bf7\u767b\u5f55") {
+			metrics.IncBrowserLoginRequired(engine)
 			return &EngineLoginStatus{Engine: engine, LoggedIn: false, Reason: "login_required", Title: title, LoginURL: loginURL}, nil
 		}
 		if len(html) < 500 {

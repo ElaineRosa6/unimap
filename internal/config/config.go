@@ -246,6 +246,16 @@ type Config struct {
 		// 按引擎的缓存配置
 		Engines map[string]EngineCacheConfig `yaml:"engines"`
 	} `yaml:"cache"`
+
+	// Query 查询配置
+	Query struct {
+		BrowserFallback struct {
+			Enabled       bool     `yaml:"enabled"`         // 是否允许 API 失败后自动尝试浏览器采集
+			OnAPIError    bool     `yaml:"on_api_error"`    // API 返回错误时是否 fallback
+			OnEmptyResult bool     `yaml:"on_empty_result"` // API 返回空结果时是否 fallback
+			Engines       []string `yaml:"engines"`         // 允许自动 fallback 的引擎白名单
+		} `yaml:"browser_fallback"`
+	} `yaml:"query"`
 }
 
 // NotificationChannelCfg 全局通知渠道配置
@@ -333,6 +343,10 @@ func (c *Config) Clone() *Config {
 	// Cache (has map: Engines)
 	clone.Cache = c.Cache
 	clone.Cache.Engines = cloneEngineCacheMap(c.Cache.Engines)
+
+	// Query (has slice: BrowserFallback.Engines)
+	clone.Query = c.Query
+	clone.Query.BrowserFallback.Engines = cloneStringSlice(c.Query.BrowserFallback.Engines)
 
 	return clone
 }
@@ -896,6 +910,11 @@ func (m *Manager) applyDefaults(config *Config) {
 		}
 	}
 
+	// 默认查询降级配置 — 全部关闭，不影响现有用户
+	if config.Query.BrowserFallback.Engines == nil {
+		config.Query.BrowserFallback.Engines = []string{"fofa", "zoomeye", "shodan"}
+	}
+
 	// 默认通知配置
 	if config.Notifications.SendTimeoutSec == 0 {
 		config.Notifications.SendTimeoutSec = 10
@@ -1082,6 +1101,14 @@ func (m *Manager) validate(config *Config) error {
 		}
 		if len(config.Distributed.NodeAuthTokens) == 0 {
 			// 同上：节点 token 为空时运行时拒绝注册
+		}
+	}
+
+	// 验证浏览器降级引擎白名单
+	validBFEngines := map[string]bool{"fofa": true, "zoomeye": true, "shodan": true, "hunter": true, "quake": true}
+	for _, e := range config.Query.BrowserFallback.Engines {
+		if !validBFEngines[strings.ToLower(e)] {
+			return fmt.Errorf("query.browser_fallback.engines: unknown engine %q, must be one of: fofa, zoomeye, shodan, hunter, quake", e)
 		}
 	}
 

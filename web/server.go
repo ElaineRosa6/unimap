@@ -477,17 +477,41 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 				metrics.IncScreenshotHealthCheck(mode, healthy)
 			},
 		)
+
+		// Inject extension health signals from bridge state.
+		// LiveClient: any extension client seen within the last 5 minutes.
+		// LastActivity: most recent task pull or callback timestamp.
+		const recentActivityCutoff = 5 * time.Minute
+		router.SetExtensionHealthSignals(
+			func() bool {
+				srv.bridge.mu.Lock()
+				defer srv.bridge.mu.Unlock()
+				cutoff := time.Now().Unix() - int64(recentActivityCutoff.Seconds())
+				for _, ts := range srv.bridge.LastSeen {
+					if ts >= cutoff {
+						return true
+					}
+				}
+				return false
+			},
+			func() int64 {
+				srv.bridge.mu.Lock()
+				defer srv.bridge.mu.Unlock()
+				pull := srv.bridge.LastTaskPullAt
+				cb := srv.bridge.LastCallbackAt
+				if pull > cb {
+					return pull
+				}
+				return cb
+			},
+			recentActivityCutoff,
+		)
+
 		router.Start(shutdownCtx)
 		srv.screenshotRouter = router
 
-		// Wire browser backend to WebOnly adapters so engines without API keys
-		// can collect structured results via browser DOM extraction.
-		if unifiedSvc != nil && srv.screenshotRouter != nil {
-			unifiedSvc.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: srv.screenshotRouter})
-		}
-
 		logger.Infof("Screenshot router initialized: mode=auto, priority=%s, fallback=%v", priority, fallback)
-	} else if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Screenshot.Engine), "extension") {
+	} else if cfg != nil && (screenshotMode == "extension" || strings.EqualFold(strings.TrimSpace(cfg.Screenshot.Engine), "extension")) {
 		// 传统 extension 单模式
 		mockClient := newBridgeMockClient()
 		bridgeSvc := screenshot.NewBridgeService(mockClient, cfg.Screenshot.Extension.MaxConcurrency, time.Duration(cfg.Screenshot.Extension.TaskTimeoutSeconds)*time.Second)
@@ -495,11 +519,28 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		srv.bridge.Mock = mockClient
 		srv.bridge.Service = bridgeSvc
 		screenshotApp.SetBridgeService(bridgeSvc)
+	}
 
-		// Wire browser backend for WebOnly adapters in extension-only mode
-		if unifiedSvc != nil && screenshotMgr != nil {
-			extProvider := screenshot.NewExtensionProvider(bridgeSvc, screenshotMgr)
-			unifiedSvc.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: extProvider})
+	// Wire browser backend to WebOnly adapters so engines without API keys can
+	// collect structured results through the active browser runtime. This must
+	// work in CDP, extension, and auto modes.
+	if unifiedSvc != nil {
+		if provider := srv.browserQueryProvider(); provider != nil {
+			unifiedSvc.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: provider})
+		}
+
+		// Wire browser fallback config
+		if cfg != nil && cfg.Query.BrowserFallback.Enabled {
+			bfEngines := make(map[string]bool)
+			for _, e := range cfg.Query.BrowserFallback.Engines {
+				bfEngines[strings.ToLower(e)] = true
+			}
+			unifiedSvc.SetBrowserFallbackConfig(service.BrowserFallbackConfig{
+				Enabled:       true,
+				OnAPIError:    cfg.Query.BrowserFallback.OnAPIError,
+				OnEmptyResult: cfg.Query.BrowserFallback.OnEmptyResult,
+				Engines:       bfEngines,
+			})
 		}
 	}
 

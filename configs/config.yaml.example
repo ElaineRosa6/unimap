@@ -32,6 +32,22 @@ system:
     cache_max_size: 1000
     cache_cleanup_interval: 300
 
+# 查询配置
+query:
+    # 浏览器查询降级 — 当 API adapter 失败或返回空结果时，可选地通过浏览器
+    # backend (CDP / Extension) 打开搜索引擎 Web 端并采集 DOM。
+    # 默认全部关闭，行为与未配置时一致。详见 docs/BROWSER_QUERY_FALLBACK_PLAN.md
+    browser_fallback:
+        enabled: false           # 总开关；关闭时下面字段无效
+        on_api_error: false      # API 返回错误时是否触发浏览器采集
+        on_empty_result: false   # API 返回空结果时是否触发浏览器采集
+        # 允许自动 fallback 的引擎白名单。免费用户通常只有 hunter / quake 能稳
+        # 定通过 API 拿到结果；fofa / zoomeye / shodan 更依赖浏览器采集。
+        engines:
+            - fofa
+            - zoomeye
+            - shodan
+
 # Web 截图与 CDP 配置
 screenshot:
     enabled: true

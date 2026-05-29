@@ -299,6 +299,7 @@ curl -s http://localhost:8448/debug/pprof/heap?debug=1 | head -20
 | 内存使用 | > 80% | > 95% | 1 min |
 | 磁盘使用 | > 80% | > 90% | 15 min |
 | Redis 连接 | 不可用 | 不可用 | 1 min |
+| 浏览器降级失败率 | > 30% | > 50% | 5 min |
 
 ---
 
@@ -391,6 +392,111 @@ curl -X POST http://localhost:8448/api/notifications/reload
 - 监控通知发送成功率，低于 90% 时告警
 - 定期检查 webhook URL 是否仍然有效（Token 过期等）
 - 通知密钥（`secret`）变更时同步更新配置并重载
+
+---
+
+## 8. 浏览器降级查询失败
+
+> ⚠️ **browser_fallback 默认关闭（`enabled: false`）**
+> - 关闭原因：浏览器查询消耗更多 CPU/内存、结果精度不如 API 直查、可能触发目标站点反爬机制
+> - 开启前请确认：服务器资源充足、已设置合理速率限制、了解降级查询结果精度低于 API
+> - 推荐仅在 API 额度耗尽或无 API Key 的场景下开启
+
+### 症状
+- API 查询失败后浏览器降级未触发
+- 浏览器降级采集无结果
+- 日志出现 `browser fallback triggered` 但无资产
+
+### 诊断步骤
+
+#### 8.1 检查浏览器降级配置是否启用
+
+```bash
+cat config.yaml | grep -A10 "browser_fallback:"
+# 应看到 enabled: true
+```
+
+如果 `query.browser_fallback.enabled: false`，降级功能完全关闭。
+
+#### 8.2 检查引擎白名单
+
+```bash
+cat config.yaml | grep -A5 "browser_fallback:" | grep "engines:"
+```
+
+确认目标引擎（如 `fofa`、`hunter`）在白名单中。不在白名单中的引擎即使 API 失败也不会触发降级。
+
+#### 8.3 检查触发条件开关
+
+```bash
+cat config.yaml | grep -A10 "browser_fallback:"
+```
+
+确认 `on_api_error` 和 `on_empty_result` 的配置：
+- `on_api_error: true` — API 返回错误时触发降级
+- `on_empty_result: true` — API 返回空结果时触发降级
+- 两个都为 false 时，降级永远不会触发
+
+#### 8.4 检查浏览器 Runtime 是否可用
+
+```bash
+# 检查 CDP 连接
+curl -s http://localhost:8448/api/screenshot/bridge/status | jq
+
+# 检查 Extension 桥接状态
+curl -s http://localhost:8448/api/health | jq '.bridge'
+```
+
+如果 CDP 和 Extension 都不可用，浏览器降级无法执行采集。
+
+#### 8.5 查看降级相关日志
+
+```bash
+journalctl -u unimap-web --since "1 hour ago" | grep -iE "browser fallback triggered|browser fallback failed"
+```
+
+关键日志：
+- `browser fallback triggered for engine <name>` — 降级已触发
+- `browser fallback failed for engine <name>: <error>` — 降级执行失败，查看具体错误
+
+#### 8.6 检查 Prometheus 指标
+
+```bash
+curl -s http://localhost:8448/metrics | grep browser_fallback
+```
+
+关键指标：
+- `unimap_browser_fallback_triggered_total` — 降级触发总次数
+- `unimap_browser_fallback_failure_total` — 降级失败总次数
+
+### 恢复操作
+
+1. **DOM 选择器失效**：如果搜索引擎页面结构变化导致解析失败，暂时从白名单移除该引擎：
+   ```yaml
+   query:
+     browser_fallback:
+       engines:
+         - hunter  # 移除失效的引擎
+   ```
+
+2. **浏览器 Runtime 不可用**：
+   - 检查 Chrome 是否安装且可访问
+   - 检查 Extension 桥接是否连接（参考「2. Bridge 断连」）
+   - 检查 CDP 配置（参考「1. Chrome 崩溃」）
+
+3. **紧急回滚**：完全关闭浏览器降级功能：
+   ```yaml
+   query:
+     browser_fallback:
+       enabled: false
+   ```
+
+### 预防措施
+
+- 监控 `unimap_browser_fallback_failure_total`，失败率 >50% 时告警
+- 定期检查 DOM 选择器是否需要更新（搜索引擎页面改版后）
+- 默认关闭浏览器降级，只在确认可用后逐步开启
+- 在测试环境验证降级功能后再部署到生产环境
 
 ---
 

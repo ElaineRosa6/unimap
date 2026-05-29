@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/model"
 )
 
@@ -63,6 +64,26 @@ type ScreenshotRouter struct {
 func (r *ScreenshotRouter) SetMetricsHooks(onModeSwitch func(from, to ScreenshotMode), onHealthCheck func(mode string, healthy bool)) {
 	r.onModeSwitch = onModeSwitch
 	r.onHealthCheck = onHealthCheck
+}
+
+// SetExtensionHealthSignals injects optional liveness and activity providers
+// into the extension health checker. All parameters are optional — nil values
+// are ignored and preserve the existing checker state.
+func (r *ScreenshotRouter) SetExtensionHealthSignals(liveClient LiveClientProvider, lastActivity LastActivityProvider, cutoff time.Duration) {
+	if r.extChecker == nil {
+		return
+	}
+	if ext, ok := r.extChecker.(*ExtensionHealthChecker); ok {
+		if liveClient != nil {
+			ext.LiveClient = liveClient
+		}
+		if lastActivity != nil {
+			ext.LastActivity = lastActivity
+		}
+		if cutoff > 0 {
+			ext.RecentActivityCutoff = cutoff
+		}
+	}
 }
 
 // NewScreenshotRouter creates a new ScreenshotRouter.
@@ -601,6 +622,7 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 		if lw, ok := result.StructuredCollectedData["is_login_wall"].(bool); ok && lw {
 			collectResult.IsLoginWall = true
 			collectResult.LoginRequired = true
+			metrics.IncBrowserLoginRequired(engine)
 		}
 	} else if result.CollectedData != "" {
 		collectResult.Title = result.CollectedData
