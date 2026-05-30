@@ -551,7 +551,7 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 
 // handleBatchScreenshotPage 处理批量截图页面
 func (s *Server) handleBatchScreenshotPage(w http.ResponseWriter, r *http.Request) {
-	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "batch-screenshot.html", map[string]interface{}{
+	if !s.renderTemplateWithNonce(r, w, http.StatusOK, "batch-screenshot.html", map[string]interface{}{
 		"staticVersion": s.staticVersion,
 	}) {
 		return
