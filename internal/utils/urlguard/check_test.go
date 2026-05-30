@@ -167,20 +167,31 @@ func TestSafeDialer_Creation(t *testing.T) {
 }
 
 func TestSafeHTTPClient_AllowPrivateRedirect(t *testing.T) {
-	// With AllowPrivate=true, redirect to private IP should be allowed
+	// With AllowPrivate=true, a redirect to a private/loopback address should be
+	// followed rather than blocked. Point the redirect at a real loopback test
+	// server (httptest binds 127.0.0.1, itself a private address) so the test
+	// verifies the redirect semantics without depending on a service listening
+	// on port 80 — a bare http://127.0.0.1/ would force a real dial to :80 and
+	// hang under the concurrent -race suite until the client timeout.
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "http://127.0.0.1/secret", http.StatusFound)
+		http.Redirect(w, r, target.URL, http.StatusFound)
 	}))
 	defer server.Close()
 
 	client := SafeHTTPClient(CheckOptions{AllowPrivate: true}, 5*time.Second)
-	// Should not error on redirect to private IP when AllowPrivate is true
+	// Should follow the redirect to the private target when AllowPrivate is true
 	resp, err := client.Get(server.URL)
 	if err != nil {
 		t.Fatalf("unexpected error with AllowPrivate=true: %v", err)
 	}
-	if resp != nil {
-		resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 after following redirect, got %d", resp.StatusCode)
 	}
 }
 
@@ -239,9 +250,16 @@ func TestCheck_EmptyURL(t *testing.T) {
 }
 
 func TestSafeHTTPClient_CheckRedirect_AllowPrivate(t *testing.T) {
-	// With AllowPrivate=true, redirect to loopback should succeed
+	// With AllowPrivate=true, a redirect to loopback should be followed.
+	// Target a real loopback test server instead of a bare http://127.0.0.1/
+	// (port 80) so the dial succeeds deterministically under the -race suite.
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "http://127.0.0.1/target", http.StatusFound)
+		http.Redirect(w, r, target.URL, http.StatusFound)
 	}))
 	defer server.Close()
 
@@ -251,8 +269,9 @@ func TestSafeHTTPClient_CheckRedirect_AllowPrivate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error with AllowPrivate redirect: %v", err)
 	}
-	if resp != nil {
-		resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 after following redirect, got %d", resp.StatusCode)
 	}
 }
 
