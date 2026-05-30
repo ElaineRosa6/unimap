@@ -758,6 +758,7 @@ function saveCookies(button) {
 // WebSocket连接管理
 let wsConnection = null;
 let wsConnected = false;
+let wsPingTimer = null;
 let currentQueryID = null;
 let cdpOnline = false;
 let bridgeOnline = false; // tracks extension live_clients > 0
@@ -928,6 +929,7 @@ function initWebSocket() {
 	wsConnection.onclose = function() {
 		console.log('WebSocket disconnected');
 		wsConnected = false;
+		if (wsPingTimer) { clearInterval(wsPingTimer); wsPingTimer = null; }
 		// 尝试重连
 		setTimeout(initWebSocket, 5000);
 	};
@@ -939,8 +941,9 @@ function initWebSocket() {
 
 // 发送ping消息保持连接
 function startPingInterval() {
-	setInterval(() => {
-		if (wsConnected && wsConnection.readyState === WebSocket.OPEN) {
+	if (wsPingTimer) clearInterval(wsPingTimer);
+	wsPingTimer = setInterval(() => {
+		if (wsConnected && wsConnection && wsConnection.readyState === WebSocket.OPEN) {
 			wsConnection.send(JSON.stringify({ type: 'ping' }));
 		}
 	}, 30000);

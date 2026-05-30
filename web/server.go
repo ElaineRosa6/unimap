@@ -845,6 +845,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.shutdownCancel()
 	}
 
+	// 先关闭HTTP服务器，排空活跃请求，确保不再有新请求访问DB等资源
+	if err := s.httpServer.Shutdown(ctx); err != nil {
+		return fmt.Errorf("web server shutdown error: %w", err)
+	}
+
 	// 停止分布式组件
 	if s.distributed != nil && s.distributed.NodeRegistry != nil {
 		s.distributed.NodeRegistry.Stop()
@@ -858,15 +863,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.scheduler.Stop()
 	}
 
-	// 关闭 ICP 结果数据库
+	// 关闭 ICP 结果数据库（HTTP已排空，无并发访问）
 	if s.icpDB != nil {
 		if err := s.icpDB.Close(); err != nil {
 			logger.Warnf("ICP result DB close error: %v", err)
 		}
-	}
-
-	if err := s.httpServer.Shutdown(ctx); err != nil {
-		return fmt.Errorf("web server shutdown error: %w", err)
 	}
 
 	// 停止截图Router（停止健康探测goroutine）

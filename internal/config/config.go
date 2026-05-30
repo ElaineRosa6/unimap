@@ -818,10 +818,20 @@ func (m *Manager) applyDefaults(config *Config) {
 	}
 
 	// 默认登录凭据：如果未配置 username/password_hash，生成默认 admin/admin
+	isPublic := config.Web.BindAddress != "127.0.0.1" &&
+		config.Web.BindAddress != "localhost" &&
+		config.Web.BindAddress != "0.0.0.0"
+
 	if strings.TrimSpace(config.Web.Auth.Username) == "" {
+		if isPublic {
+			logger.Fatalf("生产环境 (bind=%s) 禁止使用默认用户名，请在配置文件中设置 'username'", config.Web.BindAddress)
+		}
 		config.Web.Auth.Username = "admin"
 	}
 	if strings.TrimSpace(config.Web.Auth.PasswordHash) == "" {
+		if isPublic {
+			logger.Fatalf("生产环境 (bind=%s) 禁止使用默认密码，请在配置文件中设置 'password_hash'", config.Web.BindAddress)
+		}
 		hash, err := HashPassword("admin")
 		if err != nil {
 			fmt.Printf("[config] WARNING: failed to hash default password: %v\n", err)

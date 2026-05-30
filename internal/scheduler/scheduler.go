@@ -1246,8 +1246,9 @@ func (s *Scheduler) Stop() {
 	close(s.stopCh)
 	s.mu.Unlock()
 
-	// Stop cron
-	s.cron.Stop()
+	// Stop cron and wait for it to finish
+	stopCtx := s.cron.Stop()
+	<-stopCtx.Done()
 
 	// Wait for notification goroutines to finish
 	s.notifyWg.Wait()

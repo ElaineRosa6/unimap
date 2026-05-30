@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 	// 加载示例
 	document.getElementById('btn-load-example').addEventListener('click', function() {
-		urlList.value = 'https://www.example.com\nhttps://www.baidu.com\nhttp://test.example.org\n192.168.1.1:8080';
+		urlList.value = 'https://www.example.com\nhttps://www.baidu.com\nhttp://test.example.org\nhttps://httpbin.org';
 		urlList.dispatchEvent(new Event('input'));
 	});
 
@@ -122,6 +122,11 @@ document.addEventListener('DOMContentLoaded', function() {
 				body: JSON.stringify({ urls, concurrency: parseInt(concurrency.value)||5, batch_id: batchId.value||'' })
 			});
 			const data = await resp.json();
+			if (!resp.ok || data.error) {
+				progressText.textContent = '截图失败: ' + (data.error?.message || data.message || '请求被拒绝');
+				btn.disabled = false; btn.textContent = '开始截图';
+				return;
+			}
 			progressBarFill.style.width = '100%';
 			progressText.textContent = '截图完成';
 			resultsContainer.classList.remove('hidden');
