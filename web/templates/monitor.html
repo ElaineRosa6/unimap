@@ -60,7 +60,7 @@
 				<button type="button" class="btn btn-secondary" id="btn-clear">清空</button>
 				<button type="button" class="btn btn-secondary" id="btn-load-example">加载示例</button>
 				<button type="button" class="btn btn-secondary" id="btn-import-file">导入文件</button>
-				<input type="file" id="file-input" accept=".txt,.csv" class="hidden-input">
+				<input type="file" id="file-input" accept=".txt,.csv,.xlsx,.xls" class="hidden-input">
 			</div>
 
 			<div class="progress-container" id="progress-container">
@@ -183,7 +183,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 	// 加载示例
 	document.getElementById('btn-load-example').addEventListener('click', function() {
-		urlList.value = 'https://www.example.com\nhttps://www.baidu.com\nhttp://test.example.org';
+		urlList.value = 'https://www.example.com\nhttps://www.baidu.com\nhttps://httpbin.org';
 		urlList.dispatchEvent(new Event('input'));
 	});
 
@@ -220,7 +220,7 @@ document.addEventListener('DOMContentLoaded', function() {
 		progressBarFill.style.width = '0%';
 		progressText.textContent = '正在检测...';
 		try {
-			const resp = await fetch('/api/tamper/check', {
+			const resp = await fetch('/api/v1/tamper/check', {
 				method: 'POST',
 				headers: {'Content-Type': 'application/json'},
 				body: JSON.stringify({ urls, concurrency: parseInt(concurrency.value)||5, mode: tamperMode.value })
@@ -313,7 +313,7 @@ document.addEventListener('DOMContentLoaded', function() {
 		progressBarFill.style.width = '0%';
 		progressText.textContent = '正在设置基线...';
 		try {
-			const resp = await fetch('/api/tamper/baseline', {
+			const resp = await fetch('/api/v1/tamper/baseline', {
 				method: 'POST',
 				headers: {'Content-Type': 'application/json'},
 				body: JSON.stringify({ urls, concurrency: parseInt(concurrency.value)||5 })
@@ -372,7 +372,7 @@ document.addEventListener('DOMContentLoaded', function() {
 			if (typeFilter) params.set('type', typeFilter);
 			if (modeFilter) params.set('mode', modeFilter);
 
-			const resp = await fetch('/api/tamper/history?' + params.toString());
+			const resp = await fetch('/api/v1/tamper/history?' + params.toString());
 			const data = await resp.json();
 			resultsSection.classList.remove('hidden');
 			document.querySelector('.tab[data-tab="history"]').click();
@@ -431,7 +431,7 @@ document.addEventListener('DOMContentLoaded', function() {
 	// 查看已有基线
 	async function loadBaselineList() {
 		try {
-			const resp = await fetch('/api/tamper/baseline/list');
+			const resp = await fetch('/api/v1/tamper/baseline/list');
 			const data = await resp.json();
 			resultsSection.classList.remove('hidden');
 			document.querySelector('.tab[data-tab="history"]').click();
@@ -462,7 +462,7 @@ document.addEventListener('DOMContentLoaded', function() {
 	async function deleteBaseline(url) {
 		if (!confirm('确定删除该基线？')) return;
 		try {
-			await fetch('/api/tamper/baseline/delete?url=' + encodeURIComponent(url), { method: 'DELETE' });
+			await fetch('/api/v1/tamper/baseline/delete?url=' + encodeURIComponent(url), { method: 'DELETE' });
 			loadBaselineList();
 		} catch(e) {
 			alert('删除失败: ' + e.message);
@@ -479,12 +479,17 @@ document.addEventListener('DOMContentLoaded', function() {
 		progressBarFill.style.width = '0%';
 		progressText.textContent = '正在截图...';
 		try {
-			const resp = await fetch('/api/screenshot/batch-urls', {
+			const resp = await fetch('/api/v1/screenshot/batch-urls', {
 				method: 'POST',
 				headers: {'Content-Type': 'application/json'},
 				body: JSON.stringify({ urls, concurrency: parseInt(concurrency.value)||5, batch_id: batchId.value||'' })
 			});
 			const data = await resp.json();
+			if (!resp.ok || data.error) {
+				progressText.textContent = '截图失败: ' + (data.error?.message || data.message || '请求被拒绝');
+				btn.disabled = false; btn.textContent = '批量截图';
+				return;
+			}
 			progressBarFill.style.width = '100%';
 			progressText.textContent = '截图完成';
 			resultsSection.classList.remove('hidden');
@@ -506,7 +511,7 @@ document.addEventListener('DOMContentLoaded', function() {
 	// 刷新历史
 	document.getElementById('btn-refresh-history').addEventListener('click', async function() {
 		try {
-			const resp = await fetch('/api/tamper/history');
+			const resp = await fetch('/api/v1/tamper/history');
 			const data = await resp.json();
 			const container = document.getElementById('history-results');
 			container.innerHTML = '';
