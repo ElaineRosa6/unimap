@@ -549,15 +549,6 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(results)
 }
 
-// handleBatchScreenshotPage 处理批量截图页面
-func (s *Server) handleBatchScreenshotPage(w http.ResponseWriter, r *http.Request) {
-	if !s.renderTemplateWithNonce(r, w, http.StatusOK, "batch-screenshot.html", map[string]interface{}{
-		"staticVersion": s.staticVersion,
-	}) {
-		return
-	}
-}
-
 func normalizeScreenshotPathToken(raw string) (string, bool) {
 	token := strings.TrimSpace(raw)
 	if token == "" || token == "." || token == ".." {
