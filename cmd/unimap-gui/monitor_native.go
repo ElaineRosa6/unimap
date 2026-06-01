@@ -1174,7 +1174,7 @@ func runTamperCheckViaAPI(ctx context.Context, urls []string, concurrency int) (
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/tamper/check", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/v1/tamper/check", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -1227,7 +1227,7 @@ func runSetBaselineViaAPI(ctx context.Context, urls []string, concurrency int) (
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/tamper/baseline", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/v1/tamper/baseline", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -1271,7 +1271,7 @@ func runSetBaselinePreferAPI(ctx context.Context, state *AppState, urls []string
 
 func listBaselinesViaAPI(ctx context.Context) ([]string, error) {
 	base := resolveGUIAPIBase()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/tamper/baseline/list", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/v1/tamper/baseline/list", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1314,7 +1314,7 @@ func listBaselinesPreferAPI(ctx context.Context, state *AppState) ([]string, str
 
 func runDeleteBaselineViaAPI(ctx context.Context, targetURL string) error {
 	base := resolveGUIAPIBase()
-	endpoint := fmt.Sprintf("%s/api/tamper/baseline/delete?url=%s", base, url.QueryEscape(targetURL))
+	endpoint := fmt.Sprintf("%s/api/v1/tamper/baseline/delete?url=%s", base, url.QueryEscape(targetURL))
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
 	if err != nil {
 		return err
@@ -1350,7 +1350,7 @@ func runDeleteBaselinePreferAPI(ctx context.Context, state *AppState, targetURL 
 
 func listTamperHistoryViaAPI(ctx context.Context, limit int) ([]guiTamperHistoryRecord, error) {
 	base := resolveGUIAPIBase()
-	endpoint := fmt.Sprintf("%s/api/tamper/history?limit=%d", base, limit)
+	endpoint := fmt.Sprintf("%s/api/v1/tamper/history?limit=%d", base, limit)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -1380,7 +1380,7 @@ func listTamperHistoryViaAPI(ctx context.Context, limit int) ([]guiTamperHistory
 
 func runDeleteHistoryViaAPI(ctx context.Context, targetURL string) error {
 	base := resolveGUIAPIBase()
-	endpoint := fmt.Sprintf("%s/api/tamper/history/delete?url=%s", base, url.QueryEscape(targetURL))
+	endpoint := fmt.Sprintf("%s/api/v1/tamper/history/delete?url=%s", base, url.QueryEscape(targetURL))
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
 	if err != nil {
 		return err
@@ -1416,7 +1416,7 @@ func runDeleteHistoryPreferAPI(ctx context.Context, state *AppState, targetURL s
 
 func listScreenshotBatchesViaAPI(ctx context.Context, baseDir string) ([]screenshotBatchItem, error) {
 	base := resolveGUIAPIBase()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/screenshot/batches", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/v1/screenshot/batches", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1503,7 +1503,7 @@ func listScreenshotBatchesPreferAPI(ctx context.Context, baseDir string) ([]scre
 
 func listScreenshotBatchFilesViaAPI(ctx context.Context, batchName, baseDir string) ([]screenshotFileItem, error) {
 	base := resolveGUIAPIBase()
-	endpoint := fmt.Sprintf("%s/api/screenshot/batches/files?batch=%s", base, url.QueryEscape(batchName))
+	endpoint := fmt.Sprintf("%s/api/v1/screenshot/batches/files?batch=%s", base, url.QueryEscape(batchName))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -1581,7 +1581,7 @@ func listScreenshotBatchFilesPreferAPI(ctx context.Context, batchName, baseDir s
 
 func runDeleteScreenshotBatchViaAPI(ctx context.Context, batchName string) error {
 	base := resolveGUIAPIBase()
-	endpoint := fmt.Sprintf("%s/api/screenshot/batches/delete?batch=%s", base, url.QueryEscape(batchName))
+	endpoint := fmt.Sprintf("%s/api/v1/screenshot/batches/delete?batch=%s", base, url.QueryEscape(batchName))
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
 	if err != nil {
 		return err
@@ -1617,7 +1617,7 @@ func runDeleteScreenshotBatchPreferAPI(ctx context.Context, batchName, batchPath
 
 func runDeleteScreenshotFileViaAPI(ctx context.Context, batchName, fileName string) error {
 	base := resolveGUIAPIBase()
-	endpoint := fmt.Sprintf("%s/api/screenshot/file/delete?batch=%s&file=%s", base, url.QueryEscape(batchName), url.QueryEscape(fileName))
+	endpoint := fmt.Sprintf("%s/api/v1/screenshot/file/delete?batch=%s&file=%s", base, url.QueryEscape(batchName), url.QueryEscape(fileName))
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
 	if err != nil {
 		return err
@@ -1663,7 +1663,7 @@ func runBatchScreenshotViaAPI(ctx context.Context, urls []string, batchID string
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/screenshot/batch-urls", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/v1/screenshot/batch-urls", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

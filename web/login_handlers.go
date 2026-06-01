@@ -43,7 +43,7 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplateWithNonce(r, w, http.StatusOK, "login.html", data)
 }
 
-// handleLoginAPI validates credentials and sets session cookie (POST /api/login).
+// handleLoginAPI validates credentials and sets session cookie (POST /api/v1/login).
 func (s *Server) handleLoginAPI(w http.ResponseWriter, r *http.Request) {
 	// Rate limiting
 	clientIP := getClientIP(r)
@@ -119,7 +119,7 @@ func (s *Server) handleLoginAPI(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleLogoutAPI clears the session cookie (POST /api/logout).
+// handleLogoutAPI clears the session cookie (POST /api/v1/logout).
 func (s *Server) handleLogoutAPI(w http.ResponseWriter, r *http.Request) {
 	s.clearSessionCookie(w, r)
 	http.Redirect(w, r, "/login", http.StatusFound)

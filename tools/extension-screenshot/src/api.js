@@ -98,5 +98,5 @@ export async function apiPostBridgeSigned(path, body, token) {
 }
 
 export async function bridgeRotateToken(token) {
-  return apiPost("/api/screenshot/bridge/token/rotate", { revoke_old: true }, token);
+  return apiPost("/api/v1/screenshot/bridge/token/rotate", { revoke_old: true }, token);
 }

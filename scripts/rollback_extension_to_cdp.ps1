@@ -82,9 +82,9 @@ if ($SkipVerify) {
 }
 
 try {
-    $health = Invoke-RestMethod -Method Get -Uri "$ServerBase/api/screenshot/bridge/health" -TimeoutSec 5
+    $health = Invoke-RestMethod -Method Get -Uri "$ServerBase/api/v1/screenshot/bridge/health" -TimeoutSec 5
     Write-Host "Bridge health after config update:"
     $health | ConvertTo-Json -Depth 6
 } catch {
-    Write-Warning "Health endpoint not reachable. Restart service first, then verify: $ServerBase/api/screenshot/bridge/health"
+    Write-Warning "Health endpoint not reachable. Restart service first, then verify: $ServerBase/api/v1/screenshot/bridge/health"
 }

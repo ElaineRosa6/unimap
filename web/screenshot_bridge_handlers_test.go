@@ -55,7 +55,7 @@ func setLoopbackBridgeRequest(req *http.Request) {
 func TestBridgeMockResultRejectsMissingSignatureWhenRequired(t *testing.T) {
 	s := newBridgeTestServer(true)
 	body := `{"request_id":"req-1","success":true,"image_path":"c:/tmp/x.png"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/mock/result", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/mock/result", strings.NewReader(body))
 	setLoopbackBridgeRequest(req)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer tok-test")
@@ -73,7 +73,7 @@ func TestBridgeMockResultAcceptsValidSignature(t *testing.T) {
 	ts := time.Now().Unix()
 	headers := signedBridgeHeaders("tok-test", body, ts, "nonce-req-2")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/mock/result", strings.NewReader(string(body)))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/mock/result", strings.NewReader(string(body)))
 	setLoopbackBridgeRequest(req)
 	req.Header.Set("Content-Type", "application/json")
 	for k, v := range headers {
@@ -98,7 +98,7 @@ func TestBridgeMockResultAcceptsValidSignature(t *testing.T) {
 func TestBridgeMockResultForwardsCollectedData(t *testing.T) {
 	s := newBridgeTestServer(false)
 	body := `{"request_id":"req-collect","success":true,"collected_data":"raw title","structured_collected_data":{"total":1,"items":[{"ip":"1.2.3.4","port":443}]}}`
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/mock/result", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/mock/result", strings.NewReader(body))
 	setLoopbackBridgeRequest(req)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer tok-test")
@@ -131,7 +131,7 @@ func TestBridgeMockResultRejectsReplayNonce(t *testing.T) {
 	nonce := "nonce-replay-1"
 	headers := signedBridgeHeaders("tok-test", body, ts, nonce)
 
-	firstReq := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/mock/result", strings.NewReader(string(body)))
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/mock/result", strings.NewReader(string(body)))
 	setLoopbackBridgeRequest(firstReq)
 	firstReq.Header.Set("Content-Type", "application/json")
 	for k, v := range headers {
@@ -143,7 +143,7 @@ func TestBridgeMockResultRejectsReplayNonce(t *testing.T) {
 		t.Fatalf("first request expected 200, got %d", firstW.Code)
 	}
 
-	secondReq := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/mock/result", strings.NewReader(string(body)))
+	secondReq := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/mock/result", strings.NewReader(string(body)))
 	setLoopbackBridgeRequest(secondReq)
 	secondReq.Header.Set("Content-Type", "application/json")
 	for k, v := range headers {
@@ -159,7 +159,7 @@ func TestBridgeMockResultRejectsReplayNonce(t *testing.T) {
 func TestBridgeRotateTokenRevokesOldToken(t *testing.T) {
 	s := newBridgeTestServer(false)
 	body := `{"revoke_old":true}`
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/token/rotate", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/token/rotate", strings.NewReader(body))
 	setLoopbackBridgeRequest(req)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer tok-test")
@@ -188,7 +188,7 @@ func TestBridgeRotateTokenRevokesOldToken(t *testing.T) {
 }
 
 func TestIsLoopbackRequestRejectsForwardedHeaders(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/mock/result", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/mock/result", nil)
 	setLoopbackBridgeRequest(req)
 	req.Header.Set("X-Forwarded-For", "8.8.8.8")
 
@@ -198,7 +198,7 @@ func TestIsLoopbackRequestRejectsForwardedHeaders(t *testing.T) {
 }
 
 func TestIsLoopbackRequestRejectsNonLoopbackHost(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/mock/result", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/mock/result", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.Host = "example.com"
 

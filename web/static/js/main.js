@@ -2,15 +2,18 @@
  document.addEventListener('DOMContentLoaded', function() {
 	// 初始化WebSocket连接
 	initWebSocket();
-	
+
 	// 初始化查询表单
 	initQueryForm();
-	
+
 	// 初始化结果表格
 	initResultsTable();
-	
+
 	// 初始化配额页面
 	initQuotaPage();
+
+	// 页面离开时清理所有定时器和连接，防止泄漏
+	window.addEventListener('beforeunload', stopAllPolling);
 });
 
 // 初始化查询表单
@@ -172,7 +175,8 @@ function initCDPControls() {
 	};
 
 	refresh();
-	setInterval(refresh, 15000);
+	if (cdpStatusTimer) clearInterval(cdpStatusTimer);
+	cdpStatusTimer = setInterval(refresh, 15000);
 
 	if (connectBtn) {
 		connectBtn.addEventListener('click', function() {
@@ -201,7 +205,8 @@ function initBridgeStatusControls() {
 	};
 
 	refresh();
-	setInterval(refresh, 5000);
+	if (bridgeStatusTimer) clearInterval(bridgeStatusTimer);
+	bridgeStatusTimer = setInterval(refresh, 5000);
 
 	if (refreshBtn) {
 		refreshBtn.addEventListener('click', refresh);
@@ -223,7 +228,7 @@ function initScreenshotModeSelector() {
 		radio.addEventListener('change', function() {
 			const mode = this.value;
 			localStorage.setItem('screenshotMode', mode);
-			fetch('/api/screenshot/set-mode', {
+			fetch('/api/v1/screenshot/set-mode', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ mode })
@@ -231,13 +236,13 @@ function initScreenshotModeSelector() {
 				.then(data => {
 					console.log('Screenshot mode set to:', data.mode);
 				})
-				.catch(() => {});
+				.catch(function(err) { console.warn('Screenshot mode init failed:', err); });
 		});
 	}
 }
 
 function refreshBridgeStatus(statusBadge, statusInfo) {
-	fetch('/api/screenshot/bridge/status')
+	fetch('/api/v1/screenshot/bridge/status')
 		.then(resp => resp.json())
 		.then(data => {
 			// Consume runtime state from ScreenshotRouter (authoritative)
@@ -357,7 +362,7 @@ function saveProxy(button, statusInfo) {
 	button.textContent = '保存中...';
 	button.disabled = true;
 
-	fetch('/api/cookies', {
+	fetch('/api/v1/cookies', {
 		method: 'POST',
 		body: formData
 	})
@@ -384,7 +389,7 @@ function saveProxy(button, statusInfo) {
 }
 
 function refreshCDPStatus(statusBadge, statusInfo) {
-	fetch('/api/cdp/status')
+	fetch('/api/v1/cdp/status')
 		.then(resp => resp.json())
 		.then(data => {
 			const online = data && data.online;
@@ -420,7 +425,7 @@ function connectCDP(button, statusBadge, statusInfo) {
 		formData.append('proxy_server', proxyServer.value || '');
 	}
 
-	fetch('/api/cdp/connect', {
+	fetch('/api/v1/cdp/connect', {
 		method: 'POST',
 		body: formData
 	})
@@ -517,7 +522,7 @@ function importCookieJSON(button) {
 	button.textContent = '导入中...';
 	button.disabled = true;
 
-	fetch('/api/cookies/import', {
+	fetch('/api/v1/cookies/import', {
 		method: 'POST',
 		body: formData
 	})
@@ -578,7 +583,7 @@ function verifyCookies(button) {
 	button.textContent = '验证中...';
 	button.disabled = true;
 
-	fetch('/api/cookies/verify', {
+	fetch('/api/v1/cookies/verify', {
 		method: 'POST',
 		body: formData
 	})
@@ -674,7 +679,7 @@ function clearCookies(button) {
 	button.textContent = '清空中...';
 	button.disabled = true;
 
-	fetch('/api/cookies', {
+	fetch('/api/v1/cookies', {
 		method: 'POST',
 		body: formData
 	})
@@ -732,7 +737,7 @@ function saveCookies(button) {
 	button.textContent = '保存中...';
 	button.disabled = true;
 
-	fetch('/api/cookies', {
+	fetch('/api/v1/cookies', {
 		method: 'POST',
 		body: formData
 	})
@@ -759,9 +764,15 @@ function saveCookies(button) {
 let wsConnection = null;
 let wsConnected = false;
 let wsPingTimer = null;
+let wsReconnectAttempts = 0;
+let wsReconnectTimer = null;
 let currentQueryID = null;
 let cdpOnline = false;
 let bridgeOnline = false; // tracks extension live_clients > 0
+
+// CDP/Bridge 状态轮询 interval ID（initCDPControls/initBridgeStatusControls 写入）
+let cdpStatusTimer = null;
+let bridgeStatusTimer = null;
 
 // ============================================================
 // 登录状态检测
@@ -769,11 +780,27 @@ let bridgeOnline = false; // tracks extension live_clients > 0
 
 let loginStatusPollInterval = null;
 
+// 清理所有轮询定时器和 WebSocket 连接。
+// 在 beforeunload 事件中调用，防止页面离开后定时器继续执行。
+function stopAllPolling() {
+	if (cdpStatusTimer) { clearInterval(cdpStatusTimer); cdpStatusTimer = null; }
+	if (bridgeStatusTimer) { clearInterval(bridgeStatusTimer); bridgeStatusTimer = null; }
+	if (loginStatusPollInterval) { clearInterval(loginStatusPollInterval); loginStatusPollInterval = null; }
+	if (wsPingTimer) { clearInterval(wsPingTimer); wsPingTimer = null; }
+	if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+	if (wsConnection) {
+		// 关闭前移除 onclose 回调，避免触发新一轮重连
+		wsConnection.onclose = null;
+		wsConnection.close();
+		wsConnection = null;
+	}
+}
+
 function refreshLoginStatus() {
 	const query = document.getElementById('query');
 	const queryVal = query && query.value.trim() ? query.value.trim() : 'protocol="http"';
 
-	fetch('/api/cookies/login-status?query=' + encodeURIComponent(queryVal))
+	fetch('/api/v1/cookies/login-status?query=' + encodeURIComponent(queryVal))
 		.then(resp => resp.json())
 		.then(data => {
 			if (!data || !data.success) return;
@@ -911,12 +938,13 @@ function initWebSocket() {
 
 	// 创建新连接
 	const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-	const wsUrl = wsProtocol + window.location.host + '/api/ws';
+	const wsUrl = wsProtocol + window.location.host + '/api/v1/ws';
 	wsConnection = new WebSocket(wsUrl);
 
 	wsConnection.onopen = function() {
 		console.log('WebSocket connected');
 		wsConnected = true;
+		wsReconnectAttempts = 0;
 		// 发送ping消息保持连接
 		startPingInterval();
 	};
@@ -930,8 +958,18 @@ function initWebSocket() {
 		console.log('WebSocket disconnected');
 		wsConnected = false;
 		if (wsPingTimer) { clearInterval(wsPingTimer); wsPingTimer = null; }
-		// 尝试重连
-		setTimeout(initWebSocket, 5000);
+
+		// 指数退避重连：5s → 10s → 20s → 40s → 60s(上限)，最多 6 次
+		if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+		const maxAttempts = 6;
+		if (wsReconnectAttempts >= maxAttempts) {
+			console.warn('WebSocket reconnection limit reached, giving up');
+			return;
+		}
+		const delay = Math.min(5000 * Math.pow(2, wsReconnectAttempts), 60000);
+		console.log('WebSocket will reconnect in ' + (delay / 1000) + 's (attempt ' + (wsReconnectAttempts + 1) + '/' + maxAttempts + ')');
+		wsReconnectAttempts++;
+		wsReconnectTimer = setTimeout(initWebSocket, delay);
 	};
 
 	wsConnection.onerror = function(error) {
@@ -987,6 +1025,51 @@ function sanitizePreviewPath(path) {
 	if (!str.startsWith('/screenshots/')) return '';
 	if (str.includes('..')) return '';
 	return str;
+}
+
+// 对引擎错误消息进行友好化分类，返回 {html, category}。
+// 仅做前端映射，不修改后端 adapter 错误字符串。
+function classifyEngineError(msg) {
+	if (!msg) return { html: '<span class="err-cat err-unknown">未知</span> 未知错误', category: 'unknown' };
+	var s = String(msg).toLowerCase();
+	var cat, friendly;
+
+	// 额度/余额不足
+	if (s.indexOf('402') !== -1 || s.indexOf('payment') !== -1 || s.indexOf('余额不足') !== -1
+		|| s.indexOf('f点') !== -1 || s.indexOf('credits_insufficient') !== -1
+		|| s.indexOf('insufficient') !== -1 || s.indexOf('quota') !== -1) {
+		cat = '额度';
+		friendly = '额度/余额不足，请充值或更换 API Key';
+	}
+	// 速率限制
+	else if (s.indexOf('429') !== -1 || s.indexOf('rate limit') !== -1
+		|| s.indexOf('请求太多') !== -1 || s.indexOf('too many') !== -1
+		|| s.indexOf('频率') !== -1) {
+		cat = '限流';
+		friendly = '请求频率超限，请稍后重试';
+	}
+	// 权限不足
+	else if (s.indexOf('403') !== -1 || s.indexOf('membership') !== -1
+		|| s.indexOf('requires') !== -1 || s.indexOf('付费') !== -1) {
+		cat = '权限';
+		friendly = '需要更高权限或付费会员';
+	}
+	// 认证失败
+	else if (s.indexOf('401') !== -1 || s.indexOf('unauthorized') !== -1
+		|| s.indexOf('authentication') !== -1 || s.indexOf('api key') !== -1) {
+		cat = '认证';
+		friendly = '认证失败，请检查 API Key 配置';
+	}
+	else {
+		cat = '错误';
+		friendly = escapeHtml(msg);
+		return { html: '<span class="err-cat err-other">' + escapeHtml(cat) + '</span> ' + friendly, category: 'other' };
+	}
+
+	return {
+		html: '<span class="err-cat err-' + escapeHtml(cat) + '">' + escapeHtml(cat) + '</span> ' + escapeHtml(friendly),
+		category: cat
+	};
 }
 
 // 处理查询开始
@@ -1100,7 +1183,7 @@ function executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery
 // 传统API回退方案
 function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, browserAction) {
 	// 发送API请求
-	fetch('/api/query', {
+	fetch('/api/v1/query', {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/x-www-form-urlencoded',
@@ -1143,18 +1226,50 @@ function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, b
 	});
 }
 
+// 查询结果操作委托（CSP 兼容：替代 innerHTML 中的 onclick 属性）
+function initResultsActionDelegation() {
+	var resultsContent = document.getElementById('results-content');
+	if (!resultsContent || resultsContent.dataset.actionDelegated === '1') return;
+	resultsContent.dataset.actionDelegated = '1';
+
+	resultsContent.addEventListener('click', function(e) {
+		var btn = e.target.closest('[data-action]');
+		if (!btn) {
+			// 错误信息折叠展开
+			var header = e.target.closest('.errors-header');
+			if (header) {
+				header.parentElement.classList.toggle('expanded');
+				var arrow = header.querySelector('.toggle-arrow');
+				if (arrow) arrow.classList.toggle('expanded');
+			}
+			return;
+		}
+		var action = btn.getAttribute('data-action');
+		switch (action) {
+			case 'go-home':
+				window.location.href = '/';
+				break;
+			case 'capture-all-screenshots':
+				captureAllScreenshots();
+				break;
+			case 'capture-search-engine-screenshots':
+				captureSearchEngineScreenshots();
+				break;
+		}
+	});
+}
+
 // 显示查询错误
 function showResultsError(error) {
-	const resultsContent = document.getElementById('results-content');
+	var resultsContent = document.getElementById('results-content');
 	if (resultsContent) {
-		const safeError = escapeHtml(error);
-		resultsContent.innerHTML = `
-			<div class="error-message">
-				<h3>查询错误</h3>
-				<p>${safeError}</p>
-				<button type="button" class="btn btn-primary" onclick="window.location.href='/'">返回首页</button>
-			</div>
-		`;
+		var safeError = escapeHtml(error);
+		resultsContent.innerHTML =
+			'<div class="error-message">' +
+				'<h3>查询错误</h3>' +
+				'<p>' + safeError + '</p>' +
+				'<button type="button" class="btn btn-primary" data-action="go-home">返回首页</button>' +
+			'</div>';
 	}
 }
 
@@ -1252,14 +1367,23 @@ function showResults(data) {
 			}
 		}
 		
-		// 显示错误信息
+		// 显示错误信息（折叠+友好化）
 		const combinedErrors = Array.from(new Set(errors.concat(browserQueryErrors).concat(autoCaptureErrors)));
 		if (combinedErrors && combinedErrors.length > 0) {
+			const hasAssets = assets && assets.length > 0;
+			const titlePrefix = hasAssets ? '⚠ 部分引擎未返回结果' : '⚠ 查询失败';
+			const titleText = `${titlePrefix}（${combinedErrors.length} 个，点击展开）`;
 			html += `
-				<div class="errors">
-					<h3>错误信息</h3>
-					<ul>
-						${combinedErrors.map(err => `<li>${escapeHtml(err)}</li>`).join('')}
+				<div class="errors errors-collapsible">
+					<div class="errors-header">
+						<span class="toggle-arrow">▶</span>
+						<span>${escapeHtml(titleText)}</span>
+					</div>
+					<ul class="errors-body">
+						${combinedErrors.map(err => {
+							const friendly = classifyEngineError(err);
+							return '<li>' + friendly.html + '</li>';
+						}).join('')}
 					</ul>
 				</div>
 			`;
@@ -1367,10 +1491,10 @@ function showResults(data) {
 			<div class="screenshot-actions" style="margin: 15px 0; padding: 15px; background: #f0f8ff; border-radius: 4px; border: 1px solid #b0d4f1;">
 				<h4 style="margin-bottom: 10px;">📸 截图功能</h4>
 				<div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-					<button type="button" id="btn-screenshot-all" class="btn btn-primary" onclick="captureAllScreenshots()">
+					<button type="button" id="btn-screenshot-all" class="btn btn-primary" data-action="capture-all-screenshots">
 						批量截图所有结果
 					</button>
-					<button type="button" id="btn-screenshot-search-engines" class="btn btn-info" onclick="captureSearchEngineScreenshots()">
+					<button type="button" id="btn-screenshot-search-engines" class="btn btn-info" data-action="capture-search-engine-screenshots">
 						截图搜索引擎结果页
 					</button>
 					<span id="screenshot-status" style="margin-left: 10px; color: #666;"></span>
@@ -1387,7 +1511,7 @@ function showResults(data) {
 		// 添加返回按钮
 		html += `
 			<div class="results-footer">
-				<button type="button" class="btn btn-secondary" onclick="window.location.href='/'">返回首页</button>
+				<button type="button" class="btn btn-secondary" data-action="go-home">返回首页</button>
 			</div>
 		`;
 		
@@ -1405,6 +1529,10 @@ function showResults(data) {
 		
 		// 初始化结果表格功能
 		initResultsTable();
+		// 事件委托：资产详情/复制/截图按钮（避免翻页重复绑定）
+		initAssetActionDelegation();
+		// CSP兼容：注册结果操作事件委托
+		initResultsActionDelegation();
 	}
 }
 
@@ -1588,7 +1716,7 @@ function getSavedQueries() {
 
 // 检查引擎状态
 function checkEngineStatus() {
-	fetch('/api/config')
+	fetch('/api/v1/config')
 		.then(r => r.json())
 		.then(data => {
 			if (!data.engines) return;
@@ -1609,7 +1737,7 @@ function checkEngineStatus() {
 				}
 			});
 		})
-		.catch(() => {});
+		.catch(function(err) { console.warn('checkEngineStatus failed:', err); });
 }
 
 // 初始化结果表格
@@ -1897,7 +2025,6 @@ function initPagination() {
 		const tp = document.getElementById('total-pages');
 		if (cp) cp.textContent = currentPage;
 		if (tp) tp.textContent = totalPages;
-		if (typeof initAssetDetail === 'function') initAssetDetail();
 	}
 
 	if (prevBtn) {
@@ -1922,8 +2049,40 @@ function initPagination() {
 	if (allRows.length > 0) renderPage();
 }
 
-// 初始化资产详情功能
+// 事件委托：资产详情/复制/截图按钮（仅绑定一次，翻页不影响）
+function initAssetActionDelegation() {
+	var tbody = document.getElementById('results-body');
+	if (!tbody || tbody.dataset.assetDelegated === '1') return;
+	tbody.dataset.assetDelegated = '1';
+
+	tbody.addEventListener('click', function(e) {
+		var btn = e.target.closest('button');
+		if (!btn) return;
+
+		if (btn.classList.contains('btn-detail')) {
+			var ip = btn.getAttribute('data-ip');
+			var port = btn.getAttribute('data-port');
+			showAssetDetail(ip, port);
+		} else if (btn.classList.contains('btn-copy')) {
+			var ip = btn.getAttribute('data-ip');
+			if (!ip) return;
+			copyToClipboard(ip)
+				.then(function() { showMessage('IP地址已复制到剪贴板', 'success'); })
+				.catch(function(err) { console.error('复制失败:', err); fallbackCopy(ip); });
+		} else if (btn.classList.contains('btn-screenshot')) {
+			var url = btn.getAttribute('data-url');
+			var ip = btn.getAttribute('data-ip');
+			var port = btn.getAttribute('data-port');
+			var proto = btn.getAttribute('data-protocol');
+			viewScreenshot(url, ip, port, proto);
+		}
+	});
+}
+
+// 初始化资产详情功能（保留旧函数签名，但不再被翻页调用；新逻辑见 initAssetActionDelegation）
 function initAssetDetail() {
+	// 已由 initAssetActionDelegation 事件委托替代，保留空函数以兼容旧调用
+}
 	// 详情按钮 - 使用特定类名选择
 	const detailBtns = document.querySelectorAll('.btn-detail');
 	detailBtns.forEach(btn => {
@@ -2022,15 +2181,19 @@ function showAssetDetail(ip, port) {
 
 	modal.style.display = 'block';
 
-	modal.querySelectorAll('.close-btn').forEach(btn => {
-		btn.onclick = function() { modal.style.display = 'none'; };
-	});
-	window.addEventListener('click', function handler(e) {
+	function closeModal() {
+		modal.style.display = 'none';
+		window.removeEventListener('click', handleOutsideClick);
+	}
+	function handleOutsideClick(e) {
 		if (e.target === modal) {
-			modal.style.display = 'none';
-			window.removeEventListener('click', handler);
+			closeModal();
 		}
+	}
+	modal.querySelectorAll('.close-btn').forEach(function(btn) {
+		btn.onclick = closeModal;
 	});
+	window.addEventListener('click', handleOutsideClick);
 }
 
 // 初始化配额页面
@@ -2262,8 +2425,17 @@ function openQuotaSettings() {
 
 	modal.style.display = 'block';
 
-	modal.querySelectorAll('.close-btn').forEach(btn => {
-		btn.onclick = function() { modal.style.display = 'none'; };
+	function closeQuotaModal() {
+		modal.style.display = 'none';
+		window.removeEventListener('click', handleOutsideClick);
+	}
+	function handleOutsideClick(e) {
+		if (e.target === modal) {
+			closeQuotaModal();
+		}
+	}
+	modal.querySelectorAll('.close-btn').forEach(function(btn) {
+		btn.onclick = closeQuotaModal;
 	});
 
 	const saveBtn = document.getElementById('btn-save-settings');
@@ -2285,12 +2457,7 @@ function openQuotaSettings() {
 		};
 	}
 
-	window.addEventListener('click', function handler(e) {
-		if (e.target === modal) {
-			modal.style.display = 'none';
-			window.removeEventListener('click', handler);
-		}
-	});
+	window.addEventListener('click', handleOutsideClick);
 }
 
 // 工具函数：格式化数字
@@ -2520,7 +2687,7 @@ function viewScreenshot(url, ip, port, protocol) {
 	modal.style.display = 'block';
 	
 	// 请求截图 (POST)
-	fetch('/api/screenshot', {
+	fetch('/api/v1/screenshot', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 		body: `url=${encodeURIComponent(target)}`
@@ -2579,7 +2746,7 @@ function captureSearchEngineScreenshots() {
 
 	engines.forEach((engine, index) => {
 		setTimeout(() => {
-			fetch(`/api/screenshot/search-engine?engine=${encodeURIComponent(engine)}&query=${encodeURIComponent(query)}&query_id=${queryID}`)
+			fetch(`/api/v1/screenshot/search-engine?engine=${encodeURIComponent(engine)}&query=${encodeURIComponent(query)}&query_id=${queryID}`)
 				.then(response => response.json())
 				.then(data => {
 					completed++;
@@ -2594,7 +2761,7 @@ function captureSearchEngineScreenshots() {
 				})
 				.catch(err => {
 					completed++;
-					logger.error(`截图 ${engine} 失败:`, err);
+					console.error(`截图 ${engine} 失败:`, err);
 					if (completed === total) {
 						statusEl.textContent = '截图完成(部分失败)';
 					}
@@ -2656,7 +2823,7 @@ function captureAllScreenshots() {
 	// 使用批量URL截图API，控制并发为3以减少内存占用
 	const batchID = queryID || `batch_${Date.now()}`;
 
-	fetch('/api/screenshot/batch-urls', {
+	fetch('/api/v1/screenshot/batch-urls', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({

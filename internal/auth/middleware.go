@@ -97,7 +97,8 @@ func (m *AuthMiddleware) extractAPIKey(r *http.Request) string {
 		return strings.TrimSpace(apiKeyHeader)
 	}
 
-	// 从查询参数提取
+	// 从查询参数提取（Deprecated：URL 中的 API Key 会被代理/日志记录，
+	// 推荐使用 Authorization: Apikey <key> 或 X-API-Key Header）
 	apiKeyParam := r.URL.Query().Get("api_key")
 	if apiKeyParam != "" {
 		return strings.TrimSpace(apiKeyParam)

@@ -190,7 +190,7 @@ func (s *Server) reloadEngineAdapters() {
 	}
 }
 
-// handleNotifyChannelSave handles POST /api/notifications/channels — create or update a channel.
+// handleNotifyChannelSave handles POST /api/v1/notifications/channels — create or update a channel.
 func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -286,7 +286,7 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// handleNotifyChannelDelete handles DELETE /api/notifications/channels — delete a channel.
+// handleNotifyChannelDelete handles DELETE /api/v1/notifications/channels — delete a channel.
 func (s *Server) handleNotifyChannelDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -342,7 +342,7 @@ func (s *Server) handleNotifyChannelDelete(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// handleNotifyChannelTest handles POST /api/notifications/channels/test — send a test message.
+// handleNotifyChannelTest handles POST /api/v1/notifications/channels/test — send a test message.
 func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

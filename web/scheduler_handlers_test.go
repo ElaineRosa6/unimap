@@ -44,7 +44,7 @@ func TestHandleCreateTask_NoScheduler_Returns503(t *testing.T) {
 		"type":      "query",
 		"cron_expr": "0 * * * *",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleCreateTask(rec, req)
@@ -63,7 +63,7 @@ func TestHandleCreateTask_GetMethod_Returns405(t *testing.T) {
 
 	s := &Server{scheduler: sched}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/scheduler/tasks", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/tasks", nil)
 	s.handleCreateTask(rec, req)
 
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -85,7 +85,7 @@ func TestHandleCreateTask_EmptyName_Returns400(t *testing.T) {
 		"type":      "query",
 		"cron_expr": "0 * * * *",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleCreateTask(rec, req)
@@ -109,7 +109,7 @@ func TestHandleCreateTask_EmptyCron_Returns400(t *testing.T) {
 		"type":      "query",
 		"cron_expr": "",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleCreateTask(rec, req)
@@ -131,7 +131,7 @@ func TestHandleCreateTask_Success(t *testing.T) {
 		"cron_expr": "0 * * * *",
 		"payload":   map[string]interface{}{"query": "country=\"CN\""},
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleCreateTask(rec, req)
@@ -153,7 +153,7 @@ func TestHandleCreateTask_Success(t *testing.T) {
 func TestHandleListTasks_NoScheduler_Returns503(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/scheduler/tasks", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/tasks", nil)
 	s.handleListTasks(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
@@ -170,7 +170,7 @@ func TestHandleListTasks_Empty(t *testing.T) {
 
 	s := &Server{scheduler: sched}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/scheduler/tasks", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/tasks", nil)
 	s.handleListTasks(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -193,7 +193,7 @@ func TestHandleListTasks_AfterCreate(t *testing.T) {
 
 	s := &Server{scheduler: sched}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/scheduler/tasks", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/tasks", nil)
 	s.handleListTasks(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -218,7 +218,7 @@ func TestHandleUpdateTask_NoScheduler_Returns503(t *testing.T) {
 		"name":      "updated",
 		"cron_expr": "0 * * * *",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/update", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/update", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleUpdateTask(rec, req)
@@ -241,7 +241,7 @@ func TestHandleUpdateTask_MissingID_Returns400(t *testing.T) {
 		"name":      "updated",
 		"cron_expr": "0 * * * *",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/update", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/update", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleUpdateTask(rec, req)
@@ -265,7 +265,7 @@ func TestHandleUpdateTask_NotFound_Returns404(t *testing.T) {
 		"name":      "updated",
 		"cron_expr": "0 * * * *",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/update", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/update", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleUpdateTask(rec, req)
@@ -279,7 +279,7 @@ func TestHandleRunTaskNow_NoScheduler_Returns503(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]interface{}{"id": "some-id"})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/run", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/run", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleRunTaskNow(rec, req)
@@ -299,7 +299,7 @@ func TestHandleRunTaskNow_MissingID_Returns400(t *testing.T) {
 	s := &Server{scheduler: sched}
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]interface{}{})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/run", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/run", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleRunTaskNow(rec, req)
@@ -319,7 +319,7 @@ func TestHandleRunTaskNow_NotFound_Returns404(t *testing.T) {
 	s := &Server{scheduler: sched}
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]interface{}{"id": "nonexistent"})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/run", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/run", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleRunTaskNow(rec, req)
@@ -345,7 +345,7 @@ func TestHandleRunTaskNow_Success(t *testing.T) {
 	s := &Server{scheduler: sched}
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]interface{}{"id": task.ID})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/run", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/run", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleRunTaskNow(rec, req)
@@ -365,7 +365,7 @@ func TestHandleDeleteTask_NoScheduler_Returns503(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]interface{}{"id": "some-id"})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/delete", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/delete", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleDeleteTask(rec, req)
@@ -378,7 +378,7 @@ func TestHandleDeleteTask_NoScheduler_Returns503(t *testing.T) {
 func TestHandleTaskHistory_NoScheduler_Returns503(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/scheduler/history", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/history", nil)
 	s.handleTaskHistory(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
@@ -395,7 +395,7 @@ func TestHandleTaskHistory_Empty(t *testing.T) {
 
 	s := &Server{scheduler: sched}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/scheduler/history", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/history", nil)
 	s.handleTaskHistory(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -407,7 +407,7 @@ func TestHandleEnableTask_NoScheduler_Returns503(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]interface{}{"id": "some-id"})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/enable", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/enable", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleEnableTask(rec, req)
@@ -421,7 +421,7 @@ func TestHandleDisableTask_NoScheduler_Returns503(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]interface{}{"id": "some-id"})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks/disable", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/disable", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleDisableTask(rec, req)
@@ -443,7 +443,7 @@ func TestHandleSchedulerPage(t *testing.T) {
 func TestHandleGetTask_NoScheduler_Returns503(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/scheduler/tasks?id=1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/tasks?id=1", nil)
 	s.handleGetTask(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
@@ -460,7 +460,7 @@ func TestHandleGetTask_MissingID_Returns400(t *testing.T) {
 
 	s := &Server{scheduler: sched}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/scheduler/tasks", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/tasks", nil)
 	s.handleGetTask(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -477,7 +477,7 @@ func TestHandleCreateTask_BadJSON_Returns400(t *testing.T) {
 
 	s := &Server{scheduler: sched}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks", bytes.NewReader([]byte("not json")))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks", bytes.NewReader([]byte("not json")))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleCreateTask(rec, req)
@@ -521,7 +521,7 @@ func TestHandleTaskHistory_WithLimit(t *testing.T) {
 
 	s := &Server{scheduler: sched}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/scheduler/history?limit=10", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/history?limit=10", nil)
 	s.handleTaskHistory(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -556,7 +556,7 @@ func TestCreateTask_InvalidCronExpression(t *testing.T) {
 		"type":      "query",
 		"cron_expr": "not a valid cron",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/scheduler/tasks", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleCreateTask(rec, req)
@@ -576,7 +576,7 @@ func TestHandleRunTaskNow_GetMethod_Returns405(t *testing.T) {
 
 	s := &Server{scheduler: sched}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/scheduler/tasks/run", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/tasks/run", nil)
 	s.handleRunTaskNow(rec, req)
 
 	if rec.Code != http.StatusMethodNotAllowed {

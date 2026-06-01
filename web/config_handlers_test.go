@@ -32,7 +32,7 @@ func newServerForConfigTest() *Server {
 
 func TestHandleGetConfig_MasksSecrets(t *testing.T) {
 	s := newServerForConfigTest()
-	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
 	w := httptest.NewRecorder()
 	s.handleGetConfig(w, req)
 
@@ -67,7 +67,7 @@ func TestHandleGetConfig_MasksSecrets(t *testing.T) {
 
 func TestHandleGetConfig_RejectsNonGET(t *testing.T) {
 	s := newServerForConfigTest()
-	req := httptest.NewRequest(http.MethodPost, "/api/config", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/config", nil)
 	w := httptest.NewRecorder()
 	s.handleGetConfig(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
@@ -81,7 +81,7 @@ func postConfig(t *testing.T, s *Server, payload map[string]interface{}) *httpte
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/config", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/config", bytes.NewReader(body))
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/json")
@@ -211,7 +211,7 @@ func TestHandleSaveConfig_SystemSection(t *testing.T) {
 func TestHandleSaveConfig_RejectsUntrustedOrigin(t *testing.T) {
 	s := newServerForConfigTest()
 	body, _ := json.Marshal(map[string]interface{}{"section": "icp", "data": map[string]interface{}{}})
-	req := httptest.NewRequest(http.MethodPost, "/api/config", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/config", bytes.NewReader(body))
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://evil.example")
 	req.Header.Set("Content-Type", "application/json")

@@ -445,7 +445,7 @@ func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleChangePassword handles POST /api/account/change-password.
+// handleChangePassword handles POST /api/v1/account/change-password.
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})

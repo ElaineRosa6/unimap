@@ -90,7 +90,7 @@
 				}
 
 				try {
-					const res = await fetch('/api/account/change-password', {
+					const res = await fetch('/api/v1/account/change-password', {
 						method: 'POST',
 						headers: {'Content-Type': 'application/json'},
 						body: JSON.stringify({current_password: current, new_password: newPwd})

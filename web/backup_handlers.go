@@ -8,7 +8,7 @@ import (
 	"github.com/unimap/project/internal/backup"
 )
 
-// handleCreateBackup POST /api/backup/create
+// handleCreateBackup POST /api/v1/backup/create
 func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use POST", nil)
@@ -55,7 +55,7 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleListBackups GET /api/backup/list
+// handleListBackups GET /api/v1/backup/list
 func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use GET", nil)

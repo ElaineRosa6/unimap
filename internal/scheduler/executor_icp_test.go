@@ -154,8 +154,8 @@ func TestICPQueryRunner_PayloadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "type=web") {
-		t.Errorf("expected default type=web, got: %s", result)
+	if !strings.Contains(result, "types=web") {
+		t.Errorf("expected default types=web, got: %s", result)
 	}
 	if !strings.Contains(result, "page=1") {
 		t.Errorf("expected default page=1, got: %s", result)
@@ -204,8 +204,8 @@ func TestICPQueryRunner_ConfigDefaultType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "type=app") {
-		t.Errorf("expected type=app from config default, got: %s", result)
+	if !strings.Contains(result, "types=app") {
+		t.Errorf("expected types=app from config default, got: %s", result)
 	}
 }
 

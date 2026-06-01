@@ -184,7 +184,7 @@ func (s *Server) handleNodeNetworkProfile(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// handleNodeDeregister handles DELETE /api/nodes/deregister - deregister a node
+// handleNodeDeregister handles DELETE /api/v1/nodes/deregister - deregister a node
 func (s *Server) handleNodeDeregister(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
@@ -219,7 +219,7 @@ func (s *Server) handleNodeDeregister(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleNodeGet handles GET /api/nodes/get - retrieve a single node
+// handleNodeGet handles GET /api/v1/nodes/get - retrieve a single node
 func (s *Server) handleNodeGet(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return

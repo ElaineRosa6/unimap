@@ -269,7 +269,7 @@
 
 	async function loadTasks() {
 		try {
-			const res = await fetch('/api/scheduler/tasks' );
+			const res = await fetch('/api/v1/scheduler/tasks' );
 			const tasks = await res.json();
 			const tbody = document.getElementById('task-list');
 			tbody.innerHTML = '';
@@ -326,7 +326,7 @@
 		if (limit) params.set('limit', limit);
 
 		try {
-			const res = await fetch('/api/scheduler/history?' + params.toString() );
+			const res = await fetch('/api/v1/scheduler/history?' + params.toString() );
 			const records = await res.json();
 			const tbody = document.getElementById('history-list');
 			tbody.innerHTML = '';
@@ -385,7 +385,7 @@
 		const body = {name, type: taskType, enabled, cron_expr: cronExpr, payload, timeout_seconds: timeout, max_retries: retries};
 		if (notifyEnabled) body.notifications = notifications;
 
-		const res = await fetch('/api/scheduler/tasks/create', {
+		const res = await fetch('/api/v1/scheduler/tasks/create', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify(body)
@@ -406,7 +406,7 @@
 
 	async function deleteTask(id) {
 		if (!confirm('确定删除此任务？')) return;
-		const res = await fetch('/api/scheduler/tasks/delete' , {
+		const res = await fetch('/api/v1/scheduler/tasks/delete' , {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({id})
@@ -421,7 +421,7 @@
 	}
 
 	async function runTask(id) {
-		const res = await fetch('/api/scheduler/tasks/run' , {
+		const res = await fetch('/api/v1/scheduler/tasks/run' , {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({id})
@@ -435,7 +435,7 @@
 	}
 
 	async function toggleTask(id, enable) {
-		const endpoint = enable ? '/api/scheduler/tasks/enable' : '/api/scheduler/tasks/disable';
+		const endpoint = enable ? '/api/v1/scheduler/tasks/enable' : '/api/v1/scheduler/tasks/disable';
 		const res = await fetch(endpoint , {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
@@ -469,7 +469,7 @@
 
 	async function loadNotifyChannels() {
 		try {
-			const res = await fetch('/api/notifications/channels');
+			const res = await fetch('/api/v1/notifications/channels');
 			if (!res.ok) return;
 			const data = await res.json();
 			const channels = data.channels || [];
@@ -519,7 +519,7 @@ document.getElementById('task-list').addEventListener('click', (e) => {
 // --- Edit task modal ---
 async function editTask(id) {
 	try {
-		const res = await fetch('/api/scheduler/tasks/get?id=' + encodeURIComponent(id) );
+		const res = await fetch('/api/v1/scheduler/tasks/get?id=' + encodeURIComponent(id) );
 		if (!res.ok) { showToast('获取任务失败', 'error'); return; }
 		const task = await res.json();
 
@@ -584,7 +584,7 @@ async function saveTask() {
 	const body = {id, name, type: taskType, enabled, cron_expr: cronExpr, payload, timeout_seconds: timeout, max_retries: retries};
 	if (notifyEnabled) body.notifications = notifications;
 
-	const res = await fetch('/api/scheduler/tasks/update', {
+	const res = await fetch('/api/v1/scheduler/tasks/update', {
 		method: 'POST',
 		headers: {'Content-Type': 'application/json'},
 		body: JSON.stringify(body)

@@ -142,7 +142,8 @@ func IsRetryableErrorByType(errorType string) bool {
 	case ErrorTypeHTTP:
 		return true
 	case ErrorTypeRateLimit:
-		return true
+		// 限流即时重试只会加剧限流，应直接退避返回给上层
+		return false
 	case ErrorTypeInternal:
 		return true
 	case ErrorTypeUnknown:
@@ -221,6 +222,16 @@ func IsRetryableError(err error) bool {
 
 	errMsg := err.Error()
 
+	// 速率限制错误（不可重试）：被限流时立即重试只会加剧限流，
+	// 应直接退避并把结果返回给上层/用户。涵盖中英文常见表述。
+	if strings.Contains(errMsg, "HTTP 429") ||
+		strings.Contains(errMsg, "rate limit") ||
+		strings.Contains(errMsg, "too many requests") ||
+		strings.Contains(errMsg, "请求太多") ||
+		strings.Contains(errMsg, "频率") {
+		return false
+	}
+
 	// 网络错误
 	if strings.Contains(errMsg, "connection refused") ||
 		strings.Contains(errMsg, "connection reset") ||
@@ -233,11 +244,6 @@ func IsRetryableError(err error) bool {
 	// HTTP错误
 	if strings.Contains(errMsg, "HTTP 5") {
 		return true // 5xx错误可重试
-	}
-
-	// 429 Too Many Requests
-	if strings.Contains(errMsg, "HTTP 429") {
-		return true
 	}
 
 	// 配额错误（不可重试）

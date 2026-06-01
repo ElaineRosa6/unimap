@@ -186,7 +186,14 @@ func (f *FofaAdapter) Search(ctx context.Context, query string, page, pageSize i
 		Exponential: true,
 		Jitter:      true,
 		RetryableFunc: func(err error) bool {
-			// 网络错误可重试
+			errStr := err.Error()
+			// 非临时性错误不重试：认证失败、余额不足
+			if strings.Contains(errStr, "HTTP 401") ||
+				strings.Contains(errStr, "HTTP 403") ||
+				strings.Contains(errStr, "820031") {
+				return false
+			}
+			// 其他错误（网络、5xx、429限流等）可重试
 			return true
 		},
 	}

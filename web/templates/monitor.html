@@ -183,9 +183,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
 	// 加载示例
 	document.getElementById('btn-load-example').addEventListener('click', function() {
-		urlList.value = 'https://www.example.com\nhttps://www.baidu.com\nhttps://httpbin.org';
+		urlList.value = 'https://www.example.com\nhttps://www.baidu.com\nhttps://www.bing.com';
 		urlList.dispatchEvent(new Event('input'));
 	});
+	// CSP兼容：注册基线删除事件委托
+	(function() {
+			var container = document.getElementById('history-results');
+			if (!container || container.dataset.delegated) return;
+			container.dataset.delegated = '1';
+			container.addEventListener('click', function(e) {
+				var btn = e.target.closest('.js-delete-baseline');
+				if (btn && btn.dataset.url) {
+					deleteBaseline(btn.dataset.url);
+				}
+			});
+	})();
 
 	// 清空
 	document.getElementById('btn-clear').addEventListener('click', function() {
@@ -445,7 +457,7 @@ document.addEventListener('DOMContentLoaded', function() {
 				data.urls.forEach(url => {
 					const div = document.createElement('div');
 					div.className = 'result-item';
-					div.innerHTML = `<span>${url}</span> <button class="btn btn-sm btn-danger" onclick="deleteBaseline('${url.replace(/'/g,"\\'")}')">删除</button>`;
+					div.innerHTML = `<span>${url}</span> <button class="btn btn-sm btn-danger js-delete-baseline" data-url="${url.replace(/"/g, '&quot;')}">删除</button>`;
 					container.appendChild(div);
 				});
 			} else {

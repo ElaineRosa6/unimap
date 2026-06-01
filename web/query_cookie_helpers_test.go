@@ -20,7 +20,7 @@ import (
 
 func TestHandleQueryStatus_MissingQueryID(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/query/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query/status", nil)
 	w := httptest.NewRecorder()
 	s.handleQueryStatus(w, req)
 
@@ -35,7 +35,7 @@ func TestHandleQueryStatus_NotFound(t *testing.T) {
 	}
 	s.queryStatus["q1"] = &QueryStatus{Status: "running"}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/query/status?query_id=nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query/status?query_id=nonexistent", nil)
 	w := httptest.NewRecorder()
 	s.handleQueryStatus(w, req)
 
@@ -50,7 +50,7 @@ func TestHandleQueryStatus_Found(t *testing.T) {
 	}
 	s.queryStatus["q1"] = &QueryStatus{Status: "completed", TotalCount: 10}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/query/status?query_id=q1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query/status?query_id=q1", nil)
 	w := httptest.NewRecorder()
 	s.handleQueryStatus(w, req)
 
@@ -107,7 +107,7 @@ func TestHandleImportCookieJSON_MissingParams(t *testing.T) {
 		distributed: &DistributedState{NodeRegistry: distributed.NewRegistry(60 * time.Second)},
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/cookies/import/fofa", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookies/import/fofa", nil)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
@@ -127,7 +127,7 @@ func TestHandleImportCookieJSON_InvalidEngine(t *testing.T) {
 	}
 
 	form := "engine=unknown&cookie_json=%5B%7B%22name%22%3A%22token%22%2C%22value%22%3A%22abc%22%7D%5D"
-	req := httptest.NewRequest(http.MethodPost, "/api/cookies/import/unknown", bytes.NewBufferString(form))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookies/import/unknown", bytes.NewBufferString(form))
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -149,7 +149,7 @@ func TestHandleImportCookieJSON_Success(t *testing.T) {
 
 	// Valid cookie JSON for fofa
 	form := "engine=fofa&cookie_json=%5B%7B%22name%22%3A%22token%22%2C%22value%22%3A%22abc123%22%2C%22domain%22%3A%22.fofa.info%22%7D%5D"
-	req := httptest.NewRequest(http.MethodPost, "/api/cookies/import/fofa", bytes.NewBufferString(form))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookies/import/fofa", bytes.NewBufferString(form))
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -179,7 +179,7 @@ func TestHandleImportCookieJSON_ExtensionMode(t *testing.T) {
 	}
 
 	form := "engine=fofa&cookie_json=%5B%7B%22name%22%3A%22token%22%2C%22value%22%3A%22abc123%22%2C%22domain%22%3A%22.fofa.info%22%7D%5D"
-	req := httptest.NewRequest(http.MethodPost, "/api/cookies/import/fofa", bytes.NewBufferString(form))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookies/import/fofa", bytes.NewBufferString(form))
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -201,7 +201,7 @@ func TestHandleSaveCookies_CDPMode(t *testing.T) {
 	}
 
 	form := "cookie_fofa=token=abc"
-	req := httptest.NewRequest(http.MethodPost, "/api/cookies", bytes.NewBufferString(form))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookies", bytes.NewBufferString(form))
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -223,7 +223,7 @@ func TestHandleSaveCookies_ExtensionMode(t *testing.T) {
 	}
 
 	form := "cookie_fofa=token=abc"
-	req := httptest.NewRequest(http.MethodPost, "/api/cookies", bytes.NewBufferString(form))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookies", bytes.NewBufferString(form))
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

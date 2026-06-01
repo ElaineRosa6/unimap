@@ -126,7 +126,8 @@ web:
             - X-Requested-With
             - X-WebSocket-Token
         exposed_headers: []
-        allow_credentials: true
+        # 允许跨域请求携带 Cookie（生产环境建议保持 false，仅前端分离部署时设为 true）
+        allow_credentials: false
         max_age: 600
     rate_limit:
         enabled: true

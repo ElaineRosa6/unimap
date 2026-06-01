@@ -8,7 +8,7 @@ import (
 	"github.com/unimap/project/internal/logger"
 )
 
-// handleGetConfig returns the current config with secrets masked (GET /api/config).
+// handleGetConfig returns the current config with secrets masked (GET /api/v1/config).
 // Only sections needed by the settings page are exposed.
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
@@ -91,7 +91,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// configSaveRequest is the POST /api/config payload.
+// configSaveRequest is the POST /api/v1/config payload.
 type configSaveRequest struct {
 	Section string                 `json:"section"`
 	Data    map[string]interface{} `json:"data"`
