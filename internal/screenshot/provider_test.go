@@ -20,6 +20,8 @@ func TestBuildSearchEngineURL_AllEngines(t *testing.T) {
 		{"hunter", "hello world", "https://hunter.qianxin.com/list?searchValue="},
 		{"quake", "port:80", "https://quake.360.cn/quake/#/searchResult?searchVal="},
 		{"zoomeye", "ip:1.2.3.4", "https://www.zoomeye.org/searchResult?q="},
+		{"shodan", "port:443", "https://www.shodan.io/search?query="},
+		{"SHODAN", "test", "https://www.shodan.io/search?query="},
 		{"unknown", "test", ""},
 		{"", "test", ""},
 		{"fofa", "  test  ", "https://fofa.info/"}, // trimmed query

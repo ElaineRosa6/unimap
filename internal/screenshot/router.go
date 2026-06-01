@@ -632,6 +632,7 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 }
 
 // buildSearchEngineURL builds a search engine result URL for bridge capture.
+// Note: query should already be translated to engine-native syntax before calling this.
 func buildSearchEngineURL(engine, query string) string {
 	switch strings.ToLower(strings.TrimSpace(engine)) {
 	case "fofa":
@@ -642,6 +643,8 @@ func buildSearchEngineURL(engine, query string) string {
 		return fmt.Sprintf("https://quake.360.cn/quake/#/searchResult?searchVal=%s", url.QueryEscape(query))
 	case "zoomeye":
 		return fmt.Sprintf("https://www.zoomeye.org/searchResult?q=%s", url.QueryEscape(query))
+	case "shodan":
+		return fmt.Sprintf("https://www.shodan.io/search?query=%s", url.QueryEscape(query))
 	default:
 		return ""
 	}
