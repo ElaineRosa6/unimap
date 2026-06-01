@@ -642,7 +642,7 @@ func securityMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		w.Header().Set("Content-Security-Policy",
-			fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s' 'unsafe-hashes'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.font.im; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com https://fonts.gstatic.font.im;", nonce))
+			fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s' 'unsafe-hashes'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.googleapis.font.im https://fonts.gstatic.font.im; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com https://fonts.gstatic.font.im;", nonce))
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 
@@ -745,7 +745,7 @@ func (s *Server) Start() error {
 		isWebSocket := strings.Contains(r.Header.Get("Connection"), "Upgrade") &&
 			strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 
-		if isWebSocket && r.URL.Path == "/api/ws" {
+		if isWebSocket && (r.URL.Path == "/api/v1/ws" || r.URL.Path == "/api/ws") {
 			// WebSocket auth: cookie → query param → header
 			if s.adminToken() != "" && !s.isPublicPath(r.URL.Path) {
 				token := s.getSessionToken(r)

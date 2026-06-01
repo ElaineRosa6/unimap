@@ -33,7 +33,7 @@ func TestNodeTaskFlow(t *testing.T) {
 		"payload":       map[string]interface{}{"url": "https://example.com"},
 	}
 	enqueueBytes, _ := json.Marshal(enqueueBody)
-	enqueueReq := httptest.NewRequest(http.MethodPost, "/api/nodes/task/enqueue", bytes.NewReader(enqueueBytes))
+	enqueueReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/task/enqueue", bytes.NewReader(enqueueBytes))
 	enqueueReq.Header.Set("Authorization", "Bearer test-admin-token")
 	enqueueW := httptest.NewRecorder()
 	s.handleNodeTaskEnqueue(enqueueW, enqueueReq)
@@ -43,7 +43,7 @@ func TestNodeTaskFlow(t *testing.T) {
 
 	claimBody := map[string]interface{}{"node_id": "node-a", "caps": []string{"port_scan"}}
 	claimBytes, _ := json.Marshal(claimBody)
-	claimReq := httptest.NewRequest(http.MethodPost, "/api/nodes/task/claim", bytes.NewReader(claimBytes))
+	claimReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/task/claim", bytes.NewReader(claimBytes))
 	claimReq.Header.Set("Authorization", "Bearer node-token-a")
 	claimW := httptest.NewRecorder()
 	s.handleNodeTaskClaim(claimW, claimReq)
@@ -53,7 +53,7 @@ func TestNodeTaskFlow(t *testing.T) {
 
 	resultBody := map[string]interface{}{"task_id": "task-1", "node_id": "node-a", "status": "completed", "duration_ms": 32}
 	resultBytes, _ := json.Marshal(resultBody)
-	resultReq := httptest.NewRequest(http.MethodPost, "/api/nodes/task/result", bytes.NewReader(resultBytes))
+	resultReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/task/result", bytes.NewReader(resultBytes))
 	resultReq.Header.Set("Authorization", "Bearer node-token-a")
 	resultW := httptest.NewRecorder()
 	s.handleNodeTaskResult(resultW, resultReq)
@@ -61,7 +61,7 @@ func TestNodeTaskFlow(t *testing.T) {
 		t.Fatalf("result expected 200, got %d, body=%s", resultW.Code, resultW.Body.String())
 	}
 
-	statusReq := httptest.NewRequest(http.MethodGet, "/api/nodes/task/status", nil)
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/task/status", nil)
 	statusReq.Header.Set("Authorization", "Bearer test-admin-token")
 	statusW := httptest.NewRecorder()
 	s.handleNodeTaskStatus(statusW, statusReq)
@@ -94,7 +94,7 @@ func TestNodeTask_DistributedDisabled(t *testing.T) {
 	s := &Server{distributed: &DistributedState{NodeTaskQueue: distributed.NewTaskQueue()}, config: &config.Config{}}
 	body := map[string]interface{}{"task_id": "task-1", "task_type": "port_scan"}
 	b, _ := json.Marshal(body)
-	req := httptest.NewRequest(http.MethodPost, "/api/nodes/task/enqueue", bytes.NewReader(b))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/task/enqueue", bytes.NewReader(b))
 	w := httptest.NewRecorder()
 	s.handleNodeTaskEnqueue(w, req)
 	if w.Code != http.StatusServiceUnavailable {
@@ -116,14 +116,14 @@ func TestNodeTaskClaim_NodeAuthToken(t *testing.T) {
 	body := map[string]interface{}{"node_id": "node-a", "caps": []string{"port_scan"}}
 	b, _ := json.Marshal(body)
 
-	unauthReq := httptest.NewRequest(http.MethodPost, "/api/nodes/task/claim", bytes.NewReader(b))
+	unauthReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/task/claim", bytes.NewReader(b))
 	unauthW := httptest.NewRecorder()
 	s.handleNodeTaskClaim(unauthW, unauthReq)
 	if unauthW.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without token, got %d, body=%s", unauthW.Code, unauthW.Body.String())
 	}
 
-	authReq := httptest.NewRequest(http.MethodPost, "/api/nodes/task/claim", bytes.NewReader(b))
+	authReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/task/claim", bytes.NewReader(b))
 	authReq.Header.Set("Authorization", "Bearer token-a")
 	authW := httptest.NewRecorder()
 	s.handleNodeTaskClaim(authW, authReq)
@@ -141,14 +141,14 @@ func TestNodeTaskEnqueue_AdminToken(t *testing.T) {
 	body := map[string]interface{}{"task_id": "task-admin-1", "task_type": "port_scan"}
 	b, _ := json.Marshal(body)
 
-	unauthReq := httptest.NewRequest(http.MethodPost, "/api/nodes/task/enqueue", bytes.NewReader(b))
+	unauthReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/task/enqueue", bytes.NewReader(b))
 	unauthW := httptest.NewRecorder()
 	s.handleNodeTaskEnqueue(unauthW, unauthReq)
 	if unauthW.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without admin token, got %d, body=%s", unauthW.Code, unauthW.Body.String())
 	}
 
-	authReq := httptest.NewRequest(http.MethodPost, "/api/nodes/task/enqueue", bytes.NewReader(b))
+	authReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/task/enqueue", bytes.NewReader(b))
 	authReq.Header.Set("Authorization", "Bearer admin-token")
 	authW := httptest.NewRecorder()
 	s.handleNodeTaskEnqueue(authW, authReq)
@@ -163,7 +163,7 @@ func TestNodeTaskEnqueue_AdminToken(t *testing.T) {
 
 func TestHandleNodeTaskGet_DistributedDisabled(t *testing.T) {
 	s := &Server{distributed: &DistributedState{NodeTaskQueue: distributed.NewTaskQueue()}, config: &config.Config{}}
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes/task/task-1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/task/task-1", nil)
 	req.Header.Set("Authorization", "Bearer admin-token")
 	w := httptest.NewRecorder()
 	s.handleNodeTaskGet(w, req)
@@ -179,7 +179,7 @@ func TestHandleNodeTaskGet_NotFound(t *testing.T) {
 	cfg.Distributed.AdminToken = "admin-token"
 	s := &Server{distributed: &DistributedState{NodeTaskQueue: distributed.NewTaskQueue()}, config: cfg}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes/task/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/task/nonexistent", nil)
 	req.Header.Set("Authorization", "Bearer admin-token")
 	w := httptest.NewRecorder()
 	s.handleNodeTaskGet(w, req)
@@ -195,7 +195,7 @@ func TestHandleNodeTaskGet_NotFound(t *testing.T) {
 
 func TestHandleNodeTaskDelete_DistributedDisabled(t *testing.T) {
 	s := &Server{distributed: &DistributedState{NodeTaskQueue: distributed.NewTaskQueue()}, config: &config.Config{}}
-	req := httptest.NewRequest(http.MethodDelete, "/api/nodes/task/task-1", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/nodes/task/task-1", nil)
 	req.Header.Set("Authorization", "Bearer admin-token")
 	w := httptest.NewRecorder()
 	s.handleNodeTaskDelete(w, req)
@@ -211,7 +211,7 @@ func TestHandleNodeTaskDelete_NotFound(t *testing.T) {
 	cfg.Distributed.AdminToken = "admin-token"
 	s := &Server{distributed: &DistributedState{NodeTaskQueue: distributed.NewTaskQueue()}, config: cfg}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/nodes/task/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/nodes/task/nonexistent", nil)
 	req.Header.Set("Authorization", "Bearer admin-token")
 	w := httptest.NewRecorder()
 	s.handleNodeTaskDelete(w, req)

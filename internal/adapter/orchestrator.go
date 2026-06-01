@@ -597,6 +597,9 @@ func (o *EngineOrchestrator) SearchEnginesWithContext(ctx context.Context, queri
 	// 创建工作池
 	pool := workerpool.NewPool(concurrency)
 	pool.Start()
+	// 确保任何返回路径（含 ctx 取消）都立即关闭工作池，避免空闲 worker
+	// 在主函数提前返回后滞留。Stop 经 CAS 幂等，可与下方清理 goroutine 安全并存。
+	defer pool.Stop()
 
 	// 创建结果通道和错误通道
 	resultChan := make(chan *model.EngineResult, len(queries))
@@ -621,10 +624,11 @@ func (o *EngineOrchestrator) SearchEnginesWithContext(ctx context.Context, queri
 		pool.Submit(task)
 	}
 
-	// 在 goroutine 中等待所有任务完成并关闭通道
+	// 在 goroutine 中等待所有任务完成并关闭通道。
+	// 不在此处调用 pool.Stop()：主函数已通过 defer pool.Stop() 兜底，
+	// ctx 取消时可立即停止工作池，无需等待 wg.Wait() 完成。
 	go func() {
 		wg.Wait()
-		pool.Stop()
 		close(resultChan)
 		close(errorChan)
 	}()

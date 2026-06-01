@@ -52,6 +52,57 @@
 		border-color: var(--accent);
 		box-shadow: var(--shadow-focus);
 	}
+
+	.icp-type-group {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px 12px;
+		align-items: center;
+		min-width: 180px;
+	}
+	.icp-type-group label {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 12px;
+		color: var(--text-primary);
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.icp-type-group input[type="checkbox"] {
+		accent-color: var(--accent);
+		width: 14px;
+		height: 14px;
+		cursor: pointer;
+	}
+
+	.type-badge {
+		display: inline-block;
+		padding: 1px 6px;
+		border-radius: 3px;
+		font-size: 11px;
+		font-weight: 500;
+		background: var(--accent-subtle, #eff6ff);
+		color: var(--accent, #2563eb);
+		margin-right: 6px;
+		vertical-align: middle;
+	}
+	.type-badge.error {
+		background: var(--danger-bg, #fef2f2);
+		color: var(--danger, #b91c1c);
+	}
+
+	.icp-group-hdr {
+		padding: 8px 16px;
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--text-muted);
+		background: var(--bg-elevated);
+		border-bottom: 1px solid var(--border);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+	.icp-group-hdr .type-badge { margin-right: 8px; }
 	.icp-search-bar .btn-primary {
 		padding: 8px 18px;
 		background: var(--accent);
@@ -218,11 +269,11 @@
 	{{end}}
 
 	<div class="icp-search-bar">
-		<select id="icp-type">
+		<div class="icp-type-group" id="icp-type-group">
 			{{range .types}}
-			<option value="{{.value}}"{{if eq .value $.defaultType}} selected{{end}}>{{.label}}</option>
+			<label><input type="checkbox" name="icp-type" value="{{.value}}"{{if eq .value $.defaultType}} checked{{end}}>{{.label}}</label>
 			{{end}}
-		</select>
+		</div>
 		<input type="text" id="icp-search-input" placeholder="域名 / 公司名 / 许可证号" autocomplete="off">
 		<button type="button" class="btn-primary" id="btn-icp-search">查询</button>
 	</div>
@@ -253,7 +304,7 @@
 
 <script nonce="{{.CSPNonce}}">
 (function() {
-	var typeSelect = document.getElementById('icp-type');
+	var typeGroup = document.getElementById('icp-type-group');
 	var input = document.getElementById('icp-search-input');
 	var btn = document.getElementById('btn-icp-search');
 	var listBody = document.getElementById('icp-list-body');
@@ -261,8 +312,14 @@
 	var meta = document.getElementById('icp-result-meta');
 	var msg = document.getElementById('icp-msg');
 
+	// 当前全部结果（跨类型展平），每条带 _type/_label 元数据
 	var currentResults = [];
 	var selectedIndex = -1;
+
+	function getSelectedTypes() {
+		var checked = typeGroup.querySelectorAll('input[name="icp-type"]:checked');
+		return Array.prototype.map.call(checked, function(cb) { return cb.value; });
+	}
 
 	function showMsg(kind, text) {
 		msg.className = 'icp-msg ' + kind;
@@ -281,7 +338,9 @@
 			listBody.innerHTML = '<div class="icp-empty">未找到匹配的备案信息</div>';
 			return;
 		}
+		var showType = results.length > 0 && results[0]._label;
 		var html = '<table class="icp-table"><thead><tr>'
+			+ (showType ? '<th>类型</th>' : '')
 			+ '<th>域名 / 名称</th>'
 			+ '<th>许可证号</th>'
 			+ '<th>主办单位</th>'
@@ -293,6 +352,7 @@
 			var unit = r.unitName || '-';
 			var city = r.cityName || '-';
 			html += '<tr data-idx="' + i + '">'
+				+ (showType ? '<td><span class="type-badge">' + escapeHtml(r._label || r._type || '') + '</span></td>' : '')
 				+ '<td>' + escapeHtml(domain) + '</td>'
 				+ '<td>' + escapeHtml(licence) + '</td>'
 				+ '<td>' + escapeHtml(unit) + '</td>'
@@ -363,7 +423,12 @@
 
 	function doSearch() {
 		hideMsg();
-		var type = typeSelect.value;
+		var types = getSelectedTypes();
+		if (types.length === 0) {
+			showMsg('warning', '请至少选择一个备案类型');
+			return;
+		}
+		var type = types.join(',');
 		var search = input.value.trim();
 		if (!search) {
 			showMsg('warning', '请输入查询关键词');
@@ -376,7 +441,7 @@
 		meta.textContent = '--';
 		detailBody.innerHTML = '<div class="icp-detail-empty">从左侧列表选择一行查看详情</div>';
 
-		var url = '/api/icp/query?type=' + encodeURIComponent(type)
+		var url = '/api/v1/icp/query?type=' + encodeURIComponent(type)
 			+ '&search=' + encodeURIComponent(search);
 
 		fetch(url, { credentials: 'same-origin' })
@@ -392,10 +457,28 @@
 					listBody.innerHTML = '<div class="icp-empty">查询失败</div>';
 					return;
 				}
-				currentResults = env.body.results || [];
-				meta.textContent = '共 ' + (env.body.total || 0) + ' 条 / 第 ' + env.body.page + ' 页';
+				// 展平分组结果，每条携带 _type/_label 供表格显示
+				var groups = env.body.groups || [];
+				currentResults = [];
+				var groupErrors = [];
+				groups.forEach(function(g) {
+					if (g.error) {
+						groupErrors.push((g.label || g.type) + ': ' + g.error);
+						return;
+					}
+					(g.results || []).forEach(function(r) {
+						r._type = g.type;
+						r._label = g.label;
+						currentResults.push(r);
+					});
+				});
+				var total = env.body.total || currentResults.length;
+				meta.textContent = '共 ' + total + ' 条 / 第 ' + (env.body.page || 1) + ' 页';
 				renderList(currentResults);
 				if (currentResults.length > 0) selectRow(0);
+				if (groupErrors.length > 0) {
+					showMsg('warning', '部分类型查询失败: ' + groupErrors.join('; '));
+				}
 			})
 			.catch(function(err) {
 				btn.disabled = false;

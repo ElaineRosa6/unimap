@@ -334,3 +334,11 @@ if isPublicBind(config.Web.BindAddress) && defaultPassword {
 8. 前端 WebSocket ping interval 增加清理逻辑。
 9. `/health/ready` 增加 Redis、ICP DB、截图后端、通知通道等依赖检查。
 10. 引入 `/api/v1` 与 OpenAPI/契约测试，覆盖前端、CLI、扩展、Nginx 端到端链路。
+
+### 实施状态
+
+> 以上 10 项已全部实施完成（2026-05-31）。详细实施方案见 `docs/API_VERSIONING.md`。
+>
+> - 第 1-9 项：提交 `8136620`（`fix: 实施 PROJECT_REVIEW 全部 10 项修复`）
+> - 第 10 项：API 版本化全量闭环（双注册 + 前端/CLI/GUI/扩展/脚本/注释迁移，共 55 文件）
+> - 第 10 项补充：2026-05-31 全项目扫描修复 6 个脚本 (31 处)、9 个 handler 注释 (20 处)、settings.local.json (3 处)

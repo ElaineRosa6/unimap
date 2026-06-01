@@ -30,7 +30,7 @@ func TestNodeRegisterHeartbeatStatus(t *testing.T) {
 		"capabilities":    []string{"port_scan", "screenshot"},
 	}
 	registerBytes, _ := json.Marshal(registerBody)
-	registerReq := httptest.NewRequest(http.MethodPost, "/api/nodes/register", bytes.NewReader(registerBytes))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/register", bytes.NewReader(registerBytes))
 	registerReq.Header.Set("Authorization", "Bearer node-token-a")
 	registerW := httptest.NewRecorder()
 	s.handleNodeRegister(registerW, registerReq)
@@ -46,7 +46,7 @@ func TestNodeRegisterHeartbeatStatus(t *testing.T) {
 		"success_rate_5m": 99.1,
 	}
 	heartbeatBytes, _ := json.Marshal(heartbeatBody)
-	heartbeatReq := httptest.NewRequest(http.MethodPost, "/api/nodes/heartbeat", bytes.NewReader(heartbeatBytes))
+	heartbeatReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/heartbeat", bytes.NewReader(heartbeatBytes))
 	heartbeatReq.Header.Set("Authorization", "Bearer node-token-a")
 	heartbeatW := httptest.NewRecorder()
 	s.handleNodeHeartbeat(heartbeatW, heartbeatReq)
@@ -54,7 +54,7 @@ func TestNodeRegisterHeartbeatStatus(t *testing.T) {
 		t.Fatalf("expected 200, got %d, body=%s", heartbeatW.Code, heartbeatW.Body.String())
 	}
 
-	statusReq := httptest.NewRequest(http.MethodGet, "/api/nodes/status", nil)
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/status", nil)
 	statusReq.Header.Set("Authorization", "Bearer test-admin-token")
 	statusW := httptest.NewRecorder()
 	s.handleNodeStatus(statusW, statusReq)
@@ -102,7 +102,7 @@ func TestNodeRegisterValidation(t *testing.T) {
 
 	registerBody := map[string]interface{}{"hostname": "worker-a"}
 	registerBytes, _ := json.Marshal(registerBody)
-	registerReq := httptest.NewRequest(http.MethodPost, "/api/nodes/register", bytes.NewReader(registerBytes))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/register", bytes.NewReader(registerBytes))
 	registerW := httptest.NewRecorder()
 	s.handleNodeRegister(registerW, registerReq)
 	if registerW.Code != http.StatusBadRequest {
@@ -115,7 +115,7 @@ func TestNodeEndpoints_DistributedDisabled(t *testing.T) {
 
 	registerBody := map[string]interface{}{"node_id": "node-a"}
 	registerBytes, _ := json.Marshal(registerBody)
-	registerReq := httptest.NewRequest(http.MethodPost, "/api/nodes/register", bytes.NewReader(registerBytes))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/register", bytes.NewReader(registerBytes))
 	registerW := httptest.NewRecorder()
 	s.handleNodeRegister(registerW, registerReq)
 	if registerW.Code != http.StatusServiceUnavailable {
@@ -132,7 +132,7 @@ func TestNodeNetworkProfile(t *testing.T) {
 	_, _ = s.distributed.NodeRegistry.Register(distributed.NodeRegistration{NodeID: "node-a", Region: "cn-east", EgressIP: "1.2.3.4", MaxConcurrency: 3})
 	_, _ = s.distributed.NodeRegistry.Heartbeat(distributed.NodeHeartbeat{NodeID: "node-a", CurrentLoad: 1, AvgLatencyMS: 11.2, SuccessRate5m: 98.7})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes/network/profile", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/network/profile", nil)
 	req.Header.Set("Authorization", "Bearer test-admin-token")
 	w := httptest.NewRecorder()
 	s.handleNodeNetworkProfile(w, req)
@@ -164,14 +164,14 @@ func TestNodeRegister_NodeAuthToken(t *testing.T) {
 	body := map[string]interface{}{"node_id": "node-a", "hostname": "worker-a"}
 	b, _ := json.Marshal(body)
 
-	unauthReq := httptest.NewRequest(http.MethodPost, "/api/nodes/register", bytes.NewReader(b))
+	unauthReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/register", bytes.NewReader(b))
 	unauthW := httptest.NewRecorder()
 	s.handleNodeRegister(unauthW, unauthReq)
 	if unauthW.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without token, got %d, body=%s", unauthW.Code, unauthW.Body.String())
 	}
 
-	authReq := httptest.NewRequest(http.MethodPost, "/api/nodes/register", bytes.NewReader(b))
+	authReq := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/register", bytes.NewReader(b))
 	authReq.Header.Set("Authorization", "Bearer token-a")
 	authW := httptest.NewRecorder()
 	s.handleNodeRegister(authW, authReq)
@@ -186,14 +186,14 @@ func TestNodeStatus_AdminToken(t *testing.T) {
 	cfg.Distributed.AdminToken = "admin-token"
 	s := &Server{distributed: &DistributedState{NodeRegistry: distributed.NewRegistry(60 * time.Second)}, config: cfg}
 
-	unauthReq := httptest.NewRequest(http.MethodGet, "/api/nodes/status", nil)
+	unauthReq := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/status", nil)
 	unauthW := httptest.NewRecorder()
 	s.handleNodeStatus(unauthW, unauthReq)
 	if unauthW.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without admin token, got %d", unauthW.Code)
 	}
 
-	authReq := httptest.NewRequest(http.MethodGet, "/api/nodes/status", nil)
+	authReq := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/status", nil)
 	authReq.Header.Set("Authorization", "Bearer admin-token")
 	authW := httptest.NewRecorder()
 	s.handleNodeStatus(authW, authReq)
@@ -210,14 +210,14 @@ func TestNodeGet_AdminToken(t *testing.T) {
 
 	_, _ = s.distributed.NodeRegistry.Register(distributed.NodeRegistration{NodeID: "node-a", Hostname: "worker-a"})
 
-	unauthReq := httptest.NewRequest(http.MethodGet, "/api/nodes/get?node_id=node-a", nil)
+	unauthReq := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/get?node_id=node-a", nil)
 	unauthW := httptest.NewRecorder()
 	s.handleNodeGet(unauthW, unauthReq)
 	if unauthW.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without admin token, got %d", unauthW.Code)
 	}
 
-	authReq := httptest.NewRequest(http.MethodGet, "/api/nodes/get?node_id=node-a", nil)
+	authReq := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/get?node_id=node-a", nil)
 	authReq.Header.Set("Authorization", "Bearer admin-token")
 	authW := httptest.NewRecorder()
 	s.handleNodeGet(authW, authReq)
@@ -235,14 +235,14 @@ func TestNodeDeregister_AdminTokenFallback(t *testing.T) {
 
 	_, _ = s.distributed.NodeRegistry.Register(distributed.NodeRegistration{NodeID: "node-a", Hostname: "worker-a"})
 
-	unauthReq := httptest.NewRequest(http.MethodDelete, "/api/nodes/deregister?node_id=node-a", nil)
+	unauthReq := httptest.NewRequest(http.MethodDelete, "/api/v1/nodes/deregister?node_id=node-a", nil)
 	unauthW := httptest.NewRecorder()
 	s.handleNodeDeregister(unauthW, unauthReq)
 	if unauthW.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without token, got %d", unauthW.Code)
 	}
 
-	authReq := httptest.NewRequest(http.MethodDelete, "/api/nodes/deregister?node_id=node-a", nil)
+	authReq := httptest.NewRequest(http.MethodDelete, "/api/v1/nodes/deregister?node_id=node-a", nil)
 	authReq.Header.Set("Authorization", "Bearer admin-token")
 	authW := httptest.NewRecorder()
 	s.handleNodeDeregister(authW, authReq)

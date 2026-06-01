@@ -1131,12 +1131,28 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 		return "", fmt.Errorf("too many queries (%d), maximum is %d", len(queries), icpMaxQueries)
 	}
 
-	queryType := extractString(payload, "type", cfg.DefaultType)
-	if queryType == "" {
-		queryType = "web"
+	// 解析 type 参数：支持逗号分隔的多类型
+	rawType := extractString(payload, "type", cfg.DefaultType)
+	if rawType == "" {
+		rawType = "web"
 	}
-	if !adapter.IsValidICPQueryType(queryType) {
-		return "", fmt.Errorf("invalid ICP query type: %q", queryType)
+	var types []string
+	seen := make(map[string]bool)
+	for _, part := range strings.Split(rawType, ",") {
+		t := strings.TrimSpace(part)
+		if t == "" {
+			continue
+		}
+		if !adapter.IsValidICPQueryType(t) {
+			return "", fmt.Errorf("invalid ICP query type: %q", t)
+		}
+		if !seen[t] {
+			seen[t] = true
+			types = append(types, t)
+		}
+	}
+	if len(types) == 0 {
+		types = []string{"web"}
 	}
 
 	page := extractInt(payload, "page", 1)
@@ -1160,33 +1176,38 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 	startedAt := time.Now()
 
 	for _, q := range queries {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		default:
-		}
-
-		results, total, err := adapter.ICPSearchWithContext(ctx, baseURL, apiKey, adapter.ICPSearchRequest{
-			Query:    q,
-			Type:     queryType,
-			Page:     page,
-			PageSize: pageSize,
-		})
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("%q: %s", q, err.Error()))
-			if failFast {
-				break
+		for _, queryType := range types {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			default:
 			}
-			continue
-		}
-		succeeded++
-		totalRecords += total
 
-		r.persistRun(taskID, q, queryType, page, pageSize, total, results, startedAt)
+			results, total, err := adapter.ICPSearchWithContext(ctx, baseURL, apiKey, adapter.ICPSearchRequest{
+				Query:    q,
+				Type:     queryType,
+				Page:     page,
+				PageSize: pageSize,
+			})
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("%q [type=%s]: %s", q, queryType, err.Error()))
+				if failFast {
+					break
+				}
+				continue
+			}
+			succeeded++
+			totalRecords += total
+
+			r.persistRun(taskID, q, queryType, page, pageSize, total, results, startedAt)
+		}
+		if failFast && len(errs) > 0 {
+			break
+		}
 	}
 
-	result := fmt.Sprintf("icp [type=%s] %d/%d queries succeeded, total %d records (page=%d size=%d)",
-		queryType, succeeded, len(queries), totalRecords, page, pageSize)
+	result := fmt.Sprintf("icp [types=%s] %d/%d queries succeeded, total %d records (page=%d size=%d)",
+		strings.Join(types, ","), succeeded, len(queries)*len(types), totalRecords, page, pageSize)
 
 	if len(errs) > 0 {
 		result += fmt.Sprintf(", %d error(s): %s", len(errs), strings.Join(errs, "; "))

@@ -11,9 +11,9 @@ cd "$PROJECT_DIR"
 
 echo "=== UniMap 停止脚本 ==="
 
-echo "1. 停止服务"
+echo "1. 停止服务（优雅关闭，最长等待 30 秒）"
 echo "停止中..."
-docker-compose down
+docker-compose down --timeout 30
 
 echo "2. 检查服务状态"
 echo "检查中..."

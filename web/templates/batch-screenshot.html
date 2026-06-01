@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 	// 加载示例
 	document.getElementById('btn-load-example').addEventListener('click', function() {
-		urlList.value = 'https://www.example.com\nhttps://www.baidu.com\nhttp://test.example.org\nhttps://httpbin.org';
+		urlList.value = 'https://www.example.com\nhttps://www.baidu.com\nhttps://www.bing.com';
 		urlList.dispatchEvent(new Event('input'));
 	});
 
@@ -116,7 +116,7 @@ document.addEventListener('DOMContentLoaded', function() {
 		progressText.textContent = '正在截图...';
 		resultsContainer.classList.add('hidden');
 		try {
-			const resp = await fetch('/api/screenshot/batch-urls', {
+			const resp = await fetch('/api/v1/screenshot/batch-urls', {
 				method: 'POST',
 				headers: {'Content-Type': 'application/json'},
 				body: JSON.stringify({ urls, concurrency: parseInt(concurrency.value)||5, batch_id: batchId.value||'' })

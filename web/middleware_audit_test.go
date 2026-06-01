@@ -25,9 +25,9 @@ func TestShouldAudit_Skips(t *testing.T) {
 
 func TestShouldAudit_Allows(t *testing.T) {
 	allows := []string{
-		"/api/query",
-		"/api/screenshot",
-		"/api/nodes/register",
+		"/api/v1/query",
+		"/api/v1/screenshot",
+		"/api/v1/nodes/register",
 		"/query",
 		"/results",
 	}
@@ -65,7 +65,7 @@ func TestAuditMiddleware_RecordsAPI(t *testing.T) {
 
 	auditHandler := auditMiddleware(handler)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/query", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/query", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("User-Agent", "test-agent")
 	auditHandler.ServeHTTP(rec, req)

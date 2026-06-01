@@ -62,7 +62,8 @@ func isBrowserRequest(r *http.Request) bool {
 // Bridge routes have their own auth (loopback + bearer token) and need to bypass
 // CORS restrictions for browser extension access.
 func isScreenshotBridgePath(path string) bool {
-	return strings.HasPrefix(path, "/api/screenshot/bridge/")
+	return strings.HasPrefix(path, "/api/v1/screenshot/bridge/") ||
+		strings.HasPrefix(path, "/api/screenshot/bridge/") // legacy path
 }
 
 // isPublicPath returns true for paths that do not require authentication.
@@ -70,7 +71,8 @@ func (s *Server) isPublicPath(path string) bool {
 	publicPrefixes := []string{
 		"/static/",
 		"/screenshots/",
-		"/api/screenshot/bridge/", // bridge has its own auth (loopback + bearer token)
+		"/api/v1/screenshot/bridge/", // bridge has its own auth (loopback + bearer token)
+		"/api/screenshot/bridge/",    // legacy path (deprecation shim)
 	}
 	for _, prefix := range publicPrefixes {
 		if strings.HasPrefix(path, prefix) {
@@ -82,8 +84,10 @@ func (s *Server) isPublicPath(path string) bool {
 		"/health/ready",
 		"/health/live",
 		"/login",
-		"/api/login",
-		"/api/logout",
+		"/api/v1/login",
+		"/api/v1/logout",
+		"/api/login",  // legacy path (deprecation shim)
+		"/api/logout", // legacy path (deprecation shim)
 	}
 	for _, p := range publicExact {
 		if path == p {

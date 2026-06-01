@@ -2,8 +2,7 @@
    UniMap Design System — Industrial Minimal
    ============================================================ */
 
-/* --- Fonts --- */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* --- Fonts (loaded via <link> in layout.html for performance) --- */
 
 /* --- Design tokens --- */
 :root {
@@ -1870,6 +1869,62 @@ td:first-child {
 .errors ul { margin-left: var(--space-5); margin-top: var(--space-3); }
 .errors li { color: var(--danger); margin-bottom: var(--space-2); }
 
+/* 折叠式错误区 */
+.errors-collapsible .errors-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+	user-select: none;
+	font-weight: 600;
+	font-size: 13px;
+	color: var(--danger, #b91c1c);
+}
+.errors-collapsible .errors-body {
+	display: none;
+	margin-top: var(--space-3);
+	margin-left: 0;
+	list-style: none;
+	padding: 0;
+}
+.errors-collapsible.expanded .errors-body {
+	display: block;
+}
+.errors-collapsible .toggle-arrow {
+	display: inline-block;
+	font-size: 10px;
+	transition: transform 0.15s;
+	width: 14px;
+	text-align: center;
+}
+.errors-collapsible .toggle-arrow.expanded {
+	transform: rotate(90deg);
+}
+.errors-collapsible .errors-body li {
+	padding: 6px 0;
+	border-bottom: 1px solid var(--border-light, var(--border));
+	font-size: 13px;
+	color: var(--text-primary);
+}
+.errors-collapsible .errors-body li:last-child { border-bottom: none; }
+
+/* 错误类别徽标 */
+.err-cat {
+	display: inline-block;
+	padding: 1px 6px;
+	border-radius: 3px;
+	font-size: 11px;
+	font-weight: 600;
+	margin-right: 6px;
+	vertical-align: middle;
+}
+.err-cat.err-额度 { background: #fef3c7; color: #92400e; }
+.err-cat.err-限流 { background: #dbeafe; color: #1e40af; }
+.err-cat.err-权限 { background: #fce7f3; color: #9d174d; }
+.err-cat.err-认证 { background: #fee2e2; color: #991b1b; }
+.err-cat.err-错误 { background: #f3f4f6; color: #374151; }
+.err-cat.err-other { background: #f3f4f6; color: #374151; }
+
 .error-box {
 	background: var(--danger-bg);
 	border: 1px solid var(--danger-border);
@@ -2376,5 +2431,22 @@ td:first-child {
 
 	.login-card {
 		padding: var(--space-8) var(--space-5);
+	}
+}
+
+/* --- Focus-visible (accessibility) --- */
+*:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
+}
+
+/* --- Reduced motion (accessibility) --- */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
 	}
 }

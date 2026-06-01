@@ -22,12 +22,12 @@ function isBridgeAuthError(err) {
 }
 
 async function pollTaskOnce(token) {
-  const resp = await apiGet("/api/screenshot/bridge/tasks/next", token);
+  const resp = await apiGet("/api/v1/screenshot/bridge/tasks/next", token);
   return resp?.task || null;
 }
 
 async function reportTaskResult(result, token) {
-  await apiPostBridgeSigned("/api/screenshot/bridge/mock/result", result, token);
+  await apiPostBridgeSigned("/api/v1/screenshot/bridge/mock/result", result, token);
 }
 
 async function waitForCaptureSlot() {

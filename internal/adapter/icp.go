@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -468,6 +469,51 @@ func ICPSearchWithContext(ctx context.Context, baseURL string, apiKey string, re
 		return resp.Params.List, resp.Params.Total, nil
 	}
 	return resp.List, resp.Total, nil
+}
+
+// ICPTypeGroup 表示单个类型的查询结果分组，用于多类型查询返回。
+type ICPTypeGroup struct {
+	Type    string      `json:"type"`
+	Label   string      `json:"label"`
+	Total   int         `json:"total"`
+	Results []ICPResult `json:"results"`
+	Error   string      `json:"error,omitempty"`
+}
+
+// ICPSearchMultiType 并发查询多个 ICP 备案类型。
+// 每个 type 独立请求 sidecar，任一 type 失败只记入该组 Error，不影响其它组。
+// 返回结果按 types 入参顺序排列。
+func ICPSearchMultiType(ctx context.Context, baseURL, apiKey, query string, types []string, page, pageSize int) ([]ICPTypeGroup, error) {
+	if len(types) == 0 {
+		return nil, fmt.Errorf("no ICP types provided")
+	}
+
+	groups := make([]ICPTypeGroup, len(types))
+	var wg sync.WaitGroup
+
+	for i, t := range types {
+		wg.Add(1)
+		go func(idx int, tp string) {
+			defer wg.Done()
+			results, total, err := ICPSearchWithContext(ctx, baseURL, apiKey, ICPSearchRequest{
+				Query:    query,
+				Type:     tp,
+				Page:     page,
+				PageSize: pageSize,
+			})
+			g := ICPTypeGroup{Type: tp, Label: ICPTypeLabel(ICPQueryType(tp))}
+			if err != nil {
+				g.Error = err.Error()
+			} else {
+				g.Results = results
+				g.Total = total
+			}
+			groups[idx] = g
+		}(i, t)
+	}
+
+	wg.Wait()
+	return groups, nil
 }
 
 func requestIDFromContext(ctx context.Context) string {

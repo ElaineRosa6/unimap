@@ -180,7 +180,7 @@ func TestIsRetryableErrorByType(t *testing.T) {
 	}{
 		{name: "network is retryable", errorType: ErrorTypeNetwork, want: true},
 		{name: "HTTP is retryable", errorType: ErrorTypeHTTP, want: true},
-		{name: "rate_limit is retryable", errorType: ErrorTypeRateLimit, want: true},
+		{name: "rate_limit is not retryable", errorType: ErrorTypeRateLimit, want: false},
 		{name: "internal is retryable", errorType: ErrorTypeInternal, want: true},
 		{name: "unknown is retryable", errorType: ErrorTypeUnknown, want: true},
 		{name: "quota is not retryable", errorType: ErrorTypeQuota, want: false},
@@ -209,7 +209,8 @@ func TestIsRetryableError(t *testing.T) {
 		{name: "connection refused", err: errors.New("connection refused"), want: true},
 		{name: "timeout", err: errors.New("timeout"), want: true},
 		{name: "HTTP 500", err: errors.New("HTTP 500"), want: true},
-		{name: "HTTP 429", err: errors.New("HTTP 429"), want: true},
+		{name: "HTTP 429 is not retryable", err: errors.New("HTTP 429"), want: false},
+		{name: "rate limit is not retryable", err: errors.New("hunter rate limit exceeded: 请求太多啦"), want: false},
 		{name: "quota", err: errors.New("quota exceeded"), want: false},
 		{name: "unauthorized", err: errors.New("unauthorized"), want: false},
 		{name: "unknown error", err: errors.New("random error"), want: true},

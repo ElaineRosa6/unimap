@@ -317,6 +317,10 @@ type Scheduler struct {
 	mu         sync.RWMutex
 	maxHistory int
 
+	// 生命周期控制：ctx 派生给所有执行中的任务，cancel 在 Stop 时触发
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	// 通知系统
 	notifyRegistry    *notify.Registry
 	notifyCfgProvider func() *notify.NotifyGlobalCfg
@@ -336,6 +340,7 @@ func NewScheduler(storePath string, historyPath string, maxHistory int) *Schedul
 		maxHistory = 500
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &Scheduler{
 		tasks:      make(map[string]*ScheduledTask),
 		cron:       c,
@@ -344,6 +349,8 @@ func NewScheduler(storePath string, historyPath string, maxHistory int) *Schedul
 		history:    make([]ExecutionRecord, 0),
 		maxHistory: maxHistory,
 		stopCh:     make(chan struct{}),
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 
 	if storePath != "" {
@@ -849,7 +856,7 @@ func (s *Scheduler) executeTask(task *ScheduledTask, handler TaskHandler, timeou
 			time.Sleep(time.Duration(attempt*2) * time.Second) // simple backoff
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+		ctx, cancel := context.WithTimeout(s.ctx, time.Duration(timeoutSec)*time.Second)
 		var result string
 		var err error
 		func() {
@@ -1245,6 +1252,9 @@ func (s *Scheduler) Stop() {
 	s.stopped = true
 	close(s.stopCh)
 	s.mu.Unlock()
+
+	// 取消所有进行中的任务（context 派生自 s.ctx 的任务将收到取消信号）
+	s.cancel()
 
 	// Stop cron and wait for it to finish
 	stopCtx := s.cron.Stop()

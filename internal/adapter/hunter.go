@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -22,6 +23,11 @@ type HunterAdapter struct {
 	apiKey  string
 	qps     int
 	timeout time.Duration
+
+	// 请求节流：保证相邻请求间隔 >= 1/qps，避免并发查询对 Hunter 造成
+	// 突发流量触发"请求太多啦"。qps<=0 时不限流。
+	rateMu  sync.Mutex
+	lastReq time.Time
 }
 
 // NewHunterAdapter 创建Hunter适配器
@@ -36,6 +42,41 @@ func NewHunterAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *H
 		apiKey:  apiKey,
 		qps:     qps,
 		timeout: timeout,
+	}
+}
+
+// waitForRate 在发起请求前等待，确保相邻请求间隔满足 qps 限制。
+// 尊重 ctx 取消；qps<=0 时立即返回。
+func (h *HunterAdapter) waitForRate(ctx context.Context) error {
+	if h.qps <= 0 {
+		return nil
+	}
+
+	minInterval := time.Second / time.Duration(h.qps)
+
+	h.rateMu.Lock()
+	now := time.Now()
+	var wait time.Duration
+	if !h.lastReq.IsZero() {
+		if elapsed := now.Sub(h.lastReq); elapsed < minInterval {
+			wait = minInterval - elapsed
+		}
+	}
+	// 预占下一个时隙，避免持锁期间睡眠阻塞其它 goroutine
+	h.lastReq = now.Add(wait)
+	h.rateMu.Unlock()
+
+	if wait <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -168,6 +209,11 @@ func (h *HunterAdapter) Search(ctx context.Context, query string, page, pageSize
 	}
 
 	err := utils.Retry(retryConfig, func() error {
+		// 请求前节流，避免突发流量触发 Hunter 限流
+		if rateErr := h.waitForRate(ctx); rateErr != nil {
+			return fmt.Errorf("hunter rate wait cancelled: %w", rateErr)
+		}
+
 		// Hunter API endpoint: /openApi/search
 		// 修正API URL格式
 		baseURL := strings.TrimRight(h.baseURL, "/")

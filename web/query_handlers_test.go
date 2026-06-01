@@ -21,7 +21,7 @@ func TestHandleAPIQuery_GetMethod_Returns405(t *testing.T) {
 		queryApp: service.NewQueryAppService(nil, orch),
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/query", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query", nil)
 	s.handleAPIQuery(rec, req)
 
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -35,7 +35,7 @@ func TestHandleAPIQuery_EmptyQuery_Returns400(t *testing.T) {
 		queryApp: service.NewQueryAppService(nil, orch),
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/query", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/query", nil)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)
@@ -52,7 +52,7 @@ func TestHandleAPIQuery_NoEngines_Returns503(t *testing.T) {
 		orchestrator: orch,
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/query?query=country%3D%22CN%22", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/query?query=country%3D%22CN%22", nil)
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)
 
@@ -128,7 +128,7 @@ func TestHandleQueryStatus_MissingQueryID_Returns400(t *testing.T) {
 		queryStatus: make(map[string]*QueryStatus),
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/query/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query/status", nil)
 	s.handleQueryStatus(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
@@ -141,7 +141,7 @@ func TestHandleQueryStatus_NotFound_Returns404(t *testing.T) {
 		queryStatus: make(map[string]*QueryStatus),
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/query/status?query_id=nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query/status?query_id=nonexistent", nil)
 	s.handleQueryStatus(rec, req)
 
 	if rec.Code != http.StatusNotFound {
@@ -162,7 +162,7 @@ func TestHandleQueryStatus_Exists_Returns200(t *testing.T) {
 		},
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/query/status?query_id=q1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query/status?query_id=q1", nil)
 	s.handleQueryStatus(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -428,7 +428,7 @@ func TestHandleQueryStatus_CompletedQuery_ReturnsFullStatus(t *testing.T) {
 		},
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/query/status?query_id=q-complete", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/query/status?query_id=q-complete", nil)
 	s.handleQueryStatus(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -456,7 +456,7 @@ func TestHandleAPIQuery_WhitespaceQuery_Returns400(t *testing.T) {
 		queryApp: service.NewQueryAppService(nil, orch),
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/query", strings.NewReader("query=   "))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader("query=   "))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)
@@ -473,7 +473,7 @@ func TestHandleAPIQuery_PageSizeParsing(t *testing.T) {
 		orchestrator: orch,
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/query?query=country%3D%22CN%22&page_size=abc", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/query?query=country%3D%22CN%22&page_size=abc", nil)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleAPIQuery(rec, req)

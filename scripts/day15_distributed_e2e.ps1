@@ -35,7 +35,7 @@ $registerBody = @{
     capabilities = @("port_scan", "screenshot")
     egress_ip = "127.0.0.1"
 } | ConvertTo-Json -Depth 6
-$registerResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/nodes/register" -Headers $headers -ContentType "application/json" -Body $registerBody
+$registerResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/nodes/register" -Headers $headers -ContentType "application/json" -Body $registerBody
 Assert-Success $registerResp "register"
 
 Write-Host "[2/7] Heartbeat..."
@@ -47,7 +47,7 @@ $heartbeatBody = @{
     success_rate_5m = 99.9
     egress_ip = "127.0.0.1"
 } | ConvertTo-Json -Depth 6
-$heartbeatResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/nodes/heartbeat" -Headers $headers -ContentType "application/json" -Body $heartbeatBody
+$heartbeatResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/nodes/heartbeat" -Headers $headers -ContentType "application/json" -Body $heartbeatBody
 Assert-Success $heartbeatResp "heartbeat"
 
 Write-Host "[3/7] Enqueue task..."
@@ -58,12 +58,12 @@ $enqueueBody = @{
     required_caps = @("port_scan")
     payload = @{ url = "https://example.com" }
 } | ConvertTo-Json -Depth 6
-$enqueueResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/nodes/task/enqueue" -Headers $adminHeaders -ContentType "application/json" -Body $enqueueBody
+$enqueueResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/nodes/task/enqueue" -Headers $adminHeaders -ContentType "application/json" -Body $enqueueBody
 Assert-Success $enqueueResp "enqueue"
 
 Write-Host "[4/7] Claim task..."
 $claimBody = @{ node_id = $NodeId; caps = @("port_scan") } | ConvertTo-Json -Depth 6
-$claimResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/nodes/task/claim" -Headers $headers -ContentType "application/json" -Body $claimBody
+$claimResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/nodes/task/claim" -Headers $headers -ContentType "application/json" -Body $claimBody
 Assert-Success $claimResp "claim"
 if ($null -eq $claimResp.task) {
     throw "claim failed: no task returned"
@@ -77,15 +77,15 @@ $resultBody = @{
     duration_ms = 18
     output = @{ ok = $true; source = "day15_distributed_e2e.ps1" }
 } | ConvertTo-Json -Depth 6
-$resultResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/nodes/task/result" -Headers $headers -ContentType "application/json" -Body $resultBody
+$resultResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/nodes/task/result" -Headers $headers -ContentType "application/json" -Body $resultBody
 Assert-Success $resultResp "result"
 
 Write-Host "[6/7] Check task snapshot..."
-$taskStatusResp = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/nodes/task/status" -Headers $adminHeaders
+$taskStatusResp = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/nodes/task/status" -Headers $adminHeaders
 Assert-Success $taskStatusResp "task status"
 
 Write-Host "[7/7] Check network profile..."
-$profileResp = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/nodes/network/profile" -Headers $adminHeaders
+$profileResp = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/nodes/network/profile" -Headers $adminHeaders
 Assert-Success $profileResp "network profile"
 
 Write-Host "`n=== REGISTER ==="

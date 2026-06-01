@@ -92,7 +92,7 @@ echo "Next step: restart service (recommended: ./scripts/stop.sh ; ./scripts/sta
 
 echo "Bridge health check:"
 if command -v curl >/dev/null 2>&1; then
-  curl -fsS "$SERVER_BASE/api/screenshot/bridge/health" || echo "Health endpoint not reachable. Restart service and retry."
+  curl -fsS "$SERVER_BASE/api/v1/screenshot/bridge/health" || echo "Health endpoint not reachable. Restart service and retry."
 else
-  echo "curl not found. Verify manually: $SERVER_BASE/api/screenshot/bridge/health"
+  echo "curl not found. Verify manually: $SERVER_BASE/api/v1/screenshot/bridge/health"
 fi
