@@ -11,11 +11,23 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// userRepoGuard checks if userRepo is available; returns false and writes 503 if not.
+func (s *Server) userRepoGuard(w http.ResponseWriter) bool {
+	if s.userRepo == nil {
+		writeError(w, http.StatusServiceUnavailable, "user database unavailable")
+		return false
+	}
+	return true
+}
+
 // handleRegister handles user registration (POST /api/v1/users/register).
-// Any authenticated user can register; the first user is automatically admin.
+// Public only when no users exist (bootstrap mode). After that, requires authentication.
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.userRepoGuard(w) {
 		return
 	}
 
@@ -42,16 +54,18 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if user already exists
-	existing, err := s.userRepo.GetByUsername(req.Username)
-	if err != nil {
-		logger.Errorf("register: failed to check existing user: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if existing != nil {
-		writeError(w, http.StatusConflict, "username already exists")
-		return
+	// If users already exist, require authentication (admin or logged-in user)
+	count, _ := s.userRepo.Count()
+	if count > 0 {
+		currentUser := s.getCurrentUser(r)
+		if currentUser == nil {
+			writeError(w, http.StatusUnauthorized, "authentication required to register new users")
+			return
+		}
+		if currentUser.Role != "admin" {
+			writeError(w, http.StatusForbidden, "only admin can register new users")
+			return
+		}
 	}
 
 	// Hash password
@@ -64,18 +78,17 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	// First user gets admin role, others get readonly
 	role := "readonly"
-	count, err := s.userRepo.Count()
-	if err != nil {
-		logger.Errorf("register: failed to count users: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
 	if count == 0 {
 		role = "admin"
 	}
 
 	user, err := s.userRepo.Create(req.Username, string(hash), role)
 	if err != nil {
+		// Handle UNIQUE constraint violation (race condition)
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			writeError(w, http.StatusConflict, "username already exists")
+			return
+		}
 		logger.Errorf("register: failed to create user: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to create user")
 		return
@@ -97,10 +110,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 // Requires admin role.
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-
+	if !s.userRepoGuard(w) {
+		return
+	}
 	if ok, resp := s.requireAdmin(r); !ok {
 		writeError(w, http.StatusForbidden, resp)
 		return
@@ -132,10 +147,12 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetUser handles getting a single user (GET /api/v1/users/{id}).
-// Admin can get any user; regular users can only get themselves.
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.userRepoGuard(w) {
 		return
 	}
 
@@ -182,10 +199,12 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUpdateUser handles updating a user (PUT /api/v1/users/{id}).
-// Admin can update any user; regular users can only update their own role/status.
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.userRepoGuard(w) {
 		return
 	}
 
@@ -202,7 +221,6 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Non-admin can only update themselves (limited fields)
 	if currentUser.Role != "admin" && currentUser.ID != targetID {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
@@ -229,7 +247,6 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only admin can change role and status
 	if req.Role != nil {
 		if currentUser.Role != "admin" {
 			writeError(w, http.StatusForbidden, "only admin can change roles")
@@ -265,7 +282,6 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "username must be 3-32 characters")
 			return
 		}
-		// Check uniqueness
 		existing, _ := s.userRepo.GetByUsername(newName)
 		if existing != nil && existing.ID != targetID {
 			writeError(w, http.StatusConflict, "username already taken")
@@ -297,7 +313,10 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 // Admin only. Cannot delete yourself.
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.userRepoGuard(w) {
 		return
 	}
 
@@ -342,11 +361,13 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleChangePassword handles password change (POST /api/v1/users/{id}/password).
-// Users can change their own password; admin can change any user's password.
+// handleChangeUserPassword handles password change (POST /api/v1/users/{id}/password).
 func (s *Server) handleChangeUserPassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !s.userRepoGuard(w) {
 		return
 	}
 
@@ -363,7 +384,6 @@ func (s *Server) handleChangeUserPassword(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Non-admin can only change their own password
 	if currentUser.Role != "admin" && currentUser.ID != targetID {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
@@ -425,17 +445,29 @@ func (s *Server) handleChangeUserPassword(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// writeError writes a JSON error response.
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
-}
-
 // getCurrentUser extracts the authenticated user from the request context.
+// Returns a synthetic admin user for admin-token-authenticated requests.
 func (s *Server) getCurrentUser(r *http.Request) *auth.User {
 	userID, ok := r.Context().Value(contextKeyUserID).(int64)
-	if !ok || userID == 0 {
+	if !ok {
 		return nil
 	}
+
+	// Admin token auth: return synthetic admin user
+	if userID == adminSyntheticUserID {
+		return &auth.User{
+			ID:       adminSyntheticUserID,
+			Username: "admin (token)",
+			Role:     "admin",
+			Status:   "active",
+		}
+	}
+
+	// No user DB or userID=0 (legacy mode): cannot resolve user
+	if userID == 0 || s.userRepo == nil {
+		return nil
+	}
+
 	user, err := s.userRepo.GetByID(userID)
 	if err != nil || user == nil {
 		return nil
@@ -455,3 +487,7 @@ func (s *Server) requireAdmin(r *http.Request) (bool, string) {
 	return true, ""
 }
 
+// writeError writes a JSON error response.
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
+}

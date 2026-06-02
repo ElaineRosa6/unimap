@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/unimap/project/internal/logger"
 )
 
 const (
@@ -257,7 +259,7 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 func generateSessionID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
+		logger.Fatalf("failed to generate session ID: %v", err)
 	}
 	return hex.EncodeToString(b)
 }
@@ -266,7 +268,7 @@ func generateSessionID() string {
 func generateCSRFToken() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
+		logger.Fatalf("failed to generate CSRF token: %v", err)
 	}
 	return hex.EncodeToString(b)
 }

@@ -17,7 +17,12 @@ type contextKey string
 const (
 	// contextKeyUserID is the authenticated user's database ID (int64).
 	// 0 means legacy single-user mode or admin-token-only auth.
+	// -1 means admin-token auth (synthetic admin, not from user DB).
 	contextKeyUserID contextKey = "user_id"
+
+	// adminSyntheticUserID is set in context when auth is via X-Admin-Token header.
+	// getCurrentUser treats this as a superuser that bypasses role checks.
+	adminSyntheticUserID int64 = -1
 )
 
 // adminAuthMiddleware returns a middleware that requires authentication
@@ -33,7 +38,6 @@ func (s *Server) adminAuthMiddleware() func(http.Handler) http.Handler {
 
 			// Try session cookie first (set by login page)
 			if s.getSessionToken(r) != "" {
-				// Extract user ID from session and set in context
 				userID := s.getSessionUserID(r)
 				ctx := context.WithValue(r.Context(), contextKeyUserID, userID)
 				next.ServeHTTP(w, r.WithContext(ctx))
@@ -47,13 +51,20 @@ func (s *Server) adminAuthMiddleware() func(http.Handler) http.Handler {
 			}
 			adminToken := s.adminToken()
 			if adminToken != "" && token != "" && subtle.ConstantTimeCompare([]byte(token), []byte(adminToken)) == 1 {
-				next.ServeHTTP(w, r)
+				// Admin token auth: set synthetic userID so user management endpoints work
+				ctx := context.WithValue(r.Context(), contextKeyUserID, adminSyntheticUserID)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+
+			// Check node auth tokens (distributed nodes use X-Node-Token)
+			if s.isNodeAuthPath(r.URL.Path) && s.authenticateNodeToken(r) {
+				ctx := context.WithValue(r.Context(), contextKeyUserID, int64(0))
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 
 			// Authentication failed
-			// Browser page requests → redirect to /login
-			// API requests → JSON 401
 			if isBrowserRequest(r) {
 				http.Redirect(w, r, "/login", http.StatusFound)
 				return
@@ -65,6 +76,43 @@ func (s *Server) adminAuthMiddleware() func(http.Handler) http.Handler {
 	}
 }
 
+// isNodeAuthPath returns true for distributed node endpoints that accept X-Node-Token.
+func (s *Server) isNodeAuthPath(path string) bool {
+	nodePaths := []string{
+		"/api/v1/nodes/register",
+		"/api/v1/nodes/heartbeat",
+		"/api/v1/nodes/task/claim",
+		"/api/v1/nodes/task/result",
+		"/api/nodes/register",
+		"/api/nodes/heartbeat",
+		"/api/nodes/task/claim",
+		"/api/nodes/task/result",
+	}
+	for _, p := range nodePaths {
+		if path == p {
+			return true
+		}
+	}
+	return false
+}
+
+// authenticateNodeToken checks X-Node-Token against configured node auth tokens.
+func (s *Server) authenticateNodeToken(r *http.Request) bool {
+	if s.config == nil || !s.config.Distributed.Enabled {
+		return false
+	}
+	nodeToken := r.Header.Get("X-Node-Token")
+	if nodeToken == "" {
+		return false
+	}
+	for _, configuredToken := range s.config.Distributed.NodeAuthTokens {
+		if subtle.ConstantTimeCompare([]byte(nodeToken), []byte(configuredToken)) == 1 {
+			return true
+		}
+	}
+	return false
+}
+
 // isBrowserRequest checks if the request is from a browser (GET accepting HTML).
 func isBrowserRequest(r *http.Request) bool {
 	return r.Method == http.MethodGet &&
@@ -72,11 +120,9 @@ func isBrowserRequest(r *http.Request) bool {
 }
 
 // isScreenshotBridgePath returns true for paths under the screenshot bridge API.
-// Bridge routes have their own auth (loopback + bearer token) and need to bypass
-// CORS restrictions for browser extension access.
 func isScreenshotBridgePath(path string) bool {
 	return strings.HasPrefix(path, "/api/v1/screenshot/bridge/") ||
-		strings.HasPrefix(path, "/api/screenshot/bridge/") // legacy path
+		strings.HasPrefix(path, "/api/screenshot/bridge/")
 }
 
 // isPublicPath returns true for paths that do not require authentication.
@@ -84,8 +130,8 @@ func (s *Server) isPublicPath(path string) bool {
 	publicPrefixes := []string{
 		"/static/",
 		"/screenshots/",
-		"/api/v1/screenshot/bridge/", // bridge has its own auth (loopback + bearer token)
-		"/api/screenshot/bridge/",    // legacy path (deprecation shim)
+		"/api/v1/screenshot/bridge/",
+		"/api/screenshot/bridge/",
 	}
 	for _, prefix := range publicPrefixes {
 		if strings.HasPrefix(path, prefix) {
@@ -99,17 +145,33 @@ func (s *Server) isPublicPath(path string) bool {
 		"/login",
 		"/api/v1/login",
 		"/api/v1/logout",
-		"/api/v1/users/register",
-		"/api/login",           // legacy path (deprecation shim)
-		"/api/logout",          // legacy path (deprecation shim)
-		"/api/users/register",  // legacy path (deprecation shim)
+		"/api/login",
+		"/api/logout",
 	}
 	for _, p := range publicExact {
 		if path == p {
 			return true
 		}
 	}
+	// Registration is public only when no users exist (bootstrap mode)
+	if path == "/api/v1/users/register" || path == "/api/users/register" {
+		return s.isRegistrationPublic()
+	}
 	return false
+}
+
+// isRegistrationPublic returns true if registration should be publicly accessible.
+// This is only true when the user DB has zero accounts (bootstrap mode).
+func (s *Server) isRegistrationPublic() bool {
+	if s.userRepo == nil {
+		return false
+	}
+	count, err := s.userRepo.Count()
+	if err != nil {
+		logger.Warnf("registration check: failed to count users: %v", err)
+		return false
+	}
+	return count == 0
 }
 
 func generateRandomToken() string {
@@ -128,8 +190,6 @@ func maskTokenForLog(token string) string {
 }
 
 // adminToken returns the configured admin token.
-// If auth is enabled but no token is configured, a random token is auto-generated
-// on first call and cached for the server lifetime.
 func (s *Server) adminToken() string {
 	if s.config == nil || !s.config.Web.Auth.Enabled {
 		return ""
@@ -138,10 +198,8 @@ func (s *Server) adminToken() string {
 	if token != "" {
 		return token
 	}
-	// Auto-generate a random token if none configured
 	s.configMutex.Lock()
 	defer s.configMutex.Unlock()
-	// Double-check after acquiring lock
 	if s.config.Web.Auth.AdminToken != "" {
 		return s.config.Web.Auth.AdminToken
 	}
