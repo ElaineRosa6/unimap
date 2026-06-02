@@ -146,8 +146,16 @@ func isSecure(r *http.Request) bool {
 // setSessionCookie creates a new session with a random session ID and encrypted admin token.
 // Cookie format: "sessionID:encryptedToken"
 func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request) error {
+	return s.setSessionCookieForUser(w, r, 0)
+}
+
+// setSessionCookieForUser creates a session for a specific user.
+// Cookie format: "sessionID:encryptedPayload" where payload = "userID:adminToken"
+// userID=0 means legacy single-user mode (no user DB).
+func (s *Server) setSessionCookieForUser(w http.ResponseWriter, r *http.Request, userID int64) error {
 	sessionID := generateSessionID()
-	encrypted, err := s.encryptToken(s.adminToken())
+	payload := fmt.Sprintf("%d:%s", userID, s.adminToken())
+	encrypted, err := s.encryptToken(payload)
 	if err != nil {
 		return fmt.Errorf("encrypt token: %w", err)
 	}
@@ -167,23 +175,52 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request) error 
 
 // getSessionToken extracts and decrypts the session cookie. Returns "" if invalid or revoked.
 func (s *Server) getSessionToken(r *http.Request) string {
+	token, _ := s.getSessionInfo(r)
+	return token
+}
+
+// getSessionUserID extracts the user ID from the session cookie. Returns 0 if unavailable.
+func (s *Server) getSessionUserID(r *http.Request) int64 {
+	_, userID := s.getSessionInfo(r)
+	return userID
+}
+
+// getSessionInfo extracts both admin token and user ID from the session cookie.
+// Handles both new format ("userID:adminToken") and legacy format ("adminToken").
+func (s *Server) getSessionInfo(r *http.Request) (string, int64) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil || cookie.Value == "" {
-		return ""
+		return "", 0
 	}
 	parts := strings.SplitN(cookie.Value, ":", 2)
 	if len(parts) != 2 {
-		return ""
+		return "", 0
 	}
 	sessionID := parts[0]
 	if s.revocationStore != nil && s.revocationStore.IsRevoked(sessionID) {
-		return ""
+		return "", 0
 	}
-	token, err := s.decryptToken(parts[1])
+	decrypted, err := s.decryptToken(parts[1])
 	if err != nil {
-		return ""
+		return "", 0
 	}
-	return token
+	// New format: "userID:adminToken"
+	if idx := strings.Index(decrypted, ":"); idx > 0 {
+		userIDStr := decrypted[:idx]
+		token := decrypted[idx+1:]
+		var userID int64
+		for _, c := range userIDStr {
+			if c >= '0' && c <= '9' {
+				userID = userID*10 + int64(c-'0')
+			} else {
+				// Not a number, treat as legacy format
+				return decrypted, 0
+			}
+		}
+		return token, userID
+	}
+	// Legacy format: just the admin token
+	return decrypted, 0
 }
 
 // getSessionID extracts the session ID from the cookie. Returns "" if missing.

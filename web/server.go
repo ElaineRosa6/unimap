@@ -105,6 +105,8 @@ type Server struct {
 	icpRepo          icpdb.ICPResultRepository
 	notifyRegistry   *notify.Registry
 	apiAuth          *auth.AuthMiddleware
+	userDB           *auth.UserDB
+	userRepo         auth.UserRepository
 	shutdownCtx      context.Context
 	shutdownCancel   context.CancelFunc
 	revocationStore  *sessionRevocationStore
@@ -334,6 +336,21 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 			srv.icpDB = db
 			srv.icpRepo = icpdb.NewICPResultRepository(db.DB())
 		}
+	}
+
+	// 初始化用户数据库
+	userDBPath := "./data/users.db"
+	if err := os.MkdirAll(filepath.Dir(userDBPath), 0o755); err != nil {
+		logger.Warnf("user DB dir create failed (%s): %v", userDBPath, err)
+	} else if udb, err := auth.NewUserDB(userDBPath); err != nil {
+		logger.Warnf("user DB unavailable at %s: %v", userDBPath, err)
+	} else if err := udb.InitSchema(); err != nil {
+		logger.Warnf("user DB schema init failed: %v", err)
+		_ = udb.Close()
+	} else {
+		srv.userDB = udb
+		srv.userRepo = auth.NewUserRepository(udb.DB())
+		logger.Infof("user database initialized at %s", userDBPath)
 	}
 
 	// 初始化定时任务调度器
@@ -867,6 +884,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.icpDB != nil {
 		if err := s.icpDB.Close(); err != nil {
 			logger.Warnf("ICP result DB close error: %v", err)
+		}
+	}
+
+	// 关闭用户数据库
+	if s.userDB != nil {
+		if err := s.userDB.Close(); err != nil {
+			logger.Warnf("user DB close error: %v", err)
 		}
 	}
 

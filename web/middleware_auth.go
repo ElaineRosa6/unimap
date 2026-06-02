@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -8,6 +9,15 @@ import (
 	"strings"
 
 	"github.com/unimap/project/internal/logger"
+)
+
+// contextKey is a typed key for request context values.
+type contextKey string
+
+const (
+	// contextKeyUserID is the authenticated user's database ID (int64).
+	// 0 means legacy single-user mode or admin-token-only auth.
+	contextKeyUserID contextKey = "user_id"
 )
 
 // adminAuthMiddleware returns a middleware that requires authentication
@@ -23,7 +33,10 @@ func (s *Server) adminAuthMiddleware() func(http.Handler) http.Handler {
 
 			// Try session cookie first (set by login page)
 			if s.getSessionToken(r) != "" {
-				next.ServeHTTP(w, r)
+				// Extract user ID from session and set in context
+				userID := s.getSessionUserID(r)
+				ctx := context.WithValue(r.Context(), contextKeyUserID, userID)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 
@@ -86,8 +99,10 @@ func (s *Server) isPublicPath(path string) bool {
 		"/login",
 		"/api/v1/login",
 		"/api/v1/logout",
-		"/api/login",  // legacy path (deprecation shim)
-		"/api/logout", // legacy path (deprecation shim)
+		"/api/v1/users/register",
+		"/api/login",           // legacy path (deprecation shim)
+		"/api/logout",          // legacy path (deprecation shim)
+		"/api/users/register",  // legacy path (deprecation shim)
 	}
 	for _, p := range publicExact {
 		if path == p {
