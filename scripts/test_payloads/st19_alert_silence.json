@@ -1,0 +1,4 @@
+{
+  "alert_type": "quota_low",
+  "duration_minutes": 30
+}

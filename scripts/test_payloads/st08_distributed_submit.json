@@ -1,0 +1,5 @@
+{
+  "task_type": "url_reachability",
+  "priority": 5,
+  "timeout_seconds": 60
+}

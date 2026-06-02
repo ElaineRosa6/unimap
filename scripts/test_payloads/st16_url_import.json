@@ -1,0 +1,4 @@
+{
+  "file_pattern": "*.txt",
+  "max_lines": 1000
+}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/unimap/project/internal/utils/urlguard"
@@ -162,11 +163,73 @@ func (c *FeishuChannel) Send(ctx context.Context, n TaskNotification) error {
 		"timeout": "⏰",
 	}
 	emoji := statusEmoji[n.Status]
+	template := "blue"
+	if n.Status == "failed" {
+		template = "red"
+	} else if n.Status == "timeout" {
+		template = "orange"
+	}
 	title := fmt.Sprintf("%s **[UniMap]** 定时任务 **[%s]** %s", emoji, n.TaskName, statusLabel(n.Status))
 
-	text := fmt.Sprintf("**类型**: %s\n\n**耗时**: %.1fs\n\n**结果**: %s", n.TaskType, n.Duration/1000.0, n.Result)
+	// 构建 payload 上下文
+	var payloadLines []string
+	if n.Payload != nil {
+		if urls, ok := n.Payload["urls"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**目标**: %v", urls))
+		}
+		if query, ok := n.Payload["query"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**查询**: `%v`", query))
+		}
+		if queries, ok := n.Payload["queries"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**查询**: %v", queries))
+		}
+		if engines, ok := n.Payload["engines"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**引擎**: %v", engines))
+		}
+		if mode, ok := n.Payload["detection_mode"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**模式**: %v", mode))
+		}
+		if threshold, ok := n.Payload["low_threshold"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**阈值**: %v", threshold))
+		}
+	}
+
+	elements := []map[string]interface{}{}
+
+	// Payload 上下文
+	if len(payloadLines) > 0 {
+		elements = append(elements, map[string]interface{}{
+			"tag":     "markdown",
+			"content": strings.Join(payloadLines, "\n"),
+		})
+	}
+
+	// 耗时
+	elements = append(elements, map[string]interface{}{
+		"tag":     "markdown",
+		"content": fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0),
+	})
+
+	// 执行结果（多行详情）
+	if n.Result != "" {
+		elements = append(elements, map[string]interface{}{
+			"tag": "hr",
+		})
+		elements = append(elements, map[string]interface{}{
+			"tag":     "markdown",
+			"content": fmt.Sprintf("**执行结果**:\n%s", n.Result),
+		})
+	}
+
+	// 错误信息
 	if n.Error != "" {
-		text += fmt.Sprintf("\n\n**错误**: %s", n.Error)
+		elements = append(elements, map[string]interface{}{
+			"tag": "hr",
+		})
+		elements = append(elements, map[string]interface{}{
+			"tag":     "markdown",
+			"content": fmt.Sprintf("**错误**: %s", n.Error),
+		})
 	}
 
 	body := map[string]interface{}{
@@ -177,15 +240,9 @@ func (c *FeishuChannel) Send(ctx context.Context, n TaskNotification) error {
 					"tag":     "plain_text",
 					"content": title,
 				},
-				"template": "blue",
+				"template": template,
 			},
-			"elements": []map[string]interface{}{
-				{
-					"tag":        "markdown",
-					"content":    text,
-					"text_align": "left",
-				},
-			},
+			"elements": elements,
 		},
 	}
 
