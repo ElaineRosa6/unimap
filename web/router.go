@@ -143,6 +143,14 @@ func (r *Router) RegisterRoutes() http.Handler {
 	// API 路由 - 账号管理
 	r.addAPIRoute("account-change-password", "POST", "/api/account/change-password", r.server.handleChangePassword, false)
 
+	// API 路由 - 用户管理
+	r.addAPIRoute("user-register", "POST", "/api/users/register", r.server.handleRegister, true)
+	r.addAPIRoute("user-list", "GET", "/api/users", r.server.handleListUsers, false)
+	r.addAPIRoute("user-get", "GET", "/api/users/{id}", r.server.handleGetUser, false)
+	r.addAPIRoute("user-update", "PUT", "/api/users/{id}", r.server.handleUpdateUser, false)
+	r.addAPIRoute("user-delete", "DELETE", "/api/users/{id}", r.server.handleDeleteUser, false)
+	r.addAPIRoute("user-change-password", "POST", "/api/users/{id}/password", r.server.handleChangeUserPassword, false)
+
 	// API 路由 - ICP 备案查询
 	r.addAPIRoute("icp-health", "GET", "/api/icp/health", r.server.handleICPHealth, true)
 	r.addAPIRoute("icp-query", "GET", "/api/icp/query", r.server.handleICPQuery, true)

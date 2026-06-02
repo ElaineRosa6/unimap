@@ -8,6 +8,7 @@ import (
 
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/logger"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // loginRateLimiter provides brute force protection for the login endpoint.
@@ -77,42 +78,60 @@ func (s *Server) handleLoginAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate credentials
-	if s.config == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": "server configuration error",
-		})
-		return
+	// Try user database first (multi-user mode)
+	var loginUserID int64
+	var loginSuccess bool
+
+	if s.userRepo != nil {
+		user, err := s.userRepo.GetByUsername(username)
+		if err != nil {
+			logger.Errorf("login: db error: %v", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+		if user != nil && user.Status == "active" {
+			if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err == nil {
+				loginUserID = user.ID
+				loginSuccess = true
+			}
+		}
 	}
 
-	expectedUser := s.config.Web.Auth.Username
-	expectedHash := s.config.Web.Auth.PasswordHash
-
-	if expectedUser == "" || expectedHash == "" {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": "login not configured",
-		})
-		return
+	// Fall back to config-based auth (single-user legacy mode)
+	if !loginSuccess {
+		if s.config == nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server configuration error"})
+			return
+		}
+		expectedUser := s.config.Web.Auth.Username
+		expectedHash := s.config.Web.Auth.PasswordHash
+		if expectedUser == "" || expectedHash == "" {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "login not configured"})
+			return
+		}
+		if !secureCompare(username, expectedUser) || !config.CheckPassword(password, expectedHash) {
+			logger.Warnf("login failed: ip=%s username=%s", clientIP, username)
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid username or password"})
+			return
+		}
+		loginSuccess = true
+		// loginUserID stays 0 (legacy mode)
 	}
 
-	if !secureCompare(username, expectedUser) || !config.CheckPassword(password, expectedHash) {
+	if !loginSuccess {
 		logger.Warnf("login failed: ip=%s username=%s", clientIP, username)
-		writeJSON(w, http.StatusUnauthorized, map[string]string{
-			"error": "invalid username or password",
-		})
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid username or password"})
 		return
 	}
 
-	// Set session cookie
-	if err := s.setSessionCookie(w, r); err != nil {
+	// Set session cookie with user ID
+	if err := s.setSessionCookieForUser(w, r, loginUserID); err != nil {
 		logger.Errorf("login: failed to set session cookie: %v", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": "internal server error",
-		})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
 	}
 
-	logger.Infof("login successful: ip=%s username=%s", clientIP, username)
+	logger.Infof("login successful: ip=%s username=%s userID=%d", clientIP, username, loginUserID)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":  true,
 		"redirect": "/",
