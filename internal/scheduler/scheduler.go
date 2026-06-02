@@ -85,7 +85,7 @@ func TaskTypeLabel(t TaskType) string {
 		TaskBaselineRefresh:   "基线刷新",
 		TaskURLImport:         "URL 导入",
 		TaskPluginHealth:      "插件健康检查",
-		TaskBridgeTokenRotate: "Bridge 令牌轮换",
+		TaskBridgeTokenRotate: "Bridge 健康检查",
 		TaskAlertSilence:      "告警静默窗口",
 		TaskCacheWarmup:       "缓存预热",
 		TaskICPQuery:          "ICP 备案查询",

@@ -429,27 +429,59 @@ func (s *Server) handleQueryStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 	username := ""
 	tokenPrefix := ""
-	if s.config != nil {
+	isMultiUser := s.userRepo != nil
+
+	// Try to get current user from session
+	currentUser := s.getCurrentUser(r)
+	if currentUser != nil && currentUser.ID > 0 {
+		// Real user from user DB
+		username = currentUser.Username
+	} else if s.config != nil {
+		// Legacy config-based user
 		username = s.config.Web.Auth.Username
 		token := s.adminToken()
 		if len(token) >= 8 {
 			tokenPrefix = token[:8]
 		}
 	}
-	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "account-page", map[string]interface{}{
+
+	if !s.renderTemplateWithNonce(r, w, http.StatusOK, "account-page", map[string]interface{}{
 		"username":      username,
 		"tokenPrefix":   tokenPrefix,
 		"staticVersion": s.staticVersion,
+		"isMultiUser":   isMultiUser,
+		"userID":        currentUserID(r),
 	}) {
 		return
 	}
 }
 
+// currentUserID returns the user ID from context, or 0.
+func currentUserID(r *http.Request) int64 {
+	if uid, ok := r.Context().Value(contextKeyUserID).(int64); ok {
+		return uid
+	}
+	return 0
+}
+
 // handleChangePassword handles POST /api/v1/account/change-password.
+// In multi-user mode, redirects user-DB users to /api/v1/users/{id}/password.
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
+	}
+
+	// Multi-user mode: if the user has a real DB account, redirect to user endpoint
+	if s.userRepo != nil {
+		uid := currentUserID(r)
+		if uid > 0 {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error":       "use /api/v1/users/" + fmt.Sprintf("%d", uid) + "/password instead",
+				"redirect_to": fmt.Sprintf("/api/v1/users/%d/password", uid),
+			})
+			return
+		}
 	}
 
 	var req struct {

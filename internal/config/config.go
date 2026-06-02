@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
@@ -395,6 +396,7 @@ func cloneEngineCacheMap(src map[string]EngineCacheConfig) map[string]EngineCach
 type Manager struct {
 	config *Config
 	path   string
+	mu     sync.RWMutex // protects config pointer reads/writes
 }
 
 // NewManager 创建配置管理器
@@ -409,22 +411,20 @@ func (m *Manager) Load() error {
 	// 读取配置文件
 	data, err := os.ReadFile(m.path)
 	if err != nil {
-		// 文件不存在/不可读时仍提供默认配置，避免上层直接崩溃
 		var cfg Config
 		m.applyDefaults(&cfg)
 		m.resolveEnv(&cfg)
-		m.config = &cfg
+		m.SetConfig(&cfg)
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	// 解析配置
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		// 配置解析失败也提供默认配置（同时返回错误给上层提示）
 		var cfg Config
 		m.applyDefaults(&cfg)
 		m.resolveEnv(&cfg)
-		m.config = &cfg
+		m.SetConfig(&cfg)
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
@@ -439,15 +439,14 @@ func (m *Manager) Load() error {
 
 	// 验证配置
 	if err := m.validate(&config); err != nil {
-		// 配置无效时保留默认值，避免上层直接崩溃
 		var cfg Config
 		m.applyDefaults(&cfg)
 		m.resolveEnv(&cfg)
-		m.config = &cfg
+		m.SetConfig(&cfg)
 		return fmt.Errorf("invalid config: %w", err)
 	}
 
-	m.config = &config
+	m.SetConfig(&config)
 	return nil
 }
 
@@ -528,9 +527,19 @@ func (m *Manager) ResolveEnv(value string) string {
 	return value
 }
 
-// GetConfig 获取配置
+// GetConfig 获取配置 (thread-safe)
 func (m *Manager) GetConfig() *Config {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.config
+}
+
+// SetConfig replaces the current config (thread-safe).
+// Used by hot-update and rollback.
+func (m *Manager) SetConfig(cfg *Config) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.config = cfg
 }
 
 // applyDefaults 应用默认值

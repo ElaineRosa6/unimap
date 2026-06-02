@@ -942,21 +942,24 @@ func (r *PluginHealthRunner) Execute(ctx context.Context, payload map[string]int
 	return result, nil
 }
 
-// --- BridgeTokenRotateRunner (ST-18) ---
+// --- BridgeHealthCheckRunner (ST-18) ---
+// Note: Task type constant is "bridge_token" for backward compatibility,
+// but this runner performs health checks, not token rotation.
 
-// BridgeTokenRotateRunner executes scheduled bridge health checks and token status verification.
-type BridgeTokenRotateRunner struct {
+// BridgeHealthCheckRunner executes scheduled bridge health checks.
+type BridgeHealthCheckRunner struct {
 	bridgeSvc *screenshot.BridgeService
 }
 
-// NewBridgeTokenRotateRunner creates a BridgeTokenRotateRunner.
-func NewBridgeTokenRotateRunner(svc *screenshot.BridgeService) *BridgeTokenRotateRunner {
-	return &BridgeTokenRotateRunner{bridgeSvc: svc}
+// NewBridgeHealthCheckRunner creates a BridgeHealthCheckRunner.
+// Kept as NewBridgeTokenRotateRunner alias for backward compatibility.
+func NewBridgeTokenRotateRunner(svc *screenshot.BridgeService) *BridgeHealthCheckRunner {
+	return &BridgeHealthCheckRunner{bridgeSvc: svc}
 }
 
-func (r *BridgeTokenRotateRunner) Type() TaskType { return TaskBridgeTokenRotate }
+func (r *BridgeHealthCheckRunner) Type() TaskType { return TaskBridgeTokenRotate }
 
-func (r *BridgeTokenRotateRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *BridgeHealthCheckRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
 	if r.bridgeSvc == nil {
 		return "", fmt.Errorf("bridge service not available")
 	}
@@ -966,7 +969,7 @@ func (r *BridgeTokenRotateRunner) Execute(ctx context.Context, payload map[strin
 	inFlight := r.bridgeSvc.InFlight()
 	started := r.bridgeSvc.IsStarted()
 
-	status := fmt.Sprintf("bridge: started=%t, workers=%d, queue=%d, in_flight=%d",
+	status := fmt.Sprintf("bridge health: started=%t, workers=%d, queue=%d, in_flight=%d",
 		started, workers, queueLen, inFlight)
 
 	if !started {
