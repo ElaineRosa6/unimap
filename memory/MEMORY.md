@@ -2,7 +2,7 @@
 
 ## 当前遗留问题
 
-- [Extension 模式问题 2026-05-09](project_extension_mode_issues_2026-05-09.md) — UQL未翻译(P0)、结构化数据返回(P0)、进度卡0%(P1)、登录状态不准(P1)
+- [Extension 模式问题 2026-05-09](project_extension_mode_issues_2026-05-09.md) — ✅P0已修复(Shodan补齐+翻译路径验证)、✅P1进度已实现、P1登录状态部分解决
 
 ## 本轮修复记录（docs/）
 
@@ -12,6 +12,10 @@
 - [项目审查报告 2026-06-01](../docs/PROJECT_REVIEW_2026-06-01.md) — 🆕 第二轮全量审查：7 维度深度分析，18 项新发现（2 P0 + 14 P1 + 11 P2）
 - [修复实施计划 2026-06-01](../docs/FIX_PLAN_2026-06-01.md) — 🆕 5 阶段修复计划：22 个问题按依赖链排序，不破坏现有功能
 - [修复实施记录 2026-06-01](../docs/FIX_IMPLEMENTATION_2026-06-01.md) — 🆕 实施完成记录：5 阶段 21/24 项已修复，23 文件变更，go test -race 全绿
+- [定时任务优化计划](../docs/SCHEDULER_OPTIMIZATION_PLAN.md) — 7 阶段计划（前端优化 + 22 Runner 测试 + 飞书 + 浏览器采集）
+- [定时任务下一步计划](../docs/SCHEDULER_NEXT_STEPS.md) — P1 Chrome MCP 测试 + P2 选择器修复 + P9 截图飞书推送
+- [定时任务优化 P3-P8 实施记录 2026-06-02](../docs/SCHEDULER_OPTIMIZATION_P3P4_REPORT.md) — ✅ P3-P7全部完成+P8通知增强（5个Runner逐条详情+payload上下文+飞书卡片美化）；P1/P2/P9待实施
+- [定时任务优化进度 2026-06-02](project_scheduler_optimization_2026-06-02.md) — P3-P6完成详情+修复记录+后续计划
 
 ## 已归档（memory/archive/）
 

@@ -123,11 +123,16 @@ func (r *QueryRunner) Execute(ctx context.Context, payload map[string]interface{
 		return "", fmt.Errorf("query execution failed: %w", err)
 	}
 
-	result := fmt.Sprintf("retrieved %d assets from %d engine(s)", resp.TotalCount, len(resp.EngineStats))
-	if len(resp.Errors) > 0 {
-		result += fmt.Sprintf(" (%d engine error(s))", len(resp.Errors))
+	var b strings.Builder
+	fmt.Fprintf(&b, "查询: %s\n引擎: %s\n页大小: %d\n共返回 %d 条资产\n\n",
+		query, strings.Join(engines, ","), pageSize, resp.TotalCount)
+	for eng, count := range resp.EngineStats {
+		fmt.Fprintf(&b, "✅ %s: %d 条\n", eng, count)
 	}
-	return result, nil
+	for _, e := range resp.Errors {
+		fmt.Fprintf(&b, "❌ %s\n", e)
+	}
+	return b.String(), nil
 }
 
 // --- SearchScreenshotRunner (ST-02) ---
@@ -205,7 +210,17 @@ func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload map[string]
 		return "", fmt.Errorf("batch screenshot failed: %w", err)
 	}
 
-	return fmt.Sprintf("batch %s: %d/%d succeeded, dir=%s", resp.BatchID, resp.Success, resp.Total, resp.ScreenshotDir), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "批量截图 %s：%d/%d 成功\n\n", resp.BatchID, resp.Success, resp.Total)
+	for _, r := range resp.Results {
+		if r.Success {
+			fmt.Fprintf(&b, "✅ %s → %s\n", r.URL, r.FilePath)
+		} else {
+			fmt.Fprintf(&b, "❌ %s — %s\n", r.URL, r.Error)
+		}
+	}
+	b.WriteString(fmt.Sprintf("\n截图目录: %s", resp.ScreenshotDir))
+	return b.String(), nil
 }
 
 // --- TamperCheckRunner (ST-04) ---
@@ -247,11 +262,31 @@ func (r *TamperCheckRunner) Execute(ctx context.Context, payload map[string]inte
 		return "", fmt.Errorf("tamper check failed: %w", err)
 	}
 
-	parts := []string{}
-	for k, v := range resp.Summary {
-		parts = append(parts, fmt.Sprintf("%s=%d", k, v))
+	var b strings.Builder
+	fmt.Fprintf(&b, "篡改检测完成（模式: %s）：共 %d 个 URL\n\n", mode, len(resp.Results))
+	for _, r := range resp.Results {
+		switch r.Status {
+		case "tampered":
+			fmt.Fprintf(&b, "⚠️ 已篡改 %s", r.URL)
+			if len(r.TamperedSegments) > 0 {
+				fmt.Fprintf(&b, " — 变更区域: %s", strings.Join(r.TamperedSegments, ", "))
+			}
+			b.WriteString("\n")
+		case "no_baseline":
+			fmt.Fprintf(&b, "🆕 首次检测 %s — 已建立基线\n", r.URL)
+		case "unreachable":
+			fmt.Fprintf(&b, "❌ 不可达 %s", r.URL)
+			if r.ErrorMessage != "" {
+				fmt.Fprintf(&b, " — %s", r.ErrorMessage)
+			}
+			b.WriteString("\n")
+		case "normal":
+			fmt.Fprintf(&b, "✅ 正常 %s\n", r.URL)
+		default:
+			fmt.Fprintf(&b, "❓ %s %s\n", r.Status, r.URL)
+		}
 	}
-	return fmt.Sprintf("tamper check complete [%s]", strings.Join(parts, ", ")), nil
+	return b.String(), nil
 }
 
 // --- URLReachabilityRunner (ST-05) ---
@@ -285,8 +320,23 @@ func (r *URLReachabilityRunner) Execute(ctx context.Context, payload map[string]
 		return "", fmt.Errorf("reachability check failed: %w", err)
 	}
 
-	return fmt.Sprintf("reachability: %d reachable, %d unreachable, %d invalid out of %d",
-		resp.Summary.Reachable, resp.Summary.Unreachable, resp.Summary.InvalidFormat, resp.Summary.Total), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "检测 %d 个 URL：%d 可达，%d 不可达\n\n", resp.Summary.Total, resp.Summary.Reachable, resp.Summary.Unreachable)
+	for _, r := range resp.Results {
+		status := "✅ 可达"
+		if !r.Reachable {
+			status = "❌ 不可达"
+		}
+		detail := r.Input
+		if r.HTTPStatus > 0 {
+			detail = fmt.Sprintf("%s (HTTP %d)", r.Input, r.HTTPStatus)
+		}
+		if r.Reason != "" {
+			detail += " — " + r.Reason
+		}
+		fmt.Fprintf(&b, "%s %s\n", status, detail)
+	}
+	return b.String(), nil
 }
 
 // --- CookieVerifyRunner (ST-06) ---
@@ -1173,6 +1223,13 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 	totalRecords := 0
 	succeeded := 0
 	var errs []string
+	type icpQueryResult struct {
+		query string
+		qtype string
+		total int
+		domains []string
+	}
+	var queryResults []icpQueryResult
 
 	baseURL := strings.TrimSpace(cfg.BaseURL)
 	apiKey := cfg.APIKey
@@ -1202,6 +1259,15 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 			succeeded++
 			totalRecords += total
 
+			// 收集逐条结果
+			var domains []string
+			for _, res := range results {
+				if res.Domain != "" {
+					domains = append(domains, res.Domain)
+				}
+			}
+			queryResults = append(queryResults, icpQueryResult{query: q, qtype: queryType, total: total, domains: domains})
+
 			r.persistRun(taskID, q, queryType, page, pageSize, total, results, startedAt)
 		}
 		if failFast && len(errs) > 0 {
@@ -1209,12 +1275,27 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 		}
 	}
 
-	result := fmt.Sprintf("icp [types=%s] %d/%d queries succeeded, total %d records (page=%d size=%d)",
-		strings.Join(types, ","), succeeded, len(queries)*len(types), totalRecords, page, pageSize)
-
-	if len(errs) > 0 {
-		result += fmt.Sprintf(", %d error(s): %s", len(errs), strings.Join(errs, "; "))
+	var b strings.Builder
+	fmt.Fprintf(&b, "ICP 备案查询（类型: %s）：%d/%d 成功，共 %d 条记录\n\n",
+		strings.Join(types, ","), succeeded, len(queries)*len(types), totalRecords)
+	for _, qr := range queryResults {
+		fmt.Fprintf(&b, "✅ %s [%s]: %d 条", qr.query, qr.qtype, qr.total)
+		if len(qr.domains) > 0 {
+			show := qr.domains
+			if len(show) > 5 {
+				show = show[:5]
+			}
+			fmt.Fprintf(&b, " — %s", strings.Join(show, ", "))
+			if len(qr.domains) > 5 {
+				fmt.Fprintf(&b, " 等%d个", len(qr.domains))
+			}
+		}
+		b.WriteString("\n")
 	}
+	for _, e := range errs {
+		fmt.Fprintf(&b, "❌ %s\n", e)
+	}
+	result := b.String()
 
 	if succeeded == 0 && len(errs) > 0 {
 		return result, fmt.Errorf("all %d ICP query(ies) failed", len(errs))

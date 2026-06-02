@@ -57,10 +57,32 @@ func (s *Server) handleSchedulerPage(w http.ResponseWriter, r *http.Request) {
 		taskTypeLabels[s] = scheduler.TaskTypeLabel(tt)
 	}
 
+	// Build grouped task types for the <optgroup> select. Each option carries
+	// its value+label so the template needs no further map lookups.
+	type typeOption struct {
+		Value string
+		Label string
+	}
+	type taskGroupView struct {
+		Name  string
+		Icon  string
+		Types []typeOption
+	}
+	groups := scheduler.GroupedTaskTypes()
+	taskTypeGroups := make([]taskGroupView, 0, len(groups))
+	for _, g := range groups {
+		opts := make([]typeOption, 0, len(g.Types))
+		for _, tt := range g.Types {
+			opts = append(opts, typeOption{Value: string(tt), Label: scheduler.TaskTypeLabel(tt)})
+		}
+		taskTypeGroups = append(taskTypeGroups, taskGroupView{Name: g.Name, Icon: g.Icon, Types: opts})
+	}
+
 	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "scheduler.html", map[string]interface{}{
 		"staticVersion":  s.staticVersion,
 		"TaskTypes":      taskTypes,
 		"TaskTypeLabels": taskTypeLabels,
+		"TaskTypeGroups": taskTypeGroups,
 	}) {
 		return
 	}

@@ -97,6 +97,48 @@ func TaskTypeLabel(t TaskType) string {
 	return string(t)
 }
 
+// TaskGroupInfo describes a UI grouping of task types for the scheduler form.
+type TaskGroupInfo struct {
+	Name  string     // 分组名称，如 "查询与采集"
+	Icon  string     // 分组图标 emoji
+	Types []TaskType // 该分组下的任务类型（按展示顺序）
+}
+
+// GroupedTaskTypes returns task types organized into ordered UI groups.
+// The union of all groups equals AllTaskTypes (verified by tests).
+// See docs/SCHEDULER_OPTIMIZATION_PLAN.md §1.2A.
+func GroupedTaskTypes() []TaskGroupInfo {
+	return []TaskGroupInfo{
+		{Name: "查询与采集", Icon: "📊", Types: []TaskType{
+			TaskQuery, TaskSearchScreenshot, TaskBatchScreenshot, TaskExport, TaskICPQuery,
+		}},
+		{Name: "监控与检测", Icon: "🔍", Types: []TaskType{
+			TaskTamperCheck, TaskURLReachability, TaskPortScan, TaskLoginStatusCheck, TaskQuotaMonitor,
+		}},
+		{Name: "维护与清理", Icon: "🔧", Types: []TaskType{
+			TaskScreenshotCleanup, TaskTamperCleanup, TaskBaselineRefresh, TaskAlertSilence,
+		}},
+		{Name: "基础设施", Icon: "📡", Types: []TaskType{
+			TaskCookieVerify, TaskBridgeTokenRotate, TaskPluginHealth, TaskCacheWarmup, TaskDistributedSubmit,
+		}},
+		{Name: "导入与汇总", Icon: "📥", Types: []TaskType{
+			TaskURLImport, TaskICPImport, TaskAlertSummary,
+		}},
+	}
+}
+
+// TaskTypeGroup returns the UI group name for a task type, or "其他" if ungrouped.
+func TaskTypeGroup(t TaskType) string {
+	for _, g := range GroupedTaskTypes() {
+		for _, tt := range g.Types {
+			if tt == t {
+				return g.Name
+			}
+		}
+	}
+	return "其他"
+}
+
 // DefaultTemplates returns a set of pre-defined task templates.
 func DefaultTemplates() []TaskTemplate {
 	return []TaskTemplate{
@@ -106,7 +148,7 @@ func DefaultTemplates() []TaskTemplate {
 			Description: "每天凌晨 2 点对所有重要 URL 进行篡改检测",
 			Type:        TaskTamperCheck,
 			CronExpr:    "0 0 2 * * *",
-			Payload:     map[string]interface{}{"mode": "full"},
+			Payload:     map[string]interface{}{"detection_mode": "full"},
 			TimeoutSec:  3600,
 			MaxRetries:  2,
 			Tags:        []string{"security", "daily"},
@@ -1073,6 +1115,7 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 		Error:     record.Error,
 		Duration:  float64(record.DurationMs),
 		Timestamp: time.Now(),
+		Payload:   task.Payload,
 	}
 
 	timeout := s.notifyTimeout
