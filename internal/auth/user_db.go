@@ -166,10 +166,10 @@ func (r *userRepository) List() ([]*User, error) {
 }
 
 func (r *userRepository) Update(user *User) error {
-	user.UpdatedAt = time.Now()
+	now := time.Now()
 	_, err := r.db.Exec(
 		`UPDATE users SET username = ?, role = ?, status = ?, updated_at = ? WHERE id = ?`,
-		user.Username, user.Role, user.Status, user.UpdatedAt, user.ID,
+		user.Username, user.Role, user.Status, now, user.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update user: %w", err)

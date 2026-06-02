@@ -175,7 +175,7 @@ func (h *HotUpdateManager) checkConfigChanges(cfg HotUpdateConfig) {
 
 	// 更新配置
 	oldConfig := h.configManager.GetConfig()
-	h.configManager.config = newConfig
+	h.configManager.SetConfig(newConfig)
 
 	// 记录新版本
 	h.addConfigVersion(newConfig, newChecksum, "update")
@@ -226,7 +226,7 @@ func (h *HotUpdateManager) scheduleRollback(timeout time.Duration, rollbackConfi
 		lastVersion := h.configHistory[len(h.configHistory)-1]
 		if lastVersion.ChangeType == "update" {
 			// 执行回滚
-			h.configManager.config = rollbackConfig
+			h.configManager.SetConfig(rollbackConfig)
 			checksum, err := calculateChecksum(rollbackConfig)
 			if err == nil {
 				h.addConfigVersion(rollbackConfig, checksum, "rollback")
@@ -256,7 +256,7 @@ func (h *HotUpdateManager) Rollback(version int) error {
 	}
 
 	targetVersion := h.configHistory[version-1]
-	h.configManager.config = targetVersion.Config
+	h.configManager.SetConfig(targetVersion.Config)
 
 	checksum, err := calculateChecksum(targetVersion.Config)
 	if err == nil {
