@@ -63,13 +63,13 @@
 
 | 任务类型 | 模板名称 | 预填参数 |
 |----------|----------|----------|
-| UQL 查询 | "FOFA 每日资产扫描" | `{"query":"title=\"nginx\" && country=\"CN\"","engines":["fofa"],"page_size":20}` |
-| 搜索引擎截图 | "FOFA 搜索结果截图" | `{"engine":"fofa","query":"title=\"login\""}` |
-| 批量截图 | "官网截图巡检" | `{"urls":["https://example.com"],"concurrency":3}` |
-| 篡改检测 | "首页篡改监控" | `{"urls":["https://example.com"],"mode":"strict"}` |
-| ICP 备案查询 | "域名备案变更监控" | `{"queries":["example.com"],"types":["web"]}` |
+| UQL 查询 | "MikroTik 资产扫描" | `{"query":"title=\"RouterOS\" && title=\"mikrotik\"","engines":["fofa"],"page_size":5}` |
+| 搜索引擎截图 | "FOFA 搜索结果截图" | `{"engine":"fofa","query":"title=\"RouterOS\" && title=\"mikrotik\""}` |
+| 批量截图 | "官网截图巡检" | `{"urls":["https://www.baidu.com"],"concurrency":2}` |
+| 篡改检测 | "首页篡改监控" | `{"urls":["https://www.baidu.com"],"mode":"relaxed"}` |
+| ICP 备案查询 | "域名备案变更监控" | `{"queries":["baidu.com"],"types":["web"]}` |
 | 配额监控 | "API 配额告警" | `{"low_threshold":10}` |
-| URL 可达性检测 | "服务存活检测" | `{"urls":["https://example.com"]}` |
+| URL 可达性检测 | "服务存活检测" | `{"urls":["https://www.baidu.com"]}` |
 
 #### C. Cron 快捷选择
 
@@ -111,12 +111,12 @@
 
 | 引擎 | 测试查询 | 预期结果数 | 说明 |
 |------|----------|-----------|------|
-| FOFA | `title="unimap" && country="CN"` | < 10 | 精确标题匹配 |
-| FOFA | `host="example.com" && port="443"` | < 5 | 单域名+端口 |
-| Hunter | `ip="1.1.1.1"` | < 5 | 单 IP 查询 |
-| Quake | `title:"Apache" && country:"CN"` | < 20 | 精确标题 |
-| ZoomEye | `hostname:"example.com"` | < 5 | 单主机名 |
-| Shodan | `hostname:"example.com"` | < 5 | 单主机名 |
+| FOFA | `title="RouterOS" && title="mikrotik" && is_domain="false"` | < 10 | 精确标题，MikroTik 路由器管理页 |
+| FOFA | `title="TP-LINK" && title="TL-WR" && country="CN"` | < 10 | TP-Link 家用路由器 |
+| Hunter | `ip="203.0.113.1"` | < 5 | TEST-NET-3 保留地址段 |
+| Quake | `title:"Webmin" && title:"Login"` | < 15 | Webmin 管理面板登录页 |
+| ZoomEye | `hostname:"*.test.example.com"` | < 5 | 测试子域名 |
+| Shodan | `product:"Boa" && port:"80"` | < 10 | Boa 嵌入式 HTTP 服务器 |
 
 #### 禁止使用的查询（消耗过大）
 
@@ -133,7 +133,7 @@
 
 ```json
 {
-  "query": "title=\"nginx\" && country=\"CN\" && port=\"443\"",
+  "query": "title=\"RouterOS\" && title=\"mikrotik\" && is_domain=\"false\"",
   "engines": ["fofa"],
   "page_size": 5
 }
@@ -150,7 +150,7 @@
 ```json
 {
   "engine": "fofa",
-  "query": "title=\"unimap\""
+  "query": "title=\"RouterOS\" && title=\"mikrotik\""
 }
 ```
 
@@ -163,7 +163,7 @@
 
 ```json
 {
-  "urls": ["https://www.baidu.com", "https://www.example.com"],
+  "urls": ["https://www.baidu.com", "https://www.bing.com"],
   "concurrency": 2
 }
 ```
@@ -176,7 +176,7 @@
 
 ```json
 {
-  "urls": ["https://www.example.com"],
+  "urls": ["https://www.baidu.com"],
   "mode": "relaxed"
 }
 ```
@@ -189,12 +189,12 @@
 
 ```json
 {
-  "urls": ["https://www.example.com", "https://nonexistent.invalid"]
+  "urls": ["https://www.baidu.com", "https://nonexistent.invalid"]
 }
 ```
 
 **验证点**：
-- example.com → reachable
+- baidu.com → reachable
 - nonexistent.invalid → unreachable
 
 #### ST-06: Cookie 验证
@@ -237,7 +237,7 @@
 
 ```json
 {
-  "query": "title=\"example.com\"",
+  "query": "title=\"RouterOS\" && title=\"mikrotik\"",
   "engines": ["fofa"],
   "page_size": 5,
   "format": "json"
@@ -253,7 +253,7 @@
 
 ```json
 {
-  "urls": ["https://www.example.com"]
+  "urls": ["https://www.baidu.com"]
 }
 ```
 
@@ -313,7 +313,7 @@
 
 ```json
 {
-  "urls": ["https://www.example.com"]
+  "urls": ["https://www.baidu.com"]
 }
 ```
 
@@ -366,7 +366,7 @@
 
 ```json
 {
-  "urls": ["https://www.example.com", "https://www.baidu.com"]
+  "urls": ["https://www.baidu.com", "https://www.bing.com"]
 }
 ```
 
@@ -378,7 +378,7 @@
 
 ```json
 {
-  "queries": ["example.com"],
+  "queries": ["baidu.com"],
   "types": ["web"],
   "page": 1,
   "page_size": 10
@@ -511,7 +511,7 @@ notifications:
    npx @anthropic-ai/chrome-mcp@latest
 
 2. 对每个引擎执行：
-   a. 打开搜索结果页（使用精确查询，如 title="unimap"）
+   a. 打开搜索结果页（使用精确查询，如 title="RouterOS"）
    b. 等待页面渲染完成（SPA 需要额外等待）
    c. 检查 DOM 中是否存在采集目标元素
    d. 验证选择器能否提取到结构化数据（IP/端口/标题/URL）
@@ -523,8 +523,8 @@ notifications:
 ```markdown
 ### FOFA 采集测试
 
-**查询**: `title="unimap" && country="CN"`
-**URL**: `https://fofa.info/result?qbase64=dGl0bGU9InVuaW1hcCIgJiYgY291bnRyeT0iQ04i`
+**查询**: `title="RouterOS" && title="mikrotik"`
+**URL**: `https://fofa.info/result?qbase64=dGl0bGU9IlJvdGVyT1MiICYmIHRpdGxlPSJtaWtyb3RpayI=`
 
 **检查项**:
 - [ ] 页面加载完成（无白屏/报错）
@@ -575,11 +575,11 @@ UniMap Extension Bridge (实际采集)
 
 | 阶段 | 引擎 | 查询 | 验证内容 |
 |------|------|------|----------|
-| T1 | FOFA | `title="unimap"` | DOM 选择器、数据提取、登录墙检测 |
-| T2 | Hunter | `ip="1.1.1.1"` | DOM 选择器、数据提取 |
-| T3 | Quake | `title:"Apache"` | DOM 选择器、数据提取 |
-| T4 | ZoomEye | `hostname:"example.com"` | DOM 选择器、数据提取 |
-| T5 | Shodan | `hostname:"example.com"` | DOM 选择器、数据提取 |
+| T1 | FOFA | `title="RouterOS" && title="mikrotik"` | DOM 选择器、数据提取、登录墙检测 |
+| T2 | Hunter | `ip="203.0.113.1"` | DOM 选择器、数据提取 |
+| T3 | Quake | `title:"Webmin" && title:"Login"` | DOM 选择器、数据提取 |
+| T4 | ZoomEye | `hostname:"*.test.example.com"` | DOM 选择器、数据提取 |
+| T5 | Shodan | `product:"Boa" && port:"80"` | DOM 选择器、数据提取 |
 
 每个引擎测试完成后，更新 `tools/extension-screenshot/` 中的选择器配置（如有变化）。
 
