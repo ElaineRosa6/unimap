@@ -63,8 +63,8 @@
 
 | 任务类型 | 模板名称 | 预填参数 |
 |----------|----------|----------|
-| UQL 查询 | "单 IP 资产扫描" | `{"query":"ip=\"132.232.231.41\"","engines":["fofa"],"page_size":5}` |
-| 搜索引擎截图 | "FOFA 搜索结果截图" | `{"engine":"fofa","query":"ip=\"132.232.231.41\""}` |
+| UQL 查询 | "单 IP 资产扫描" | `{"query":"ip=\"47.95.120.1\" && port=\"443\"","engines":["fofa"],"page_size":5}` |
+| 搜索引擎截图 | "FOFA 搜索结果截图" | `{"engine":"fofa","query":"ip=\"47.95.120.1\" && port=\"443\""}` |
 | 批量截图 | "官网截图巡检" | `{"urls":["https://www.baidu.com"],"concurrency":2}` |
 | 篡改检测 | "首页篡改监控" | `{"urls":["https://www.baidu.com"],"mode":"relaxed"}` |
 | ICP 备案查询 | "域名备案变更监控" | `{"queries":["baidu.com"],"types":["web"]}` |
@@ -111,12 +111,11 @@
 
 | 引擎 | 测试查询 | 预期结果数 | 说明 |
 |------|----------|-----------|------|
-| FOFA | `ip="132.232.231.41"` | 1 | 单 IP，结果极少 |
 | FOFA | `ip="47.95.120.1" && port="443"` | 1 | 单 IP + 单端口 |
-| Hunter | `ip="132.232.231.41"` | 1 | 单 IP 查询 |
+| Hunter | `ip="47.95.120.1" && port="443"` | 1 | 单 IP + 单端口 |
 | Quake | `ip:"47.95.120.1" AND port:"443"` | 1 | 单 IP + 单端口 |
-| ZoomEye | `ip:"132.232.231.41"` | 1 | 单 IP |
-| Shodan | `net:"132.232.231.41/32"` | 1 | 单 IP CIDR |
+| ZoomEye | `ip:"47.95.120.1" +port:"443"` | 1 | 单 IP + 单端口 |
+| Shodan | `net:"47.95.120.1/32" port:"443"` | 1 | 单 IP + 单端口 |
 
 #### 禁止使用的查询（消耗过大）
 
@@ -133,7 +132,7 @@
 
 ```json
 {
-  "query": "ip=\"132.232.231.41\"",
+  "query": "ip=\"47.95.120.1\" && port=\"443\"",
   "engines": ["fofa"],
   "page_size": 5
 }
@@ -150,7 +149,7 @@
 ```json
 {
   "engine": "fofa",
-  "query": "ip=\"132.232.231.41\""
+  "query": "ip=\"47.95.120.1\" && port=\"443\""
 }
 ```
 
@@ -237,7 +236,7 @@
 
 ```json
 {
-  "query": "ip=\"132.232.231.41\"",
+  "query": "ip=\"47.95.120.1\" && port=\"443\"",
   "engines": ["fofa"],
   "page_size": 5,
   "format": "json"
@@ -378,7 +377,7 @@
 
 ```json
 {
-  "queries": ["132.232.231.41"],
+  "queries": ["47.95.120.1"],
   "types": ["web"],
   "page": 1,
   "page_size": 10
@@ -511,7 +510,7 @@ notifications:
    npx @anthropic-ai/chrome-mcp@latest
 
 2. 对每个引擎执行：
-   a. 打开搜索结果页（使用精确查询，如 ip="132.232.231.41"）
+   a. 打开搜索结果页（使用精确查询，如 ip="47.95.120.1" port="443"）
    b. 等待页面渲染完成（SPA 需要额外等待）
    c. 检查 DOM 中是否存在采集目标元素
    d. 验证选择器能否提取到结构化数据（IP/端口/标题/URL）
@@ -523,8 +522,8 @@ notifications:
 ```markdown
 ### FOFA 采集测试
 
-**查询**: `ip="132.232.231.41"`
-**URL**: `https://fofa.info/result?qbase64=aXA9IjEzMi4yMzIuMjMxLjQxIg==`
+**查询**: `ip="47.95.120.1" && port="443"`
+**URL**: `https://fofa.info/result?qbase64=aXA9IjQ3Ljk1LjEyMC4xIiAmJiBwb3J0PSI0NDMi`
 
 **检查项**:
 - [ ] 页面加载完成（无白屏/报错）
@@ -575,11 +574,11 @@ UniMap Extension Bridge (实际采集)
 
 | 阶段 | 引擎 | 查询 | 验证内容 |
 |------|------|------|----------|
-| T1 | FOFA | `ip="132.232.231.41"` | DOM 选择器、数据提取、登录墙检测 |
-| T2 | Hunter | `ip="132.232.231.41"` | DOM 选择器、数据提取 |
+| T1 | FOFA | `ip="47.95.120.1" && port="443"` | DOM 选择器、数据提取、登录墙检测 |
+| T2 | Hunter | `ip="47.95.120.1" && port="443"` | DOM 选择器、数据提取 |
 | T3 | Quake | `ip:"47.95.120.1" AND port:"443"` | DOM 选择器、数据提取 |
-| T4 | ZoomEye | `ip:"132.232.231.41"` | DOM 选择器、数据提取 |
-| T5 | Shodan | `net:"132.232.231.41/32"` | DOM 选择器、数据提取 |
+| T4 | ZoomEye | `ip:"47.95.120.1" +port:"443"` | DOM 选择器、数据提取 |
+| T5 | Shodan | `net:"47.95.120.1/32" port:"443"` | DOM 选择器、数据提取 |
 
 每个引擎测试完成后，更新 `tools/extension-screenshot/` 中的选择器配置（如有变化）。
 
