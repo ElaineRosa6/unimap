@@ -268,6 +268,94 @@ func TestExtensionProvider_CollectSearchEngineResult_LoginWall(t *testing.T) {
 	}
 }
 
+// loginWallFailBridgeClient simulates the real extension behavior:
+// success=false + is_login_wall in structured data.
+type loginWallFailBridgeClient struct {
+	mockBridgeClient
+}
+
+func (l *loginWallFailBridgeClient) SubmitTask(ctx context.Context, task BridgeTask) error {
+	return nil
+}
+
+func (l *loginWallFailBridgeClient) AwaitResult(ctx context.Context, requestID string) (BridgeResult, error) {
+	return BridgeResult{
+		RequestID: requestID,
+		Success:   false,
+		Error:     "login wall detected on https://fofa.info/result",
+		ErrorCode: "login_required",
+		StructuredCollectedData: map[string]interface{}{
+			"items":         []interface{}{},
+			"total":         float64(0),
+			"is_login_wall": true,
+			"title":         "FOFA Login",
+		},
+	}, nil
+}
+
+func TestExtensionProvider_CollectSearchEngineResult_LoginWall_SuccessFalse(t *testing.T) {
+	client := &loginWallFailBridgeClient{}
+	svc := NewBridgeService(client, 1, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	provider := NewExtensionProvider(svc, nil)
+	results, err := provider.CollectSearchEngineResult(context.Background(), "fofa", `country="CN"`, "q1")
+	if err != nil {
+		t.Fatalf("login wall with success=false should NOT return error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].IsLoginWall {
+		t.Error("expected IsLoginWall=true")
+	}
+	if !results[0].LoginRequired {
+		t.Error("expected LoginRequired=true")
+	}
+}
+
+// loginWallErrorCodeClient simulates extension with success=false + error_code="login_required"
+// but no structured data is_login_wall field (text-marker fallback).
+type loginWallErrorCodeClient struct {
+	mockBridgeClient
+}
+
+func (l *loginWallErrorCodeClient) SubmitTask(ctx context.Context, task BridgeTask) error {
+	return nil
+}
+
+func (l *loginWallErrorCodeClient) AwaitResult(ctx context.Context, requestID string) (BridgeResult, error) {
+	return BridgeResult{
+		RequestID: requestID,
+		Success:   false,
+		Error:     "login required for hunter",
+		ErrorCode: "login_required",
+	}, nil
+}
+
+func TestExtensionProvider_CollectSearchEngineResult_LoginWall_ErrorCodeFallback(t *testing.T) {
+	client := &loginWallErrorCodeClient{}
+	svc := NewBridgeService(client, 1, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	provider := NewExtensionProvider(svc, nil)
+	results, err := provider.CollectSearchEngineResult(context.Background(), "hunter", `ip="1.2.3.4"`, "q2")
+	if err != nil {
+		t.Fatalf("login wall detected via error_code should NOT return error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].IsLoginWall {
+		t.Error("expected IsLoginWall=true via error_code fallback")
+	}
+	if !results[0].LoginRequired {
+		t.Error("expected LoginRequired=true")
+	}
+}
+
 // mockProvider is a minimal Provider implementation for testing.
 type mockProvider struct{}
 

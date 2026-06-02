@@ -595,6 +595,43 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 	if err != nil {
 		return nil, fmt.Errorf("extension bridge collect failed: %w", err)
 	}
+	collectResult := CollectResult{
+		Engine:    engine,
+		Query:     query,
+		RawURL:    searchURL,
+		Timestamp: time.Now().Unix(),
+	}
+
+	// Check for login wall BEFORE treating success=false as an error.
+	// The extension sets success=false + error_code="login_required" when a login wall
+	// is detected. We must return a proper CollectResult with IsLoginWall=true rather
+	// than an error, so the caller can distinguish "login required" from "actual failure".
+	isLoginWall := false
+	if len(result.StructuredCollectedData) > 0 {
+		if lw, ok := result.StructuredCollectedData["is_login_wall"].(bool); ok && lw {
+			isLoginWall = true
+		}
+	}
+	if !isLoginWall && !result.Success {
+		errCode := strings.TrimSpace(result.ErrorCode)
+		if strings.Contains(strings.ToLower(errCode), "login") {
+			isLoginWall = true
+		}
+	}
+
+	if isLoginWall {
+		collectResult.IsLoginWall = true
+		collectResult.LoginRequired = true
+		metrics.IncBrowserLoginRequired(engine)
+		if len(result.StructuredCollectedData) > 0 {
+			collectResult.Assets, collectResult.Total, collectResult.HasMore = parseStructuredCollectedData(result.StructuredCollectedData, engine)
+			if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
+				collectResult.Title = title
+			}
+		}
+		return []CollectResult{collectResult}, nil
+	}
+
 	if !result.Success {
 		errMsg := strings.TrimSpace(result.Error)
 		if errMsg == "" {
@@ -606,21 +643,14 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 		return nil, fmt.Errorf("extension bridge collect failed: %s", errMsg)
 	}
 
-	collectResult := CollectResult{
-		Engine:    engine,
-		Query:     query,
-		RawURL:    searchURL,
-		Timestamp: time.Now().Unix(),
-	}
-
 	// Anti-corruption: prefer structured data, fall back to string payload.
 	if len(result.StructuredCollectedData) > 0 {
 		collectResult.Assets, collectResult.Total, collectResult.HasMore = parseStructuredCollectedData(result.StructuredCollectedData, engine)
 		if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
 			collectResult.Title = title
 		}
-		if lw, ok := result.StructuredCollectedData["is_login_wall"].(bool); ok && lw {
-			collectResult.IsLoginWall = true
+		// Also check login_required from structured data (second indicator from extension)
+		if lr, ok := result.StructuredCollectedData["login_required"].(bool); ok && lr {
 			collectResult.LoginRequired = true
 			metrics.IncBrowserLoginRequired(engine)
 		}
