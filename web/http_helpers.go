@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 
 	"github.com/unimap/project/internal/logger"
 )
@@ -147,7 +151,20 @@ func decodeJSONReader(r io.Reader, dst interface{}) error {
 }
 
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
-	if err := decodeJSONReader(r.Body, dst); err != nil {
+	// Read body and detect GBK encoding (common on Windows with Chinese locale).
+	// Go's JSON decoder expects UTF-8, so we convert GBK→UTF-8 before parsing.
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request_body", "failed to read request body", nil)
+		return false
+	}
+	if len(body) > 0 && !utf8.Valid(body) {
+		decoder := simplifiedchinese.GBK.NewDecoder()
+		if converted, convErr := decoder.Bytes(body); convErr == nil && utf8.Valid(converted) {
+			body = converted
+		}
+	}
+	if err := decodeJSONReader(bytes.NewReader(body), dst); err != nil {
 		if errors.Is(err, io.EOF) {
 			writeAPIError(w, http.StatusBadRequest, "invalid_request_body", "request body is required", nil)
 			return false

@@ -5,8 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -98,7 +102,7 @@ func (c *DingTalkChannel) Send(ctx context.Context, n TaskNotification) error {
 	if err != nil {
 		return fmt.Errorf("create dingtalk request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -186,11 +190,38 @@ func (c *FeishuChannel) Send(ctx context.Context, n TaskNotification) error {
 		if engines, ok := n.Payload["engines"]; ok {
 			payloadLines = append(payloadLines, fmt.Sprintf("**引擎**: %v", engines))
 		}
+		if engine, ok := n.Payload["engine"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**引擎**: %v", engine))
+		}
 		if mode, ok := n.Payload["detection_mode"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**模式**: %v", mode))
+			payloadLines = append(payloadLines, fmt.Sprintf("**检测模式**: %v", mode))
 		}
 		if threshold, ok := n.Payload["low_threshold"]; ok {
 			payloadLines = append(payloadLines, fmt.Sprintf("**阈值**: %v", threshold))
+		}
+		if format, ok := n.Payload["format"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**格式**: %v", format))
+		}
+		if ports, ok := n.Payload["ports"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**端口**: %v", ports))
+		}
+		if maxAge, ok := n.Payload["max_age_days"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**保留天数**: %v", maxAge))
+		}
+		if alertType, ok := n.Payload["alert_type"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**告警类型**: %v", alertType))
+		}
+		if duration, ok := n.Payload["duration_minutes"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**静默时长**: %v 分钟", duration))
+		}
+		if taskType, ok := n.Payload["task_type"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**任务类型**: %v", taskType))
+		}
+		if icpType, ok := n.Payload["type"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**备案类型**: %v", icpType))
+		}
+		if filePattern, ok := n.Payload["file_pattern"]; ok {
+			payloadLines = append(payloadLines, fmt.Sprintf("**文件模式**: %v", filePattern))
 		}
 	}
 
@@ -265,7 +296,7 @@ func (c *FeishuChannel) Send(ctx context.Context, n TaskNotification) error {
 	if err != nil {
 		return fmt.Errorf("create feishu request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -343,7 +374,7 @@ func (c *WeComChannel) Send(ctx context.Context, n TaskNotification) error {
 	if err != nil {
 		return fmt.Errorf("create wecom request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -379,4 +410,313 @@ func statusLabel(status string) string {
 	default:
 		return status
 	}
+}
+
+// FeishuAppChannel 飞书应用机器人（支持图片上传）
+type FeishuAppChannel struct {
+	appID     string
+	appSecret string
+	chatID    string
+	enabled   bool
+	client    *http.Client
+	token     string
+	tokenExp  time.Time
+}
+
+// NewFeishuAppChannel 创建飞书应用渠道
+func NewFeishuAppChannel(appID, appSecret, chatID string, enabled bool) *FeishuAppChannel {
+	// Custom transport to work around Go HTTP client DNS/connection issues on Windows
+	// when connecting to open.feishu.cn. Forces IPv4-first dial and shorter timeouts.
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			// Force IPv4 to avoid IPv6 resolution hangs on some Windows environments.
+			dialer := &net.Dialer{
+				Timeout:   8 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}
+			return dialer.DialContext(ctx, "tcp4", addr)
+		},
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout:  15 * time.Second,
+		MaxIdleConns:           10,
+		MaxIdleConnsPerHost:    5,
+		IdleConnTimeout:        90 * time.Second,
+	}
+	return &FeishuAppChannel{
+		appID:     appID,
+		appSecret: appSecret,
+		chatID:    chatID,
+		enabled:   enabled,
+		client:    &http.Client{Timeout: 20 * time.Second, Transport: transport},
+	}
+}
+
+func (c *FeishuAppChannel) ID() string      { return "feishu_app" }
+func (c *FeishuAppChannel) Type() string    { return "feishu_app" }
+func (c *FeishuAppChannel) IsEnabled() bool { return c.enabled }
+func (c *FeishuAppChannel) Close() error    { return nil }
+
+// getToken 获取 tenant_access_token
+func (c *FeishuAppChannel) getToken(ctx context.Context) (string, error) {
+	if c.token != "" && time.Now().Before(c.tokenExp) {
+		return c.token, nil
+	}
+
+	body := map[string]string{
+		"app_id":     c.appID,
+		"app_secret": c.appSecret,
+	}
+	data, _ := json.Marshal(body)
+
+	const tokenURL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+	req, err := http.NewRequestWithContext(ctx, "POST", tokenURL, bytes.NewBuffer(data))
+	if err != nil {
+		return "", fmt.Errorf("create token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("get token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Code              int    `json:"code"`
+		Msg               string `json:"msg"`
+		TenantAccessToken string `json:"tenant_access_token"`
+		Expire            int    `json:"expire"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode token response: %w", err)
+	}
+	if result.Code != 0 {
+		return "", fmt.Errorf("token error: code=%d msg=%s", result.Code, result.Msg)
+	}
+
+	c.token = result.TenantAccessToken
+	c.tokenExp = time.Now().Add(time.Duration(result.Expire-60) * time.Second) // 提前 60 秒过期
+	return c.token, nil
+}
+
+// uploadImage 上传图片获取 image_key
+func (c *FeishuAppChannel) uploadImage(ctx context.Context, imagePath string) (string, error) {
+	token, err := c.getToken(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// 读取图片文件
+	imageData, err := os.ReadFile(imagePath)
+	if err != nil {
+		return "", fmt.Errorf("read image: %w", err)
+	}
+
+	// 构建 multipart 请求
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	// 添加 image_type 字段
+	writer.WriteField("image_type", "message")
+
+	// 添加图片文件
+	part, err := writer.CreateFormFile("image", filepath.Base(imagePath))
+	if err != nil {
+		return "", fmt.Errorf("create form file: %w", err)
+	}
+	part.Write(imageData)
+	writer.Close()
+
+	req, err := http.NewRequestWithContext(ctx, "POST",
+		"https://open.feishu.cn/open-apis/im/v1/images",
+		&buf)
+	if err != nil {
+		return "", fmt.Errorf("create upload request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("upload image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			ImageKey string `json:"image_key"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode upload response: %w", err)
+	}
+	if result.Code != 0 {
+		return "", fmt.Errorf("upload error: code=%d msg=%s", result.Code, result.Msg)
+	}
+
+	return result.Data.ImageKey, nil
+}
+
+// sendMessage 发送消息到群
+func (c *FeishuAppChannel) sendMessage(ctx context.Context, body map[string]interface{}) error {
+	token, err := c.getToken(ctx)
+	if err != nil {
+		return err
+	}
+
+	data, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, "POST",
+		"https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
+		bytes.NewBuffer(data))
+	if err != nil {
+		return fmt.Errorf("create message request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("send message: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode message response: %w", err)
+	}
+	if result.Code != 0 {
+		return fmt.Errorf("message error: code=%d msg=%s", result.Code, result.Msg)
+	}
+
+	return nil
+}
+
+// Send 发送通知（支持图片）
+func (c *FeishuAppChannel) Send(ctx context.Context, n TaskNotification) error {
+	if !c.enabled {
+		return nil
+	}
+
+	statusEmoji := map[string]string{
+		"success": "✅",
+		"failed":  "❌",
+		"timeout": "⏰",
+	}
+	emoji := statusEmoji[n.Status]
+	template := "blue"
+	if n.Status == "failed" {
+		template = "red"
+	} else if n.Status == "timeout" {
+		template = "orange"
+	}
+	title := fmt.Sprintf("%s [UniMap] 定时任务 [%s] %s", emoji, n.TaskName, statusLabel(n.Status))
+
+	// 构建 payload 上下文
+	var payloadLines []string
+	if n.Payload != nil {
+		payloadFields := []string{"urls", "query", "queries", "engines", "engine",
+			"detection_mode", "low_threshold", "format", "ports", "max_age_days",
+			"alert_type", "duration_minutes", "task_type", "type", "file_pattern"}
+		for _, field := range payloadFields {
+			if val, ok := n.Payload[field]; ok {
+				payloadLines = append(payloadLines, fmt.Sprintf("**%s**: %v", field, val))
+			}
+		}
+	}
+
+	elements := []map[string]interface{}{}
+
+	// Payload 上下文
+	if len(payloadLines) > 0 {
+		elements = append(elements, map[string]interface{}{
+			"tag":     "markdown",
+			"content": strings.Join(payloadLines, "\n"),
+		})
+	}
+
+	// 耗时
+	elements = append(elements, map[string]interface{}{
+		"tag":     "markdown",
+		"content": fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0),
+	})
+
+	// 上传图片并添加到卡片
+	if len(n.ImagePaths) > 0 {
+		elements = append(elements, map[string]interface{}{
+			"tag": "hr",
+		})
+		elements = append(elements, map[string]interface{}{
+			"tag":     "markdown",
+			"content": "**截图预览**:",
+		})
+
+		for _, imgPath := range n.ImagePaths {
+			imageKey, err := c.uploadImage(ctx, imgPath)
+			if err != nil {
+				// 上传失败，显示文本路径
+				elements = append(elements, map[string]interface{}{
+					"tag":     "markdown",
+					"content": fmt.Sprintf("⚠️ %s (上传失败: %v)", filepath.Base(imgPath), err),
+				})
+				continue
+			}
+			elements = append(elements, map[string]interface{}{
+				"tag": "img",
+				"img_key": imageKey,
+				"alt": map[string]interface{}{
+					"tag":     "plain_text",
+					"content": filepath.Base(imgPath),
+				},
+			})
+		}
+	}
+
+	// 执行结果
+	if n.Result != "" {
+		elements = append(elements, map[string]interface{}{
+			"tag": "hr",
+		})
+		elements = append(elements, map[string]interface{}{
+			"tag":     "markdown",
+			"content": fmt.Sprintf("**执行结果**:\n%s", n.Result),
+		})
+	}
+
+	// 错误信息
+	if n.Error != "" {
+		elements = append(elements, map[string]interface{}{
+			"tag": "hr",
+		})
+		elements = append(elements, map[string]interface{}{
+			"tag":     "markdown",
+			"content": fmt.Sprintf("**错误**: %s", n.Error),
+		})
+	}
+
+	// 构建卡片消息
+	card := map[string]interface{}{
+		"header": map[string]interface{}{
+			"title": map[string]interface{}{
+				"tag":     "plain_text",
+				"content": title,
+			},
+			"template": template,
+		},
+		"elements": elements,
+	}
+
+	cardJSON, _ := json.Marshal(card)
+
+	body := map[string]interface{}{
+		"receive_id": c.chatID,
+		"msg_type":   "interactive",
+		"content":    string(cardJSON),
+	}
+
+	return c.sendMessage(ctx, body)
 }

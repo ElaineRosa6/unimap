@@ -218,7 +218,12 @@ type Config struct {
 
 	// Notifications 通知配置
 	Notifications struct {
-		Enabled        bool                     `yaml:"enabled"`
+		Enabled   bool `yaml:"enabled"`
+		FeishuApp *struct {
+			AppID     string `yaml:"app_id"`
+			AppSecret string `yaml:"app_secret"`
+			ChatID    string `yaml:"chat_id"`
+		} `yaml:"feishu_app,omitempty"`
 		Channels       []NotificationChannelCfg `yaml:"channels"`
 		SendTimeoutSec int                      `yaml:"send_timeout_sec"`
 		MaxRetries     int                      `yaml:"max_retries"`

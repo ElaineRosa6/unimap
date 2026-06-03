@@ -13,4 +13,5 @@ type TaskNotification struct {
 	Duration  float64                `json:"duration_ms"`
 	Timestamp time.Time              `json:"timestamp"`
 	Payload   map[string]interface{} `json:"payload,omitempty"` // 原始任务参数
+	ImagePaths []string              `json:"image_paths,omitempty"` // 截图文件路径，用于飞书图片推送
 }

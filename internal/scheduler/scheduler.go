@@ -496,6 +496,11 @@ func (s *Scheduler) AddTask(task *ScheduledTask) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Sanitize task name and payload strings at creation time to handle
+	// GBK-encoded input from Windows terminals / Chinese HTTP clients.
+	task.Name = sanitizeUTF8(task.Name)
+	task.Payload = sanitizePayload(task.Payload)
+
 	if task.ID == "" {
 		task.ID = s.generateID()
 	}
@@ -548,6 +553,10 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 	if !ok {
 		return fmt.Errorf("task %s not found", task.ID)
 	}
+
+	// Sanitize on update too
+	task.Name = sanitizeUTF8(task.Name)
+	task.Payload = sanitizePayload(task.Payload)
 
 	// Validate cron if changed
 	if task.CronExpr != "" && task.CronExpr != existing.CronExpr {
@@ -1108,15 +1117,18 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 
 	msg := notify.TaskNotification{
 		TaskID:    task.ID,
-		TaskName:  task.Name,
+		TaskName:  sanitizeUTF8(task.Name),
 		TaskType:  string(task.Type),
 		Status:    record.Status,
-		Result:    record.Result,
-		Error:     record.Error,
+		Result:    sanitizeUTF8(record.Result), // executor sanitizes, but double-check for old records
+		Error:     sanitizeUTF8(record.Error),
 		Duration:  float64(record.DurationMs),
 		Timestamp: time.Now(),
-		Payload:   task.Payload,
+		Payload:   sanitizePayload(task.Payload),
 	}
+
+	// 提取截图路径（用于飞书图片推送）
+	msg.ImagePaths = extractImagePaths(record.Result)
 
 	timeout := s.notifyTimeout
 	if timeout == 0 {
@@ -1193,6 +1205,73 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 			}
 		}(ch)
 	}
+}
+
+// extractImagePaths 从任务结果中提取截图文件路径
+func extractImagePaths(result string) []string {
+	if result == "" {
+		return nil
+	}
+
+	var paths []string
+	lines := strings.Split(result, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// 匹配格式：✅ URL → filepath 或 ✅ filepath
+		if strings.Contains(line, "→") {
+			parts := strings.SplitN(line, "→", 2)
+			if len(parts) == 2 {
+				path := strings.TrimSpace(parts[1])
+				if isImageFile(path) {
+					paths = append(paths, path)
+					continue // 已通过箭头格式提取，跳过后续独立匹配
+				}
+			}
+		}
+
+		// 匹配格式：✅ 截图保存: filepath
+		if strings.Contains(line, "截图保存:") || strings.Contains(line, "截图目录:") {
+			// 这是目录路径，不是文件路径
+			continue
+		}
+
+		// 匹配直接的文件路径（以 screenshots/ 开头或包含 .png/.jpg）
+		if isImageFile(line) {
+			paths = append(paths, line)
+		}
+	}
+
+	return paths
+}
+
+// isImageFile 检查路径是否是图片文件
+func isImageFile(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".png") ||
+		strings.HasSuffix(lower, ".jpg") ||
+		strings.HasSuffix(lower, ".jpeg") ||
+		strings.HasSuffix(lower, ".gif") ||
+		strings.HasSuffix(lower, ".webp")
+}
+
+// sanitizePayload creates a copy of payload with all string values passed through sanitizeUTF8.
+func sanitizePayload(payload map[string]interface{}) map[string]interface{} {
+	if payload == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(payload))
+	for k, v := range payload {
+		if s, ok := v.(string); ok {
+			out[k] = sanitizeUTF8(s)
+		} else {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // migrateChannelIDs 将旧 Channels[] 字段迁移到 ChannelIDs[]
