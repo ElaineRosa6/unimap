@@ -154,13 +154,13 @@ func TestICPQueryRunner_PayloadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "类型: web") {
+	if !strings.Contains(result, "web") {
 		t.Errorf("expected default types=web, got: %s", result)
 	}
-	if !strings.Contains(result, "1/1 成功") {
+	if !strings.Contains(result, "1/1") {
 		t.Errorf("expected success, got: %s", result)
 	}
-	if !strings.Contains(result, "共 10 条记录") {
+	if !strings.Contains(result, "10 条记录") {
 		t.Errorf("expected 10 records, got: %s", result)
 	}
 }
@@ -182,7 +182,7 @@ func TestICPQueryRunner_SingleQueryString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "1/1 成功") {
+	if !strings.Contains(result, "1/1") {
 		t.Errorf("expected single query success, got: %s", result)
 	}
 }
@@ -204,7 +204,7 @@ func TestICPQueryRunner_ConfigDefaultType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "类型: app") {
+	if !strings.Contains(result, "app") {
 		t.Errorf("expected types=app from config default, got: %s", result)
 	}
 }
@@ -302,10 +302,10 @@ func TestICPQueryRunner_SingleQuerySuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "1/1 成功") {
+	if !strings.Contains(result, "1/1") {
 		t.Errorf("expected 1/1 succeeded, got: %s", result)
 	}
-	if !strings.Contains(result, "共 23 条记录") {
+	if !strings.Contains(result, "23 条记录") {
 		t.Errorf("expected total 23 records, got: %s", result)
 	}
 }
@@ -328,7 +328,7 @@ func TestICPQueryRunner_MultiQueryPartialFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("partial failure should return nil error, got: %v", err)
 	}
-	if !strings.Contains(result, "2/3 成功") {
+	if !strings.Contains(result, "2/3") {
 		t.Errorf("expected 2/3 succeeded, got: %s", result)
 	}
 	if !strings.Contains(result, "❌") {
@@ -357,7 +357,7 @@ func TestICPQueryRunner_FailFast(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when all queries failed")
 	}
-	if !strings.Contains(result, "0/3 成功") {
+	if !strings.Contains(result, "0/3") {
 		t.Errorf("expected 0/3 succeeded, got: %s", result)
 	}
 }
@@ -377,7 +377,7 @@ func TestICPQueryRunner_AllFail(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when all queries failed")
 	}
-	if !strings.Contains(result, "0/2 成功") {
+	if !strings.Contains(result, "0/2") {
 		t.Errorf("expected 0/2 succeeded, got: %s", result)
 	}
 }
@@ -429,7 +429,7 @@ func TestICPQueryRunner_ContextTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error with reasonable timeout: %v", err)
 	}
-	if !strings.Contains(result, "1/1 成功") {
+	if !strings.Contains(result, "1/1") {
 		t.Errorf("expected success, got: %s", result)
 	}
 }

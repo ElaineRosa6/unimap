@@ -225,9 +225,9 @@ notifications:
 
 ---
 
-## 八、P8：通知内容增强
+## 八、P8：通知内容增强（全量）
 
-> 执行时间：2026-06-02 18:00
+> 执行时间：2026-06-02 18:00（初始 5 个）→ 2026-06-02 22:00（全量 22 个）
 
 ### 8.1 问题
 
@@ -239,46 +239,99 @@ notifications:
 
 | 文件 | 改动 |
 |------|------|
-| `internal/scheduler/executor.go` | 5 个 Runner 结果字符串改为逐条详情格式 |
+| `internal/scheduler/executor.go` | 全部 22 个 Runner 结果字符串改为逐条详情格式 + `sanitizeUTF8()` 防乱码 |
 | `internal/notify/message.go` | `TaskNotification` 新增 `Payload` 字段 |
-| `internal/notify/bot_channels.go` | 飞书卡片：payload 上下文 + 详情 + 颜色状态头 |
+| `internal/notify/bot_channels.go` | 飞书卡片：扩展 payload 上下文字段 + `charset=utf-8` |
 | `internal/scheduler/scheduler.go` | `sendNotification` 传递 `task.Payload` |
+| `internal/scheduler/executor_extra_test.go` | 适配新结果格式 |
 | `internal/scheduler/executor_icp_test.go` | 适配新结果格式 |
 
-### 8.3 丰富化的 Runner
+### 8.3 全部 22 个 Runner 通知增强
 
-| Runner | 原格式 | 新格式 |
-|--------|--------|--------|
-| URLReachability | `1 reachable, 0 unreachable` | 每个 URL：✅ 可达 (HTTP 200) / ❌ 不可达 — 原因 |
-| TamperCheck | `tampered=1, safe=0` | 每个 URL：⚠️ 已篡改 — 变更区域 / ✅ 正常 / 🆕 首次检测 |
-| BatchScreenshot | `3/5 succeeded` | 每个 URL：✅ → 文件路径 / ❌ — 错误 |
-| Query | `retrieved 10 assets from 2 engines` | 查询语句 + 每个引擎：✅ fofa: 5 条 |
-| ICPQuery | `1/1 queries succeeded, total 5` | 每个关键词：✅ baidu.com [web]: 5 条 — 域名列表 |
+| ST | Runner | 原格式 | 新格式 |
+|----|--------|--------|--------|
+| 01 | Query | `retrieved 10 assets from 2 engines` | 查询语句 + 每个引擎：✅ fofa: 5 条 |
+| 02 | SearchScreenshot | `captured fofa search for 'q' -> path` | 引擎 + 查询 + 保存路径 + 查询ID |
+| 03 | BatchScreenshot | `3/5 succeeded` | 每个 URL：✅ → 文件路径 / ❌ — 错误 |
+| 04 | TamperCheck | `tampered=1, safe=0` | 每个 URL：⚠️ 已篡改 / ✅ 正常 / 🆕 首次检测 |
+| 05 | URLReachability | `1 reachable, 0 unreachable` | 每个 URL：✅ 可达 (HTTP 200) / ❌ 不可达 — 原因 |
+| 06 | CookieVerify | `fofa: no_cookies; hunter: no_cookies` | 每个引擎：✅/⚠️ Cookie 状态 |
+| 07 | LoginStatusCheck | `fofa: logged_in; hunter: not_logged_in` | 每个引擎：✅ 已登录 / ❌ 未登录 |
+| 08 | DistributedSubmit | `enqueued task dist_1 (type=port_scan)` | 任务ID + 类型 + 优先级 + 超时 + 重分配 |
+| 09 | Export | `exported 100 assets to file` | 查询 + 引擎 + 格式 + 资产数 + 保存路径 |
+| 10 | PortScan | `scanned 3 URLs: 3 successful` | 每个 URL：开放端口详情 / DNS 失败 / CDN 排除 |
+| 11 | ScreenshotCleanup | `cleaned up 8 batches older than 30 days` | 已删除 + 保留批次数 |
+| 12 | TamperCleanup | `cleaned up 5 records, skipped 85` | 已删除 + 保留记录数 |
+| 13 | QuotaMonitor | `fofa: ok; hunter: LOW (remaining=5)` | 每个引擎：✅/⚠️ 配额详情 |
+| 14 | AlertSummary | `alert summary [total=2, tamper=1]` | 按类型 + 按级别分组统计 |
+| 15 | BaselineRefresh | `refreshed baseline for 3/5 URLs` | 成功/失败数 + 失败 URL 列表 |
+| 16 | URLImport | `imported 100 URLs from 3 files` | 每个文件：导入数 + 共导入总数 |
+| 17 | PluginHealth | `3/5 plugins healthy` | 每个插件：✅ 健康 / ❌ 错误信息 |
+| 18 | BridgeHealth | `bridge health: started=true, workers=5` | 状态 + 工作线程 + 队列 + 进行中 |
+| 19 | AlertSilence | `silenced all tamper alerts for 30 min` | 告警类型 + 静默时长 / 清理保留天数 |
+| 20 | CacheWarmup | `warmed up 2/3 URLs` | 每个 URL：✅ HTTP 状态 / ❌ 错误 |
+| 21 | ICPQuery | `1/1 queries succeeded, total 5` | 每个关键词：✅ baidu.com [web]: 5 条 — 域名列表 |
+| 22 | ICPImport | `imported 10 keywords from 2 files` | 每个文件：关键词数 + 查询类型 + 已创建任务 |
 
-### 8.4 飞书卡片新格式
+### 8.4 UTF-8 防乱码
 
+- 新增 `sanitizeUTF8()` 函数：检测并替换无效 UTF-8 字节（`strings.ToValidUTF8`）
+- 所有 Runner 结果字符串在返回前经过 `sanitizeUTF8()` 处理
+- 通知渠道 Content-Type 统一加 `charset=utf-8`（飞书/钉钉/企微）
+
+### 8.5 飞书卡片 payload 上下文扩展
+
+新增自动提取的 payload 字段：
+- `engine` — 单引擎
+- `format` — 导出格式
+- `ports` — 端口列表
+- `max_age_days` — 保留天数
+- `alert_type` — 告警类型
+- `duration_minutes` — 静默时长
+- `task_type` — 分布式任务类型
+- `type` — ICP 备案类型
+- `file_pattern` — 文件模式
+
+### 8.6 截图飞书推送（P9）
+
+> 执行时间：2026-06-02 23:00
+
+**方案**：使用飞书应用 API（非 webhook）上传图片并发送卡片消息。
+
+**流程**：
 ```
-✅ [UniMap] 定时任务 [富通知测试-URL可达性] 执行成功
-────────────────────────
-目标: ["https://www.baidu.com","https://www.bing.com"]
-耗时: 5.0s
-────────────────────────
-执行结果:
-检测 3 个 URL：2 可达，0 不可达
-
-✅ 可达 https://www.baidu.com (HTTP 200)
-✅ 可达 https://www.bing.com (HTTP 200)
-❌ 不可达 https://nonexistent.invalid — context deadline exceeded
+截图任务完成 → extractImagePaths() 提取文件路径
+  → FeishuAppChannel.getToken() 获取 tenant_access_token
+  → FeishuAppChannel.uploadImage() 上传图片 → 获取 image_key
+  → FeishuAppChannel.sendMessage() 发送带图片的卡片到群
 ```
 
+**改动文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `configs/config.yaml` | 新增 `notifications.feishu_app` 配置（app_id/app_secret/chat_id） |
+| `internal/config/config.go` | Notifications 结构新增 FeishuApp 字段 |
+| `internal/notify/message.go` | TaskNotification 新增 `ImagePaths` 字段 |
+| `internal/notify/bot_channels.go` | 新增 `FeishuAppChannel`（getToken/uploadImage/sendMessage/Send） |
+| `internal/scheduler/scheduler.go` | 新增 `extractImagePaths()` 从结果中提取截图路径 |
+| `web/server.go` | 初始化时注册 FeishuAppChannel |
+
+**配置示例**：
+```yaml
+notifications:
+  enabled: true
+  feishu_app:
+    app_id: cli_a922e4e8adb99ccb
+    app_secret: xxx
+    chat_id: oc_77ef60be0bfe235c960750bde7cb8cac
+```
+
+**飞书卡片效果**：
 - 状态头颜色：蓝色(成功) / 红色(失败) / 橙色(超时)
-- Payload 关键字段自动提取：urls、query、queries、engines、detection_mode、low_threshold
-
-### 8.5 截图推送方案
-
-当前截图以文本路径展示（`✅ https://example.com → screenshots/batch_xxx/1.png`）。
-
-飞书 webhook 机器人推送图片需要先上传获取 `image_key`，完整方案见后续计划。
+- Payload 上下文自动提取
+- 截图图片直接嵌入卡片（通过 image_key）
+- 上传失败时降级为文本路径显示
 
 ---
 

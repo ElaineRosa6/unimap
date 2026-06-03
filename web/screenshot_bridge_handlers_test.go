@@ -206,3 +206,93 @@ func TestIsLoopbackRequestRejectsNonLoopbackHost(t *testing.T) {
 		t.Fatalf("expected non-loopback host to be rejected")
 	}
 }
+
+// ============================================================
+// Admin token fallback + pairing/signature coordination tests
+// (covers the post-restart recovery path: a static admin token
+// is accepted as a bridge credential on loopback, surviving the
+// loss of in-memory pairing tokens after a server restart)
+// ============================================================
+
+func withAdminToken(s *Server, token string) *Server {
+	s.config.Web.Auth.Enabled = true
+	s.config.Web.Auth.AdminToken = token
+	return s
+}
+
+func TestBridgeMockResultAcceptsAdminTokenWithoutSignature(t *testing.T) {
+	// Even with callback signature required, the admin token is accepted on
+	// loopback and the signature check is skipped (admin path returns "" token).
+	s := withAdminToken(newBridgeTestServer(true), "admin-secret")
+	body := `{"request_id":"req-admin","success":true,"image_path":"c:/tmp/x.png"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/mock/result", strings.NewReader(body))
+	setLoopbackBridgeRequest(req)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer admin-secret")
+
+	w := httptest.NewRecorder()
+	s.handleScreenshotBridgeMockResult(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for admin token without signature, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestBridgeTaskNextAcceptsAdminToken(t *testing.T) {
+	s := withAdminToken(newBridgeTestServer(true), "admin-secret")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/bridge/tasks/next", nil)
+	setLoopbackBridgeRequest(req)
+	req.Header.Set("Authorization", "Bearer admin-secret")
+
+	w := httptest.NewRecorder()
+	s.handleScreenshotBridgeTaskNext(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for admin token task pull, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestBridgeMockResultRejectsUnknownToken(t *testing.T) {
+	// A token that is neither a valid bridge token nor the admin token is rejected.
+	s := withAdminToken(newBridgeTestServer(true), "admin-secret")
+	body := `{"request_id":"req-bad","success":true,"image_path":"c:/tmp/x.png"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/mock/result", strings.NewReader(body))
+	setLoopbackBridgeRequest(req)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer not-a-real-token")
+
+	w := httptest.NewRecorder()
+	s.handleScreenshotBridgeMockResult(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unknown token, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestBridgeAuthAdminTokenRejectedWhenNotLoopback(t *testing.T) {
+	// The admin token must only be honored as a bridge credential on loopback.
+	s := withAdminToken(newBridgeTestServer(true), "admin-secret")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/bridge/tasks/next", nil)
+	req.RemoteAddr = "203.0.113.7:5555"
+	req.Host = "example.com:8448"
+	req.Header.Set("Authorization", "Bearer admin-secret")
+
+	_, ok := s.validateBridgeAuthIfRequired(httptest.NewRecorder(), req)
+	if ok {
+		t.Fatalf("expected admin token to be rejected for non-loopback request")
+	}
+}
+
+func TestBridgeMockResultSkipsSignatureWhenPairingDisabled(t *testing.T) {
+	// Signature requires a pairing token; when pairing is disabled the callback
+	// signature requirement is also lifted so callbacks are not blocked.
+	s := newBridgeTestServer(true)                        // signature required...
+	s.config.Screenshot.Extension.PairingRequired = false // ...but pairing disabled
+	body := `{"request_id":"req-nopair","success":true,"image_path":"c:/tmp/x.png"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/mock/result", strings.NewReader(body))
+	setLoopbackBridgeRequest(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	s.handleScreenshotBridgeMockResult(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 when pairing disabled, got %d body=%s", w.Code, w.Body.String())
+	}
+}

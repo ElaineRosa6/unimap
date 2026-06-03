@@ -402,6 +402,26 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 	// 初始化通知系统
 	notifyReg := notify.NewRegistry()
 	notifyReg.Register(notify.NewLogChannel("builtin-log", true))
+
+	// 注册飞书应用渠道（支持图片上传）
+	if cfg != nil && cfg.Notifications.FeishuApp != nil {
+		feishuApp := cfg.Notifications.FeishuApp
+		if feishuApp.AppID != "" && feishuApp.AppSecret != "" && feishuApp.ChatID != "" {
+			feishuAppCh := notify.NewFeishuAppChannel(
+				feishuApp.AppID,
+				feishuApp.AppSecret,
+				feishuApp.ChatID,
+				cfg.Notifications.Enabled,
+			)
+			if err := notifyReg.Register(feishuAppCh); err != nil {
+				logger.Warnf("Failed to register feishu app channel: %v", err)
+			} else {
+				notifyReg.Pin("feishu_app") // 不受 Reload 影响
+				logger.Infof("Feishu app channel registered (chat_id=%s)", feishuApp.ChatID)
+			}
+		}
+	}
+
 	sched.SetNotifyRegistry(notifyReg)
 
 	if cfg != nil {

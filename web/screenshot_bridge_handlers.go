@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/screenshot"
 	"golang.org/x/image/webp"
 )
@@ -188,12 +189,16 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body exceeds configured limit", nil)
 		return
 	}
-	if err := s.validateBridgeCallbackSignatureIfRequired(r, rawBody, token); err != nil {
-		s.setBridgeLastError("unauthorized_bridge: invalid callback signature")
-		writeAPIError(w, http.StatusUnauthorized, "unauthorized_bridge", "invalid callback signature", err.Error())
-		return
+	// Skip callback signature when authenticated via admin session (loopback + session cookie).
+	// The token is non-empty only when bridge token auth was used.
+	if token != "" {
+		if err := s.validateBridgeCallbackSignatureIfRequired(r, rawBody, token); err != nil {
+			s.setBridgeLastError("unauthorized_bridge: invalid callback signature")
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized_bridge", "invalid callback signature", err.Error())
+			return
+		}
+		s.touchBridgeToken(token)
 	}
-	s.touchBridgeToken(token)
 
 	var req struct {
 		RequestID               string                 `json:"request_id"`
@@ -328,6 +333,7 @@ func (s *Server) validateBridgeAuthIfRequired(w http.ResponseWriter, r *http.Req
 	if !required {
 		return "", true
 	}
+
 	raw := strings.TrimSpace(r.Header.Get("Authorization"))
 	if raw == "" || !strings.HasPrefix(strings.ToLower(raw), "bearer ") {
 		s.setBridgeLastError("unauthorized_bridge: missing bridge bearer token")
@@ -335,6 +341,17 @@ func (s *Server) validateBridgeAuthIfRequired(w http.ResponseWriter, r *http.Req
 		return "", false
 	}
 	token := strings.TrimSpace(raw[7:])
+
+	// Accept the admin token as a valid bridge credential for loopback requests.
+	// This allows the extension to work after server restart without re-pairing:
+	// the admin token is static (from config.yaml) and survives restarts.
+	loopback := isLoopbackRequest(r)
+	adminTok := s.adminToken()
+	if loopback && adminTok != "" && subtle.ConstantTimeCompare([]byte(token), []byte(adminTok)) == 1 {
+		logger.Debugf("[bridge-auth] admin token accepted for loopback request")
+		return "", true
+	}
+
 	if token == "" || !s.validateBridgeToken(token) {
 		s.setBridgeLastError("unauthorized_bridge: invalid or expired bridge token")
 		writeAPIError(w, http.StatusUnauthorized, "unauthorized_bridge", "invalid or expired bridge token", nil)
@@ -345,10 +362,12 @@ func (s *Server) validateBridgeAuthIfRequired(w http.ResponseWriter, r *http.Req
 
 func (s *Server) validateBridgeCallbackSignatureIfRequired(r *http.Request, body []byte, token string) error {
 	required := false
+	pairingRequired := true
 	skewSeconds := 300
 	nonceTTLSeconds := 600
 	if s.config != nil {
 		required = s.config.Screenshot.Extension.CallbackSignatureRequired
+		pairingRequired = s.config.Screenshot.Extension.PairingRequired
 		if s.config.Screenshot.Extension.CallbackSignatureSkewSeconds > 0 {
 			skewSeconds = s.config.Screenshot.Extension.CallbackSignatureSkewSeconds
 		}
@@ -356,7 +375,8 @@ func (s *Server) validateBridgeCallbackSignatureIfRequired(r *http.Request, body
 			nonceTTLSeconds = s.config.Screenshot.Extension.CallbackNonceTTLSeconds
 		}
 	}
-	if !required {
+	// Callback signature requires a pairing token; skip if pairing is disabled.
+	if !required || !pairingRequired {
 		return nil
 	}
 	if strings.TrimSpace(token) == "" {
