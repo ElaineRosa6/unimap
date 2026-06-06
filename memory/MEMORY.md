@@ -1,21 +1,25 @@
 # Project Memory Index
 
-## 当前遗留问题
+## 当前活跃
 
 - [Extension 模式问题 2026-05-09](project_extension_mode_issues_2026-05-09.md) — ✅P0已修复(Shodan补齐+翻译路径验证)、✅P1进度已实现、P1登录状态部分解决
-
-## 本轮修复记录（docs/）
-
-- [问题修复报告 2026-06-01](../docs/FIX_REPORT_2026-06-01.md) — Phase 1-4 全量修复 + Hunter 限流根因
-- [问题记录与计划 2026-06-01](../docs/ISSUES_AND_PLAN_2026-06-01.md) — 4 类问题记录 + 整改计划
-- [项目审查报告 2026-05-31](../docs/PROJECT_REVIEW_2026-05-31.md) — 最近一次全量审查
-- [项目审查报告 2026-06-01](../docs/PROJECT_REVIEW_2026-06-01.md) — 🆕 第二轮全量审查：7 维度深度分析，18 项新发现（2 P0 + 14 P1 + 11 P2）
-- [修复实施计划 2026-06-01](../docs/FIX_PLAN_2026-06-01.md) — 🆕 5 阶段修复计划：22 个问题按依赖链排序，不破坏现有功能
-- [修复实施记录 2026-06-01](../docs/FIX_IMPLEMENTATION_2026-06-01.md) — 🆕 实施完成记录：5 阶段 21/24 项已修复，23 文件变更，go test -race 全绿
-- [定时任务优化计划](../docs/SCHEDULER_OPTIMIZATION_PLAN.md) — 7 阶段计划（前端优化 + 22 Runner 测试 + 飞书 + 浏览器采集）
-- [定时任务下一步计划](../docs/SCHEDULER_NEXT_STEPS.md) — P1 Chrome MCP 测试 + P2 选择器修复 + P9 截图飞书推送
-- [定时任务优化 P3-P8 实施记录 2026-06-02](../docs/SCHEDULER_OPTIMIZATION_P3P4_REPORT.md) — ✅ P3-P7全部完成+P8通知增强（5个Runner逐条详情+payload上下文+飞书卡片美化）；P1/P2/P9待实施
+- [Bridge 认证修复 2026-06-03](project_bridge_auth_fix_2026-06-03.md) — ✅截图超时根因(重启丢token→401)修复：admin token loopback 兜底+签名/pairing联动+5测试+真机curl E2E全绿
 - [定时任务优化进度 2026-06-02](project_scheduler_optimization_2026-06-02.md) — P3-P6完成详情+修复记录+后续计划
+
+## 当前文档（docs/）
+
+- [E2E采集验证 2026-06-04](../docs/E2E_COLLECTION_VERIFICATION_2026-06-04.md) — 🟡 截图✅ Shodan 6/6 + Quake 2/2；采集🔴 3bug修复(CANARY已清理)+诊断日志(`[bridge-collect]`)+**parseStructuredCollectedData 4项修复**已添加(port/status_code string→int、banner→BodySnippet)；下次重启Chrome+服务器后测试定位数据丢失点；Quake反爬拦截(非账号无权限,手动查询正常)
+- [问题修复报告 2026-06-01](../docs/FIX_REPORT_2026-06-01.md) — Phase 1-4 全量修复 + Hunter 限流根因
+- [项目审查报告 2026-06-01](../docs/PROJECT_REVIEW_2026-06-01.md) — 第二轮全量审查：7 维度深度分析，18 项新发现
+- [定时任务下一步计划](../docs/SCHEDULER_NEXT_STEPS.md) — 🟡 P1 CDP 4/5通过(Quake反爬) + P2 capture.js已修复 + 飞书路径泄露已修复；下一步Extension E2E
+
+## 已归档（docs/archive/）
+
+| 目录 | 内容 |
+|------|------|
+| [plans/](../docs/archive/plans/) | 9 文件：ICP/通知/FOFA/浏览器降级策略/修复计划/定时任务优化计划 |
+| [reviews/](../docs/archive/reviews/) | 10 文件：2026-05-19~06-01 审查链 + 定时任务P3P4报告 + 项目审查05-31 |
+| [COMMIT_HISTORY_2026-05.md](../docs/archive/COMMIT_HISTORY_2026-05.md) | 2026-05 提交历史（git 已跟踪，冗余归档） |
 
 ## 已归档（memory/archive/）
 
@@ -29,13 +33,6 @@
 | [测试覆盖率进度 2026-04-21](archive/project_test_coverage_phase1_2026-04-21.md) | Phase 1-3 进度，整体约 75% |
 | [实施指南完成 2026-04-16](archive/project_implementation_guide_progress_2026-04-16.md) | 10步全部完成 |
 | [跨平台适配 2026-04-13](archive/project_crossplatform_2026-04-13.md) | macOS/Linux 6 项适配 |
-
-## 已归档（docs/archive/）
-
-| 目录 | 内容 |
-|------|------|
-| [reviews/](../docs/archive/reviews/) | 2026-05-19~05-25 审查链（7 个文件）：CODE_REVIEW → FIX → VERIFICATION → DEEP_REVIEW → AUDIT |
-| [plans/](../docs/archive/plans/) | 已实施的功能计划（6 个文件）：ICP/通知/FOFA/浏览器降级策略 |
 
 ## 核心文档（docs/）
 
