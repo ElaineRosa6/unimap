@@ -142,6 +142,7 @@ func (r *Router) RegisterRoutes() http.Handler {
 
 	// API 路由 - 账号管理
 	r.addAPIRoute("account-change-password", "POST", "/api/account/change-password", r.server.handleChangePassword, false)
+	r.addAPIRoute("account-admin-token", "GET", "/api/account/admin-token", r.server.handleGetAdminToken, false)
 
 	// API 路由 - 用户管理
 	r.addAPIRoute("user-register", "POST", "/api/users/register", r.server.handleRegister, true)

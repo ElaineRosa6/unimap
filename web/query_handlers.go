@@ -456,6 +456,26 @@ func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleGetAdminToken returns the admin token for authenticated users (GET /api/account/admin-token).
+// Used by the account page to allow copying the token into the browser extension.
+func (s *Server) handleGetAdminToken(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	token := s.adminToken()
+	if token == "" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"token":   "",
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"token":   token,
+	})
+}
+
 // currentUserID returns the user ID from context, or 0.
 func currentUserID(r *http.Request) int64 {
 	if uid, ok := r.Context().Value(contextKeyUserID).(int64); ok {

@@ -2440,6 +2440,50 @@ td:first-child {
 	outline-offset: 2px;
 }
 
+/* ============================================================
+   Account page
+   ============================================================ */
+.account-section { max-width: 560px; }
+.account-info { margin-top: var(--space-4); }
+.account-info-row {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+	padding: var(--space-3) 0;
+	border-bottom: 1px solid var(--border);
+}
+.account-info-row .label {
+	flex-shrink: 0;
+	width: 120px;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-muted);
+}
+.account-info-row .value {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	font-size: 14px;
+	font-family: var(--font-mono);
+	word-break: break-all;
+}
+.btn-copy {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 10px;
+	font-size: 12px;
+	font-family: inherit;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--bg-elevated);
+	color: var(--text);
+	cursor: pointer;
+	transition: background 0.15s, border-color 0.15s;
+}
+.btn-copy:hover { background: var(--slate-200); border-color: var(--text-muted); }
+.btn-copy.copied { background: var(--success-bg); border-color: var(--success-border); color: var(--success); }
+
 /* --- Reduced motion (accessibility) --- */
 @media (prefers-reduced-motion: reduce) {
 	*,
