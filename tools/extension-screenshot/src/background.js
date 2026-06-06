@@ -1,6 +1,6 @@
 import { apiGet, apiPostBridgeSigned, bridgeRotateToken } from "./api.js";
 import { ensureTab, waitForPageReady, captureVisible, normalizeImagePayload, releaseTab, cleanupTabPool, normalizeCollectPayload, extractEngineAssets } from "./capture.js";
-import { loadSessionToken, isTokenExpired, saveSessionToken, saveRuntimeState, saveLastError } from "./storage.js";
+import { loadSessionToken, isTokenExpired, saveSessionToken, saveRuntimeState, saveLastError, loadAdminToken } from "./storage.js";
 import { pairAndStore } from "./pairing.js";
 
 const POLL_INTERVAL_MS = 1000;
@@ -93,12 +93,17 @@ async function handleTask(task, token) {
 
     // Choose wait strategy based on action type
     let waitStrategy = task.wait_strategy || "load";
-    if (action === "collect") {
-      // Collect needs extra time for SPA rendering
-      waitStrategy = "spa";
-    }
+    // Use longer timeout for collect action (SPA rendering)
+    const effectiveTimeout = action === "collect"
+      ? Math.max(task.timeout_ms || 30000, 30000)
+      : (task.timeout_ms || 15000);
 
-    await waitForPageReady(tabId, waitStrategy, task.timeout_ms || 15000);
+    await waitForPageReady(tabId, waitStrategy, effectiveTimeout);
+
+    // Extra render wait for collect action (SPA search results take time to render)
+    if (action === "collect") {
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+    }
 
     if (action === "open") {
       // Only open the page, no screenshot or data collection
@@ -148,6 +153,10 @@ async function handleTask(task, token) {
           result.structured_collected_data.total = assets.total || assets.items.length;
           result.structured_collected_data.has_more = assets.has_more || false;
           result.structured_collected_data.engine = assets.engine || "unknown";
+          // Diagnostic fields — report which selector worked and how
+          result.structured_collected_data.extraction_method = assets.extraction_method || "unknown";
+          result.structured_collected_data.row_selector_used = assets.row_selector_used || "";
+          result.structured_collected_data.rows_found = assets.rows_found || 0;
           if (assets.error) {
             result.structured_collected_data.extraction_error = assets.error;
           }
@@ -195,6 +204,32 @@ async function handleTask(task, token) {
   }
 }
 
+async function acquireToken(session, usingAdmin) {
+  // 1. Valid bridge token from pairing — use it
+  if (session.token && !isTokenExpired(session.expireAt)) {
+    return { token: session.token, isAdmin: usingAdmin };
+  }
+
+  // 2. Try pairing to get a fresh bridge token
+  try {
+    const pair = await pairAndStore(chrome.runtime.id, "dev-pair");
+    await chrome.storage.local.set({ usingAdminToken: false });
+    return { token: pair.token, isAdmin: false };
+  } catch (pairErr) {
+    // Pairing failed — fall through to admin token
+  }
+
+  // 3. Fallback: use admin token (static, survives server restarts)
+  const adminToken = await loadAdminToken();
+  if (adminToken) {
+    await saveSessionToken(adminToken, 24 * 3600);
+    await chrome.storage.local.set({ usingAdminToken: true });
+    return { token: adminToken, isAdmin: true };
+  }
+
+  return { token: "", isAdmin: false };
+}
+
 async function bridgeLoop() {
   if (loopStarted) {
     return;
@@ -207,25 +242,23 @@ async function bridgeLoop() {
       await cleanupTabPool();
 
       const session = await loadSessionToken();
-      let token = session.token;
-      if (!token || isTokenExpired(session.expireAt)) {
-        try {
-          const pair = await pairAndStore(chrome.runtime.id, "dev-pair");
-          token = pair.token;
-        } catch (pairErr) {
-          await saveRuntimeState({ paired: false });
-          await saveLastError(pairErr);
-          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-          continue;
-        }
-      } else if (shouldRotateSoon(session.expireAt)) {
+      const adminData = await chrome.storage.local.get(["usingAdminToken"]);
+      const usingAdmin = !!adminData.usingAdminToken;
+      const { token, isAdmin } = await acquireToken(session, usingAdmin);
+      if (!token) {
+        await saveRuntimeState({ paired: false });
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        continue;
+      }
+
+      // Rotate bridge tokens before expiry (skip for admin token — it's static)
+      if (!isAdmin && shouldRotateSoon(session.expireAt)) {
         try {
           const rotated = await bridgeRotateToken(token);
           const newToken = rotated?.token || "";
           const expiresIn = Number(rotated?.expires_in || 600);
           if (newToken) {
             await saveSessionToken(newToken, expiresIn);
-            token = newToken;
           }
         } catch (rotateErr) {
           // Rotation failure should not stop task polling; existing token may still be valid.
@@ -240,8 +273,25 @@ async function bridgeLoop() {
       }
     } catch (err) {
       if (isBridgeAuthError(err)) {
+        const wasAdmin = (await chrome.storage.local.get(["usingAdminToken"])).usingAdminToken;
         await saveSessionToken("", 1);
+        await chrome.storage.local.set({ usingAdminToken: false });
         await saveRuntimeState({ paired: false });
+        // If admin token was used and rejected, clear it to avoid an infinite retry loop.
+        // The user should re-enter the correct token in the extension options page.
+        if (wasAdmin) {
+          await chrome.storage.local.remove("adminToken");
+        }
+
+        // Retry pairing immediately so the extension recovers from transient auth
+        // failures (e.g. server restart that invalidates in-memory bridge tokens).
+        try {
+          const pair = await pairAndStore(chrome.runtime.id, "dev-pair");
+          await saveRuntimeState({ paired: true });
+          continue;
+        } catch (rePairErr) {
+          // Re-pairing also failed; fall through to the next loop iteration.
+        }
       }
       await saveLastError(err);
     }

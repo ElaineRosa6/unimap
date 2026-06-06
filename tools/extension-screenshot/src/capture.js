@@ -16,6 +16,7 @@ function detectEngine(url) {
   if (lower.includes("hunter.qianxin.com")) return "hunter";
   if (lower.includes("zoomeye.org")) return "zoomeye";
   if (lower.includes("quake.360.cn")) return "quake";
+  if (lower.includes("shodan.io")) return "shodan";
   return "unknown";
 }
 
@@ -114,8 +115,15 @@ export async function waitForPageReady(tabId, strategy, timeoutMs) {
   }
 
   if (strategy === "spa" || strategy === "networkidle") {
-    // SPA strategy: wait for complete + extra render time
+    // SPA strategy: give the page time to start rendering
     await new Promise((resolve) => setTimeout(resolve, Math.min(timeout, 5000)));
+    // If the tab already reached "complete" during the SPA delay,
+    // the onUpdated listener below would never fire — resolve now.
+    const afterDelay = await chrome.tabs.get(tabId);
+    if (afterDelay && afterDelay.status === "complete") {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      return;
+    }
   }
 
   await new Promise((resolve, reject) => {
@@ -201,74 +209,93 @@ export function normalizeCollectPayload(items, title, requestId, startedAt) {
  */
 const ENGINE_SELECTORS = {
   fofa: {
-    // FOFA now uses card-based layout (not tables). Try multiple approaches:
-    // 1. Card-based selectors (current layout)
-    // 2. Table-based fallbacks (older layouts)
+    // FOFA uses Vue SPA with hsxa-* prefixed class names.
+    // CDP DOM inspection (2026-06-03):
+    //   Row: .hsxa-meta-data-item (result card container)
+    //   Cells: <a> links with qbase64 params (stable across FOFA updates)
+    //   Key span: .hsxa-host = "IP:Port" directly
     row: [
-      // Card-based (primary - current FOFA layout)
-      ".result-card",
-      "[class*='result-card']",
-      "[class*='result-item']",
-      ".result-item",
-      // Card/list hybrid
-      ".list_content > div",
-      "[class*='list'] > [class*='item']",
-      // Table-based (legacy fallback)
-      ".list_content > tbody > tr",
-      ".result-table tbody tr",
-      "[class*='result'] table tbody tr",
-      "table[class*='list'] tbody tr",
-      // Generic fallback
-      "[class*='result'] > div",
-      "[class*='asset']"
+      ".hsxa-meta-data-item",
+      "[class*='meta-data-item']",
+      ".result-card", "[class*='result-card']",
+      "[class*='result-item']", ".result-item",
+      "[class*='result'] > div"
     ],
     cells: {
-      // Card-based selectors
-      ip: { selector: "[class*='ip'] a, [class*='host'] a, a[href*='qbase64=aXA9']", fallback: "td:nth-child(1) a" },
-      port: { selector: "[class*='port'] a, a[href*='qbase64=cG9ydD0']", fallback: "td:nth-child(2)" },
-      protocol: { selector: "[class*='protocol'] a, [class*='service'] a, a[href*='qbase64=cHJvdG9jb2w9']", fallback: "td:nth-child(3)" },
-      host: { selector: "[class*='host'] a, [class*='domain'] a", fallback: "td:nth-child(4) a" },
-      title: { selector: "[class*='title'], [class*='name']", fallback: "td:nth-child(5)" },
-      country_code: { selector: "[class*='country'] a, [class*='region'] a, a[href*='qbase64=Y291bnRyeT0']", fallback: "td:nth-child(6)" },
-      banner: { selector: "[class*='banner'], [class*='header']", fallback: "td:nth-child(7)" }
+      // Link-based extraction: each link's text IS the field value.
+      // qbase64 param patterns are FOFA's internal query format — stable/rarely change.
+      // IMPORTANT: a[href*='qbase64=aXA9'] matches country links too (not just IP).
+      // span.hsxa-host is the PRIMARY IP selector: it shows "IP:Port" directly.
+      // CDP verified (2026-06-03): span.hsxa-host returns "8.8.8.8:53" correctly.
+      ip: { selector: "span.hsxa-host, a[href*='qbase64=aXA9']" },
+      port: { selector: "a[href*='qbase64=cG9ydD0']" },
+      protocol: { selector: "a[href*='qbase64=cHJvdG9jb2w9'], a[href*='qbase64=cHJvdG9jb2xf']" },
+      host: { selector: "a[href*='qbase64=ZG9tYWluPS'], a[href*='qbase64=aG9zdD0'], span.hsxa-host" },
+      title: { selector: "[class*='title'] a, [class*='title'] span, [class*='name']" },
+      country_code: { selector: "a[href*='qbase64=Y291bnRyeT0']" },
+      asn: { selector: "a[href*='qbase64=YXNuPS']" },
+      org: { selector: "a[href*='qbase64=b3JnPS']" },
+      banner: { selector: "a[href*='qbase64=YmFubmVyX2hhc2g9'], pre, [class*='banner-content']" }
     },
-    total: [".total-count", ".total_count", "[class*='total']", "[class*='count']", ".pagination-info"],
+    total: [".total-count", ".total_count", "[class*='total']", "[class*='count']"],
     nextPage: [".next", ".next-page", "[class*='next']", ".el-pagination__next"]
   },
   hunter: {
+    // Hunter uses Quasar UI framework (q-table, q-pagination, etc.)
+    // CDP verified (2026-06-03): .q-table tbody tr / .list-table tbody tr → 24-30 rows ✅
+    // Hunter table columns (CDP verified):
+    //   td:nth-child(1)=序号, td:nth-child(2)=IP, td:nth-child(3)=域名,
+    //   td:nth-child(4)=端口/服务, td:nth-child(5)=站点标题, td:nth-child(6)=状态码,
+    //   td:nth-child(7)=ICP备案企业, td:nth-child(8)=应用/组件
+    // Note: class-based selectors (.ip-address, .port) don't match Hunter DOM — use td:nth-child
     row: [
-      // Card-based (current Hunter layout)
+      // Quasar table (primary — current layout)
+      ".q-table tbody tr",
+      ".q-table__body tr",
+      ".list-table tbody tr",
+      ".page-list-body_table tr",
+      // Quasar skeleton placeholders (loading)
+      ".skeleton-row",
+      // Card/list-based (alternative layouts)
       ".result-list > .result-item",
       ".result-item",
       "[class*='result-list'] > [class*='item']",
       "div[class*='result-item']",
-      // Element UI table
-      ".el-table tbody tr",
       // Generic fallbacks
       "[class*='result-list'] > div",
-      "[class*='result'] > div"
+      "[class*='result'] > div",
+      ".page-list-body > div"
     ],
     cells: {
-      ip: { selector: ".ip-address, [data-ip], [class*='ip']" },
-      port: { selector: ".port, [data-port], [class*='port']" },
-      protocol: { selector: ".protocol, .service, [data-protocol]" },
-      host: { selector: ".domain, .hostname, [class*='domain']" },
-      title: { selector: ".web-title, .title, [class*='web-title']" },
-      banner: { selector: ".header-info, .banner" }
+      // td:nth-child indices match Hunter's 2026-06 column layout
+      ip: { selector: "td:nth-child(2) a, td:nth-child(2), .ip-address, [data-ip], [class*='ip']" },
+      host: { selector: "td:nth-child(3) a, td:nth-child(3), .domain, .hostname, [class*='domain']" },
+      port: { selector: "td:nth-child(4), .port, [data-port], [class*='port']" },
+      title: { selector: "td:nth-child(5), .web-title, .title, [class*='web-title']" },
+      status_code: { selector: "td:nth-child(6)" },
+      org: { selector: "td:nth-child(7), [class*='enterprise'], [class*='company']" },
     },
-    total: [".total-count", ".total", "[class*='total-count']", "[class*='total']"],
-    nextPage: [".next", ".el-pagination__next", "[class*='next']", ".pagination-next"]
+    total: [".total-count", ".total", "[class*='total-count']", "[class*='total']", ".page-list-body_statistic"],
+    nextPage: [".next", ".q-pagination button", "[class*='next']", ".pagination-next", ".page-list-pagination button"]
   },
   zoomeye: {
+    // ZoomEye uses card-based layout (2026-06-03 CDP verified).
+    // .search-result-item → 10 elements (most specific row selector) ✅
+    // [class*='search-result-item'] → 40 elements (broader match)
+    // .ant-table tbody tr → 0 — ZoomEye NO LONGER uses Ant Design table!
     row: [
-      // Card-based
-      "div[class*='search-result-item']",
-      ".result-list > .item",
+      // Card-based (primary — current layout, CDP verified)
       ".search-result-item",
+      "[class*='search-result-item']",
+      ".result-list > .item",
+      // Generic fallbacks (card-based)
       "[class*='result-item']",
-      // Generic fallbacks
       "[class*='result-list'] > div",
-      "[class*='result'] > div"
+      "[class*='result'] > div",
+      // Ant Design table — DEPRECATED (0 matches as of 2026-06-03), kept as fallback
+      ".ant-table tbody tr",
+      ".ant-table-tbody tr",
+      ".main-content > div > div"
     ],
     cells: {
       ip: { selector: ".ip, [data-ip], [class*='ip']" },
@@ -283,17 +310,21 @@ const ENGINE_SELECTORS = {
     nextPage: [".next", ".pagination-next", "[class*='next']", ".el-pagination__next"]
   },
   quake: {
+    // Quake uses Element UI (el-table, el-row, el-pagination).
+    // CDP DOM inspection (2026-06-03) confirmed: .el-table, .search-wrapper
     row: [
+      // Element UI table (primary)
+      ".el-table tbody tr",
+      ".el-table__body tr",
       // Card-based
       ".result-list > .result-row",
       ".result-row",
       "[class*='result-list'] > [class*='row']",
       "[class*='result-row']",
-      // Element UI table
-      ".el-table tbody tr",
       // Generic fallbacks
       "[class*='result-list'] > div",
-      "[class*='result'] > div"
+      "[class*='result'] > div",
+      "table tbody tr"
     ],
     cells: {
       ip: { selector: ".ip, [class*='ip']" },
@@ -307,6 +338,46 @@ const ENGINE_SELECTORS = {
     },
     total: [".total-count", ".total", "[class*='total']", ".pagination-info"],
     nextPage: [".next", ".next-page", "[class*='next']", ".el-pagination__next"]
+  },
+  shodan: {
+    // CDP-verified (2026-06-04): Shodan uses div.row.l-search-results > div.nine.columns > div.result
+    // Each .result contains: div.heading > a.title[href="/host/X.X.X.X"] (IP),
+    //   div.result-details (org + location), div.banner-data (HTTP banner)
+    row: [
+      // Primary: search result cards in the main results column
+      ".row.l-search-results .result",
+      ".nine.columns .result",
+      // Legacy / alternative layouts
+      ".heading + div > div",
+      "div.search-results > div",
+      "[class*='search-result']",
+      // Table-based (rare but possible)
+      "table.results tbody tr",
+      "table[class*='result'] tbody tr",
+      // Generic fallbacks
+      "[class*='result'] > div",
+      "div[class*='result']"
+    ],
+    cells: {
+      // IP: extracted from /host/ link href (most reliable) or text fallback
+      ip: { selector: "a[href*='/host/']", attr: "href", extract: "ip_from_path", fallback: ".ip" },
+      // Port: look for /port/ links
+      port: { selector: "a[href*='/port/'], .port" },
+      // Hostname: /host/ link text or hostnames element
+      host: { selector: "a[href*='/host/'], .hostnames, a[href*='/domain/'], [class*='hostname']" },
+      // Title: the heading link text (may be IP or HTTP title)
+      title: { selector: "div.heading a, .heading a, a.title, h2, [class*='title']" },
+      // Country: from result-details or flag element
+      country_code: { selector: ".result-details, .country, [class*='country'], [class*='flag']" },
+      // Organization: first line of .result-details
+      org: { selector: ".result-details, .org, a[href*='/org/'], [class*='org']" },
+      // Banner: HTTP response banner
+      banner: { selector: ".banner-data, pre, [class*='banner']" },
+      // OS: from result metadata
+      os: { selector: ".os, [class*='os']" }
+    },
+    total: [".total", "[class*='total']", ".result-count", "[class*='result-count']"],
+    nextPage: [".next", ".pagination-next", "[class*='next']", "a[rel='next']"]
   }
 };
 
@@ -338,22 +409,6 @@ function queryAll(root, selectors) {
     if (els.length > 0) return els;
   }
   return [];
-}
-
-/**
- * Extract cell text using selector config with fallback.
- * @param {Element} row - Row element
- * @param {Object} cellConfig - {selector, fallback}
- * @returns {string}
- */
-function extractCellText(row, cellConfig) {
-  const el = row.querySelector(cellConfig.selector);
-  if (el) return el.textContent.trim();
-  if (cellConfig.fallback) {
-    const fb = row.querySelector(cellConfig.fallback);
-    if (fb) return fb.textContent.trim();
-  }
-  return "";
 }
 
 /**
@@ -396,7 +451,7 @@ export async function extractEngineAssets(tabId) {
 
         // Check for login wall first
         if (isLoginWallFn(document)) {
-          return { items: [], total: 0, has_more: false, title, engine: eng, is_login_wall: true };
+          return { items: [], total: 0, has_more: false, title, engine: eng, is_login_wall: true, extraction_method: "login_wall" };
         }
 
         const engineSelectors = selectors[eng];
@@ -418,6 +473,39 @@ export async function extractEngineAssets(tabId) {
         if (rows.length === 0) {
           // No rows found — try fallback extraction
           return fallbackExtraction();
+        }
+
+        // Cell text extractor with attribute support
+        function extractCellText(row, cellConfig) {
+          const selectors = cellConfig.selector.split(/,\s*/);
+          let el = null;
+          for (const sel of selectors) {
+            el = row.querySelector(sel);
+            if (el) break;
+          }
+          if (!el && cellConfig.fallback) {
+            const fbs = cellConfig.fallback.split(/,\s*/);
+            for (const fb of fbs) {
+              el = row.querySelector(fb);
+              if (el) break;
+            }
+          }
+          if (!el) return "";
+
+          // Support attribute extraction (e.g. href, src, data-*)
+          if (cellConfig.attr) {
+            const val = el.getAttribute(cellConfig.attr) || "";
+            // Post-process: extract IP from Shodan /host/X.X.X.X path
+            if (cellConfig.extract) {
+              if (cellConfig.extract === "ip_from_path") {
+                const m = val.match(/\/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+                return m ? m[1] : val;
+              }
+            }
+            return val.trim();
+          }
+
+          return el.textContent.trim();
         }
 
         // Extract data from each row/card
@@ -455,7 +543,7 @@ export async function extractEngineAssets(tabId) {
         const nextEl = queryOne(document, engineSelectors.nextPage);
         hasMore = !!nextEl && !nextEl.classList.contains("disabled");
 
-        return { items, total, has_more: hasMore, title, engine: eng, is_login_wall: false, row_selector_used: rowSelectorUsed };
+        return { items, total, has_more: hasMore, title, engine: eng, is_login_wall: false, row_selector_used: rowSelectorUsed, rows_found: rows.length, extraction_method: "selector" };
 
         function isLoginWallFn(doc) {
           const text = doc.body.textContent.toLowerCase();
@@ -518,7 +606,7 @@ export async function extractEngineAssets(tabId) {
 
           // If tables found, return table extraction
           if (fallbackItems.length > 0) {
-            return { items: fallbackItems, total: 0, has_more: false, title, engine: eng, is_login_wall: false };
+            return { items: fallbackItems, total: 0, has_more: false, title, engine: eng, is_login_wall: false, extraction_method: "table_fallback" };
           }
 
           // Try card-based extraction using link patterns
@@ -594,7 +682,7 @@ export async function extractEngineAssets(tabId) {
             }
           }
 
-          return { items: cardItems, total: 0, has_more: false, title, engine: eng, is_login_wall: false, extraction_method: "card_based" };
+          return { items: cardItems, total: 0, has_more: false, title, engine: eng, is_login_wall: false, extraction_method: "card_fallback" };
         }
         return {
           items,
@@ -609,10 +697,15 @@ export async function extractEngineAssets(tabId) {
       args: [engine, ENGINE_SELECTORS]
     });
 
-    if (results && results[0] && results[0].result) {
-      return results[0].result;
+    if (results && results[0]) {
+      if (results[0].result) {
+        return results[0].result;
+      }
+      if (results[0].error) {
+        return { items: [], total: 0, has_more: false, title: "", engine, login_required: false, error: "injection_error: " + String(results[0].error) };
+      }
     }
-    return { items: [], total: 0, has_more: false, title: "", engine, login_required: false };
+    return { items: [], total: 0, has_more: false, title: "", engine, login_required: false, error: "no_injection_result" };
   } catch (err) {
     // DOM extraction failed — return empty result, let caller handle
     return { items: [], total: 0, has_more: false, title: "", engine, login_required: false, error: String(err) };
