@@ -244,6 +244,37 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		resolvedPath = savedPath
 	}
 
+	// Diagnostic: log structured collect data to trace the data loss issue
+	if req.StructuredCollectedData != nil {
+		itemsRaw := req.StructuredCollectedData["items"]
+		itemCount := 0
+		if items, ok := itemsRaw.([]interface{}); ok {
+			itemCount = len(items)
+		}
+		logger.Infof("[bridge-collect] request_id=%s items=%d total=%v has_more=%v engine=%v method=%v rows=%v row_sel=%q",
+			strings.TrimSpace(req.RequestID),
+			itemCount,
+			req.StructuredCollectedData["total"],
+			req.StructuredCollectedData["has_more"],
+			req.StructuredCollectedData["engine"],
+			req.StructuredCollectedData["extraction_method"],
+			req.StructuredCollectedData["rows_found"],
+			req.StructuredCollectedData["row_selector_used"])
+		// Log first 3 items for debugging
+		if items, ok := itemsRaw.([]interface{}); ok && len(items) > 0 {
+			for i := 0; i < len(items) && i < 3; i++ {
+				if m, ok := items[i].(map[string]interface{}); ok {
+					logger.Infof("[bridge-collect] item[%d]: ip=%v port=%v title=%v",
+						i, m["ip"], m["port"], m["title"])
+				}
+			}
+		} else {
+			logger.Warnf("[bridge-collect] request_id=%s has structured_collected_data but items is empty or missing", strings.TrimSpace(req.RequestID))
+		}
+	} else {
+		logger.Warnf("[bridge-collect] request_id=%s has nil StructuredCollectedData", strings.TrimSpace(req.RequestID))
+	}
+
 	s.bridge.Mock.PushResult(screenshot.BridgeResult{
 		RequestID:               strings.TrimSpace(req.RequestID),
 		Success:                 req.Success,
