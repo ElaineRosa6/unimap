@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -1129,6 +1130,8 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 
 	// 提取截图路径（用于飞书图片推送）
 	msg.ImagePaths = extractImagePaths(record.Result)
+	// 从通知文案中剥离系统路径，防止泄露
+	msg.Result = redactImagePaths(msg.Result, msg.ImagePaths)
 
 	timeout := s.notifyTimeout
 	if timeout == 0 {
@@ -1256,6 +1259,18 @@ func isImageFile(path string) bool {
 		strings.HasSuffix(lower, ".jpeg") ||
 		strings.HasSuffix(lower, ".gif") ||
 		strings.HasSuffix(lower, ".webp")
+}
+
+// redactImagePaths 从结果文本中剥离图片文件的完整路径，仅保留文件名。
+// 防止飞书/Webhook 通知泄露服务器目录结构。
+func redactImagePaths(result string, paths []string) string {
+	if result == "" || len(paths) == 0 {
+		return result
+	}
+	for _, p := range paths {
+		result = strings.ReplaceAll(result, p, filepath.Base(p))
+	}
+	return result
 }
 
 // sanitizePayload creates a copy of payload with all string values passed through sanitizeUTF8.

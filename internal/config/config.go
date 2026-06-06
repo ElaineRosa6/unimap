@@ -271,6 +271,9 @@ type NotificationChannelCfg struct {
 	Enabled        bool              `yaml:"enabled"`
 	WebhookURL     string            `yaml:"webhook_url"`
 	Secret         string            `yaml:"secret"`
+	AppID          string            `yaml:"app_id,omitempty"`
+	AppSecret      string            `yaml:"app_secret,omitempty"`
+	ChatID         string            `yaml:"chat_id,omitempty"`
 	Headers        map[string]string `yaml:"headers"`
 	AllowPrivateIP bool              `yaml:"allow_private_ip"`
 }

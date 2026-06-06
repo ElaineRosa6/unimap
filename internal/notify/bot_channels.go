@@ -655,13 +655,13 @@ func (c *FeishuAppChannel) Send(ctx context.Context, n TaskNotification) error {
 			"content": "**截图预览**:",
 		})
 
-		for _, imgPath := range n.ImagePaths {
+		for i, imgPath := range n.ImagePaths {
 			imageKey, err := c.uploadImage(ctx, imgPath)
 			if err != nil {
-				// 上传失败，显示文本路径
+				// 上传失败，不暴露系统路径
 				elements = append(elements, map[string]interface{}{
 					"tag":     "markdown",
-					"content": fmt.Sprintf("⚠️ %s (上传失败: %v)", filepath.Base(imgPath), err),
+					"content": fmt.Sprintf("⚠️ 截图 #%d 上传失败", i+1),
 				})
 				continue
 			}
@@ -670,7 +670,7 @@ func (c *FeishuAppChannel) Send(ctx context.Context, n TaskNotification) error {
 				"img_key": imageKey,
 				"alt": map[string]interface{}{
 					"tag":     "plain_text",
-					"content": filepath.Base(imgPath),
+					"content": fmt.Sprintf("截图 #%d", i+1),
 				},
 			})
 		}
