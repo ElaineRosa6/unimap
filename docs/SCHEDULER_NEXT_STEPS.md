@@ -22,14 +22,16 @@
 
 ## 待实施阶段
 
-### P1：Chrome MCP DOM 采集测试
+### P1：Chrome MCP DOM 采集测试 🔄 进行中
+
+> 更新：2026-06-03
 
 **目标**：验证 5 个搜索引擎的浏览器采集选择器是否有效
 
 **环境要求**：
 - Node.js ✅ (v24.14.1 已安装)
-- Chrome ✅ (已安装)
-- Chrome MCP：`npx @anthropic-ai/chrome-mcp@latest`
+- Chrome ✅ (已安装，已登录各引擎)
+- Chrome CDP ✅ (`--remote-debugging-port=9222`)
 
 **测试项**：
 
@@ -124,8 +126,9 @@
 | 🔴 高 | 乱码修复 | ✅ 已完成 | GBK→UTF-8 三层防御，飞书通知中文正确 |
 | 🔴 高 | P9 截图飞书推送 | ✅ 已完成 | 飞书通知链路打通 |
 | 🔴 高 | 截图超时修复 | ✅ 已完成 | Bridge token 认证改造（Admin Token fallback）+ 单元/真机 E2E 验证 |
-| 🟡 中 | P1 Chrome MCP 测试 | ⏸ 待实施 | 需要交互式浏览器测试 |
-| 🟢 低 | P2 选择器修复 | ⏸ 待实施 | 依赖 P1 结果 |
+| 🟡 中 | P1 Chrome MCP 测试 | 🟡 4/5 通过 | CDP 4 轮 30 测试：FOFA/Hunter/ZoomEye/Shodan ✅，Quake ❌（反爬检测） |
+| 🟡 中 | P2 选择器修复 | 🟡 进行中 | capture.js FOFA/Hunter/ZoomEye 已修复；**🆕 parseStructuredCollectedData 4项修复（port/status_code string→int、banner→BodySnippet）+ 5测试**；Quake 待 Extension；飞书路径泄露已修复 |
+| 🔵 低 | 飞书路径泄露 | ✅ 已修复 | bot_channels 不再显示路径；Result 路径已剥离为仅文件名 |
 
 ---
 
@@ -194,3 +197,157 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST "$B/api/v1/screenshot/bridge/mo
 > 要验证扩展截图链路：临时设 `screenshot.engine=extension` 或让 CDP 不可用，
 > 然后在已配对扩展的情况下触发一次批量截图，确认结果返回而非超时。
 
+---
+
+## P1/P2 进展记录 (2026-06-04 更新)
+
+### CDP 测试执行情况（第 3-4 轮）
+
+Chrome CDP (`--remote-debugging-port=9222`)，通过 junction 方式加载主 profile（保留登录会话）。
+
+**测试配置**：
+- 测试脚本：`tools/test_dom_selectors.mjs`（端口限定查询，减少消耗）
+- 测试目标：6 个 IP+端口组合（Google DNS:53/443, Cloudflare DNS:53/443, Alibaba Cloud:80/443）
+- 5 引擎 × 6 目标 = 30 测试
+- 截图存档：`docs/test_screenshots/`
+
+### 各引擎 DOM 选择器验证结果（最终）
+
+| 引擎 | 测试 | 登录 | Row 选择器 | Cell 提取 | 状态 |
+|------|------|------|-----------|----------|------|
+| **FOFA** | 6/6 ✅ | ✅ | `.hsxa-meta-data-item` (2-10 rows) | 8/8 字段 | ✅ 通过 |
+| **Hunter** | 4/6 ✅ | ✅ | `.q-table tbody tr` (24-30 rows) | 8 列 table | ✅ 通过（2 个无数据） |
+| **ZoomEye** | 6/6 ✅ | ✅ | `.search-result-item` (10 rows) | ⚠️ card-based | ✅ 通过 |
+| **Shodan** | 6/6 ✅ | ✅ | `.heading + div > div` (2-3 rows) | IP/Title/Banner ✅ | ✅ 通过 |
+| **Quake** | 0/6 ❌ | ✅ 已登录 | — | — | 🔒 反爬检测拦截（账号有权限，手动查询正常） |
+
+### 各引擎 URL 格式（CDP 验证正确）
+
+| 引擎 | 正确 URL | 关键发现 |
+|------|---------|---------|
+| FOFA | `qbase64=base64(ip="X.X.X.X" && port="YYYY")` | 无需登录也可访问 |
+| Hunter | `search=base64url(ip="X.X.X.X")` | 用 `search=` 不是 `searchValue=` |
+| ZoomEye | `q=ip:X.X.X.X` | 端口过滤语法不支持 |
+| Quake | `#/searchResult?searchVal=ip:"X.X.X.X"` | 反爬检测拦截（账号有权限，手动查询正常） |
+| Shodan | `?query=net:"X.X.X.X/32" port:YYYY` | 搜索过滤需登录 |
+
+### 关键发现（第 3-4 轮新增）
+
+1. **FOFA `a[href*='qbase64=aXA9']` 误匹配**：该选择器匹配国家过滤链接（如"美国"），不是 IP。`span.hsxa-host`（返回"IP:Port"）才是正确的 IP 选择器
+2. **Hunter 用 `search=` 不是 `searchValue=`**：旧参数名导致"语法不能为空"
+3. **Hunter class 选择器全部无效**：`.ip-address`、`.port` 等 class 不存在，需用 `td:nth-child()` 列索引
+4. **Hunter 列映射**：td:nth-child(2)=IP, (3)=域名, (4)=端口/服务, (5)=标题, (6)=状态码, (7)=ICP, (8)=组件
+5. **ZoomEye `.ant-table tbody tr` 已死**：0 匹配。`.search-result-item`（10 匹配）是正确选择器
+6. **Shodan 选择器验证通过**：`.heading + div > div`、`.result`、`div[class*='result']` 均有效
+7. **Quake 反爬检测（非权限问题，2026-06-07 更正）**：`360U3166720809` **账号有正常搜索权限，用户手动查询可正常返回**。CDP 访问返回"用户缺少必要权限"/"暂无数据"是 360 反爬体系识别自动化后的拦截响应，不是真实权限错误。需 Extension 真实浏览器 + stealth 绕过
+8. **Quake DOM 框架**：仍使用 Element UI（`el-*` 类名 186 个），但无 `<table>` 元素
+
+### capture.js 改动清单（累计，含第 3-4 轮修复）
+
+| 修改项 | 文件 | 说明 |
+|--------|------|------|
+| 新增 `shodan` 引擎检测 | `capture.js:19` | `detectEngine()` 添加 `shodan.io` 识别 |
+| FOFA IP selector 修复 | `capture.js:220` | `span.hsxa-host` 提升为 PRIMARY（`a[href*='qbase64=aXA9']` 误匹配已修复） |
+| Hunter cell 列索引修复 | `capture.js:254-260` | td:nth-child(2)=IP, (3)=域名, (4)=端口, (5)=标题, (6)=状态码, (7)=ICP |
+| Hunter cell 移除无效 class | `capture.js:254-260` | 移除 `.ip-address`, `.port`, `.protocol` 等不存在于 DOM 的选择器 |
+| Hunter cell 新增字段 | `capture.js:259-260` | 新增 `status_code` 和 `org` |
+| ZoomEye row 优先级修正 | `capture.js:268-280` | `.search-result-item` 提升为首选，`.ant-table` 降级为 DEPRECATED fallback |
+| 诊断字段透传 | `background.js` | `structured_collected_data` 包含诊断字段 |
+
+### Go 端数据映射修复 (2026-06-04)
+
+> 详见 `docs/E2E_COLLECTION_VERIFICATION_2026-06-04.md` §3.6
+
+| Bug | 文件 | 问题 | 修复 |
+|-----|------|------|------|
+| port 静默丢弃 | `internal/screenshot/router.go:769-773` | Extension 发 `"80"`（string），Go 只认 `float64`/`int` | 新增 `string` → `strconv.Atoi` |
+| status_code 静默丢弃 | `internal/screenshot/router.go:786-788` | 同上 | 同上 |
+| banner 映射缺失 | `internal/screenshot/router.go:780-782` | Extension 发 `banner`，Go 只映射 `body_snippet` | 新增 `banner` → `BodySnippet` 回退（`body_snippet` 优先） |
+| known 字段不全 | `internal/screenshot/router.go:809-814` | `banner`/`os` 未标记 → Extra 重复 | 补全 known map |
+
+**测试覆盖**: 5 新测试（`router_test.go`），`go test -race ./...` 全绿。
+
+### 测试脚本改动
+
+| 文件 | 改动 |
+|------|------|
+| `tools/test_dom_selectors.mjs` | 端口限定重写：6 个 IP+port 组合 |
+| 同上 | Hunter URL 修复：`search=base64url()` |
+| 同上 | ZoomEye URL 修复：`q=ip:X.X.X.X` |
+| 同上 | 移除 Quake/Shodan 的"需登录"限制，纳入全量测试 |
+| 同上 | Windows 文件名校验（`:` → `_`） |
+
+### 遇到的问题
+
+1. **Quake CDP 反爬检测（2026-06-04）**：
+   - 用户手动查询有效，但通过 CDP 访问返回"暂无数据"或"用户缺少必要权限"
+   - 确认 Quake 检测到了自动化访问（`Page.navigate` CDP 协议），触发了反爬机制
+   - **解决方案**：必须走 Chrome Extension 路径（真实浏览器交互可绕过检测）
+   - **影响**：Quake DOM 选择器无法通过 CDP 验证，只能在 Extension E2E 阶段验证
+
+2. **飞书通知路径泄露（2026-06-04，已修复）**：
+   - 截图上传失败时错误消息暴露服务器文件路径
+   - 通知 Result 文本中嵌入完整路径（如 `screenshots/batch1/shot.png`）
+   - 修复：bot_channels 失败消息移除路径 + Result 路径剥离为仅文件名（`redactImagePaths`）
+   - 涉及文件：`bot_channels.go` + `scheduler.go`
+
+3. **Hunter URL 参数名错误**：
+   - 旧：`searchValue=base64(...)` → "语法不能为空"
+   - 正：`search=base64url(...)` → 已修复于 test_dom_selectors.mjs
+
+4. **ZoomEye 端口过滤不生效**：
+   - `+port:XX` 语法在 ZoomEye 当前版本中不支持
+   - 使用 `ip:X.X.X.X` 单 IP 查询已够精确
+
+### 下一步：Extension 端到端验证
+
+**目标**：验证 Extension 在真实浏览器中对各引擎的采集功能是否正常。
+
+**前置条件**：
+- ✅ Chrome CDP 可用（`--remote-debugging-port=9222`）+ junction 方式加载主 profile
+- ✅ Extension 已加载（开发者模式 → `tools/extension-screenshot/`）
+- ✅ 各引擎已登录（FOFA/Hunter/ZoomEye/Shodan 均验证通过，Quake 待验证）
+- ⏸️ 服务器未运行（需先 `go run ./cmd/unimap-web`）
+
+**验证步骤**：
+
+```bash
+# 1. 启动服务器
+go run ./cmd/unimap-web
+
+# 2. 确认 Extension 配对成功
+curl http://127.0.0.1:8448/api/v1/screenshot/bridge/status
+
+# 3. 触发批量截图/采集任务
+#    Web UI → 定时任务 → 创建截图任务 → 执行
+#    或通过 API 创建任务
+
+# 4. 检查采集结果
+#    查看 structured_collected_data 是否正确提取了 IP/Port/Title 等字段
+```
+
+**验证要点**（按引擎）：
+
+| 引擎 | 验证项 | 预期 |
+|------|--------|------|
+| FOFA | `.hsxa-meta-data-item` row + `span.hsxa-host` IP | IP 显示为 "X.X.X.X:Port" |
+| Hunter | `.q-table tbody tr` row + `td:nth-child(2)` IP | IP 正确提取 |
+| ZoomEye | `.search-result-item` row + card cells | IP/Port/Title 提取正确 |
+| Shodan | `.heading + div > div` row + `.result` cells | IP/Title/Banner 提取 |
+| Quake | 真实浏览器绕过反爬 | 待首次验证 |
+
+### 快速命令
+
+```bash
+# 启动 Chrome CDP（主 profile，junction 方式）
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\Users\ljw\AppData\Local\Temp\chrome-cdp-profile"
+
+# CDP 测试
+node tools/test_dom_selectors.mjs
+
+# 查看测试截图
+ls docs/test_screenshots/
+
+# 查看测试结果 JSON
+cat docs/test_screenshots/dom_selector_results.json
+```

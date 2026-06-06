@@ -39,10 +39,15 @@ metadata:
 - 飞书卡片：payload 上下文 + 详情 + 颜色状态头（蓝/红/橙）
 - 测试适配：executor_icp_test.go 更新断言
 
-### 未完成
-- P1: Chrome MCP DOM采集测试（5引擎选择器验证）
-- P2: Extension采集脚本更新（依赖P1）
-- P9: 截图飞书推送（需飞书 app 凭证上传图片获取 image_key）
+### 未完成 → 进行中
+
+- **P1**: Chrome MCP DOM采集测试 ✅ 4/5引擎通过（FOFA/Hunter/ZoomEye/Shodan ✅，Quake ❌ 反爬检测），CDP 4轮30测试完成
+- **P2**: Extension采集脚本更新 🟡 capture.js FOFA/Hunter/ZoomEye/Shodan选择器已修复；3 bug修复（waitForPageReady SPA超时、extractCellText作用域、Shodan选择器过时）；CANARY已清理；🟡 诊断日志已加（`web/screenshot_bridge_handlers.go` `[bridge-collect]` tag）；✅ **Go端 `parseStructuredCollectedData` 4项修复**（port/status_code string→int、banner→BodySnippet、known map）+ 5新测试；待重启 Chrome+服务器后测试定位 Shodan 0 assets 根因
+- **P9**: 截图飞书推送 ✅ 已完成（bot_channels.go + scheduler.go + 18单测 + UTF-8乱码三层防御 + 路径泄露修复）
+
+### P2 待定位问题
+- **Shodan 采集返回 0 assets**：CDP/Puppeteer 直测证明提取逻辑正确（10 items），但 Extension→Bridge→Server 链路返回空。已添加 `[bridge-collect]` 诊断日志在 PushResult 入口，下次重启 Chrome+Server 后运行 collect 测试即可看到 items count/前3条数据/诊断字段。
+- **关键注意事项**：Chrome MV3 service worker 不会热重载，修改 capture.js/background.js 后必须完全退出 Chrome 再重启。
 
 **Why:** 计划详见 `docs/SCHEDULER_OPTIMIZATION_PLAN.md`，实施记录详见 `docs/SCHEDULER_OPTIMIZATION_P3P4_REPORT.md`
 **How to apply:** 后续继续推进P1/P2/P7时参考此记录了解已完成的工作和发现的问题
