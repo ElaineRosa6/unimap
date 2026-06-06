@@ -28,6 +28,9 @@ type ChannelConfig struct {
 	Enabled        bool              `yaml:"enabled" json:"enabled"`
 	WebhookURL     string            `yaml:"webhook_url" json:"webhook_url"`
 	Secret         string            `yaml:"secret" json:"secret"`
+	AppID          string            `yaml:"app_id,omitempty" json:"app_id"`
+	AppSecret      string            `yaml:"app_secret,omitempty" json:"app_secret"`
+	ChatID         string            `yaml:"chat_id,omitempty" json:"chat_id"`
 	Headers        map[string]string `yaml:"headers" json:"headers"`
 	AllowPrivateIP bool              `yaml:"allow_private_ip" json:"allow_private_ip"`
 }
@@ -43,6 +46,11 @@ func NewChannelFromConfig(cfg ChannelConfig) (NotifyChannel, error) {
 		return NewDingTalkChannel(cfg.ID, cfg.WebhookURL, cfg.Secret, cfg.Enabled, cfg.AllowPrivateIP)
 	case "feishu":
 		return NewFeishuChannel(cfg.ID, cfg.WebhookURL, cfg.Secret, cfg.Enabled, cfg.AllowPrivateIP)
+	case "feishu_app":
+		if cfg.AppID == "" || cfg.AppSecret == "" || cfg.ChatID == "" {
+			return nil, fmt.Errorf("feishu_app requires app_id, app_secret, and chat_id")
+		}
+		return NewFeishuAppChannel(cfg.AppID, cfg.AppSecret, cfg.ChatID, cfg.Enabled), nil
 	case "wecom":
 		return NewWeComChannel(cfg.ID, cfg.WebhookURL, cfg.Enabled, cfg.AllowPrivateIP)
 	default:
