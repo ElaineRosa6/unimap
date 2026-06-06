@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
@@ -793,5 +794,66 @@ func TestBrowserQueryProvider_Table(t *testing.T) {
 				t.Fatalf("expected %s, got %s", tt.expectedType, actualType)
 			}
 		})
+	}
+}
+
+// ============================================================
+// handleGetAdminToken tests
+// ============================================================
+
+func TestHandleGetAdminToken_ReturnsToken(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "test-admin-token-123"
+	s := &Server{config: cfg}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/account/admin-token", nil)
+	w := httptest.NewRecorder()
+	s.handleGetAdminToken(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if ok, _ := resp["success"].(bool); !ok {
+		t.Fatalf("expected success=true, got %v", resp)
+	}
+	if tok, _ := resp["token"].(string); tok != "test-admin-token-123" {
+		t.Fatalf("expected token 'test-admin-token-123', got %q", tok)
+	}
+}
+
+func TestHandleGetAdminToken_AuthDisabled(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = false
+	s := &Server{config: cfg}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/account/admin-token", nil)
+	w := httptest.NewRecorder()
+	s.handleGetAdminToken(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if tok, _ := resp["token"].(string); tok != "" {
+		t.Fatalf("expected empty token when auth disabled, got %q", tok)
+	}
+}
+
+func TestHandleGetAdminToken_WrongMethod(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/account/admin-token", nil)
+	w := httptest.NewRecorder()
+	s.handleGetAdminToken(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
 	}
 }

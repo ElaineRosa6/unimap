@@ -40,8 +40,15 @@
 							</div>
 							<div class="account-info-row">
 								<span class="label">管理员 Token</span>
-								<span class="value">{{.tokenPrefix}}••••</span>
+								<span class="value">
+									<span id="token-display">{{.tokenPrefix}}••••</span>
+									<button type="button" class="btn btn-sm btn-copy" id="copy-token-btn" title="复制完整 Token">
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+										<span>复制</span>
+									</button>
+								</span>
 							</div>
+							<p class="form-text" style="margin-top:8px;">用于 Chrome Extension 桥接认证。复制后粘贴到 Extension 选项页面的 Admin Token 字段。</p>
 						</div>
 					</div>
 				</section>
@@ -72,6 +79,29 @@
 					this.setAttribute('aria-selected', 'true');
 					document.getElementById(this.dataset.tab).classList.add('active');
 				});
+			});
+
+			// Copy admin token
+			document.getElementById('copy-token-btn').addEventListener('click', async () => {
+				const btn = document.getElementById('copy-token-btn');
+				try {
+					const res = await fetch('/api/v1/account/admin-token');
+					const data = await res.json();
+					if (!res.ok || !data.token) {
+						showToast(data.error || '未配置 Admin Token', 'error');
+						return;
+					}
+					await navigator.clipboard.writeText(data.token);
+					btn.classList.add('copied');
+					btn.querySelector('span').textContent = '已复制';
+					showToast('Token 已复制到剪贴板', 'success');
+					setTimeout(() => {
+						btn.classList.remove('copied');
+						btn.querySelector('span').textContent = '复制';
+					}, 2000);
+				} catch (err) {
+					showToast('复制失败: ' + err.message, 'error');
+				}
 			});
 
 			document.getElementById('change-password-form').addEventListener('submit', async (e) => {
