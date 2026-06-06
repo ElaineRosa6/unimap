@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -770,6 +771,10 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 			asset.Port = int(v)
 		} else if v, ok := item["port"].(int); ok {
 			asset.Port = v
+		} else if v, ok := item["port"].(string); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				asset.Port = n
+			}
 		}
 		if v, ok := item["protocol"].(string); ok {
 			asset.Protocol = v
@@ -777,7 +782,9 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 		if v, ok := item["host"].(string); ok {
 			asset.Host = v
 		}
-		if v, ok := item["body_snippet"].(string); ok {
+		if v, ok := item["body_snippet"].(string); ok && v != "" {
+			asset.BodySnippet = v
+		} else if v, ok := item["banner"].(string); ok && v != "" {
 			asset.BodySnippet = v
 		}
 		if v, ok := item["server"].(string); ok {
@@ -785,6 +792,10 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 		}
 		if v, ok := item["status_code"].(float64); ok {
 			asset.StatusCode = int(v)
+		} else if v, ok := item["status_code"].(string); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				asset.StatusCode = n
+			}
 		}
 		if v, ok := item["country_code"].(string); ok {
 			asset.CountryCode = v
@@ -809,8 +820,9 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 		known := map[string]bool{
 			"url": true, "title": true, "ip": true, "port": true,
 			"protocol": true, "host": true, "body_snippet": true,
-			"server": true, "status_code": true, "country_code": true,
-			"region": true, "city": true, "asn": true, "org": true, "isp": true,
+			"banner": true, "server": true, "status_code": true,
+			"country_code": true, "region": true, "city": true,
+			"asn": true, "org": true, "isp": true, "os": true,
 		}
 		for k, v := range item {
 			if !known[k] {

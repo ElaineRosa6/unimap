@@ -490,3 +490,104 @@ func TestParseStructuredCollectedData_MissingItemsKey(t *testing.T) {
 		t.Fatal("expected total 0 and has_more false")
 	}
 }
+
+func TestParseStructuredCollectedData_PortAsString(t *testing.T) {
+	// Extension sends port as a string (from DOM text content), not a number
+	data := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"ip":   "10.0.0.1",
+				"port": "80",
+			},
+		},
+	}
+	assets, _, _ := parseStructuredCollectedData(data, "shodan")
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 asset, got %d", len(assets))
+	}
+	if assets[0].Port != 80 {
+		t.Fatalf("expected port 80 from string, got %d", assets[0].Port)
+	}
+}
+
+func TestParseStructuredCollectedData_PortAsInvalidString(t *testing.T) {
+	data := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"ip":   "10.0.0.1",
+				"port": "not-a-number",
+			},
+		},
+	}
+	assets, _, _ := parseStructuredCollectedData(data, "shodan")
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 asset, got %d", len(assets))
+	}
+	if assets[0].Port != 0 {
+		t.Fatalf("expected port 0 for invalid string, got %d", assets[0].Port)
+	}
+}
+
+func TestParseStructuredCollectedData_StatusCodeAsString(t *testing.T) {
+	// Extension sends status_code as a string (from DOM text content)
+	data := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"ip":          "10.0.0.1",
+				"status_code": "200",
+			},
+		},
+	}
+	assets, _, _ := parseStructuredCollectedData(data, "hunter")
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 asset, got %d", len(assets))
+	}
+	if assets[0].StatusCode != 200 {
+		t.Fatalf("expected status_code 200 from string, got %d", assets[0].StatusCode)
+	}
+}
+
+func TestParseStructuredCollectedData_BannerToBodySnippet(t *testing.T) {
+	// Extension sends "banner" field (not "body_snippet")
+	data := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"ip":     "10.0.0.1",
+				"banner": "HTTP/1.1 200 OK\r\nServer: nginx",
+			},
+		},
+	}
+	assets, _, _ := parseStructuredCollectedData(data, "shodan")
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 asset, got %d", len(assets))
+	}
+	if assets[0].BodySnippet != "HTTP/1.1 200 OK\r\nServer: nginx" {
+		t.Fatalf("expected banner mapped to BodySnippet, got %q", assets[0].BodySnippet)
+	}
+	// banner should NOT appear in Extra (it's a known field)
+	if assets[0].Extra != nil {
+		if _, ok := assets[0].Extra["banner"]; ok {
+			t.Fatal("banner should not appear in Extra after mapping to BodySnippet")
+		}
+	}
+}
+
+func TestParseStructuredCollectedData_BodySnippetPreferredOverBanner(t *testing.T) {
+	// If both body_snippet and banner are present, body_snippet takes priority
+	data := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"ip":           "10.0.0.1",
+				"body_snippet": "Primary snippet",
+				"banner":       "Fallback banner",
+			},
+		},
+	}
+	assets, _, _ := parseStructuredCollectedData(data, "fofa")
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 asset, got %d", len(assets))
+	}
+	if assets[0].BodySnippet != "Primary snippet" {
+		t.Fatalf("expected body_snippet to take priority, got %q", assets[0].BodySnippet)
+	}
+}
