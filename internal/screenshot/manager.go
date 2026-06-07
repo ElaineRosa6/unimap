@@ -737,9 +737,9 @@ func (m *Manager) BuildSearchEngineURL(engine, query string) string {
 	case "fofa":
 		return fmt.Sprintf("%s/result?qbase64=%s", model.FOFAOfficialWebURL, encodedB64)
 	case "hunter":
-		return fmt.Sprintf("https://hunter.qianxin.com/list?searchValue=%s", encodedB64)
+		return fmt.Sprintf("https://hunter.qianxin.com/home/list?search=%s&conditions=", encodedB64)
 	case "quake":
-		return fmt.Sprintf("https://quake.360.cn/quake/#/searchResult?searchVal=%s", encodedQuery)
+		return fmt.Sprintf("https://quake.360.net/quake/#/searchResult?searchVal=%s&selectIndex=quake_service&latest=true", encodedQuery)
 	case "zoomeye":
 		return fmt.Sprintf("https://www.zoomeye.org/searchResult?q=%s", encodedQuery)
 	case "shodan":

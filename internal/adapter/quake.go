@@ -127,22 +127,33 @@ func (q *QuakeAdapter) buildCondition(field, op, value string) string {
 		"domain":      "domain",
 		"app":         "app",
 		"os":          "os",
-		"server":      "app",
+		"server":      "server",
 		"host":        "domain",
 		"url":         "url",
 		"status_code": "status_code",
+		"cert":        "cert",
 	}
 
 	if mapped, ok := mapping[field]; ok {
 		field = mapped
 	}
 
+	escaped := escapeQuotes(value)
+
 	if op == "!=" || op == "<>" {
-		return fmt.Sprintf(`NOT %s:"%s"`, field, value)
+		return fmt.Sprintf(`NOT %s:"%s"`, field, escaped)
+	}
+	// Quake 区间语法: port:[N TO M] / port:[N TO *]
+	// 注意: Quake 的 [N TO *] 包含 N 本身，因此 > 和 >= 输出相同结果（Quake 无排他下界语法）
+	if op == ">" || op == ">=" {
+		return fmt.Sprintf(`%s:[%s TO *]`, field, escaped)
+	}
+	if op == "<" || op == "<=" {
+		return fmt.Sprintf(`%s:[* TO %s]`, field, escaped)
 	}
 
 	// Quake syntax: field:"value"
-	return fmt.Sprintf(`%s:"%s"`, field, value)
+	return fmt.Sprintf(`%s:"%s"`, field, escaped)
 }
 
 // Search 执行搜索

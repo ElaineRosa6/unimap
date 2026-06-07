@@ -509,7 +509,7 @@ func TestHunterAdapter_Translate(t *testing.T) {
 					}},
 				},
 			}},
-			want: `(port="80" AND ip="1.2.3.4")`,
+			want: `(port="80" && ip="1.2.3.4")`,
 		},
 		{
 			name: "IN operator",
@@ -521,7 +521,7 @@ func TestHunterAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "http,https"},
 				},
 			}},
-			want: `(protocol="http" OR protocol="https")`,
+			want: `(protocol="http" || protocol="https")`,
 		},
 		{
 			name: "field mapping port",
@@ -534,6 +534,42 @@ func TestHunterAdapter_Translate(t *testing.T) {
 				},
 			}},
 			want: `port="443"`,
+		},
+		{
+			name: "greater than",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "port",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: ">"},
+					{Type: "value", Value: "80"},
+				},
+			}},
+			want: `port>"80"`,
+		},
+		{
+			name: "field mapping server dot notation",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "server",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "nginx"},
+				},
+			}},
+			want: `header.server="nginx"`,
+		},
+		{
+			name: "field mapping os",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "os",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "centos"},
+				},
+			}},
+			want: `ip.os="centos"`,
 		},
 	}
 	for _, tt := range tests {
@@ -776,7 +812,7 @@ func TestShodanAdapter_Translate(t *testing.T) {
 					}},
 				},
 			}},
-			want: `(port:80 AND country:US)`,
+			want: `port:80 country:US`,
 		},
 		{
 			name: "IN operator",
@@ -788,7 +824,7 @@ func TestShodanAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80,443"},
 				},
 			}},
-			want: `(port:80 OR port:443)`,
+			want: `port:80,443`,
 		},
 		{
 			name: "field mapping port",
@@ -812,7 +848,61 @@ func TestShodanAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "nginx"},
 				},
 			}},
-			want: `title:nginx`,
+			want: `http.title:nginx`,
+		},
+		{
+			name: "greater than",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "port",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: ">"},
+					{Type: "value", Value: "80"},
+				},
+			}},
+			want: `port:>80`,
+		},
+		{
+			name: "less than or equal",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "port",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "<="},
+					{Type: "value", Value: "443"},
+				},
+			}},
+			want: `port:<=443`,
+		},
+		{
+			name: "OR logical (degraded to AND)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "logical",
+				Value: "OR",
+				Children: []*model.UQLNode{
+					{Type: "condition", Value: "port", Children: []*model.UQLNode{
+						{Type: "operator", Value: "="},
+						{Type: "value", Value: "80"},
+					}},
+					{Type: "condition", Value: "port", Children: []*model.UQLNode{
+						{Type: "operator", Value: "="},
+						{Type: "value", Value: "443"},
+					}},
+				},
+			}},
+			want: `port:80 port:443`,
+		},
+		{
+			name: "value with space gets quoted",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "org",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "Beijing University"},
+				},
+			}},
+			want: `org:"Beijing University"`,
 		},
 	}
 	for _, tt := range tests {
@@ -829,6 +919,30 @@ func TestShodanAdapter_Translate(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("Translate() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShodanQuote(t *testing.T) {
+	tests := []struct {
+		name string
+		val  string
+		want string
+	}{
+		{"empty", "", ""},
+		{"simple number", "80", "80"},
+		{"ip address", "1.2.3.4", "1.2.3.4"},
+		{"country code", "US", "US"},
+		{"with space", "Beijing University", `"Beijing University"`},
+		{"with double quote", `hello"world`, `"hello\"world"`},
+		{"special chars", "Cisco ASA", `"Cisco ASA"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shodanQuote(tt.val)
+			if got != tt.want {
+				t.Errorf("shodanQuote(%q) = %q, want %q", tt.val, got, tt.want)
 			}
 		})
 	}
@@ -1258,7 +1372,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80"},
 				},
 			}},
-			want: `+port:"80"`,
+			want: `port="80"`,
 		},
 		{
 			name: "not equal",
@@ -1270,7 +1384,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "CN"},
 				},
 			}},
-			want: `-country:"CN"`,
+			want: `country!="CN"`,
 		},
 		{
 			name: "AND logical",
@@ -1288,7 +1402,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 					}},
 				},
 			}},
-			want: `++port:"80" ++ip:"1.2.3.4"`,
+			want: `(port="80" && ip="1.2.3.4")`,
 		},
 		{
 			name: "OR logical",
@@ -1306,7 +1420,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 					}},
 				},
 			}},
-			want: `+port:"80" +port:"443"`,
+			want: `(port="80" || port="443")`,
 		},
 		{
 			name: "IN operator",
@@ -1318,7 +1432,79 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80,443"},
 				},
 			}},
-			want: `(+port:"80" +port:"443")`,
+			want: `(port="80" || port="443")`,
+		},
+		{
+			name: "field mapping body",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "body",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "login"},
+				},
+			}},
+			want: `http.body="login"`,
+		},
+		{
+			name: "field mapping server",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "server",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "nginx"},
+				},
+			}},
+			want: `http.header.server="nginx"`,
+		},
+		{
+			name: "exact match ==",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "title",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "=="},
+					{Type: "value", Value: "admin"},
+				},
+			}},
+			want: `title=="admin"`,
+		},
+		{
+			name: "greater than",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "port",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: ">"},
+					{Type: "value", Value: "80"},
+				},
+			}},
+			want: `port>"80"`,
+		},
+		{
+			name: "nested OR and AND",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "logical",
+				Value: "AND",
+				Children: []*model.UQLNode{
+					{Type: "condition", Value: "country", Children: []*model.UQLNode{
+						{Type: "operator", Value: "="},
+						{Type: "value", Value: "CN"},
+					}},
+					{Type: "logical", Value: "OR", Children: []*model.UQLNode{
+						{Type: "condition", Value: "service", Children: []*model.UQLNode{
+							{Type: "operator", Value: "="},
+							{Type: "value", Value: "ssh"},
+						}},
+						{Type: "condition", Value: "service", Children: []*model.UQLNode{
+							{Type: "operator", Value: "="},
+							{Type: "value", Value: "http"},
+						}},
+					}},
+				},
+			}},
+			want: `(country="CN" && (service="ssh" || service="http"))`,
 		},
 	}
 	for _, tt := range tests {

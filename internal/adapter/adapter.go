@@ -3,6 +3,7 @@ package adapter
 import (
 	"context"
 	"regexp"
+	"strings"
 
 	"github.com/unimap/project/internal/model"
 )
@@ -23,6 +24,12 @@ func sanitizeBody(body string) string {
 		body = body[:maxLogBodyLen] + "...(truncated)"
 	}
 	return tokenPattern.ReplaceAllString(body, "***")
+}
+
+// escapeQuotes escapes embedded double quotes in a value string.
+// Used by adapters that wrap values in double quotes to prevent syntax breakage.
+func escapeQuotes(v string) string {
+	return strings.ReplaceAll(v, `"`, `\"`)
 }
 
 // EngineAdapter 引擎适配器接口

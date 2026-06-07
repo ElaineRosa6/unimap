@@ -17,8 +17,8 @@ func TestBuildSearchEngineURL_AllEngines(t *testing.T) {
 	}{
 		{"fofa", "test", "https://fofa.info/result?qbase64="},
 		{"FOFA", "test", "https://fofa.info/result?qbase64="},
-		{"hunter", "hello world", "https://hunter.qianxin.com/list?searchValue="},
-		{"quake", "port:80", "https://quake.360.cn/quake/#/searchResult?searchVal="},
+		{"hunter", "hello world", "https://hunter.qianxin.com/home/list?search="},
+		{"quake", "port:80", "https://quake.360.net/quake/#/searchResult?searchVal="},
 		{"zoomeye", "ip:1.2.3.4", "https://www.zoomeye.org/searchResult?q="},
 		{"shodan", "port:443", "https://www.shodan.io/search?query="},
 		{"SHODAN", "test", "https://www.shodan.io/search?query="},

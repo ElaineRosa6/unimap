@@ -73,7 +73,7 @@ func (z *ZoomEyeAdapter) translateNode(node *model.UQLNode) string {
 				for _, v := range values {
 					conditions = append(conditions, z.buildCondition(field, "=", v))
 				}
-				return "(" + strings.Join(conditions, " ") + ")"
+				return "(" + strings.Join(conditions, " || ") + ")"
 			}
 
 			return z.buildCondition(field, op, val)
@@ -84,9 +84,9 @@ func (z *ZoomEyeAdapter) translateNode(node *model.UQLNode) string {
 			left := z.translateNode(node.Children[0])
 			right := z.translateNode(node.Children[1])
 			if node.Value == "OR" {
-				return fmt.Sprintf("%s %s", left, right)
+				return fmt.Sprintf("(%s || %s)", left, right)
 			}
-			return fmt.Sprintf("+%s +%s", left, right)
+			return fmt.Sprintf("(%s && %s)", left, right)
 		}
 	}
 
@@ -94,11 +94,11 @@ func (z *ZoomEyeAdapter) translateNode(node *model.UQLNode) string {
 }
 
 func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
-	// 字段映射
+	// 字段映射 — v2 API 语法: field="value" (非 v1 的 +field:"value")
 	mapping := map[string]string{
-		"body":        "site",
+		"body":        "http.body",
 		"title":       "title",
-		"header":      "headers",
+		"header":      "http.header",
 		"port":        "port",
 		"protocol":    "service",
 		"ip":          "ip",
@@ -108,30 +108,41 @@ func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
 		"asn":         "asn",
 		"org":         "org",
 		"isp":         "isp",
-		"domain":      "hostname",
+		"domain":      "domain",
 		"app":         "app",
 		"os":          "os",
 		"device":      "device",
 		"banner":      "banner",
-		"server":      "app",
+		"server":      "http.header.server",
 		"host":        "hostname",
 		"url":         "site",
-		"status_code": "site",
+		"status_code": "http.header.status_code",
+		"cert":        "ssl",
 	}
 
 	if mapped, ok := mapping[field]; ok {
 		field = mapped
 	}
 
-	prefix := ""
-	if op == "!=" || op == "<>" {
-		prefix = "-"
-	} else {
-		prefix = "+"
-	}
+	escaped := escapeQuotes(value)
 
-	// ZoomEye search syntax: app:"nginx" or +app:"nginx" -app:"apache"
-	return fmt.Sprintf(`%s%s:"%s"`, prefix, field, value)
+	switch op {
+	case "==":
+		return fmt.Sprintf(`%s=="%s"`, field, escaped)
+	case "!=", "<>":
+		return fmt.Sprintf(`%s!="%s"`, field, escaped)
+	case ">":
+		return fmt.Sprintf(`%s>"%s"`, field, escaped)
+	case ">=":
+		return fmt.Sprintf(`%s>="%s"`, field, escaped)
+	case "<":
+		return fmt.Sprintf(`%s<"%s"`, field, escaped)
+	case "<=":
+		return fmt.Sprintf(`%s<="%s"`, field, escaped)
+	default:
+		// =, CONTAINS 等均为模糊匹配
+		return fmt.Sprintf(`%s="%s"`, field, escaped)
+	}
 }
 
 // Search 执行搜索
