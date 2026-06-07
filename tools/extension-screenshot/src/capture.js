@@ -555,6 +555,21 @@ export async function extractEngineAssets(tabId) {
           return loginKeywords.some(kw => text.includes(kw));
         }
 
+        // queryOne MUST be defined inside the injected function — chrome.scripting
+        // .executeScript serializes only the function body, so module-level helpers
+        // are undefined in the page scope and throw ReferenceError (same class of bug
+        // as the extractCellText scope fix). Missing this caused selector-based
+        // extraction to throw at the pagination step → empty items → 0 assets.
+        function queryOne(root, selectors) {
+          if (!selectors) return null;
+          const list = Array.isArray(selectors) ? selectors : [selectors];
+          for (const sel of list) {
+            const el = root.querySelector(sel);
+            if (el) return el;
+          }
+          return null;
+        }
+
         function extractCellTextFromCells(cells, cfg) {
           const el = cfg.selector.includes("td:nth-child")
             ? (() => {
