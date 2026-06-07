@@ -52,8 +52,12 @@ async function parseResponse(resp) {
   }
 
   if (!resp.ok) {
-    const code = body?.code || body?.errorCode || "http_error";
-    const message = body?.message || body?.error || resp.statusText;
+    // UniMap API wraps errors in { error: { code, message } }.
+    // Also handle flat { code, message } and { error: "string" } formats.
+    const errObj = body?.error;
+    const code = (errObj?.code) || body?.code || body?.errorCode || "http_error";
+    const message = (errObj?.message) || body?.message ||
+      (typeof body?.error === "string" ? body.error : null) || resp.statusText;
     throw new Error(`${code}: ${message}`);
   }
   return body;
@@ -98,5 +102,5 @@ export async function apiPostBridgeSigned(path, body, token) {
 }
 
 export async function bridgeRotateToken(token) {
-  return apiPost("/api/screenshot/bridge/token/rotate", { revoke_old: true }, token);
+  return apiPost("/api/v1/screenshot/bridge/token/rotate", { revoke_old: true }, token);
 }

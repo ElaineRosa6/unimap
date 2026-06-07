@@ -36,7 +36,7 @@ func setupBackupServer(t *testing.T, tmpDir string) *Server {
 func TestHandleCreateBackup_NoConfig(t *testing.T) {
 	s := &Server{config: nil}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/backup/create", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/backup/create", nil)
 	req.Header.Set("Origin", "http://localhost:8448")
 	rec := httptest.NewRecorder()
 
@@ -56,7 +56,7 @@ func TestHandleCreateBackup_WithSources(t *testing.T) {
 
 	s := setupBackupServer(t, tmpDir)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/backup/create", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/backup/create", nil)
 	req.Header.Set("Origin", "http://localhost:8448")
 	rec := httptest.NewRecorder()
 
@@ -77,7 +77,7 @@ func TestHandleListBackups_Empty(t *testing.T) {
 
 	s := setupBackupServer(t, tmpDir)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/backup/list", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/backup/list", nil)
 	rec := httptest.NewRecorder()
 
 	s.handleListBackups(rec, req)
@@ -97,7 +97,7 @@ func TestHandleListBackups_AfterCreate(t *testing.T) {
 	s := setupBackupServer(t, tmpDir)
 
 	// 先创建一个备份
-	createReq := httptest.NewRequest(http.MethodPost, "/api/backup/create", nil)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/backup/create", nil)
 	createReq.Header.Set("Origin", "http://localhost:8448")
 	createRec := httptest.NewRecorder()
 	s.handleCreateBackup(createRec, createReq)
@@ -107,7 +107,7 @@ func TestHandleListBackups_AfterCreate(t *testing.T) {
 	}
 
 	// 然后列出备份
-	listReq := httptest.NewRequest(http.MethodGet, "/api/backup/list", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/backup/list", nil)
 	listRec := httptest.NewRecorder()
 	s.handleListBackups(listRec, listReq)
 
@@ -160,4 +160,3 @@ func TestDirExists(t *testing.T) {
 		t.Error("dirExists should return false for file")
 	}
 }
-

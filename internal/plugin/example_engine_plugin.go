@@ -100,7 +100,7 @@ func (e *ExampleEnginePlugin) Translate(ast *model.UQLAST) (string, error) {
 	return fmt.Sprintf("%+v", ast.Root), nil
 }
 
-func (e *ExampleEnginePlugin) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (e *ExampleEnginePlugin) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if !e.started.Load() {
 		return nil, fmt.Errorf("plugin %s not started", e.name)
 	}
@@ -135,4 +135,3 @@ func (e *ExampleEnginePlugin) RateLimit() RateLimitConfig {
 		RequestsPerMinute: 30,
 	}
 }
-

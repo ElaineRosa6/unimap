@@ -208,13 +208,16 @@ func (p *Pool) startLoadMonitoring() {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	for atomic.LoadInt32(&p.running) == 1 {
-		select {
-		case <-ticker.C:
-			p.adjustConcurrency()
-		default:
-			time.Sleep(100 * time.Millisecond)
+	// 纯 ticker 阻塞，避免忙等待空转 CPU。
+	// 不读取 p.exitCh：该通道被 adjustConcurrency 用于精准终止超额 worker，
+	// 监控协程若读取会窃取信号导致 worker 泄漏。改为每个 tick 检查 running 标志，
+	// Stop 时 running→0，至多 5s 后退出（Stop 自带 30s 超时容忍）。
+	for {
+		<-ticker.C
+		if atomic.LoadInt32(&p.running) == 0 {
+			return
 		}
+		p.adjustConcurrency()
 	}
 }
 

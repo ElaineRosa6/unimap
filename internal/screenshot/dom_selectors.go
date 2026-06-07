@@ -3,10 +3,10 @@ package screenshot
 // engineSelectors defines CSS selectors for extracting structured asset data
 // from a search engine's web results page.
 type engineSelectors struct {
-	RowSelector    string            // CSS selector for a single result row
-	ExtractJS      string            // JavaScript snippet to run on the page for data extraction
-	PaginationNext string            // CSS selector for the "next page" button
-	TotalSelector  string            // CSS selector for the total results count indicator
+	RowSelector    string // CSS selector for a single result row
+	ExtractJS      string // JavaScript snippet to run on the page for data extraction
+	PaginationNext string // CSS selector for the "next page" button
+	TotalSelector  string // CSS selector for the total results count indicator
 }
 
 // selectorsByEngine maps engine names to their DOM extraction selectors.
@@ -14,26 +14,26 @@ type engineSelectors struct {
 // adjustment when engine frontends change.
 var selectorsByEngine = map[string]*engineSelectors{
 	"fofa": {
-		RowSelector:   "table.el-table__body tr.el-table__row",
-		ExtractJS:     extractFofaJS,
+		RowSelector:    "table.el-table__body tr.el-table__row",
+		ExtractJS:      extractFofaJS,
 		PaginationNext: "button.btn-next",
 		TotalSelector:  ".search-list-head span:first-child",
 	},
 	"hunter": {
-		RowSelector:   "table.table tbody tr",
-		ExtractJS:     extractHunterJS,
+		RowSelector:    "table.table tbody tr",
+		ExtractJS:      extractHunterJS,
 		PaginationNext: "li.next a",
 		TotalSelector:  ".pull-left.m-b span",
 	},
 	"zoomeye": {
-		RowSelector:   "table.table-condensed tbody tr",
-		ExtractJS:     extractZoomEyeJS,
+		RowSelector:    "table.table-condensed tbody tr",
+		ExtractJS:      extractZoomEyeJS,
 		PaginationNext: "ul.pagination li.next a",
 		TotalSelector:  ".result-count",
 	},
 	"quake": {
-		RowSelector:   "table tbody tr",
-		ExtractJS:     extractQuakeJS,
+		RowSelector:    "table tbody tr",
+		ExtractJS:      extractQuakeJS,
 		PaginationNext: "li.ant-pagination-next button",
 		TotalSelector:  ".total-count",
 	},

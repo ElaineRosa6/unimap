@@ -1,0 +1,4 @@
+{
+  "urls": ["https://www.baidu.com", "https://www.bing.com"],
+  "concurrency": 2
+}

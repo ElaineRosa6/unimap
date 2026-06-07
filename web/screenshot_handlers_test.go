@@ -60,7 +60,7 @@ func TestHandleScreenshotBatchesAndFiles(t *testing.T) {
 
 	s := buildTestServerWithScreenshotBase(baseDir)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/batches", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/batches", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshotBatches(w, req)
 	if w.Code != http.StatusOK {
@@ -78,7 +78,7 @@ func TestHandleScreenshotBatchesAndFiles(t *testing.T) {
 		t.Fatalf("unexpected batch response: %+v", batchResp)
 	}
 
-	reqFiles := httptest.NewRequest(http.MethodGet, "/api/screenshot/batches/files?batch=batch-a", nil)
+	reqFiles := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/batches/files?batch=batch-a", nil)
 	wFiles := httptest.NewRecorder()
 	s.handleScreenshotBatchFiles(wFiles, reqFiles)
 	if wFiles.Code != http.StatusOK {
@@ -109,7 +109,7 @@ func TestHandleScreenshotDeleteSafety(t *testing.T) {
 
 	s := buildTestServerWithScreenshotBase(baseDir)
 
-	badReq := httptest.NewRequest(http.MethodDelete, "/api/screenshot/file/delete?batch=../evil&file=a.png", nil)
+	badReq := httptest.NewRequest(http.MethodDelete, "/api/v1/screenshot/file/delete?batch=../evil&file=a.png", nil)
 	badReq.Header.Set("Origin", "http://localhost:8448")
 	badW := httptest.NewRecorder()
 	s.handleScreenshotFileDelete(badW, badReq)
@@ -117,7 +117,7 @@ func TestHandleScreenshotDeleteSafety(t *testing.T) {
 		t.Fatalf("expected 400 for traversal, got %d", badW.Code)
 	}
 
-	okReq := httptest.NewRequest(http.MethodDelete, "/api/screenshot/file/delete?batch=batch-z&file=a.png", nil)
+	okReq := httptest.NewRequest(http.MethodDelete, "/api/v1/screenshot/file/delete?batch=batch-z&file=a.png", nil)
 	okReq.Header.Set("Origin", "http://localhost:8448")
 	okW := httptest.NewRecorder()
 	s.handleScreenshotFileDelete(okW, okReq)
@@ -135,7 +135,7 @@ func TestHandleScreenshotDeleteSafety(t *testing.T) {
 
 func TestHandleScreenshot_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshot(w, req)
 
@@ -147,7 +147,7 @@ func TestHandleScreenshot_WrongMethod(t *testing.T) {
 func TestHandleScreenshot_MissingURL(t *testing.T) {
 	s := &Server{}
 	body := strings.NewReader(`{"url":""}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
@@ -163,7 +163,7 @@ func TestHandleScreenshot_MissingURL(t *testing.T) {
 
 func TestHandleScreenshot_EmptyBody(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot", nil)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
@@ -177,7 +177,7 @@ func TestHandleScreenshot_EmptyBody(t *testing.T) {
 func TestHandleScreenshot_PrivateIPBlocked(t *testing.T) {
 	s := &Server{}
 	body := strings.NewReader(`{"url":"http://127.0.0.1:8080"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
@@ -194,7 +194,7 @@ func TestHandleScreenshot_PrivateIPBlocked(t *testing.T) {
 func TestHandleScreenshot_PrivateIPBlockedLocalhost(t *testing.T) {
 	s := &Server{}
 	body := strings.NewReader(`{"url":"http://localhost:3000/admin"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
@@ -214,7 +214,7 @@ func TestHandleScreenshot_PrivateIPBlockedLocalhost(t *testing.T) {
 
 func TestHandleSearchEngineScreenshot_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/engine", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/engine", nil)
 	w := httptest.NewRecorder()
 	s.handleSearchEngineScreenshot(w, req)
 
@@ -225,7 +225,7 @@ func TestHandleSearchEngineScreenshot_WrongMethod(t *testing.T) {
 
 func TestHandleSearchEngineScreenshot_NoScreenshotApp(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/engine?engine=fofa&query=test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/engine?engine=fofa&query=test", nil)
 	w := httptest.NewRecorder()
 	s.handleSearchEngineScreenshot(w, req)
 
@@ -239,7 +239,7 @@ func TestHandleSearchEngineScreenshot_NoScreenshotApp(t *testing.T) {
 
 func TestHandleSearchEngineScreenshot_MissingQuery(t *testing.T) {
 	s := buildTestServerWithScreenshotBase(t.TempDir())
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/engine?engine=fofa", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/engine?engine=fofa", nil)
 	w := httptest.NewRecorder()
 	s.handleSearchEngineScreenshot(w, req)
 
@@ -253,7 +253,7 @@ func TestHandleSearchEngineScreenshot_MissingQuery(t *testing.T) {
 
 func TestHandleSearchEngineScreenshot_MissingEngine(t *testing.T) {
 	s := buildTestServerWithScreenshotBase(t.TempDir())
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/engine?query=test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/engine?query=test", nil)
 	w := httptest.NewRecorder()
 	s.handleSearchEngineScreenshot(w, req)
 
@@ -271,7 +271,7 @@ func TestHandleSearchEngineScreenshot_MissingEngine(t *testing.T) {
 
 func TestHandleBatchScreenshot_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/batch", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/batch", nil)
 	w := httptest.NewRecorder()
 	s.handleBatchScreenshot(w, req)
 
@@ -283,7 +283,7 @@ func TestHandleBatchScreenshot_WrongMethod(t *testing.T) {
 func TestHandleBatchScreenshot_NoScreenshotApp(t *testing.T) {
 	s := &Server{}
 	body := strings.NewReader(`{"query_id":"1","engines":[]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/batch", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch", body)
 	w := httptest.NewRecorder()
 	s.handleBatchScreenshot(w, req)
 
@@ -298,7 +298,7 @@ func TestHandleBatchScreenshot_NoScreenshotApp(t *testing.T) {
 func TestHandleBatchScreenshot_PrivateTargetURL(t *testing.T) {
 	s := buildTestServerWithScreenshotBase(t.TempDir())
 	body := strings.NewReader(`{"query_id":"1","targets":[{"url":"http://192.168.1.1:8080"}]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/batch", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
@@ -315,7 +315,7 @@ func TestHandleBatchScreenshot_PrivateTargetURL(t *testing.T) {
 func TestHandleBatchScreenshot_PrivateTargetIPField(t *testing.T) {
 	s := buildTestServerWithScreenshotBase(t.TempDir())
 	body := strings.NewReader(`{"query_id":"1","targets":[{"ip":"10.0.0.1"}]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/batch", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
@@ -332,7 +332,7 @@ func TestHandleBatchScreenshot_PrivateTargetIPField(t *testing.T) {
 func TestHandleBatchScreenshot_InvalidJSON(t *testing.T) {
 	s := buildTestServerWithScreenshotBase(t.TempDir())
 	body := strings.NewReader(`not-json`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/batch", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
@@ -349,7 +349,7 @@ func TestHandleBatchScreenshot_InvalidJSON(t *testing.T) {
 
 func TestHandleBatchURLsScreenshot_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/batch-urls", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/batch-urls", nil)
 	w := httptest.NewRecorder()
 	s.handleBatchURLsScreenshot(w, req)
 
@@ -361,7 +361,7 @@ func TestHandleBatchURLsScreenshot_WrongMethod(t *testing.T) {
 func TestHandleBatchURLsScreenshot_NoScreenshotApp(t *testing.T) {
 	s := &Server{}
 	body := strings.NewReader(`{"urls":["https://example.com"]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/batch-urls", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch-urls", body)
 	w := httptest.NewRecorder()
 	s.handleBatchURLsScreenshot(w, req)
 
@@ -376,7 +376,7 @@ func TestHandleBatchURLsScreenshot_NoScreenshotApp(t *testing.T) {
 func TestHandleBatchURLsScreenshot_PrivateIP(t *testing.T) {
 	s := buildTestServerWithScreenshotBase(t.TempDir())
 	body := strings.NewReader(`{"urls":["https://127.0.0.1:8080"]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/batch-urls", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch-urls", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
@@ -393,7 +393,7 @@ func TestHandleBatchURLsScreenshot_PrivateIP(t *testing.T) {
 func TestHandleBatchURLsScreenshot_InvalidURL(t *testing.T) {
 	s := buildTestServerWithScreenshotBase(t.TempDir())
 	body := strings.NewReader(`{"urls":["://invalid"]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/batch-urls", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch-urls", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
@@ -410,7 +410,7 @@ func TestHandleBatchURLsScreenshot_InvalidURL(t *testing.T) {
 func TestHandleBatchURLsScreenshot_InvalidScheme(t *testing.T) {
 	s := buildTestServerWithScreenshotBase(t.TempDir())
 	body := strings.NewReader(`{"urls":["file:///etc/passwd"]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/batch-urls", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch-urls", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
@@ -427,7 +427,7 @@ func TestHandleBatchURLsScreenshot_InvalidScheme(t *testing.T) {
 func TestHandleBatchURLsScreenshot_InvalidJSON(t *testing.T) {
 	s := buildTestServerWithScreenshotBase(t.TempDir())
 	body := strings.NewReader(`not-json`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/batch-urls", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch-urls", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
@@ -444,7 +444,7 @@ func TestHandleBatchURLsScreenshot_InvalidJSON(t *testing.T) {
 
 func TestHandleScreenshotRouterStatus(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/router/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/router/status", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshotRouterStatus(w, req)
 
@@ -493,7 +493,7 @@ func TestResolveScreenshotBatchDir_TraversalBatch(t *testing.T) {
 
 func TestHandleScreenshotBatchDelete_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/batch/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/batch/test", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshotBatchDelete(w, req)
 
@@ -508,7 +508,7 @@ func TestHandleScreenshotBatchDelete_WrongMethod(t *testing.T) {
 
 func TestHandleScreenshotFileDelete_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/file/test.png", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/file/test.png", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshotFileDelete(w, req)
 
@@ -516,5 +516,3 @@ func TestHandleScreenshotFileDelete_WrongMethod(t *testing.T) {
 		t.Fatalf("expected 405, got %d", w.Code)
 	}
 }
-
-

@@ -18,13 +18,22 @@ type NotifyGlobalCfg struct {
 type Registry struct {
 	mu       sync.RWMutex
 	channels map[string]NotifyChannel
+	pinned   map[string]bool // 不受 Reload 影响的固定渠道
 }
 
 // NewRegistry 创建空的注册表
 func NewRegistry() *Registry {
 	return &Registry{
 		channels: make(map[string]NotifyChannel),
+		pinned:   make(map[string]bool),
 	}
+}
+
+// Pin 标记一个渠道为"固定"，Reload 时不会被移除
+func (r *Registry) Pin(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pinned[id] = true
 }
 
 // Register 注册一个渠道
@@ -96,13 +105,13 @@ func (r *Registry) Reload(chanCfgs []ChannelConfig) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// 找出需要移除的渠道
+	// 找出需要移除的渠道（跳过固定渠道）
 	existing := make(map[string]bool)
 	for _, cfg := range chanCfgs {
 		existing[cfg.ID] = true
 	}
 	for id, ch := range r.channels {
-		if !existing[id] {
+		if !existing[id] && !r.pinned[id] {
 			ch.Close()
 			delete(r.channels, id)
 			logger.Infof("notify channel %q removed", id)
@@ -122,4 +131,3 @@ func (r *Registry) Reload(chanCfgs []ChannelConfig) {
 		r.channels[cfg.ID] = ch
 	}
 }
-

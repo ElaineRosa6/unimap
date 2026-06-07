@@ -203,15 +203,15 @@ run_load_test "query" "GET" "/query?query=port%3A80&engines=fofa&type=ip" ""
 
 # 3. 截图接口（如果服务支持）
 log "=== Phase 3: Screenshot API ==="
-run_load_test "screenshot" "POST" "/api/screenshot" "$TEMP_DIR/screenshot.json"
+run_load_test "screenshot" "POST" "/api/v1/screenshot" "$TEMP_DIR/screenshot.json"
 
 # 4. 篡改检测接口
 log "=== Phase 4: Tamper Check API ==="
-run_load_test "tamper" "POST" "/api/tamper/check" "$TEMP_DIR/tamper.json"
+run_load_test "tamper" "POST" "/api/v1/tamper/check" "$TEMP_DIR/tamper.json"
 
 # 5. 导入 URL 接口
 log "=== Phase 5: Import URLs API ==="
-run_load_test "import_urls" "POST" "/api/import/urls" "$TEMP_DIR/import_urls.json"
+run_load_test "import_urls" "POST" "/api/v1/import/urls" "$TEMP_DIR/import_urls.json"
 
 # 6. 就绪检查
 log "=== Phase 6: Readiness Check ==="

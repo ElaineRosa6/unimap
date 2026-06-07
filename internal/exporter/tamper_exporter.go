@@ -37,7 +37,7 @@ func NewTamperJSONExporter() *TamperJSONExporter {
 // Export 导出为JSON文件
 func (e *TamperJSONExporter) Export(results []tamper.TamperCheckResult, filepath string) error {
 	exportResults := e.convertToExportFormat(results)
-	
+
 	file, err := os.Create(filepath)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
@@ -64,7 +64,7 @@ func NewTamperExcelExporter() *TamperExcelExporter {
 // Export 导出为Excel文件
 func (e *TamperExcelExporter) Export(results []tamper.TamperCheckResult, filepath string) error {
 	exportResults := e.convertToExportFormat(results)
-	
+
 	f := excelize.NewFile()
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -110,7 +110,7 @@ func (e *TamperExcelExporter) Export(results []tamper.TamperCheckResult, filepat
 // convertToExportFormat 转换为导出格式
 func (e *TamperJSONExporter) convertToExportFormat(results []tamper.TamperCheckResult) []TamperExportResult {
 	var exportResults []TamperExportResult
-	
+
 	for _, result := range results {
 		exportResult := TamperExportResult{
 			URL:          result.URL,

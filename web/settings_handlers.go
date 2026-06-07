@@ -50,4 +50,3 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
-

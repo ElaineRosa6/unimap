@@ -422,12 +422,12 @@ func TestRegistry_FailoverStrategy(t *testing.T) {
 
 func TestTaskRecord_Fields(t *testing.T) {
 	rec := TaskRecord{
-		TaskID:         "t1",
-		TaskType:       "scan",
-		Status:         "pending",
-		Priority:       5,
-		AssignedNode:   "n1",
-		Attempt:        0,
+		TaskID:       "t1",
+		TaskType:     "scan",
+		Status:       "pending",
+		Priority:     5,
+		AssignedNode: "n1",
+		Attempt:      0,
 	}
 	if rec.TaskID != "t1" {
 		t.Errorf("TaskID = %q, want t1", rec.TaskID)

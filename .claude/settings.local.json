@@ -36,9 +36,9 @@
       "mcp__chrome__chrome_fill_or_select",
       "mcp__chrome__chrome_click_element",
       "mcp__chrome__chrome_javascript",
-      "Bash(curl -s http://127.0.0.1:8448/api/screenshot/bridge/diagnostic)",
-      "Bash(curl -s -X POST http://127.0.0.1:8448/api/screenshot/bridge/pair -H 'Content-Type: application/json' -d '{\"client_id\":\"test-debug\",\"pair_code\":\"dev-pair\"}')",
-      "Bash(curl -s -X POST http://127.0.0.1:8448/api/screenshot/bridge/mock/result -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s http://127.0.0.1:8448/api/v1/screenshot/bridge/diagnostic)",
+      "Bash(curl -s -X POST http://127.0.0.1:8448/api/v1/screenshot/bridge/pair -H 'Content-Type: application/json' -d '{\"client_id\":\"test-debug\",\"pair_code\":\"dev-pair\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8448/api/v1/screenshot/bridge/mock/result -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
       "Bash(curl *)",
       "Bash(node --check D:/Project/Go_project/add-multi-engine-search/tools/extension-screenshot/src/capture.js)",
       "Bash(node --check D:/Project/Go_project/add-multi-engine-search/tools/extension-screenshot/src/background.js)",
@@ -67,7 +67,10 @@
       "Read(//c/Users/ljw/AppData/Local/Temp/claude/D--Project-Go-project-add-multi-engine-search/606e3650-8350-48b5-af99-0de53acda002/tasks/**)",
       "Bash(cd D:\\\\\\\\Project\\\\\\\\Go_project\\\\\\\\add-multi-engine-search)",
       "Bash(git diff *)",
-      "Bash(echo \"PID=$!\")"
+      "Bash(echo \"PID=$!\")",
+      "Bash(grep unimap_csrf /tmp/cookies2.txt)",
+      "Bash(node -e \"require\\('docx'\\)\")",
+      "Bash(NODE_PATH=\"D:/necessary/node/nodejs/node_modules\" node *)"
     ]
   }
 }

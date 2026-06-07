@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/unimap/project/internal/logger"
 )
 
 const (
@@ -134,16 +136,33 @@ func (s *Server) decryptToken(encrypted string) (string, error) {
 	return string(plaintext), nil
 }
 
+// isSecure returns true if the request arrived over TLS directly or via a
+// reverse proxy that sets the X-Forwarded-Proto header to "https".
+func isSecure(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
 // setSessionCookie creates a new session with a random session ID and encrypted admin token.
 // Cookie format: "sessionID:encryptedToken"
 func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request) error {
+	return s.setSessionCookieForUser(w, r, 0)
+}
+
+// setSessionCookieForUser creates a session for a specific user.
+// Cookie format: "sessionID:encryptedPayload" where payload = "userID:adminToken"
+// userID=0 means legacy single-user mode (no user DB).
+func (s *Server) setSessionCookieForUser(w http.ResponseWriter, r *http.Request, userID int64) error {
 	sessionID := generateSessionID()
-	encrypted, err := s.encryptToken(s.adminToken())
+	payload := fmt.Sprintf("%d:%s", userID, s.adminToken())
+	encrypted, err := s.encryptToken(payload)
 	if err != nil {
 		return fmt.Errorf("encrypt token: %w", err)
 	}
 	cookieValue := sessionID + ":" + encrypted
-	secure := r.TLS != nil
+	secure := isSecure(r)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    cookieValue,
@@ -158,23 +177,52 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request) error 
 
 // getSessionToken extracts and decrypts the session cookie. Returns "" if invalid or revoked.
 func (s *Server) getSessionToken(r *http.Request) string {
+	token, _ := s.getSessionInfo(r)
+	return token
+}
+
+// getSessionUserID extracts the user ID from the session cookie. Returns 0 if unavailable.
+func (s *Server) getSessionUserID(r *http.Request) int64 {
+	_, userID := s.getSessionInfo(r)
+	return userID
+}
+
+// getSessionInfo extracts both admin token and user ID from the session cookie.
+// Handles both new format ("userID:adminToken") and legacy format ("adminToken").
+func (s *Server) getSessionInfo(r *http.Request) (string, int64) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil || cookie.Value == "" {
-		return ""
+		return "", 0
 	}
 	parts := strings.SplitN(cookie.Value, ":", 2)
 	if len(parts) != 2 {
-		return ""
+		return "", 0
 	}
 	sessionID := parts[0]
 	if s.revocationStore != nil && s.revocationStore.IsRevoked(sessionID) {
-		return ""
+		return "", 0
 	}
-	token, err := s.decryptToken(parts[1])
+	decrypted, err := s.decryptToken(parts[1])
 	if err != nil {
-		return ""
+		return "", 0
 	}
-	return token
+	// New format: "userID:adminToken"
+	if idx := strings.Index(decrypted, ":"); idx > 0 {
+		userIDStr := decrypted[:idx]
+		token := decrypted[idx+1:]
+		var userID int64
+		for _, c := range userIDStr {
+			if c >= '0' && c <= '9' {
+				userID = userID*10 + int64(c-'0')
+			} else {
+				// Not a number, treat as legacy format
+				return decrypted, 0
+			}
+		}
+		return token, userID
+	}
+	// Legacy format: just the admin token
+	return decrypted, 0
 }
 
 // getSessionID extracts the session ID from the cookie. Returns "" if missing.
@@ -196,7 +244,7 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	if s.revocationStore != nil && sessionID != "" {
 		s.revocationStore.Revoke(sessionID, 24*time.Hour)
 	}
-	secure := r.TLS != nil
+	secure := isSecure(r)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
@@ -211,7 +259,7 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 func generateSessionID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
+		logger.Fatalf("failed to generate session ID: %v", err)
 	}
 	return hex.EncodeToString(b)
 }
@@ -220,14 +268,14 @@ func generateSessionID() string {
 func generateCSRFToken() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
+		logger.Fatalf("failed to generate CSRF token: %v", err)
 	}
 	return hex.EncodeToString(b)
 }
 
 // setCSRFCookie sets the CSRF cookie (readable by JS).
 func (s *Server) setCSRFCookie(w http.ResponseWriter, r *http.Request, token string) {
-	secure := r.TLS != nil
+	secure := isSecure(r)
 	http.SetCookie(w, &http.Cookie{
 		Name:     csrfCookieName,
 		Value:    token,

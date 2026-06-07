@@ -1,0 +1,6 @@
+{
+  "queries": ["baidu.com"],
+  "type": "web",
+  "page": 1,
+  "page_size": 40
+}

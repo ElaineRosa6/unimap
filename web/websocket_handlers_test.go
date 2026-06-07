@@ -50,7 +50,7 @@ func TestHandleWebSocketQuery_WithEngines_SendsQueryStart(t *testing.T) {
 		return nil
 	}
 
-	s.handleWebSocketQuery(nil, map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
+	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
 
 	mu.Lock()
 	msgs := make([]map[string]interface{}, len(messages))
@@ -88,7 +88,7 @@ func TestHandleWebSocketQuery_SendsQueryID(t *testing.T) {
 		return nil
 	}
 
-	s.handleWebSocketQuery(nil, map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
+	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
 
 	mu.Lock()
 	msgs := make([]map[string]interface{}, len(messages))
@@ -127,7 +127,7 @@ func TestHandleWebSocketQuery_QueryIDTracked(t *testing.T) {
 		return nil
 	}
 
-	s.handleWebSocketQuery(nil, map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
+	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
 
 	mu.Lock()
 	msgs := make([]map[string]interface{}, len(messages))
@@ -180,7 +180,7 @@ func TestUpdateQueryProgress_ExistingQuery_UpdatesState(t *testing.T) {
 		},
 	}
 
-	s.updateQueryProgress("q1", 75.0)
+	s.updateQueryProgress("test-conn", "q1", 75.0)
 
 	s.queryMutex.RLock()
 	progress := s.queryStatus["q1"].Progress
@@ -197,7 +197,7 @@ func TestUpdateQueryProgress_NonExistentQuery_NoChange(t *testing.T) {
 		queryStatus: make(map[string]*QueryStatus),
 	}
 
-	s.updateQueryProgress("nonexistent", 50.0)
+	s.updateQueryProgress("test-conn", "nonexistent", 50.0)
 
 	if len(s.queryStatus) != 0 {
 		t.Fatalf("expected no queryStatus entries, got %d", len(s.queryStatus))
@@ -218,7 +218,7 @@ func TestUpdateQueryProgress_DoesNotMoveBackward(t *testing.T) {
 		},
 	}
 
-	s.updateQueryProgress("q1", 25)
+	s.updateQueryProgress("test-conn", "q1", 25)
 
 	s.queryMutex.RLock()
 	progress := s.queryStatus["q1"].Progress
@@ -271,7 +271,7 @@ func TestHandleWebSocketQuery_PingPongMessages(t *testing.T) {
 		orchestrator: orch,
 		queryStatus:  make(map[string]*QueryStatus),
 	}
-	s.handleWebSocketQuery(nil, map[string]interface{}{"query": "ping"}, writeJSON)
+	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "ping"}, writeJSON)
 
 	// 由于没有引擎，应该返回 query_error
 	if len(messages) != 1 {
@@ -427,7 +427,7 @@ func TestHandleWebSocketQuery_EmptyQuery_ReturnsError(t *testing.T) {
 	}
 
 	s := &Server{}
-	s.handleWebSocketQuery(nil, map[string]interface{}{"query": ""}, writeJSON)
+	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": ""}, writeJSON)
 
 	if len(messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(messages))
@@ -449,7 +449,7 @@ func TestHandleWebSocketQuery_NoEngines_ReturnsError(t *testing.T) {
 	s := &Server{
 		orchestrator: adapter.NewEngineOrchestrator(),
 	}
-	s.handleWebSocketQuery(nil, map[string]interface{}{"query": "country=\"CN\""}, writeJSON)
+	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "country=\"CN\""}, writeJSON)
 
 	if len(messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(messages))
@@ -471,7 +471,7 @@ func TestUpdateQueryProgress_NonExistentQuery_NoBroadcast(t *testing.T) {
 		connManager: &ConnectionManager{connections: make(map[string]*managedConn)},
 		queryStatus: make(map[string]*QueryStatus),
 	}
-	s.updateQueryProgress("nonexistent", 50.0)
+	s.updateQueryProgress("test-conn", "nonexistent", 50.0)
 }
 
 func TestValidateQueryInput(t *testing.T) {
@@ -568,4 +568,3 @@ func TestMaskAPIKey(t *testing.T) {
 		})
 	}
 }
-

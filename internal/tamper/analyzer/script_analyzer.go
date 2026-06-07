@@ -14,68 +14,68 @@ type ScriptAnalyzer struct {
 // Patterns 检测模式
 type Patterns struct {
 	// 函数模式
-	FunctionPattern      *regexp.Regexp
+	FunctionPattern *regexp.Regexp
 	// DOM操作模式
-	DOMOperations        []*regexp.Regexp
+	DOMOperations []*regexp.Regexp
 	// 事件绑定模式
-	EventBindings        []*regexp.Regexp
+	EventBindings []*regexp.Regexp
 	// 动态代码执行模式
-	DynamicExecution     []*regexp.Regexp
+	DynamicExecution []*regexp.Regexp
 	// 网络请求模式
-	NetworkRequests      []*regexp.Regexp
+	NetworkRequests []*regexp.Regexp
 	// 危险操作模式
 	DangerousOperations []*regexp.Regexp
 }
 
 // AnalysisResult 分析结果
 type AnalysisResult struct {
-	Functions            []FunctionInfo
-	DOMOperations        []OperationInfo
-	EventBindings        []BindingInfo
-	DynamicExecution     []ExecutionInfo
-	NetworkRequests      []RequestInfo
+	Functions           []FunctionInfo
+	DOMOperations       []OperationInfo
+	EventBindings       []BindingInfo
+	DynamicExecution    []ExecutionInfo
+	NetworkRequests     []RequestInfo
 	DangerousOperations []OperationInfo
-	SuspiciousSignals    []string
+	SuspiciousSignals   []string
 }
 
 // FunctionInfo 函数信息
 type FunctionInfo struct {
-	Name        string
-	StartLine   int
-	EndLine     int
-	Parameters  []string
-	HasDynamicCode bool
+	Name               string
+	StartLine          int
+	EndLine            int
+	Parameters         []string
+	HasDynamicCode     bool
 	HasDOMManipulation bool
 }
 
 // OperationInfo DOM操作信息
 type OperationInfo struct {
-	Type        string
-	Target      string
-	Line        int
-	Pattern     string
+	Type    string
+	Target  string
+	Line    int
+	Pattern string
 }
 
 // BindingInfo 事件绑定信息
 type BindingInfo struct {
-	Element     string
-	Event       string
-	Handler     string
-	Line        int
+	Element string
+	Event   string
+	Handler string
+	Line    int
 }
 
 // ExecutionInfo 动态执行信息
 type ExecutionInfo struct {
-	Type        string
-	Code        string
-	Line        int
+	Type string
+	Code string
+	Line int
 }
 
 // RequestInfo 网络请求信息
 type RequestInfo struct {
-	Type        string
-	URL         string
-	Line        int
+	Type string
+	URL  string
+	Line int
 }
 
 // NewScriptAnalyzer 创建脚本分析器
@@ -125,37 +125,37 @@ func (a *ScriptAnalyzer) Analyze(script string) (*AnalysisResult, error) {
 	if script == "" {
 		return &AnalysisResult{}, nil
 	}
-	
+
 	result := &AnalysisResult{}
-	
+
 	// 分析函数
 	a.analyzeFunctions(script, result)
-	
+
 	// 分析DOM操作
 	a.analyzeDOMOperations(script, result)
-	
+
 	// 分析事件绑定
 	a.analyzeEventBindings(script, result)
-	
+
 	// 分析动态执行
 	a.analyzeDynamicExecution(script, result)
-	
+
 	// 分析网络请求
 	a.analyzeNetworkRequests(script, result)
-	
+
 	// 分析危险操作
 	a.analyzeDangerousOperations(script, result)
-	
+
 	// 检测可疑信号
 	a.detectSuspiciousSignals(result)
-	
+
 	return result, nil
 }
 
 // analyzeFunctions 分析函数
 func (a *ScriptAnalyzer) analyzeFunctions(script string, result *AnalysisResult) {
 	lines := strings.Split(script, "\n")
-	
+
 	for i, line := range lines {
 		matches := a.patterns.FunctionPattern.FindStringSubmatch(line)
 		if matches != nil && len(matches) >= 3 {
@@ -164,12 +164,12 @@ func (a *ScriptAnalyzer) analyzeFunctions(script string, result *AnalysisResult)
 				StartLine:  i + 1,
 				Parameters: strings.Split(strings.TrimSpace(matches[2]), ","),
 			}
-			
+
 			// 清理参数
 			for j, param := range function.Parameters {
 				function.Parameters[j] = strings.TrimSpace(param)
 			}
-			
+
 			result.Functions = append(result.Functions, function)
 		}
 	}
@@ -178,7 +178,7 @@ func (a *ScriptAnalyzer) analyzeFunctions(script string, result *AnalysisResult)
 // analyzeDOMOperations 分析DOM操作
 func (a *ScriptAnalyzer) analyzeDOMOperations(script string, result *AnalysisResult) {
 	lines := strings.Split(script, "\n")
-	
+
 	for i, line := range lines {
 		for _, pattern := range a.patterns.DOMOperations {
 			if pattern.MatchString(line) {
@@ -198,7 +198,7 @@ func (a *ScriptAnalyzer) analyzeDOMOperations(script string, result *AnalysisRes
 // analyzeEventBindings 分析事件绑定
 func (a *ScriptAnalyzer) analyzeEventBindings(script string, result *AnalysisResult) {
 	lines := strings.Split(script, "\n")
-	
+
 	for i, line := range lines {
 		// 分析addEventListener
 		matches := a.patterns.EventBindings[0].FindStringSubmatch(line)
@@ -212,7 +212,7 @@ func (a *ScriptAnalyzer) analyzeEventBindings(script string, result *AnalysisRes
 			result.EventBindings = append(result.EventBindings, binding)
 			continue
 		}
-		
+
 		// 分析on事件属性
 		matches = a.patterns.EventBindings[1].FindStringSubmatch(line)
 		if matches != nil && len(matches) >= 2 {
@@ -225,7 +225,7 @@ func (a *ScriptAnalyzer) analyzeEventBindings(script string, result *AnalysisRes
 			result.EventBindings = append(result.EventBindings, binding)
 			continue
 		}
-		
+
 		// 分析element.on事件
 		matches = a.patterns.EventBindings[2].FindStringSubmatch(line)
 		if matches != nil && len(matches) >= 2 {
@@ -243,13 +243,13 @@ func (a *ScriptAnalyzer) analyzeEventBindings(script string, result *AnalysisRes
 // analyzeDynamicExecution 分析动态执行
 func (a *ScriptAnalyzer) analyzeDynamicExecution(script string, result *AnalysisResult) {
 	lines := strings.Split(script, "\n")
-	
+
 	for i, line := range lines {
 		for _, pattern := range a.patterns.DynamicExecution {
 			if pattern.MatchString(line) {
 				match := pattern.FindString(line)
 				var execType string
-				
+
 				switch {
 				case strings.Contains(match, "eval"):
 					execType = "eval"
@@ -262,7 +262,7 @@ func (a *ScriptAnalyzer) analyzeDynamicExecution(script string, result *Analysis
 				default:
 					execType = "dynamic"
 				}
-				
+
 				execution := ExecutionInfo{
 					Type: execType,
 					Code: match,
@@ -277,13 +277,13 @@ func (a *ScriptAnalyzer) analyzeDynamicExecution(script string, result *Analysis
 // analyzeNetworkRequests 分析网络请求
 func (a *ScriptAnalyzer) analyzeNetworkRequests(script string, result *AnalysisResult) {
 	lines := strings.Split(script, "\n")
-	
+
 	for i, line := range lines {
 		for _, pattern := range a.patterns.NetworkRequests {
 			if pattern.MatchString(line) {
 				match := pattern.FindString(line)
 				var requestType string
-				
+
 				switch {
 				case strings.Contains(match, "XMLHttpRequest"):
 					requestType = "xhr"
@@ -296,7 +296,7 @@ func (a *ScriptAnalyzer) analyzeNetworkRequests(script string, result *AnalysisR
 				default:
 					requestType = "network"
 				}
-				
+
 				request := RequestInfo{
 					Type: requestType,
 					URL:  match,
@@ -311,13 +311,13 @@ func (a *ScriptAnalyzer) analyzeNetworkRequests(script string, result *AnalysisR
 // analyzeDangerousOperations 分析危险操作
 func (a *ScriptAnalyzer) analyzeDangerousOperations(script string, result *AnalysisResult) {
 	lines := strings.Split(script, "\n")
-	
+
 	for i, line := range lines {
 		for _, pattern := range a.patterns.DangerousOperations {
 			if pattern.MatchString(line) {
 				match := pattern.FindString(line)
 				var operationType string
-				
+
 				switch {
 				case strings.Contains(match, "cookie"):
 					operationType = "cookie"
@@ -330,7 +330,7 @@ func (a *ScriptAnalyzer) analyzeDangerousOperations(script string, result *Analy
 				default:
 					operationType = "dangerous"
 				}
-				
+
 				operation := OperationInfo{
 					Type:    operationType,
 					Target:  match,
@@ -349,7 +349,7 @@ func (a *ScriptAnalyzer) detectSuspiciousSignals(result *AnalysisResult) {
 	if len(result.DynamicExecution) > 0 {
 		result.SuspiciousSignals = append(result.SuspiciousSignals, "dynamic_code_execution")
 	}
-	
+
 	// 检测可疑的DOM操作
 	dangerousDOMCount := 0
 	for _, op := range result.DOMOperations {
@@ -360,24 +360,24 @@ func (a *ScriptAnalyzer) detectSuspiciousSignals(result *AnalysisResult) {
 	if dangerousDOMCount > 0 {
 		result.SuspiciousSignals = append(result.SuspiciousSignals, fmt.Sprintf("dangerous_dom_operations:%d", dangerousDOMCount))
 	}
-	
+
 	// 检测可疑的事件绑定
 	for _, binding := range result.EventBindings {
 		if binding.Event == "error" || binding.Event == "load" || binding.Event == "mouseover" {
 			result.SuspiciousSignals = append(result.SuspiciousSignals, fmt.Sprintf("suspicious_event_binding:%s", binding.Event))
 		}
 	}
-	
+
 	// 检测网络请求
 	if len(result.NetworkRequests) > 5 {
 		result.SuspiciousSignals = append(result.SuspiciousSignals, "excessive_network_requests")
 	}
-	
+
 	// 检测危险操作
 	if len(result.DangerousOperations) > 0 {
 		result.SuspiciousSignals = append(result.SuspiciousSignals, "dangerous_operations_detected")
 	}
-	
+
 	// 检测函数数量异常
 	if len(result.Functions) > 20 {
 		result.SuspiciousSignals = append(result.SuspiciousSignals, "excessive_functions")
@@ -387,7 +387,7 @@ func (a *ScriptAnalyzer) detectSuspiciousSignals(result *AnalysisResult) {
 // GetSuspiciousLevel 获取可疑级别
 func (a *ScriptAnalyzer) GetSuspiciousLevel(result *AnalysisResult) int {
 	level := 0
-	
+
 	// 根据可疑信号计算级别
 	for _, signal := range result.SuspiciousSignals {
 		switch {
@@ -405,6 +405,6 @@ func (a *ScriptAnalyzer) GetSuspiciousLevel(result *AnalysisResult) int {
 			level += 1
 		}
 	}
-	
+
 	return level
 }

@@ -302,8 +302,8 @@ var (
 
 	schedulerTaskExecutionDurationSeconds = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: "unimap_scheduler_task_execution_duration_seconds",
-			Help: "Scheduled task execution duration in seconds.",
+			Name:    "unimap_scheduler_task_execution_duration_seconds",
+			Help:    "Scheduled task execution duration in seconds.",
 			Buckets: []float64{1.0, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0},
 		},
 		[]string{"task_type"},
@@ -364,6 +364,49 @@ var (
 			Help: "Total number of ICP captcha failures by type.",
 		},
 		[]string{"type"},
+	)
+
+	// 浏览器 DOM 解析失败计数
+	browserDOMParseFailureTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unimap_browser_dom_parse_failure_total",
+			Help: "Total number of browser DOM parsing failures by engine.",
+		},
+		[]string{"engine"},
+	)
+
+	// 浏览器登录墙检测计数
+	browserLoginRequiredTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unimap_browser_login_required_total",
+			Help: "Total number of login-required page detections by engine.",
+		},
+		[]string{"engine"},
+	)
+
+	// 浏览器降级指标
+	browserFallbackTriggeredTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unimap_browser_fallback_triggered_total",
+			Help: "Total number of browser fallback triggers by engine and trigger reason.",
+		},
+		[]string{"engine", "trigger"},
+	)
+
+	browserFallbackSuccessTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unimap_browser_fallback_success_total",
+			Help: "Total number of successful browser fallback attempts by engine.",
+		},
+		[]string{"engine"},
+	)
+
+	browserFallbackFailureTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unimap_browser_fallback_failure_total",
+			Help: "Total number of failed browser fallback attempts by engine and reason.",
+		},
+		[]string{"engine", "reason"},
 	)
 )
 
@@ -436,6 +479,15 @@ func init() {
 	prometheus.MustRegister(icpQueriesTotal)
 	prometheus.MustRegister(icpQueryDuration)
 	prometheus.MustRegister(icpCaptchaFailuresTotal)
+
+	// 浏览器 DOM 解析和登录墙指标
+	prometheus.MustRegister(browserDOMParseFailureTotal)
+	prometheus.MustRegister(browserLoginRequiredTotal)
+
+	// 浏览器降级指标
+	prometheus.MustRegister(browserFallbackTriggeredTotal)
+	prometheus.MustRegister(browserFallbackSuccessTotal)
+	prometheus.MustRegister(browserFallbackFailureTotal)
 }
 
 // HTTP 指标函数
@@ -704,3 +756,40 @@ func IncICPCaptchaFailure(queryType string) {
 	icpCaptchaFailuresTotal.WithLabelValues(queryType).Inc()
 }
 
+// 浏览器 DOM 解析失败指标
+func IncBrowserDOMParseFailure(engine string) {
+	if engine == "" {
+		engine = "unknown"
+	}
+	browserDOMParseFailureTotal.WithLabelValues(engine).Inc()
+}
+
+// 浏览器登录墙检测指标
+func IncBrowserLoginRequired(engine string) {
+	if engine == "" {
+		engine = "unknown"
+	}
+	browserLoginRequiredTotal.WithLabelValues(engine).Inc()
+}
+
+// 浏览器降级指标函数
+func IncBrowserFallbackTriggered(engine, trigger string) {
+	if engine == "" {
+		engine = "unknown"
+	}
+	browserFallbackTriggeredTotal.WithLabelValues(engine, trigger).Inc()
+}
+
+func IncBrowserFallbackSuccess(engine string) {
+	if engine == "" {
+		engine = "unknown"
+	}
+	browserFallbackSuccessTotal.WithLabelValues(engine).Inc()
+}
+
+func IncBrowserFallbackFailure(engine, reason string) {
+	if engine == "" {
+		engine = "unknown"
+	}
+	browserFallbackFailureTotal.WithLabelValues(engine, reason).Inc()
+}

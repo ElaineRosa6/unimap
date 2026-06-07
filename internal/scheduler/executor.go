@@ -12,6 +12,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/alerting"
@@ -23,6 +27,27 @@ import (
 	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/utils/urlguard"
 )
+
+// sanitizeUTF8 ensures s is valid UTF-8, converting from GBK if necessary.
+// This prevents garbled text (mojibake) in notification channels that assume
+// valid UTF-8 (Feishu, DingTalk, WeCom).
+//
+// Steps:
+//  1. If already valid UTF-8, return as-is.
+//  2. Try GBK→UTF-8 conversion (common for Chinese API responses / Windows environments).
+//  3. Strip any remaining invalid UTF-8 bytes as a final fallback.
+func sanitizeUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	// Try GBK→UTF-8 conversion — many Chinese APIs and Windows tools produce GBK output.
+	decoded, _, err := transform.String(simplifiedchinese.GBK.NewDecoder(), s)
+	if err == nil && utf8.ValidString(decoded) {
+		return decoded
+	}
+	// Fallback: strip invalid UTF-8 bytes.
+	return strings.ToValidUTF8(s, "�")
+}
 
 // extractStrings pulls a string slice from payload[key], falling back to def.
 func extractStrings(payload map[string]interface{}, key string, def []string) []string {
@@ -123,11 +148,19 @@ func (r *QueryRunner) Execute(ctx context.Context, payload map[string]interface{
 		return "", fmt.Errorf("query execution failed: %w", err)
 	}
 
-	result := fmt.Sprintf("retrieved %d assets from %d engine(s)", resp.TotalCount, len(resp.EngineStats))
-	if len(resp.Errors) > 0 {
-		result += fmt.Sprintf(" (%d engine error(s))", len(resp.Errors))
+	var b strings.Builder
+	fmt.Fprintf(&b, "UQL 查询完成\n\n")
+	fmt.Fprintf(&b, "📋 查询: %s\n", query)
+	fmt.Fprintf(&b, "📋 引擎: %s\n", strings.Join(engines, ","))
+	fmt.Fprintf(&b, "📋 页大小: %d\n", pageSize)
+	fmt.Fprintf(&b, "📊 共返回 %d 条资产\n\n", resp.TotalCount)
+	for eng, count := range resp.EngineStats {
+		fmt.Fprintf(&b, "✅ %s: %d 条\n", eng, count)
 	}
-	return result, nil
+	for _, e := range resp.Errors {
+		fmt.Fprintf(&b, "❌ %s\n", e)
+	}
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- SearchScreenshotRunner (ST-02) ---
@@ -163,7 +196,15 @@ func (r *SearchScreenshotRunner) Execute(ctx context.Context, payload map[string
 		return "", fmt.Errorf("screenshot capture failed: %w", err)
 	}
 
-	return fmt.Sprintf("captured %s search for '%s' -> %s (query_id=%s)", eng, q, path, id), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "搜索引擎截图完成\n\n")
+	fmt.Fprintf(&b, "✅ 引擎: %s\n", eng)
+	fmt.Fprintf(&b, "✅ 查询: %s\n", q)
+	fmt.Fprintf(&b, "✅ 保存: %s\n", path)
+	if id != "" {
+		fmt.Fprintf(&b, "✅ 查询ID: %s\n", id)
+	}
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- BatchScreenshotRunner (ST-03) ---
@@ -205,7 +246,17 @@ func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload map[string]
 		return "", fmt.Errorf("batch screenshot failed: %w", err)
 	}
 
-	return fmt.Sprintf("batch %s: %d/%d succeeded, dir=%s", resp.BatchID, resp.Success, resp.Total, resp.ScreenshotDir), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "批量截图完成：%d/%d 成功\n\n", resp.Success, resp.Total)
+	for _, r := range resp.Results {
+		if r.Success {
+			fmt.Fprintf(&b, "✅ %s → %s\n", r.URL, r.FilePath)
+		} else {
+			fmt.Fprintf(&b, "❌ %s — %s\n", r.URL, r.Error)
+		}
+	}
+	fmt.Fprintf(&b, "\n📁 截图目录: %s", resp.ScreenshotDir)
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- TamperCheckRunner (ST-04) ---
@@ -247,11 +298,31 @@ func (r *TamperCheckRunner) Execute(ctx context.Context, payload map[string]inte
 		return "", fmt.Errorf("tamper check failed: %w", err)
 	}
 
-	parts := []string{}
-	for k, v := range resp.Summary {
-		parts = append(parts, fmt.Sprintf("%s=%d", k, v))
+	var b strings.Builder
+	fmt.Fprintf(&b, "篡改检测完成（模式: %s）：共 %d 个 URL\n\n", mode, len(resp.Results))
+	for _, r := range resp.Results {
+		switch r.Status {
+		case "tampered":
+			fmt.Fprintf(&b, "⚠️ 已篡改 %s", r.URL)
+			if len(r.TamperedSegments) > 0 {
+				fmt.Fprintf(&b, " — 变更区域: %s", strings.Join(r.TamperedSegments, ", "))
+			}
+			b.WriteString("\n")
+		case "no_baseline":
+			fmt.Fprintf(&b, "🆕 首次检测 %s — 已建立基线\n", r.URL)
+		case "unreachable":
+			fmt.Fprintf(&b, "❌ 不可达 %s", r.URL)
+			if r.ErrorMessage != "" {
+				fmt.Fprintf(&b, " — %s", r.ErrorMessage)
+			}
+			b.WriteString("\n")
+		case "normal":
+			fmt.Fprintf(&b, "✅ 正常 %s\n", r.URL)
+		default:
+			fmt.Fprintf(&b, "❓ %s %s\n", r.Status, r.URL)
+		}
 	}
-	return fmt.Sprintf("tamper check complete [%s]", strings.Join(parts, ", ")), nil
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- URLReachabilityRunner (ST-05) ---
@@ -285,8 +356,25 @@ func (r *URLReachabilityRunner) Execute(ctx context.Context, payload map[string]
 		return "", fmt.Errorf("reachability check failed: %w", err)
 	}
 
-	return fmt.Sprintf("reachability: %d reachable, %d unreachable, %d invalid out of %d",
-		resp.Summary.Reachable, resp.Summary.Unreachable, resp.Summary.InvalidFormat, resp.Summary.Total), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "URL 可达性检测完成：%d 个 URL\n\n", resp.Summary.Total)
+	for _, r := range resp.Results {
+		if r.Reachable {
+			detail := r.Input
+			if r.HTTPStatus > 0 {
+				detail = fmt.Sprintf("%s (HTTP %d)", r.Input, r.HTTPStatus)
+			}
+			fmt.Fprintf(&b, "✅ 可达 %s\n", detail)
+		} else {
+			detail := r.Input
+			if r.Reason != "" {
+				detail += " — " + r.Reason
+			}
+			fmt.Fprintf(&b, "❌ 不可达 %s\n", detail)
+		}
+	}
+	fmt.Fprintf(&b, "\n📊 可达: %d，不可达: %d", resp.Summary.Reachable, resp.Summary.Unreachable)
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- CookieVerifyRunner (ST-06) ---
@@ -315,17 +403,17 @@ func (r *CookieVerifyRunner) Execute(ctx context.Context, payload map[string]int
 		engines = []string{"fofa", "hunter", "quake", "zoomeye"}
 	}
 
-	results := make([]string, 0, len(engines))
+	var b strings.Builder
+	fmt.Fprintf(&b, "Cookie 验证完成：%d 个引擎\n\n", len(engines))
 	for _, engine := range engines {
 		cookies := r.mgr.GetCookies(engine)
-		status := "no_cookies"
 		if len(cookies) > 0 {
-			status = fmt.Sprintf("%d cookie(s) configured", len(cookies))
+			fmt.Fprintf(&b, "✅ %s: %d 个 Cookie 已配置\n", engine, len(cookies))
+		} else {
+			fmt.Fprintf(&b, "⚠️ %s: 未配置 Cookie\n", engine)
 		}
-		results = append(results, fmt.Sprintf("%s: %s", engine, status))
 	}
-
-	return strings.Join(results, "; "), nil
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- LoginStatusCheckRunner (ST-07) ---
@@ -353,24 +441,28 @@ func (r *LoginStatusCheckRunner) Execute(ctx context.Context, payload map[string
 	}
 	testQuery := extractString(payload, "test_query", "test")
 
-	results := make([]string, 0, len(engines))
+	var b strings.Builder
+	fmt.Fprintf(&b, "登录状态检查完成：%d 个引擎\n\n", len(engines))
 	failedCount := 0
 	for _, engine := range engines {
 		status, err := r.mgr.CheckEngineLoginStatus(ctx, engine, testQuery)
 		if err != nil {
-			results = append(results, fmt.Sprintf("%s: error=%v", engine, err))
+			fmt.Fprintf(&b, "❌ %s: 检查失败 — %v\n", engine, err)
 			failedCount++
 			continue
 		}
-		loginStatus := "logged_in"
-		if !status.LoggedIn {
-			loginStatus = "not_logged_in"
+		if status.LoggedIn {
+			fmt.Fprintf(&b, "✅ %s: 已登录", engine)
+		} else {
+			fmt.Fprintf(&b, "❌ %s: 未登录", engine)
 			failedCount++
 		}
-		results = append(results, fmt.Sprintf("%s: %s (reason=%s)", engine, loginStatus, status.Reason))
+		if status.Reason != "" {
+			fmt.Fprintf(&b, " (%s)", status.Reason)
+		}
+		b.WriteString("\n")
 	}
-
-	result := strings.Join(results, "; ")
+	result := sanitizeUTF8(b.String())
 	if failedCount > 0 {
 		return result, fmt.Errorf("%d engine(s) not logged in or errored", failedCount)
 	}
@@ -426,7 +518,14 @@ func (r *DistributedSubmitRunner) Execute(ctx context.Context, payload map[strin
 		return "", fmt.Errorf("enqueue failed: %w", err)
 	}
 
-	return fmt.Sprintf("enqueued task %s (type=%s, priority=%d)", envelope.TaskID, taskType, priority), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "分布式任务已提交\n\n")
+	fmt.Fprintf(&b, "✅ 任务ID: %s\n", envelope.TaskID)
+	fmt.Fprintf(&b, "✅ 任务类型: %s\n", taskType)
+	fmt.Fprintf(&b, "✅ 优先级: %d\n", priority)
+	fmt.Fprintf(&b, "✅ 超时: %ds\n", timeoutSec)
+	fmt.Fprintf(&b, "✅ 最大重分配: %d\n", maxReassign)
+	return sanitizeUTF8(b.String()), nil
 }
 
 // distributedIDCounter is a monotonic counter for unique distributed task IDs.
@@ -475,7 +574,12 @@ func (r *ExportRunner) Execute(ctx context.Context, payload map[string]interface
 	}
 
 	if resp.TotalCount == 0 {
-		return "no results to export", nil
+		var b strings.Builder
+		fmt.Fprintf(&b, "数据导出完成\n\n")
+		fmt.Fprintf(&b, "⚠️ 查询: %s\n", query)
+		fmt.Fprintf(&b, "⚠️ 引擎: %s\n", strings.Join(engines, ","))
+		fmt.Fprintf(&b, "⚠️ 结果: 无数据可导出\n")
+		return sanitizeUTF8(b.String()), nil
 	}
 
 	// Determine output path
@@ -500,7 +604,14 @@ func (r *ExportRunner) Execute(ctx context.Context, payload map[string]interface
 		return "", fmt.Errorf("export failed: %w", err)
 	}
 
-	return fmt.Sprintf("exported %d assets to %s", len(resp.Assets), outPath), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "数据导出完成\n\n")
+	fmt.Fprintf(&b, "✅ 查询: %s\n", query)
+	fmt.Fprintf(&b, "✅ 引擎: %s\n", strings.Join(engines, ","))
+	fmt.Fprintf(&b, "✅ 格式: %s\n", format)
+	fmt.Fprintf(&b, "✅ 资产数: %d\n", len(resp.Assets))
+	fmt.Fprintf(&b, "✅ 保存: %s\n", outPath)
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- PortScanRunner (ST-10) ---
@@ -545,8 +656,37 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload map[string]interfa
 		return "", fmt.Errorf("port scan failed: %w", err)
 	}
 
-	return fmt.Sprintf("scanned %d URLs: %d successful, %d failed",
-		resp.Summary.Total, resp.Summary.Scanned, resp.Summary.ScanFailed), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "端口扫描完成：%d 个 URL，端口 %v\n\n", resp.Summary.Total, portNums)
+	for _, r := range resp.Results {
+		switch r.Status {
+		case "scanned":
+			if len(r.OpenPorts) > 0 {
+				var portDetails []string
+				for ip, ports := range r.OpenPorts {
+					portDetails = append(portDetails, fmt.Sprintf("%s: %v", ip, ports))
+				}
+				fmt.Fprintf(&b, "✅ %s — 开放端口 %s\n", r.Input, strings.Join(portDetails, "; "))
+			} else {
+				fmt.Fprintf(&b, "✅ %s — 无开放端口\n", r.Input)
+			}
+		case "resolve_failed":
+			fmt.Fprintf(&b, "❌ %s — DNS 解析失败", r.Input)
+			if r.Reason != "" {
+				fmt.Fprintf(&b, " (%s)", r.Reason)
+			}
+			b.WriteString("\n")
+		case "cdn_excluded":
+			fmt.Fprintf(&b, "⚠️ %s — CDN 已排除\n", r.Input)
+		default:
+			fmt.Fprintf(&b, "❓ %s — %s", r.Input, r.Status)
+			if r.Reason != "" {
+				fmt.Fprintf(&b, " (%s)", r.Reason)
+			}
+			b.WriteString("\n")
+		}
+	}
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- ScreenshotCleanupRunner (ST-11) ---
@@ -581,18 +721,24 @@ func (r *ScreenshotCleanupRunner) Execute(ctx context.Context, payload map[strin
 	}
 
 	deletedCount := 0
+	skippedCount := 0
 	for _, batch := range batches {
 		batchTime := time.Unix(batch.UpdatedAt, 0)
 		if batchTime.Before(cutoff) {
 			if delErr := r.screenshotSvc.DeleteBatch(batch.Name); delErr != nil {
-				// Log but continue with other batches
 				continue
 			}
 			deletedCount++
+		} else {
+			skippedCount++
 		}
 	}
 
-	return fmt.Sprintf("cleaned up %d batch(es) older than %d days", deletedCount, maxAgeDays), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "截图清理完成（保留 %d 天）\n\n", maxAgeDays)
+	fmt.Fprintf(&b, "🗑️ 已删除: %d 个批次\n", deletedCount)
+	fmt.Fprintf(&b, "📁 保留: %d 个批次\n", skippedCount)
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- TamperCleanupRunner (ST-12) ---
@@ -665,7 +811,11 @@ func (r *TamperCleanupRunner) Execute(ctx context.Context, payload map[string]in
 		}
 	}
 
-	return fmt.Sprintf("cleaned up %d expired check record(s), skipped %d within max age %d days", deletedCount, skippedCount, r.maxAgeDays), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "篡改记录清理完成（保留 %d 天）\n\n", r.maxAgeDays)
+	fmt.Fprintf(&b, "🗑️ 已删除: %d 条过期记录\n", deletedCount)
+	fmt.Fprintf(&b, "📁 保留: %d 条有效记录\n", skippedCount)
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- QuotaMonitorRunner (ST-13) ---
@@ -697,7 +847,8 @@ func (r *QuotaMonitorRunner) Execute(ctx context.Context, payload map[string]int
 	}
 
 	lowThreshold := extractInt(payload, "low_threshold", r.lowThreshold)
-	results := make([]string, 0, len(engines))
+	var b strings.Builder
+	fmt.Fprintf(&b, "引擎配额监控完成：%d 个引擎\n\n", len(engines))
 	lowQuotaEngines := 0
 
 	for _, engine := range engines {
@@ -707,20 +858,20 @@ func (r *QuotaMonitorRunner) Execute(ctx context.Context, payload map[string]int
 		}
 		quota, err := adapter.GetQuota()
 		if err != nil {
-			results = append(results, fmt.Sprintf("%s: error=%v", engine, err))
+			fmt.Fprintf(&b, "❌ %s: 查询失败 — %v\n", engine, err)
 			continue
 		}
-		status := "ok"
 		if quota != nil && quota.Remaining < lowThreshold {
-			status = fmt.Sprintf("LOW (remaining=%d)", quota.Remaining)
+			fmt.Fprintf(&b, "⚠️ %s: 配额不足 (剩余 %d/%d)\n", engine, quota.Remaining, quota.Total)
 			lowQuotaEngines++
 		} else if quota != nil {
-			status = fmt.Sprintf("remaining=%d/%d", quota.Remaining, quota.Total)
+			fmt.Fprintf(&b, "✅ %s: 配额充足 (剩余 %d/%d)\n", engine, quota.Remaining, quota.Total)
+		} else {
+			fmt.Fprintf(&b, "✅ %s: 配额信息不可用\n", engine)
 		}
-		results = append(results, fmt.Sprintf("%s: %s", engine, status))
 	}
 
-	result := strings.Join(results, "; ")
+	result := sanitizeUTF8(b.String())
 	if lowQuotaEngines > 0 {
 		return result, fmt.Errorf("%d engine(s) with low quota (below %d)", lowQuotaEngines, lowThreshold)
 	}
@@ -764,17 +915,29 @@ func (r *AlertSummaryRunner) Execute(ctx context.Context, payload map[string]int
 		levelCounts[string(rec.Alert.Level)]++
 	}
 
-	parts := []string{
-		fmt.Sprintf("total=%d (last %d days)", totalCount, maxAgeDays),
+	var b strings.Builder
+	fmt.Fprintf(&b, "告警汇总（最近 %d 天）\n\n", maxAgeDays)
+	fmt.Fprintf(&b, "📊 总计: %d 条告警\n", totalCount)
+	if len(typeCounts) > 0 {
+		b.WriteString("\n按类型:\n")
+		for t, c := range typeCounts {
+			fmt.Fprintf(&b, "  • %s: %d 条\n", t, c)
+		}
 	}
-	for t, c := range typeCounts {
-		parts = append(parts, fmt.Sprintf("%s=%d", t, c))
+	if len(levelCounts) > 0 {
+		b.WriteString("\n按级别:\n")
+		for l, c := range levelCounts {
+			emoji := "ℹ️"
+			switch l {
+			case "warning":
+				emoji = "⚠️"
+			case "critical":
+				emoji = "🔴"
+			}
+			fmt.Fprintf(&b, "  %s %s: %d 条\n", emoji, l, c)
+		}
 	}
-	for l, c := range levelCounts {
-		parts = append(parts, fmt.Sprintf("%s=%d", l, c))
-	}
-
-	return fmt.Sprintf("alert summary [%s]", strings.Join(parts, ", ")), nil
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- BaselineRefreshRunner (ST-15) ---
@@ -810,6 +973,8 @@ func (r *BaselineRefreshRunner) Execute(ctx context.Context, payload map[string]
 	}
 
 	refreshed := 0
+	failed := 0
+	var failedURLs []string
 
 	for _, url := range urls {
 		req := service.TamperBaselineRequest{
@@ -817,12 +982,23 @@ func (r *BaselineRefreshRunner) Execute(ctx context.Context, payload map[string]
 		}
 		_, err := r.tamperSvc.SetBaseline(ctx, req, nil)
 		if err != nil {
+			failed++
+			failedURLs = append(failedURLs, url)
 			continue
 		}
 		refreshed++
 	}
 
-	return fmt.Sprintf("refreshed baseline for %d/%d URL(s)", refreshed, len(urls)), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "基线刷新完成：%d 个 URL\n\n", len(urls))
+	fmt.Fprintf(&b, "✅ 成功: %d 个\n", refreshed)
+	if failed > 0 {
+		fmt.Fprintf(&b, "❌ 失败: %d 个\n", failed)
+		for _, u := range failedURLs {
+			fmt.Fprintf(&b, "  • %s\n", u)
+		}
+	}
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- URLImportRunner (ST-16) ---
@@ -853,19 +1029,49 @@ func (r *URLImportRunner) Execute(ctx context.Context, payload map[string]interf
 		return "", fmt.Errorf("glob failed: %w", err)
 	}
 	if len(matches) == 0 {
-		return fmt.Sprintf("no files matching %s in %s", filePattern, r.importDir), nil
+		var b strings.Builder
+		fmt.Fprintf(&b, "URL 导入完成\n\n")
+		fmt.Fprintf(&b, "⚠️ 未找到匹配文件: %s\n", filePattern)
+		fmt.Fprintf(&b, "📁 搜索目录: %s\n", r.importDir)
+		return sanitizeUTF8(b.String()), nil
 	}
 
 	importedURLs := make([]string, 0)
+	fileDetails := make([]struct {
+		name string
+		count int
+		err  error
+	}, 0, len(matches))
+
 	for _, filePath := range matches {
-		urls, err := readURLsFromFile(filePath, maxLines)
+		urls, err := readURLsFromFile(filePath, maxLines-len(importedURLs))
 		if err != nil {
+			fileDetails = append(fileDetails, struct {
+				name string
+				count int
+				err  error
+			}{filepath.Base(filePath), 0, err})
 			continue
 		}
 		importedURLs = append(importedURLs, urls...)
+		fileDetails = append(fileDetails, struct {
+			name string
+			count int
+			err  error
+		}{filepath.Base(filePath), len(urls), nil})
 	}
 
-	return fmt.Sprintf("imported %d URL(s) from %d file(s)", len(importedURLs), len(matches)), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "URL 导入完成：%d 个文件\n\n", len(matches))
+	for _, fd := range fileDetails {
+		if fd.err != nil {
+			fmt.Fprintf(&b, "❌ %s: 读取失败 — %v\n", fd.name, fd.err)
+		} else {
+			fmt.Fprintf(&b, "✅ %s: %d 条 URL\n", fd.name, fd.count)
+		}
+	}
+	fmt.Fprintf(&b, "\n📊 共导入: %d 条 URL\n", len(importedURLs))
+	return sanitizeUTF8(b.String()), nil
 }
 
 // readURLsFromFile reads URLs from a text file, one per line.
@@ -921,42 +1127,50 @@ func (r *PluginHealthRunner) Execute(ctx context.Context, payload map[string]int
 
 	health := r.unifiedSvc.HealthCheck()
 	if len(health) == 0 {
-		return "no plugins registered", nil
+		return "插件健康检查完成\n\n⚠️ 无已注册插件", nil
 	}
 
 	healthyCount := 0
-	unhealthy := make([]string, 0)
+	var b strings.Builder
+	fmt.Fprintf(&b, "插件健康检查完成：%d 个插件\n\n", len(health))
 	for name, status := range health {
 		if status.Healthy {
+			fmt.Fprintf(&b, "✅ %s: 健康\n", name)
 			healthyCount++
 		} else {
-			unhealthy = append(unhealthy, fmt.Sprintf("%s: %s", name, status.Message))
+			msg := status.Message
+			if msg == "" {
+				msg = "未知错误"
+			}
+			fmt.Fprintf(&b, "❌ %s: %s\n", name, msg)
 		}
 	}
 
-	result := fmt.Sprintf("%d/%d plugins healthy", healthyCount, len(health))
-	if len(unhealthy) > 0 {
-		result += fmt.Sprintf(" (%s)", strings.Join(unhealthy, "; "))
-		return result, fmt.Errorf("unhealthy plugins detected")
+	result := sanitizeUTF8(b.String())
+	if healthyCount < len(health) {
+		return result, fmt.Errorf("%d/%d plugins unhealthy", len(health)-healthyCount, len(health))
 	}
 	return result, nil
 }
 
-// --- BridgeTokenRotateRunner (ST-18) ---
+// --- BridgeHealthCheckRunner (ST-18) ---
+// Note: Task type constant is "bridge_token" for backward compatibility,
+// but this runner performs health checks, not token rotation.
 
-// BridgeTokenRotateRunner executes scheduled bridge health checks and token status verification.
-type BridgeTokenRotateRunner struct {
+// BridgeHealthCheckRunner executes scheduled bridge health checks.
+type BridgeHealthCheckRunner struct {
 	bridgeSvc *screenshot.BridgeService
 }
 
-// NewBridgeTokenRotateRunner creates a BridgeTokenRotateRunner.
-func NewBridgeTokenRotateRunner(svc *screenshot.BridgeService) *BridgeTokenRotateRunner {
-	return &BridgeTokenRotateRunner{bridgeSvc: svc}
+// NewBridgeHealthCheckRunner creates a BridgeHealthCheckRunner.
+// Kept as NewBridgeTokenRotateRunner alias for backward compatibility.
+func NewBridgeTokenRotateRunner(svc *screenshot.BridgeService) *BridgeHealthCheckRunner {
+	return &BridgeHealthCheckRunner{bridgeSvc: svc}
 }
 
-func (r *BridgeTokenRotateRunner) Type() TaskType { return TaskBridgeTokenRotate }
+func (r *BridgeHealthCheckRunner) Type() TaskType { return TaskBridgeTokenRotate }
 
-func (r *BridgeTokenRotateRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *BridgeHealthCheckRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
 	if r.bridgeSvc == nil {
 		return "", fmt.Errorf("bridge service not available")
 	}
@@ -966,13 +1180,22 @@ func (r *BridgeTokenRotateRunner) Execute(ctx context.Context, payload map[strin
 	inFlight := r.bridgeSvc.InFlight()
 	started := r.bridgeSvc.IsStarted()
 
-	status := fmt.Sprintf("bridge: started=%t, workers=%d, queue=%d, in_flight=%d",
-		started, workers, queueLen, inFlight)
-
-	if !started {
-		return status, fmt.Errorf("bridge service is not started")
+	var b strings.Builder
+	fmt.Fprintf(&b, "截图桥接服务健康检查\n\n")
+	if started {
+		fmt.Fprintf(&b, "✅ 状态: 运行中\n")
+	} else {
+		fmt.Fprintf(&b, "❌ 状态: 未启动\n")
 	}
-	return status, nil
+	fmt.Fprintf(&b, "📊 工作线程: %d\n", workers)
+	fmt.Fprintf(&b, "📊 队列长度: %d\n", queueLen)
+	fmt.Fprintf(&b, "📊 进行中: %d\n", inFlight)
+
+	result := sanitizeUTF8(b.String())
+	if !started {
+		return result, fmt.Errorf("bridge service is not started")
+	}
+	return result, nil
 }
 
 // --- AlertSilenceRunner (ST-19) ---
@@ -1000,13 +1223,21 @@ func (r *AlertSilenceRunner) Execute(ctx context.Context, payload map[string]int
 
 	if alertType != "" {
 		r.alertManager.SilenceAlertsByType(alerting.AlertType(alertType), duration)
-		return fmt.Sprintf("silenced all %s alerts for %d minutes", alertType, durationMin), nil
+		var b strings.Builder
+		fmt.Fprintf(&b, "告警静默设置完成\n\n")
+		fmt.Fprintf(&b, "✅ 告警类型: %s\n", alertType)
+		fmt.Fprintf(&b, "✅ 静默时长: %d 分钟\n", durationMin)
+		return sanitizeUTF8(b.String()), nil
 	}
 
 	// No type specified: cleanup old records instead
 	maxAgeDays := extractInt(payload, "max_age_days", 30)
 	r.alertManager.CleanupOldRecords(time.Duration(maxAgeDays) * 24 * time.Hour)
-	return fmt.Sprintf("cleaned up alert records older than %d days", maxAgeDays), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "告警记录清理完成\n\n")
+	fmt.Fprintf(&b, "✅ 保留天数: %d 天\n", maxAgeDays)
+	fmt.Fprintf(&b, "✅ 已清理过期记录\n")
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- URLHealthChecker (ST-20) ---
@@ -1040,7 +1271,7 @@ func (r *URLHealthChecker) Type() TaskType { return TaskCacheWarmup }
 func (r *URLHealthChecker) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
 	urls := extractStrings(payload, "warmup_urls", []string{})
 	if len(urls) == 0 {
-		return "no warmup URLs configured", nil
+		return "URL 健康检查完成\n\n⚠️ 未配置 warmup_urls", nil
 	}
 
 	client := urlguard.SafeHTTPClient(urlguard.CheckOptions{
@@ -1048,28 +1279,33 @@ func (r *URLHealthChecker) Execute(ctx context.Context, payload map[string]inter
 		AllowPrivate:   false,
 	}, 10*time.Second)
 	successCount := 0
-	var skippedErrors []string
+	failedCount := 0
+	var b strings.Builder
+	fmt.Fprintf(&b, "URL 健康检查完成：%d 个 URL\n\n", len(urls))
 	for _, u := range urls {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
+			fmt.Fprintf(&b, "❌ %s: 请求构建失败\n", u)
+			failedCount++
 			continue
 		}
 		resp, err := client.Do(req)
 		if err != nil {
-			skippedErrors = append(skippedErrors, fmt.Sprintf("%s: %v", u, err))
+			fmt.Fprintf(&b, "❌ %s: %v\n", u, err)
+			failedCount++
 			continue
 		}
 		resp.Body.Close()
 		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+			fmt.Fprintf(&b, "✅ %s (HTTP %d)\n", u, resp.StatusCode)
 			successCount++
+		} else {
+			fmt.Fprintf(&b, "⚠️ %s (HTTP %d)\n", u, resp.StatusCode)
+			failedCount++
 		}
 	}
-
-	result := fmt.Sprintf("warmed up %d/%d URLs", successCount, len(urls))
-	if len(skippedErrors) > 0 {
-		result += fmt.Sprintf(", %d URL(s) rejected or unreachable", len(skippedErrors))
-	}
-	return result, nil
+	fmt.Fprintf(&b, "\n📊 成功: %d，失败: %d\n", successCount, failedCount)
+	return sanitizeUTF8(b.String()), nil
 }
 
 // --- ICPQueryRunner (ST-21) ---
@@ -1131,12 +1367,28 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 		return "", fmt.Errorf("too many queries (%d), maximum is %d", len(queries), icpMaxQueries)
 	}
 
-	queryType := extractString(payload, "type", cfg.DefaultType)
-	if queryType == "" {
-		queryType = "web"
+	// 解析 type 参数：支持逗号分隔的多类型
+	rawType := extractString(payload, "type", cfg.DefaultType)
+	if rawType == "" {
+		rawType = "web"
 	}
-	if !adapter.IsValidICPQueryType(queryType) {
-		return "", fmt.Errorf("invalid ICP query type: %q", queryType)
+	var types []string
+	seen := make(map[string]bool)
+	for _, part := range strings.Split(rawType, ",") {
+		t := strings.TrimSpace(part)
+		if t == "" {
+			continue
+		}
+		if !adapter.IsValidICPQueryType(t) {
+			return "", fmt.Errorf("invalid ICP query type: %q", t)
+		}
+		if !seen[t] {
+			seen[t] = true
+			types = append(types, t)
+		}
+	}
+	if len(types) == 0 {
+		types = []string{"web"}
 	}
 
 	page := extractInt(payload, "page", 1)
@@ -1154,43 +1406,79 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 	totalRecords := 0
 	succeeded := 0
 	var errs []string
+	type icpQueryResult struct {
+		query string
+		qtype string
+		total int
+		domains []string
+	}
+	var queryResults []icpQueryResult
 
 	baseURL := strings.TrimSpace(cfg.BaseURL)
 	apiKey := cfg.APIKey
 	startedAt := time.Now()
 
 	for _, q := range queries {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		default:
-		}
-
-		results, total, err := adapter.ICPSearchWithContext(ctx, baseURL, apiKey, adapter.ICPSearchRequest{
-			Query:    q,
-			Type:     queryType,
-			Page:     page,
-			PageSize: pageSize,
-		})
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("%q: %s", q, err.Error()))
-			if failFast {
-				break
+		for _, queryType := range types {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			default:
 			}
-			continue
+
+			results, total, err := adapter.ICPSearchWithContext(ctx, baseURL, apiKey, adapter.ICPSearchRequest{
+				Query:    q,
+				Type:     queryType,
+				Page:     page,
+				PageSize: pageSize,
+			})
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("%q [type=%s]: %s", q, queryType, err.Error()))
+				if failFast {
+					break
+				}
+				continue
+			}
+			succeeded++
+			totalRecords += total
+
+			// 收集逐条结果
+			var domains []string
+			for _, res := range results {
+				if res.Domain != "" {
+					domains = append(domains, res.Domain)
+				}
+			}
+			queryResults = append(queryResults, icpQueryResult{query: q, qtype: queryType, total: total, domains: domains})
+
+			r.persistRun(taskID, q, queryType, page, pageSize, total, results, startedAt)
 		}
-		succeeded++
-		totalRecords += total
-
-		r.persistRun(taskID, q, queryType, page, pageSize, total, results, startedAt)
+		if failFast && len(errs) > 0 {
+			break
+		}
 	}
 
-	result := fmt.Sprintf("icp [type=%s] %d/%d queries succeeded, total %d records (page=%d size=%d)",
-		queryType, succeeded, len(queries), totalRecords, page, pageSize)
-
-	if len(errs) > 0 {
-		result += fmt.Sprintf(", %d error(s): %s", len(errs), strings.Join(errs, "; "))
+	var b strings.Builder
+	fmt.Fprintf(&b, "ICP 备案查询完成（类型: %s）\n\n", strings.Join(types, ","))
+	fmt.Fprintf(&b, "📊 成功: %d/%d，共 %d 条记录\n\n", succeeded, len(queries)*len(types), totalRecords)
+	for _, qr := range queryResults {
+		fmt.Fprintf(&b, "✅ %s [%s]: %d 条", qr.query, qr.qtype, qr.total)
+		if len(qr.domains) > 0 {
+			show := qr.domains
+			if len(show) > 5 {
+				show = show[:5]
+			}
+			fmt.Fprintf(&b, " — %s", strings.Join(show, ", "))
+			if len(qr.domains) > 5 {
+				fmt.Fprintf(&b, " 等%d个", len(qr.domains))
+			}
+		}
+		b.WriteString("\n")
 	}
+	for _, e := range errs {
+		fmt.Fprintf(&b, "❌ %s\n", e)
+	}
+	result := sanitizeUTF8(b.String())
 
 	if succeeded == 0 && len(errs) > 0 {
 		return result, fmt.Errorf("all %d ICP query(ies) failed", len(errs))
@@ -1308,38 +1596,79 @@ func (r *ICPImportRunner) Execute(ctx context.Context, payload map[string]interf
 		return "", fmt.Errorf("glob failed: %w", err)
 	}
 	if len(matches) == 0 {
-		return fmt.Sprintf("no files matching %s in %s", filePattern, r.importDir), nil
+		var b strings.Builder
+		fmt.Fprintf(&b, "ICP 关键词导入完成\n\n")
+		fmt.Fprintf(&b, "⚠️ 未找到匹配文件: %s\n", filePattern)
+		fmt.Fprintf(&b, "📁 搜索目录: %s\n", r.importDir)
+		return sanitizeUTF8(b.String()), nil
 	}
 
 	var queries []string
+	fileDetails := make([]struct {
+		name  string
+		count int
+		err   error
+	}, 0, len(matches))
+
 	for _, filePath := range matches {
 		rows, err := readKeywordsFromCSV(filePath, maxRows-len(queries))
 		if err != nil {
+			fileDetails = append(fileDetails, struct {
+				name  string
+				count int
+				err   error
+			}{filepath.Base(filePath), 0, err})
 			continue
 		}
 		queries = append(queries, rows...)
+		fileDetails = append(fileDetails, struct {
+			name  string
+			count int
+			err   error
+		}{filepath.Base(filePath), len(rows), nil})
 	}
 
 	if len(queries) == 0 {
-		return "no keywords found in CSV files", nil
+		var b strings.Builder
+		fmt.Fprintf(&b, "ICP 关键词导入完成\n\n")
+		for _, fd := range fileDetails {
+			if fd.err != nil {
+				fmt.Fprintf(&b, "❌ %s: 读取失败 — %v\n", fd.name, fd.err)
+			} else {
+				fmt.Fprintf(&b, "⚠️ %s: 无关键词\n", fd.name)
+			}
+		}
+		return sanitizeUTF8(b.String()), nil
 	}
 
 	if r.scheduler != nil {
 		task := &ScheduledTask{
-			Name:        fmt.Sprintf("ICP import batch %s", filePattern),
-			Type:        TaskICPQuery,
-			CronExpr:    "0 0 * * * *", // run once immediately
-			Payload:     map[string]interface{}{"queries": queries, "type": queryType},
-			TimeoutSec:  600,
-			MaxRetries:  1,
-			Enabled:     true,
+			Name:       fmt.Sprintf("ICP import batch %s", filePattern),
+			Type:       TaskICPQuery,
+			CronExpr:   "0 0 * * * *", // run once immediately
+			Payload:    map[string]interface{}{"queries": queries, "type": queryType},
+			TimeoutSec: 600,
+			MaxRetries: 1,
+			Enabled:    true,
 		}
 		if err := r.scheduler.AddTask(task); err != nil {
 			return "", fmt.Errorf("failed to create ICP task: %w", err)
 		}
 	}
 
-	return fmt.Sprintf("imported %d keyword(s) from %d file(s), queued as ICP task", len(queries), len(matches)), nil
+	var b strings.Builder
+	fmt.Fprintf(&b, "ICP 关键词导入完成：%d 个文件\n\n", len(matches))
+	for _, fd := range fileDetails {
+		if fd.err != nil {
+			fmt.Fprintf(&b, "❌ %s: 读取失败 — %v\n", fd.name, fd.err)
+		} else {
+			fmt.Fprintf(&b, "✅ %s: %d 个关键词\n", fd.name, fd.count)
+		}
+	}
+	fmt.Fprintf(&b, "\n📊 共导入: %d 个关键词\n", len(queries))
+	fmt.Fprintf(&b, "📋 查询类型: %s\n", queryType)
+	fmt.Fprintf(&b, "🚀 已创建 ICP 查询任务\n")
+	return sanitizeUTF8(b.String()), nil
 }
 
 func readKeywordsFromCSV(filePath string, maxRows int) ([]string, error) {
@@ -1389,4 +1718,3 @@ func isCSVHeader(s string) bool {
 	lower := strings.ToLower(s)
 	return lower == "keyword" || lower == "domain" || lower == "company" || lower == "query" || lower == "name"
 }
-

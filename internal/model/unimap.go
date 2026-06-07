@@ -1,5 +1,7 @@
 package model
 
+import "context"
+
 // FOFAOfficialWebURL FOFA 官方 Web 域名，所有 Web/截图/扩展链路仅允许读此常量或配置中的 WebBaseURL。
 const FOFAOfficialWebURL = "https://fofa.info"
 
@@ -25,14 +27,14 @@ type EngineQuery struct {
 
 // EngineResult 引擎返回的原始结果
 type EngineResult struct {
-	EngineName     string           `json:"engine_name"`
-	RawData        []interface{}    `json:"raw_data"`
-	Total          int              `json:"total"`
-	Page           int              `json:"page"`
-	HasMore        bool             `json:"has_more"`
-	Error          string           `json:"error,omitempty"`
-	Cached         bool             `json:"cached,omitempty"`         // 标记是否来自缓存
-	NormalizedData []UnifiedAsset   `json:"normalized_data,omitempty"` // 缓存命中时的标准化数据
+	EngineName     string         `json:"engine_name"`
+	RawData        []interface{}  `json:"raw_data"`
+	Total          int            `json:"total"`
+	Page           int            `json:"page"`
+	HasMore        bool           `json:"has_more"`
+	Error          string         `json:"error,omitempty"`
+	Cached         bool           `json:"cached,omitempty"`          // 标记是否来自缓存
+	NormalizedData []UnifiedAsset `json:"normalized_data,omitempty"` // 缓存命中时的标准化数据
 }
 
 // UnifiedAsset 统一资产结构 (用于引擎适配器返回)
@@ -70,7 +72,7 @@ type QuotaInfo struct {
 type EngineAdapter interface {
 	Name() string
 	Translate(ast *UQLAST) (string, error)
-	Search(query string, page, pageSize int) (*EngineResult, error)
+	Search(ctx context.Context, query string, page, pageSize int) (*EngineResult, error)
 	Normalize(raw *EngineResult) ([]UnifiedAsset, error)
 	GetQuota() (*QuotaInfo, error) // 获取配额信息
 }

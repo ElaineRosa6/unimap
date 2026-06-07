@@ -266,4 +266,3 @@ func (s *Server) handleTamperHistoryDelete(w http.ResponseWriter, r *http.Reques
 		"url":     urlValue,
 	})
 }
-

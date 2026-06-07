@@ -18,6 +18,7 @@ import (
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/utils"
 )
@@ -337,12 +338,12 @@ func (m *Manager) isCDPMode() bool {
 
 // EngineLoginStatus represents the login status of a search engine.
 type EngineLoginStatus struct {
-	Engine    string `json:"engine"`
-	LoggedIn  bool   `json:"logged_in"`
-	Reason    string `json:"reason"`    // "browser_session" / "cookie_configured" / "login_required" / "no_session"
-	Title     string `json:"title"`     // page title if detected
-	LoginURL  string `json:"login_url"` // engine homepage for login redirect
-	Error     string `json:"error,omitempty"`
+	Engine   string `json:"engine"`
+	LoggedIn bool   `json:"logged_in"`
+	Reason   string `json:"reason"`    // "browser_session" / "cookie_configured" / "login_required" / "no_session"
+	Title    string `json:"title"`     // page title if detected
+	LoginURL string `json:"login_url"` // engine homepage for login redirect
+	Error    string `json:"error,omitempty"`
 }
 
 // CheckEngineLoginStatus checks whether the user is logged in to the given
@@ -385,6 +386,7 @@ func (m *Manager) CheckEngineLoginStatus(ctx context.Context, engine, query stri
 		text := strings.ToLower(html)
 		if strings.Contains(text, "login") || strings.Contains(text, "sign in") ||
 			strings.Contains(text, "\u767b\u5f55") || strings.Contains(text, "\u8bf7\u767b\u5f55") {
+			metrics.IncBrowserLoginRequired(engine)
 			return &EngineLoginStatus{Engine: engine, LoggedIn: false, Reason: "login_required", Title: title, LoginURL: loginURL}, nil
 		}
 		if len(html) < 500 {
@@ -735,9 +737,9 @@ func (m *Manager) BuildSearchEngineURL(engine, query string) string {
 	case "fofa":
 		return fmt.Sprintf("%s/result?qbase64=%s", model.FOFAOfficialWebURL, encodedB64)
 	case "hunter":
-		return fmt.Sprintf("https://hunter.qianxin.com/list?searchValue=%s", encodedB64)
+		return fmt.Sprintf("https://hunter.qianxin.com/home/list?search=%s&conditions=", encodedB64)
 	case "quake":
-		return fmt.Sprintf("https://quake.360.cn/quake/#/searchResult?searchVal=%s", encodedQuery)
+		return fmt.Sprintf("https://quake.360.net/quake/#/searchResult?searchVal=%s&selectIndex=quake_service&latest=true", encodedQuery)
 	case "zoomeye":
 		return fmt.Sprintf("https://www.zoomeye.org/searchResult?q=%s", encodedQuery)
 	case "shodan":
@@ -1185,4 +1187,3 @@ func safeJoinPath(baseDir string, elems []string) (string, error) {
 
 	return result, nil
 }
-

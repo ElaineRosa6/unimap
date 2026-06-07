@@ -10,19 +10,19 @@ type HookType string
 
 const (
 	// 插件生命周期钩子
-	HookBeforeLoad   HookType = "before_load"    // 插件加载前
-	HookAfterLoad    HookType = "after_load"     // 插件加载后
-	HookBeforeStart  HookType = "before_start"   // 插件启动前
-	HookAfterStart   HookType = "after_start"    // 插件启动后
-	HookBeforeStop   HookType = "before_stop"    // 插件停止前
-	HookAfterStop    HookType = "after_stop"     // 插件停止后
-	HookBeforeUnload HookType = "before_unload"  // 插件卸载前
-	HookAfterUnload  HookType = "after_unload"   // 插件卸载后
+	HookBeforeLoad   HookType = "before_load"   // 插件加载前
+	HookAfterLoad    HookType = "after_load"    // 插件加载后
+	HookBeforeStart  HookType = "before_start"  // 插件启动前
+	HookAfterStart   HookType = "after_start"   // 插件启动后
+	HookBeforeStop   HookType = "before_stop"   // 插件停止前
+	HookAfterStop    HookType = "after_stop"    // 插件停止后
+	HookBeforeUnload HookType = "before_unload" // 插件卸载前
+	HookAfterUnload  HookType = "after_unload"  // 插件卸载后
 
 	// 查询生命周期钩子
-	HookBeforeQuery  HookType = "before_query"   // 查询前
-	HookAfterQuery   HookType = "after_query"    // 查询后
-	HookQueryError   HookType = "query_error"    // 查询错误
+	HookBeforeQuery HookType = "before_query" // 查询前
+	HookAfterQuery  HookType = "after_query"  // 查询后
+	HookQueryError  HookType = "query_error"  // 查询错误
 
 	// 数据处理钩子
 	HookBeforeProcess HookType = "before_process" // 数据处理前

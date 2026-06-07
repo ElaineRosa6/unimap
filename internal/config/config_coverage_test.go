@@ -169,8 +169,8 @@ func TestGetAllEngineCacheConfigs(t *testing.T) {
 	var cfg Config
 	mgr.applyDefaults(&cfg)
 	cfg.Cache.Engines = map[string]EngineCacheConfig{
-		"quake":  {Enabled: true, TTL: 600},
-		"fofa":   {Enabled: false, TTL: 300},
+		"quake": {Enabled: true, TTL: 600},
+		"fofa":  {Enabled: false, TTL: 300},
 	}
 	mgr.config = &cfg
 

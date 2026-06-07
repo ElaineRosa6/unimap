@@ -1,11 +1,13 @@
 package adapter
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -21,6 +23,11 @@ type HunterAdapter struct {
 	apiKey  string
 	qps     int
 	timeout time.Duration
+
+	// 请求节流：保证相邻请求间隔 >= 1/qps，避免并发查询对 Hunter 造成
+	// 突发流量触发"请求太多啦"。qps<=0 时不限流。
+	rateMu  sync.Mutex
+	lastReq time.Time
 }
 
 // NewHunterAdapter 创建Hunter适配器
@@ -35,6 +42,41 @@ func NewHunterAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *H
 		apiKey:  apiKey,
 		qps:     qps,
 		timeout: timeout,
+	}
+}
+
+// waitForRate 在发起请求前等待，确保相邻请求间隔满足 qps 限制。
+// 尊重 ctx 取消；qps<=0 时立即返回。
+func (h *HunterAdapter) waitForRate(ctx context.Context) error {
+	if h.qps <= 0 {
+		return nil
+	}
+
+	minInterval := time.Second / time.Duration(h.qps)
+
+	h.rateMu.Lock()
+	now := time.Now()
+	var wait time.Duration
+	if !h.lastReq.IsZero() {
+		if elapsed := now.Sub(h.lastReq); elapsed < minInterval {
+			wait = minInterval - elapsed
+		}
+	}
+	// 预占下一个时隙，避免持锁期间睡眠阻塞其它 goroutine
+	h.lastReq = now.Add(wait)
+	h.rateMu.Unlock()
+
+	if wait <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -71,7 +113,7 @@ func (h *HunterAdapter) translateNode(node *model.UQLNode) string {
 				for _, v := range values {
 					conditions = append(conditions, h.buildCondition(field, "=", v))
 				}
-				return "(" + strings.Join(conditions, " OR ") + ")"
+				return "(" + strings.Join(conditions, " || ") + ")"
 			}
 
 			return h.buildCondition(field, op, val)
@@ -81,18 +123,10 @@ func (h *HunterAdapter) translateNode(node *model.UQLNode) string {
 		if len(node.Children) >= 2 {
 			left := h.translateNode(node.Children[0])
 			right := h.translateNode(node.Children[1])
-
-			// Hunter supports AND, OR, NOT (via operator usually, but logical nodes are AND/OR)
-			// Ensure parentheses for precedence
-			connector := "AND"
 			if node.Value == "OR" {
-				connector = "OR"
-			} else if node.Value == "NOT" {
-				// Unary NOT? usually binary logical in this tree structure but let's see UQL
-				// If UQL "NOT" is a unary operator on a condition, it might be different structure
-				// Assuming binary tree here
+				return fmt.Sprintf("(%s || %s)", left, right)
 			}
-			return fmt.Sprintf("(%s %s %s)", left, connector, right)
+			return fmt.Sprintf("(%s && %s)", left, right)
 		}
 	}
 
@@ -100,8 +134,7 @@ func (h *HunterAdapter) translateNode(node *model.UQLNode) string {
 }
 
 func (h *HunterAdapter) buildCondition(field, op, value string) string {
-	// Hunter使用类似ES的查询语法
-	// 字段映射
+	// Hunter 字段映射（点命名空间: web.*, ip.*, app.*, header.*）
 	mapping := map[string]string{
 		"body":        "web.body",
 		"title":       "web.title",
@@ -117,11 +150,11 @@ func (h *HunterAdapter) buildCondition(field, op, value string) string {
 		"isp":         "ip.isp",
 		"domain":      "domain",
 		"status_code": "web.status_code",
-		"os":          "os",
+		"os":          "ip.os",
 		"app":         "app.name",
-		"server":      "header_server",
+		"server":      "header.server",
 		"host":        "domain",
-		"url":         "url",
+		"cert":        "cert",
 	}
 
 	mappedField, ok := mapping[field]
@@ -129,22 +162,27 @@ func (h *HunterAdapter) buildCondition(field, op, value string) string {
 		mappedField = field
 	}
 
-	// Handle Operators
 	switch op {
-	case "=", "==":
-		return fmt.Sprintf(`%s="%s"`, mappedField, value)
+	case "==":
+		return fmt.Sprintf(`%s=="%s"`, mappedField, escapeQuotes(value))
 	case "!=", "<>":
-		return fmt.Sprintf(`%s!="%s"`, mappedField, value)
-	case "CONTAINS":
-		// Hunter默认支持包含匹配
-		return fmt.Sprintf(`%s="%s"`, mappedField, value)
+		return fmt.Sprintf(`%s!="%s"`, mappedField, escapeQuotes(value))
+	case ">":
+		return fmt.Sprintf(`%s>"%s"`, mappedField, escapeQuotes(value))
+	case ">=":
+		return fmt.Sprintf(`%s>="%s"`, mappedField, escapeQuotes(value))
+	case "<":
+		return fmt.Sprintf(`%s<"%s"`, mappedField, escapeQuotes(value))
+	case "<=":
+		return fmt.Sprintf(`%s<="%s"`, mappedField, escapeQuotes(value))
 	default:
-		return fmt.Sprintf(`%s="%s"`, mappedField, value)
+		// =, CONTAINS 等均为模糊匹配
+		return fmt.Sprintf(`%s="%s"`, mappedField, escapeQuotes(value))
 	}
 }
 
 // Search 执行Hunter搜索
-func (h *HunterAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (h *HunterAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if h.apiKey == "" {
 		return &model.EngineResult{
 			EngineName: h.Name(),
@@ -167,6 +205,11 @@ func (h *HunterAdapter) Search(query string, page, pageSize int) (*model.EngineR
 	}
 
 	err := utils.Retry(retryConfig, func() error {
+		// 请求前节流，避免突发流量触发 Hunter 限流
+		if rateErr := h.waitForRate(ctx); rateErr != nil {
+			return fmt.Errorf("hunter rate wait cancelled: %w", rateErr)
+		}
+
 		// Hunter API endpoint: /openApi/search
 		// 修正API URL格式
 		baseURL := strings.TrimRight(h.baseURL, "/")
@@ -188,7 +231,7 @@ func (h *HunterAdapter) Search(query string, page, pageSize int) (*model.EngineR
 			Get(url)
 
 		if err != nil {
-			return fmt.Errorf("hunter request error: %v", err)
+			return fmt.Errorf("hunter request error: %w", err)
 		}
 
 		if resp.StatusCode() != 200 {
@@ -206,7 +249,7 @@ func (h *HunterAdapter) Search(query string, page, pageSize int) (*model.EngineR
 		}
 
 		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return fmt.Errorf("hunter response parse error: %v", err)
+			return fmt.Errorf("hunter response parse error: %w", err)
 		}
 
 		if result.Code != 200 {
@@ -399,15 +442,15 @@ func (h *HunterAdapter) GetQuota() (*model.QuotaInfo, error) {
 		Get(url)
 
 	if err != nil {
-		return nil, fmt.Errorf("request error: %v", err)
+		return nil, fmt.Errorf("request error: %w", err)
 	}
 
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
 	}
 
 	// 打印响应体，方便调试
-	logger.Debugf("Hunter quota response: %s", resp.String())
+	logger.Debugf("Hunter quota response: %s", sanitizeBody(resp.String()))
 
 	// Hunter quota response structure
 	var result struct {
@@ -421,7 +464,7 @@ func (h *HunterAdapter) GetQuota() (*model.QuotaInfo, error) {
 	}
 
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("parse error: %v", err)
+		return nil, fmt.Errorf("parse error: %w", err)
 	}
 
 	if result.Code != 200 {
@@ -482,4 +525,3 @@ func NewHunterAdapterWebOnly() *HunterAdapterWebOnly {
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "hunter"),
 	}
 }
-

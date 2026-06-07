@@ -139,4 +139,3 @@ func testBatchOperations(c utils.QueryCache, name string, batchSize, batches int
 	fmt.Printf("   Throughput: %.2f ops/sec\n", throughput)
 	fmt.Printf("   Average Latency: %v\n", totalTime/time.Duration(totalOperations))
 }
-

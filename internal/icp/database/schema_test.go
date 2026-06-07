@@ -67,7 +67,7 @@ func TestICPResultRepository_SaveResults(t *testing.T) {
 
 	// Insert a run first.
 	run := &ICPQueryRun{
-		TaskID:       "t1", QueryKeyword: "test.com", QueryType: "web",
+		TaskID: "t1", QueryKeyword: "test.com", QueryType: "web",
 		Page: 1, PageSize: 20, TotalRecords: 3, ResultCount: 2,
 		StartedAt: time.Now(),
 	}
@@ -250,4 +250,3 @@ func TestRawJSON(t *testing.T) {
 		})
 	}
 }
-

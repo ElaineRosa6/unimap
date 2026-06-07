@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/proxypool"
+	"github.com/unimap/project/internal/utils/urlguard"
 	"github.com/unimap/project/internal/utils/workerpool"
 )
 
@@ -82,6 +83,23 @@ func (t *reachabilityTask) Execute() error {
 			},
 		}
 		return nil
+	}
+
+	// SSRF protection: reject internal/private addresses
+	if parsed, parseErr := url.Parse(normalizedURL); parseErr == nil {
+		if urlguard.IsInternalHost(t.ctx, parsed.Hostname()) {
+			t.resultChan <- reachabilityTaskPayload{
+				index: t.index,
+				item: URLReachabilityResult{
+					Input:      t.input,
+					Status:     "blocked",
+					ReasonType: "ssrf_blocked",
+					Reachable:  false,
+					Reason:     "target resolves to private/internal address (SSRF protection)",
+				},
+			}
+			return nil
+		}
 	}
 
 	probeCtx, cancel := context.WithTimeout(t.ctx, 20*time.Second)
@@ -308,4 +326,3 @@ func buildReachabilityHTTPClient(proxyAddr string) (*http.Client, error) {
 
 	return &http.Client{Timeout: 15 * time.Second, Transport: transport}, nil
 }
-

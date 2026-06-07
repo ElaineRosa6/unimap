@@ -2,6 +2,7 @@ package tamper
 
 import (
 	"context"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -287,6 +288,13 @@ func TestDetector_DeleteCheckRecords(t *testing.T) {
 // --- Detector CheckTampering Tests ---
 
 func TestDetector_CheckTampering_NoBaseline(t *testing.T) {
+	// This test requires Chrome/CDP to be available
+	if _, err := exec.LookPath("chrome"); err != nil {
+		if _, err := exec.LookPath("google-chrome"); err != nil {
+			t.Skip("Chrome not available, skipping CDP-dependent test")
+		}
+	}
+
 	dir := t.TempDir()
 	d := NewDetector(DetectorConfig{BaseDir: dir})
 

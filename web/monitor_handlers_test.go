@@ -13,7 +13,7 @@ import (
 func TestHandleImportURLs_GetMethod_Returns405(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/monitor/import", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/monitor/import", nil)
 	s.handleImportURLs(rec, req)
 
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -28,7 +28,7 @@ func TestHandleImportURLs_NoFile_Returns400(t *testing.T) {
 	writer := multipart.NewWriter(body)
 	writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/monitor/import", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/import", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleImportURLs(rec, req)
@@ -47,7 +47,7 @@ func TestHandleImportURLs_UnsupportedFormat_Returns400(t *testing.T) {
 	part.Write([]byte("some data"))
 	writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/monitor/import", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/import", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleImportURLs(rec, req)
@@ -66,7 +66,7 @@ func TestHandleImportURLs_TXTFile_Success(t *testing.T) {
 	part.Write([]byte("http://example.com\nhttps://test.org\n\ninvalid\n"))
 	writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/monitor/import", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/import", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleImportURLs(rec, req)
@@ -91,7 +91,7 @@ func TestHandleImportURLs_CSVFile_Success(t *testing.T) {
 	part.Write([]byte("url\nhttp://example.com\nhttps://test.org\n"))
 	writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/monitor/import", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/import", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleImportURLs(rec, req)
@@ -198,7 +198,7 @@ func TestURLPattern_InvalidURLs(t *testing.T) {
 func TestHandleURLReachability_GetMethod_Returns405(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/monitor/reachability", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/monitor/reachability", nil)
 	s.handleURLReachability(rec, req)
 
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -210,7 +210,7 @@ func TestHandleURLReachability_EmptyURLs_Returns400(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]interface{}{"urls": []string{}})
-	req := httptest.NewRequest(http.MethodPost, "/api/monitor/reachability", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/reachability", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleURLReachability(rec, req)
@@ -226,7 +226,7 @@ func TestHandleURLReachability_NoMonitorApp_Returns503(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]interface{}{"urls": []string{"http://example.com"}})
-	req := httptest.NewRequest(http.MethodPost, "/api/monitor/reachability", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/reachability", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleURLReachability(rec, req)
@@ -239,7 +239,7 @@ func TestHandleURLReachability_NoMonitorApp_Returns503(t *testing.T) {
 func TestHandleURLPortScan_GetMethod_Returns405(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/monitor/portscan", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/monitor/portscan", nil)
 	s.handleURLPortScan(rec, req)
 
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -251,7 +251,7 @@ func TestHandleURLPortScan_EmptyURLs_Returns400(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]interface{}{"urls": []string{}})
-	req := httptest.NewRequest(http.MethodPost, "/api/monitor/portscan", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/portscan", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleURLPortScan(rec, req)
@@ -267,7 +267,7 @@ func TestHandleURLPortScan_NoMonitorApp_Returns503(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]interface{}{"urls": []string{"http://example.com"}})
-	req := httptest.NewRequest(http.MethodPost, "/api/monitor/portscan", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/portscan", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleURLPortScan(rec, req)

@@ -1,10 +1,10 @@
 package web
 
 import (
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"html/template"
 )
 
 func TestRenderTemplate_TemplateNotFound(t *testing.T) {

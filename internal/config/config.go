@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
@@ -46,9 +47,9 @@ type Config struct {
 			Enabled         bool     `yaml:"enabled"`
 			APIKey          string   `yaml:"api_key"`
 			Email           string   `yaml:"email"`
-			BaseURL         string   `yaml:"base_url,omitempty"`          // 废弃，保留兼容
-			APIBaseURL      string   `yaml:"api_base_url"`                 // API 模式使用
-			WebBaseURL      string   `yaml:"web_base_url"`                 // Web 模式使用（本期锁死官方域名）
+			BaseURL         string   `yaml:"base_url,omitempty"` // 废弃，保留兼容
+			APIBaseURL      string   `yaml:"api_base_url"`       // API 模式使用
+			WebBaseURL      string   `yaml:"web_base_url"`       // Web 模式使用（本期锁死官方域名）
 			QPS             int      `yaml:"qps"`
 			Timeout         int      `yaml:"timeout"`
 			UseWebAPI       bool     `yaml:"use_web_api"`
@@ -99,7 +100,7 @@ type Config struct {
 			Enabled                      bool   `yaml:"enabled"`
 			ListenAddr                   string `yaml:"listen_addr"`
 			PairingRequired              bool   `yaml:"pairing_required"`
-			PairCode                    string `yaml:"pair_code"` // optional, if set pairing must provide matching pair_code
+			PairCode                     string `yaml:"pair_code"` // optional, if set pairing must provide matching pair_code
 			TokenTTLSeconds              int    `yaml:"token_ttl_seconds"`
 			TaskTimeoutSeconds           int    `yaml:"task_timeout_seconds"`
 			MaxConcurrency               int    `yaml:"max_concurrency"`
@@ -126,12 +127,13 @@ type Config struct {
 		Port        int    `yaml:"port"`         // 监听端口
 		BindAddress string `yaml:"bind_address"` // 监听地址
 		CORS        struct {
-			AllowedOrigins   []string `yaml:"allowed_origins"`
-			AllowedMethods   []string `yaml:"allowed_methods"`
-			AllowedHeaders   []string `yaml:"allowed_headers"`
-			ExposedHeaders   []string `yaml:"exposed_headers"`
-			AllowCredentials bool     `yaml:"allow_credentials"`
-			MaxAge           int      `yaml:"max_age"`
+			AllowedOrigins      []string `yaml:"allowed_origins"`
+			AllowedMethods      []string `yaml:"allowed_methods"`
+			AllowedHeaders      []string `yaml:"allowed_headers"`
+			ExposedHeaders      []string `yaml:"exposed_headers"`
+			AllowCredentials    bool     `yaml:"allow_credentials"`
+			MaxAge              int      `yaml:"max_age"`
+			AllowedExtensionIDs []string `yaml:"allowed_extension_ids"` // chrome-extension:// 允许的扩展 ID，空表示全部允许（向后兼容）
 		} `yaml:"cors"`
 		RateLimit struct {
 			Enabled           bool `yaml:"enabled"`
@@ -191,11 +193,11 @@ type Config struct {
 
 	// ICP 备案查询配置
 	ICP struct {
-		Enabled     bool   `yaml:"enabled"`      // 是否启用 ICP 查询
-		BaseURL     string `yaml:"base_url"`     // sidecar 服务地址，默认 http://localhost:16181
-		APIKey      string `yaml:"api_key"`      // 可选 API Key，支持 ${ENV_VAR}
-		Timeout     int    `yaml:"timeout"`      // 请求超时（秒）
-		DefaultType  string `yaml:"default_type"` // web/app/mapp/kapp/bweb/bapp/bmapp/bkapp
+		Enabled      bool   `yaml:"enabled"`       // 是否启用 ICP 查询
+		BaseURL      string `yaml:"base_url"`      // sidecar 服务地址，默认 http://localhost:16181
+		APIKey       string `yaml:"api_key"`       // 可选 API Key，支持 ${ENV_VAR}
+		Timeout      int    `yaml:"timeout"`       // 请求超时（秒）
+		DefaultType  string `yaml:"default_type"`  // web/app/mapp/kapp/bweb/bapp/bmapp/bkapp
 		DatabasePath string `yaml:"database_path"` // SQLite 持久化路径，默认 ./data/icp_results.db
 	} `yaml:"icp"`
 
@@ -216,10 +218,15 @@ type Config struct {
 
 	// Notifications 通知配置
 	Notifications struct {
-		Enabled        bool                    `yaml:"enabled"`
+		Enabled   bool `yaml:"enabled"`
+		FeishuApp *struct {
+			AppID     string `yaml:"app_id"`
+			AppSecret string `yaml:"app_secret"`
+			ChatID    string `yaml:"chat_id"`
+		} `yaml:"feishu_app,omitempty"`
 		Channels       []NotificationChannelCfg `yaml:"channels"`
-		SendTimeoutSec int                    `yaml:"send_timeout_sec"`
-		MaxRetries     int                    `yaml:"max_retries"`
+		SendTimeoutSec int                      `yaml:"send_timeout_sec"`
+		MaxRetries     int                      `yaml:"max_retries"`
 	} `yaml:"notifications"`
 
 	// 缓存配置
@@ -245,6 +252,16 @@ type Config struct {
 		// 按引擎的缓存配置
 		Engines map[string]EngineCacheConfig `yaml:"engines"`
 	} `yaml:"cache"`
+
+	// Query 查询配置
+	Query struct {
+		BrowserFallback struct {
+			Enabled       bool     `yaml:"enabled"`         // 是否允许 API 失败后自动尝试浏览器采集
+			OnAPIError    bool     `yaml:"on_api_error"`    // API 返回错误时是否 fallback
+			OnEmptyResult bool     `yaml:"on_empty_result"` // API 返回空结果时是否 fallback
+			Engines       []string `yaml:"engines"`         // 允许自动 fallback 的引擎白名单
+		} `yaml:"browser_fallback"`
+	} `yaml:"query"`
 }
 
 // NotificationChannelCfg 全局通知渠道配置
@@ -254,6 +271,9 @@ type NotificationChannelCfg struct {
 	Enabled        bool              `yaml:"enabled"`
 	WebhookURL     string            `yaml:"webhook_url"`
 	Secret         string            `yaml:"secret"`
+	AppID          string            `yaml:"app_id,omitempty"`
+	AppSecret      string            `yaml:"app_secret,omitempty"`
+	ChatID         string            `yaml:"chat_id,omitempty"`
 	Headers        map[string]string `yaml:"headers"`
 	AllowPrivateIP bool              `yaml:"allow_private_ip"`
 }
@@ -315,6 +335,7 @@ func (c *Config) Clone() *Config {
 	clone.Web.CORS.AllowedMethods = cloneStringSlice(c.Web.CORS.AllowedMethods)
 	clone.Web.CORS.AllowedHeaders = cloneStringSlice(c.Web.CORS.AllowedHeaders)
 	clone.Web.CORS.ExposedHeaders = cloneStringSlice(c.Web.CORS.ExposedHeaders)
+	clone.Web.CORS.AllowedExtensionIDs = cloneStringSlice(c.Web.CORS.AllowedExtensionIDs)
 	clone.Web.Auth = c.Web.Auth
 
 	// Network (has slice: Proxies)
@@ -331,6 +352,10 @@ func (c *Config) Clone() *Config {
 	// Cache (has map: Engines)
 	clone.Cache = c.Cache
 	clone.Cache.Engines = cloneEngineCacheMap(c.Cache.Engines)
+
+	// Query (has slice: BrowserFallback.Engines)
+	clone.Query = c.Query
+	clone.Query.BrowserFallback.Engines = cloneStringSlice(c.Query.BrowserFallback.Engines)
 
 	return clone
 }
@@ -379,6 +404,7 @@ func cloneEngineCacheMap(src map[string]EngineCacheConfig) map[string]EngineCach
 type Manager struct {
 	config *Config
 	path   string
+	mu     sync.RWMutex // protects config pointer reads/writes
 }
 
 // NewManager 创建配置管理器
@@ -393,22 +419,20 @@ func (m *Manager) Load() error {
 	// 读取配置文件
 	data, err := os.ReadFile(m.path)
 	if err != nil {
-		// 文件不存在/不可读时仍提供默认配置，避免上层直接崩溃
 		var cfg Config
 		m.applyDefaults(&cfg)
 		m.resolveEnv(&cfg)
-		m.config = &cfg
+		m.SetConfig(&cfg)
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	// 解析配置
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		// 配置解析失败也提供默认配置（同时返回错误给上层提示）
 		var cfg Config
 		m.applyDefaults(&cfg)
 		m.resolveEnv(&cfg)
-		m.config = &cfg
+		m.SetConfig(&cfg)
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
@@ -423,15 +447,14 @@ func (m *Manager) Load() error {
 
 	// 验证配置
 	if err := m.validate(&config); err != nil {
-		// 配置无效时保留默认值，避免上层直接崩溃
 		var cfg Config
 		m.applyDefaults(&cfg)
 		m.resolveEnv(&cfg)
-		m.config = &cfg
+		m.SetConfig(&cfg)
 		return fmt.Errorf("invalid config: %w", err)
 	}
 
-	m.config = &config
+	m.SetConfig(&config)
 	return nil
 }
 
@@ -512,9 +535,19 @@ func (m *Manager) ResolveEnv(value string) string {
 	return value
 }
 
-// GetConfig 获取配置
+// GetConfig 获取配置 (thread-safe)
 func (m *Manager) GetConfig() *Config {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.config
+}
+
+// SetConfig replaces the current config (thread-safe).
+// Used by hot-update and rollback.
+func (m *Manager) SetConfig(cfg *Config) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.config = cfg
 }
 
 // applyDefaults 应用默认值
@@ -802,10 +835,20 @@ func (m *Manager) applyDefaults(config *Config) {
 	}
 
 	// 默认登录凭据：如果未配置 username/password_hash，生成默认 admin/admin
+	isPublic := config.Web.BindAddress != "127.0.0.1" &&
+		config.Web.BindAddress != "localhost" &&
+		config.Web.BindAddress != "0.0.0.0"
+
 	if strings.TrimSpace(config.Web.Auth.Username) == "" {
+		if isPublic {
+			logger.Fatalf("生产环境 (bind=%s) 禁止使用默认用户名，请在配置文件中设置 'username'", config.Web.BindAddress)
+		}
 		config.Web.Auth.Username = "admin"
 	}
 	if strings.TrimSpace(config.Web.Auth.PasswordHash) == "" {
+		if isPublic {
+			logger.Fatalf("生产环境 (bind=%s) 禁止使用默认密码，请在配置文件中设置 'password_hash'", config.Web.BindAddress)
+		}
 		hash, err := HashPassword("admin")
 		if err != nil {
 			fmt.Printf("[config] WARNING: failed to hash default password: %v\n", err)
@@ -892,6 +935,11 @@ func (m *Manager) applyDefaults(config *Config) {
 			}
 			config.Cache.Engines[engine] = cfg
 		}
+	}
+
+	// 默认查询降级配置 — 全部关闭，不影响现有用户
+	if config.Query.BrowserFallback.Engines == nil {
+		config.Query.BrowserFallback.Engines = []string{"fofa", "zoomeye", "shodan"}
 	}
 
 	// 默认通知配置
@@ -1080,6 +1128,14 @@ func (m *Manager) validate(config *Config) error {
 		}
 		if len(config.Distributed.NodeAuthTokens) == 0 {
 			// 同上：节点 token 为空时运行时拒绝注册
+		}
+	}
+
+	// 验证浏览器降级引擎白名单
+	validBFEngines := map[string]bool{"fofa": true, "zoomeye": true, "shodan": true, "hunter": true, "quake": true}
+	for _, e := range config.Query.BrowserFallback.Engines {
+		if !validBFEngines[strings.ToLower(e)] {
+			return fmt.Errorf("query.browser_fallback.engines: unknown engine %q, must be one of: fofa, zoomeye, shodan, hunter, quake", e)
 		}
 	}
 
@@ -1299,4 +1355,3 @@ func HashPassword(password string) (string, error) {
 func CheckPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
-

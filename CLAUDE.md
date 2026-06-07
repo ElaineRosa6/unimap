@@ -55,7 +55,7 @@ internal/
   tamper/              网页篡改检测 (5 种模式)
   utils/               通用工具
 web/
-  server.go            Web 服务 + 路由 (69 个路由)
+  server.go            Web 服务 + 路由 (73 API + 17 非 API = 163 mux 条目，含旧路径 shim)
   templates/           Go 页面模板
   static/              前端静态资源
   middleware_*.go      中间件 (auth/ratelimit/requestid/audit)
@@ -69,6 +69,7 @@ docs/
   grafana-dashboard.json  Grafana 面板 (7 面板)
   PRODUCTION_READINESS_PLAN.md  生产就绪清单
   API.md               API 文档
+  API_VERSIONING.md    API 版本化方案
   PLUGIN_DEVELOPMENT_GUIDE.md  插件开发指南
 memory/
   MEMORY.md            项目记忆索引
@@ -264,5 +265,6 @@ gosec ./...
 | Grafana 面板 | `docs/grafana-dashboard.json` (7 面板) |
 | 生产就绪清单 | `docs/PRODUCTION_READINESS_PLAN.md` |
 | API 文档 | `docs/API.md` |
+| API 版本化方案 | `docs/API_VERSIONING.md` |
 | 插件开发指南 | `docs/PLUGIN_DEVELOPMENT_GUIDE.md` |
 | 插件桥接运维 | `docs/OPS_SCREENSHOT_EXTENSION.md` |

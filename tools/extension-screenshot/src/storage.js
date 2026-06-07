@@ -28,6 +28,12 @@ export async function saveLastError(err) {
   });
 }
 
+// Admin token (fallback credential for bridge auth after server restart)
+export async function loadAdminToken() {
+  const data = await chrome.storage.local.get(["adminToken"]);
+  return data.adminToken || "";
+}
+
 // API Base URL storage
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8448";
 

@@ -168,7 +168,7 @@ func TestCORSMiddleware_BridgePathBypass(t *testing.T) {
 	}))
 
 	// Preflight from chrome-extension should be allowed on bridge paths
-	req := httptest.NewRequest(http.MethodOptions, "/api/screenshot/bridge/pair", nil)
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/screenshot/bridge/pair", nil)
 	req.Header.Set("Origin", "chrome-extension://abc123")
 	req.Header.Set("Access-Control-Request-Method", "POST")
 	req.Header.Set("Access-Control-Request-Headers", "Content-Type")
@@ -184,7 +184,7 @@ func TestCORSMiddleware_BridgePathBypass(t *testing.T) {
 
 	// Non-bridge path with non-matching origin should be denied
 	// Note: isOriginAllowed also allows chrome-extension:// origin, so test with a different origin
-	req2 := httptest.NewRequest(http.MethodOptions, "/api/some/other/path", nil)
+	req2 := httptest.NewRequest(http.MethodOptions, "/api/v1/some/other/path", nil)
 	req2.Header.Set("Origin", "https://evil.com")
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, req2)
@@ -200,7 +200,7 @@ func TestCORSMiddleware_BridgeNormalRequest(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/tasks/next", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/tasks/next", nil)
 	req.Header.Set("Origin", "chrome-extension://abc123")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

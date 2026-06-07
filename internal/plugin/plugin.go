@@ -11,69 +11,69 @@ import (
 // Plugin 插件接口 - 定义了所有插件必须实现的方法
 type Plugin interface {
 	// 元数据方法
-	Name() string                    // 插件名称
-	Version() string                 // 插件版本
-	Description() string             // 插件描述
-	Author() string                  // 插件作者
-	Type() PluginType               // 插件类型
+	Name() string        // 插件名称
+	Version() string     // 插件版本
+	Description() string // 插件描述
+	Author() string      // 插件作者
+	Type() PluginType    // 插件类型
 
 	// 生命周期方法
-	Initialize(config map[string]interface{}) error  // 初始化
-	Start(ctx context.Context) error                 // 启动
-	Stop() error                                      // 停止
-	Health() HealthStatus                            // 健康检查
+	Initialize(config map[string]interface{}) error // 初始化
+	Start(ctx context.Context) error                // 启动
+	Stop() error                                    // 停止
+	Health() HealthStatus                           // 健康检查
 }
 
 // EnginePlugin 搜索引擎插件接口
 type EnginePlugin interface {
 	Plugin
-	
+
 	// 查询能力
 	Translate(ast *model.UQLAST) (string, error)
-	Search(query string, page, pageSize int) (*model.EngineResult, error)
+	Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error)
 	Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error)
-	
+
 	// 引擎特性
-	SupportedFields() []string       // 支持的查询字段
-	MaxPageSize() int                // 最大分页大小
-	RateLimit() RateLimitConfig      // 速率限制配置
+	SupportedFields() []string  // 支持的查询字段
+	MaxPageSize() int           // 最大分页大小
+	RateLimit() RateLimitConfig // 速率限制配置
 }
 
 // ProcessorPlugin 数据处理插件接口
 type ProcessorPlugin interface {
 	Plugin
-	
+
 	// 数据处理
 	Process(ctx context.Context, assets []model.UnifiedAsset) ([]model.UnifiedAsset, error)
-	Priority() int  // 处理优先级，数字越小优先级越高
+	Priority() int // 处理优先级，数字越小优先级越高
 }
 
 // ExporterPlugin 导出器插件接口
 type ExporterPlugin interface {
 	Plugin
-	
+
 	// 导出功能
 	Export(assets []model.UnifiedAsset, outputPath string) error
-	SupportedFormats() []string  // 支持的导出格式
+	SupportedFormats() []string // 支持的导出格式
 }
 
 // NotifierPlugin 通知插件接口
 type NotifierPlugin interface {
 	Plugin
-	
+
 	// 通知功能
 	Notify(ctx context.Context, message NotificationMessage) error
-	SupportedChannels() []string  // 支持的通知渠道
+	SupportedChannels() []string // 支持的通知渠道
 }
 
 // PluginType 插件类型
 type PluginType string
 
 const (
-	PluginTypeEngine    PluginType = "engine"     // 搜索引擎插件
-	PluginTypeProcessor PluginType = "processor"  // 数据处理插件
-	PluginTypeExporter  PluginType = "exporter"   // 导出器插件
-	PluginTypeNotifier  PluginType = "notifier"   // 通知插件
+	PluginTypeEngine    PluginType = "engine"    // 搜索引擎插件
+	PluginTypeProcessor PluginType = "processor" // 数据处理插件
+	PluginTypeExporter  PluginType = "exporter"  // 导出器插件
+	PluginTypeNotifier  PluginType = "notifier"  // 通知插件
 )
 
 // HealthStatus 健康状态
@@ -95,7 +95,7 @@ type RateLimitConfig struct {
 type NotificationMessage struct {
 	Title    string
 	Content  string
-	Level    string  // info, warning, error
+	Level    string // info, warning, error
 	Metadata map[string]interface{}
 }
 
@@ -233,4 +233,3 @@ func (r *PluginRegistry) GetNotifierPlugins() []NotifierPlugin {
 	}
 	return notifiers
 }
-

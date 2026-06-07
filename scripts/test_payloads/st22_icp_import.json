@@ -1,0 +1,5 @@
+{
+  "file_pattern": "*.csv",
+  "type": "web",
+  "max_rows": 1000
+}

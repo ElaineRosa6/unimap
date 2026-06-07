@@ -33,7 +33,7 @@ func NewStore(taskPath, historyPath string) *Store {
 }
 
 type persistedData struct {
-	Tasks   []*ScheduledTask `json:"tasks"`
+	Tasks   []*ScheduledTask  `json:"tasks"`
 	History []ExecutionRecord `json:"history"`
 }
 

@@ -82,7 +82,7 @@ func runAPIQuery(args []string) {
 	}
 
 	var resp apiQueryResponse
-	if err := doFormRequest(*apiBase, "/api/query", *timeoutSec, values, &resp); err != nil {
+	if err := doFormRequest(*apiBase, "/api/v1/query", *timeoutSec, values, &resp); err != nil {
 		fmt.Fprintf(os.Stderr, "API query failed: %v\n", err)
 		os.Exit(1)
 	}
@@ -131,7 +131,7 @@ func runAPITamperCheck(args []string) {
 		"mode":        strings.ToLower(strings.TrimSpace(*mode)),
 	}
 	var resp apiTamperResponse
-	if err := doJSONRequest(*apiBase, "/api/tamper/check", *timeoutSec, payload, &resp); err != nil {
+	if err := doJSONRequest(*apiBase, "/api/v1/tamper/check", *timeoutSec, payload, &resp); err != nil {
 		fmt.Fprintf(os.Stderr, "API tamper-check failed: %v\n", err)
 		os.Exit(1)
 	}
@@ -173,7 +173,7 @@ func runAPIScreenshotBatch(args []string) {
 		"concurrency": *concurrency,
 	}
 	var resp apiScreenshotBatchResponse
-	if err := doJSONRequest(*apiBase, "/api/screenshot/batch-urls", *timeoutSec, payload, &resp); err != nil {
+	if err := doJSONRequest(*apiBase, "/api/v1/screenshot/batch-urls", *timeoutSec, payload, &resp); err != nil {
 		fmt.Fprintf(os.Stderr, "API screenshot-batch failed: %v\n", err)
 		os.Exit(1)
 	}
@@ -295,12 +295,12 @@ func runAPIScheduler(args []string) {
 	}
 
 	base := strings.TrimRight(*apiBase, "/")
-	prefix := "/api/scheduler"
+	prefix := "/api/v1/scheduler"
 
 	switch strings.ToLower(subcmd) {
 	case "list":
 		var resp struct {
-			Success bool                   `json:"success"`
+			Success bool                     `json:"success"`
 			Tasks   []map[string]interface{} `json:"tasks"`
 		}
 		if err := doFormRequest(base, prefix+"/tasks", *timeoutSec, nil, &resp); err != nil {
@@ -320,7 +320,9 @@ func runAPIScheduler(args []string) {
 			os.Exit(1)
 		}
 		payload := map[string]string{"id": taskID.Value.String()}
-		var resp struct{ Success bool `json:"success"` }
+		var resp struct {
+			Success bool `json:"success"`
+		}
 		if err := doJSONRequest(base, prefix+"/tasks/run", *timeoutSec, payload, &resp); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -374,7 +376,9 @@ func runAPIScheduler(args []string) {
 		}
 		action := strings.ToLower(subcmd)
 		payload := map[string]string{"id": *taskID}
-		var resp struct{ Success bool `json:"success"` }
+		var resp struct {
+			Success bool `json:"success"`
+		}
 		if err := doJSONRequest(base, prefix+"/tasks/"+action, *timeoutSec, payload, &resp); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -389,7 +393,9 @@ func runAPIScheduler(args []string) {
 			os.Exit(1)
 		}
 		payload := map[string]string{"id": *taskID}
-		var resp struct{ Success bool `json:"success"` }
+		var resp struct {
+			Success bool `json:"success"`
+		}
 		if err := doJSONRequest(base, prefix+"/tasks/delete", *timeoutSec, payload, &resp); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -430,4 +436,3 @@ func runAPIScheduler(args []string) {
 		os.Exit(1)
 	}
 }
-

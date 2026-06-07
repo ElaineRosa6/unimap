@@ -22,7 +22,7 @@ func TestHandleImportCookieJSON_MissingEngine(t *testing.T) {
 	cfg := &config.Config{}
 	s := &Server{config: cfg}
 	body := strings.NewReader("engine=&cookie_json=[]")
-	req := httptest.NewRequest(http.MethodPost, "/api/cookies", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookies", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -41,7 +41,7 @@ func TestHandleImportCookieJSON_InvalidJSON(t *testing.T) {
 	cfg := &config.Config{}
 	s := &Server{config: cfg}
 	body := strings.NewReader("engine=fofa&cookie_json=not-json")
-	req := httptest.NewRequest(http.MethodPost, "/api/cookies", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookies", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -60,7 +60,7 @@ func TestHandleImportCookieJSON_EmptyCookieSet(t *testing.T) {
 	cfg := &config.Config{}
 	s := &Server{config: cfg}
 	body := strings.NewReader("engine=fofa&cookie_json=[]")
-	req := httptest.NewRequest(http.MethodPost, "/api/cookies", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookies", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -79,7 +79,7 @@ func TestHandleImportCookieJSON_UnsupportedEngine(t *testing.T) {
 	cfg := &config.Config{}
 	s := &Server{config: cfg}
 	body := strings.NewReader(`engine=unknown&cookie_json=[{"name":"test","value":"val","domain":".example.com"}]`)
-	req := httptest.NewRequest(http.MethodPost, "/api/cookies", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookies", body)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -196,7 +196,7 @@ func TestConvertConfigCookies_Single(t *testing.T) {
 
 func TestHandleVerifyCookies_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/cookies/verify", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookies/verify", nil)
 	w := httptest.NewRecorder()
 	s.handleVerifyCookies(w, req)
 
@@ -209,7 +209,7 @@ func TestHandleVerifyCookies_InvalidQuery(t *testing.T) {
 	cfg := &config.Config{}
 	s := &Server{config: cfg}
 	body := strings.NewReader("query=")
-	req := httptest.NewRequest(http.MethodPost, "/api/cookies/verify", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookies/verify", body)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	s.handleVerifyCookies(w, req)
@@ -228,7 +228,7 @@ func TestHandleVerifyCookies_InvalidQuery(t *testing.T) {
 
 func TestHandleCookieLoginStatus_Success(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/cookies/login-status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookies/login-status", nil)
 	w := httptest.NewRecorder()
 	s.handleCookieLoginStatus(w, req)
 
@@ -242,7 +242,7 @@ func TestHandleCookieLoginStatus_Success(t *testing.T) {
 
 func TestHandleCookieLoginStatus_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/cookies/login-status", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookies/login-status", nil)
 	w := httptest.NewRecorder()
 	s.handleCookieLoginStatus(w, req)
 
@@ -274,7 +274,7 @@ func TestHandleCookieLoginStatus_ExtPaired_NotLoggedIn(t *testing.T) {
 			},
 		},
 	}
-	req := httptest.NewRequest(http.MethodGet, "/api/cookies/login-status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookies/login-status", nil)
 	w := httptest.NewRecorder()
 	s.handleCookieLoginStatus(w, req)
 
@@ -349,4 +349,3 @@ func TestVerifyEngineSession_UnknownEngine(t *testing.T) {
 	}
 	_ = hint // hint varies by implementation
 }
-

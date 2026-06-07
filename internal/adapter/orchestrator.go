@@ -39,19 +39,19 @@ type EngineCacheTTLConfig struct {
 type CircuitState string
 
 const (
-	CircuitClosed   CircuitState = "closed"   // 正常状态
-	CircuitOpen     CircuitState = "open"     // 熔断状态，跳过该引擎
+	CircuitClosed   CircuitState = "closed"    // 正常状态
+	CircuitOpen     CircuitState = "open"      // 熔断状态，跳过该引擎
 	CircuitHalfOpen CircuitState = "half_open" // 半开状态，尝试恢复
 )
 
 // CircuitBreaker 简单熔断器
 type CircuitBreaker struct {
-	mu             sync.Mutex
-	State          CircuitState
-	Failures       int
-	LastFailure    time.Time
-	Threshold      int
-	ResetDuration  time.Duration
+	mu            sync.Mutex
+	State         CircuitState
+	Failures      int
+	LastFailure   time.Time
+	Threshold     int
+	ResetDuration time.Duration
 }
 
 func (cb *CircuitBreaker) AllowRequest() bool {
@@ -296,10 +296,10 @@ func (o *EngineOrchestrator) GetCircuitBreakerStats() map[string]map[string]inte
 	for name, cb := range o.circuitBreakers {
 		state, failures, threshold, lastFailure, resetDuration := cb.GetStats()
 		stats[name] = map[string]interface{}{
-			"state":         string(state),
-			"failures":      failures,
-			"threshold":     threshold,
-			"last_failure":  lastFailure,
+			"state":          string(state),
+			"failures":       failures,
+			"threshold":      threshold,
+			"last_failure":   lastFailure,
 			"reset_duration": resetDuration,
 		}
 	}
@@ -494,7 +494,7 @@ func (t *SearchTask) Execute() error {
 		if page <= 0 {
 			page = 1
 		}
-		result, err = adapter.Search(t.query.Query, page, t.pageSize)
+		result, err = adapter.Search(t.ctx, t.query.Query, page, t.pageSize)
 		if err == nil {
 			break
 		}
@@ -506,7 +506,7 @@ func (t *SearchTask) Execute() error {
 			metrics.IncEngineErrorByName(t.query.EngineName)
 			t.orchestrator.RecordEngineFailure(t.query.EngineName)
 			select {
-			case t.errorChan <- fmt.Errorf("%s search error: %v", t.query.EngineName, err):
+			case t.errorChan <- fmt.Errorf("%s search error: %w", t.query.EngineName, err):
 			default:
 				logger.CtxErrorf(t.ctx, "failed to send error: %s search error: %v", t.query.EngineName, err)
 			}
@@ -597,6 +597,9 @@ func (o *EngineOrchestrator) SearchEnginesWithContext(ctx context.Context, queri
 	// 创建工作池
 	pool := workerpool.NewPool(concurrency)
 	pool.Start()
+	// 确保任何返回路径（含 ctx 取消）都立即关闭工作池，避免空闲 worker
+	// 在主函数提前返回后滞留。Stop 经 CAS 幂等，可与下方清理 goroutine 安全并存。
+	defer pool.Stop()
 
 	// 创建结果通道和错误通道
 	resultChan := make(chan *model.EngineResult, len(queries))
@@ -621,10 +624,11 @@ func (o *EngineOrchestrator) SearchEnginesWithContext(ctx context.Context, queri
 		pool.Submit(task)
 	}
 
-	// 在 goroutine 中等待所有任务完成并关闭通道
+	// 在 goroutine 中等待所有任务完成并关闭通道。
+	// 不在此处调用 pool.Stop()：主函数已通过 defer pool.Stop() 兜底，
+	// ctx 取消时可立即停止工作池，无需等待 wg.Wait() 完成。
 	go func() {
 		wg.Wait()
-		pool.Stop()
 		close(resultChan)
 		close(errorChan)
 	}()
@@ -730,7 +734,7 @@ func (t *PaginatedSearchTask) Execute() error {
 			continue
 		}
 
-		result, err := adapter.Search(t.query.Query, page, t.pageSize)
+		result, err := adapter.Search(t.ctx, t.query.Query, page, t.pageSize)
 		if err != nil {
 			select {
 			case t.resultChan <- &model.EngineResult{
@@ -887,21 +891,20 @@ func (o *EngineOrchestrator) ExecuteUnifiedQuery(ast *model.UQLAST, engineNames 
 	// 1. 翻译查询
 	queries, err := o.TranslateQuery(ast, engineNames)
 	if err != nil {
-		return nil, fmt.Errorf("translate error: %v", err)
+		return nil, fmt.Errorf("translate error: %w", err)
 	}
 
 	// 2. 并行搜索
 	engineResults, err := o.SearchEnginesWithPagination(queries, pageSize, maxPages)
 	if err != nil {
-		return nil, fmt.Errorf("search error: %v", err)
+		return nil, fmt.Errorf("search error: %w", err)
 	}
 
 	// 3. 标准化
 	assets, err := o.NormalizeResults(engineResults)
 	if err != nil {
-		return nil, fmt.Errorf("normalize error: %v", err)
+		return nil, fmt.Errorf("normalize error: %w", err)
 	}
 
 	return assets, nil
 }
-

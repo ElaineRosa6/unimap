@@ -6,7 +6,7 @@ export async function requestPairToken(clientId, pairCode) {
     client_id: clientId,
     pair_code: pairCode
   };
-  return apiPost("/api/screenshot/bridge/pair", body, "");
+  return apiPost("/api/v1/screenshot/bridge/pair", body, "");
 }
 
 export async function pairAndStore(clientId, pairCode) {

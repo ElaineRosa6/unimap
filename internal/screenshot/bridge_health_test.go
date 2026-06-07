@@ -15,12 +15,12 @@ import (
 // ===== mockBridgeClient =====
 
 type mockBridgeClient struct {
-	mu           sync.Mutex
-	submitCalls  []BridgeTask
-	submitErr    error
-	awaitResult  BridgeResult
-	awaitErr     error
-	submitDelay  time.Duration
+	mu          sync.Mutex
+	submitCalls []BridgeTask
+	submitErr   error
+	awaitResult BridgeResult
+	awaitErr    error
+	submitDelay time.Duration
 }
 
 func (m *mockBridgeClient) SubmitTask(ctx context.Context, task BridgeTask) error {
@@ -355,14 +355,31 @@ func TestCDPHealthChecker_Override(t *testing.T) {
 	}
 }
 
-func TestCDPHealthChecker_EmptyRemoteURL(t *testing.T) {
-	c := &CDPHealthChecker{RemoteDebugURL: ""}
+func TestCDPHealthChecker_EmptyRemoteURL_LocalChromeFound(t *testing.T) {
+	c := &CDPHealthChecker{
+		RemoteDebugURL:    "",
+		LocalChromeFinder: func() string { return "/usr/bin/google-chrome" },
+	}
 	ok, err := c.Check(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !ok {
-		t.Error("expected true for empty RemoteDebugURL")
+		t.Error("expected true when local Chrome is available")
+	}
+}
+
+func TestCDPHealthChecker_EmptyRemoteURL_NoLocalChrome(t *testing.T) {
+	c := &CDPHealthChecker{
+		RemoteDebugURL:    "",
+		LocalChromeFinder: func() string { return "" },
+	}
+	ok, err := c.Check(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Error("expected false when no remote URL and no local Chrome found")
 	}
 }
 

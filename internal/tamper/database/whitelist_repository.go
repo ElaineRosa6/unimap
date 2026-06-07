@@ -34,21 +34,21 @@ func (r *whitelistRepository) CreateWhitelist(item *Whitelist) error {
 		INSERT INTO whitelist (type, value, description, created_at)
 		VALUES (?, ?, ?, ?)
 	`
-	
+
 	item.CreatedAt = time.Now()
-	
+
 	result, err := r.db.Exec(query, item.Type, item.Value, item.Description, item.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to create whitelist: %w", err)
 	}
-	
+
 	id, err := result.LastInsertId()
 	if err != nil {
 		return fmt.Errorf("failed to get last insert id: %w", err)
 	}
-	
+
 	item.ID = int(id)
-	
+
 	return nil
 }
 
@@ -59,7 +59,7 @@ func (r *whitelistRepository) GetWhitelistByID(id int) (*Whitelist, error) {
 		FROM whitelist
 		WHERE id = ?
 	`
-	
+
 	var item Whitelist
 	err := r.db.QueryRow(query, id).Scan(
 		&item.ID,
@@ -68,14 +68,14 @@ func (r *whitelistRepository) GetWhitelistByID(id int) (*Whitelist, error) {
 		&item.Description,
 		&item.CreatedAt,
 	)
-	
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("whitelist not found with id: %d", id)
 		}
 		return nil, fmt.Errorf("failed to get whitelist: %w", err)
 	}
-	
+
 	return &item, nil
 }
 
@@ -87,13 +87,13 @@ func (r *whitelistRepository) GetWhitelistByType(whitelistType string) ([]*White
 		WHERE type = ?
 		ORDER BY created_at DESC
 	`
-	
+
 	rows, err := r.db.Query(query, whitelistType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query whitelist by type: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var items []*Whitelist
 	for rows.Next() {
 		var item Whitelist
@@ -109,11 +109,11 @@ func (r *whitelistRepository) GetWhitelistByType(whitelistType string) ([]*White
 		}
 		items = append(items, &item)
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating rows: %w", err)
 	}
-	
+
 	return items, nil
 }
 
@@ -124,13 +124,13 @@ func (r *whitelistRepository) GetAllWhitelist() ([]*Whitelist, error) {
 		FROM whitelist
 		ORDER BY type, created_at DESC
 	`
-	
+
 	rows, err := r.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query all whitelist: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var items []*Whitelist
 	for rows.Next() {
 		var item Whitelist
@@ -146,11 +146,11 @@ func (r *whitelistRepository) GetAllWhitelist() ([]*Whitelist, error) {
 		}
 		items = append(items, &item)
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating rows: %w", err)
 	}
-	
+
 	return items, nil
 }
 
@@ -160,16 +160,16 @@ func (r *whitelistRepository) DeleteWhitelist(id int) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete whitelist: %w", err)
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
-	
+
 	if rowsAffected == 0 {
 		return fmt.Errorf("whitelist not found with id: %d", id)
 	}
-	
+
 	return nil
 }
 
@@ -179,16 +179,16 @@ func (r *whitelistRepository) DeleteWhitelistByType(whitelistType string) error 
 	if err != nil {
 		return fmt.Errorf("failed to delete whitelist by type: %w", err)
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
-	
+
 	if rowsAffected == 0 {
 		return fmt.Errorf("no whitelist found with type: %s", whitelistType)
 	}
-	
+
 	return nil
 }
 
@@ -198,16 +198,16 @@ func (r *whitelistRepository) DeleteWhitelistByValue(value string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete whitelist by value: %w", err)
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
-	
+
 	if rowsAffected == 0 {
 		return fmt.Errorf("no whitelist found with value: %s", value)
 	}
-	
+
 	return nil
 }
 
@@ -218,7 +218,7 @@ func (r *whitelistRepository) ExistsByTypeAndValue(whitelistType, value string) 
 	if err != nil {
 		return false, fmt.Errorf("failed to check whitelist existence: %w", err)
 	}
-	
+
 	return count > 0, nil
 }
 
@@ -228,12 +228,12 @@ func (r *whitelistRepository) BatchCreateWhitelist(items []*Whitelist) error {
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	
+
 	query := `
 		INSERT INTO whitelist (type, value, description, created_at)
 		VALUES (?, ?, ?, ?)
 	`
-	
+
 	now := time.Now()
 	for _, item := range items {
 		item.CreatedAt = now
@@ -243,7 +243,7 @@ func (r *whitelistRepository) BatchCreateWhitelist(items []*Whitelist) error {
 			return fmt.Errorf("failed to create whitelist: %w", err)
 		}
 	}
-	
+
 	return tx.Commit()
 }
 
@@ -254,13 +254,13 @@ func (r *whitelistRepository) GetWhitelistValuesByType(whitelistType string) ([]
 		FROM whitelist
 		WHERE type = ?
 	`
-	
+
 	rows, err := r.db.Query(query, whitelistType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query whitelist values: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var values []string
 	for rows.Next() {
 		var value string
@@ -269,10 +269,10 @@ func (r *whitelistRepository) GetWhitelistValuesByType(whitelistType string) ([]
 		}
 		values = append(values, value)
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating rows: %w", err)
 	}
-	
+
 	return values, nil
 }

@@ -87,7 +87,7 @@ func TestExampleEnginePlugin_Search_NotStarted(t *testing.T) {
 	plugin := NewExampleEnginePlugin()
 
 	// Search without start should fail
-	if _, err := plugin.Search("test", 1, 10); err == nil {
+	if _, err := plugin.Search(context.Background(), "test", 1, 10); err == nil {
 		t.Fatal("expected error when searching before start")
 	}
 }
@@ -172,14 +172,14 @@ type testProcessor struct {
 	priority int
 }
 
-func (t *testProcessor) Name() string                         { return t.name }
-func (t *testProcessor) Version() string                      { return "0.1.0" }
-func (t *testProcessor) Description() string                  { return "test" }
-func (t *testProcessor) Author() string                       { return "test" }
-func (t *testProcessor) Type() PluginType                     { return PluginTypeProcessor }
+func (t *testProcessor) Name() string                            { return t.name }
+func (t *testProcessor) Version() string                         { return "0.1.0" }
+func (t *testProcessor) Description() string                     { return "test" }
+func (t *testProcessor) Author() string                          { return "test" }
+func (t *testProcessor) Type() PluginType                        { return PluginTypeProcessor }
 func (t *testProcessor) Initialize(map[string]interface{}) error { return nil }
-func (t *testProcessor) Start(context.Context) error          { return nil }
-func (t *testProcessor) Stop() error                          { return nil }
+func (t *testProcessor) Start(context.Context) error             { return nil }
+func (t *testProcessor) Stop() error                             { return nil }
 func (t *testProcessor) Health() HealthStatus {
 	return HealthStatus{Healthy: true, Message: "ok"}
 }
@@ -187,4 +187,3 @@ func (t *testProcessor) Process(ctx context.Context, assets []model.UnifiedAsset
 	return assets, nil
 }
 func (t *testProcessor) Priority() int { return t.priority }
-

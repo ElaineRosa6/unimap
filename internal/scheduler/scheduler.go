@@ -6,8 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -86,7 +86,7 @@ func TaskTypeLabel(t TaskType) string {
 		TaskBaselineRefresh:   "基线刷新",
 		TaskURLImport:         "URL 导入",
 		TaskPluginHealth:      "插件健康检查",
-		TaskBridgeTokenRotate: "Bridge 令牌轮换",
+		TaskBridgeTokenRotate: "Bridge 健康检查",
 		TaskAlertSilence:      "告警静默窗口",
 		TaskCacheWarmup:       "缓存预热",
 		TaskICPQuery:          "ICP 备案查询",
@@ -98,6 +98,48 @@ func TaskTypeLabel(t TaskType) string {
 	return string(t)
 }
 
+// TaskGroupInfo describes a UI grouping of task types for the scheduler form.
+type TaskGroupInfo struct {
+	Name  string     // 分组名称，如 "查询与采集"
+	Icon  string     // 分组图标 emoji
+	Types []TaskType // 该分组下的任务类型（按展示顺序）
+}
+
+// GroupedTaskTypes returns task types organized into ordered UI groups.
+// The union of all groups equals AllTaskTypes (verified by tests).
+// See docs/SCHEDULER_OPTIMIZATION_PLAN.md §1.2A.
+func GroupedTaskTypes() []TaskGroupInfo {
+	return []TaskGroupInfo{
+		{Name: "查询与采集", Icon: "📊", Types: []TaskType{
+			TaskQuery, TaskSearchScreenshot, TaskBatchScreenshot, TaskExport, TaskICPQuery,
+		}},
+		{Name: "监控与检测", Icon: "🔍", Types: []TaskType{
+			TaskTamperCheck, TaskURLReachability, TaskPortScan, TaskLoginStatusCheck, TaskQuotaMonitor,
+		}},
+		{Name: "维护与清理", Icon: "🔧", Types: []TaskType{
+			TaskScreenshotCleanup, TaskTamperCleanup, TaskBaselineRefresh, TaskAlertSilence,
+		}},
+		{Name: "基础设施", Icon: "📡", Types: []TaskType{
+			TaskCookieVerify, TaskBridgeTokenRotate, TaskPluginHealth, TaskCacheWarmup, TaskDistributedSubmit,
+		}},
+		{Name: "导入与汇总", Icon: "📥", Types: []TaskType{
+			TaskURLImport, TaskICPImport, TaskAlertSummary,
+		}},
+	}
+}
+
+// TaskTypeGroup returns the UI group name for a task type, or "其他" if ungrouped.
+func TaskTypeGroup(t TaskType) string {
+	for _, g := range GroupedTaskTypes() {
+		for _, tt := range g.Types {
+			if tt == t {
+				return g.Name
+			}
+		}
+	}
+	return "其他"
+}
+
 // DefaultTemplates returns a set of pre-defined task templates.
 func DefaultTemplates() []TaskTemplate {
 	return []TaskTemplate{
@@ -107,7 +149,7 @@ func DefaultTemplates() []TaskTemplate {
 			Description: "每天凌晨 2 点对所有重要 URL 进行篡改检测",
 			Type:        TaskTamperCheck,
 			CronExpr:    "0 0 2 * * *",
-			Payload:     map[string]interface{}{"mode": "full"},
+			Payload:     map[string]interface{}{"detection_mode": "full"},
 			TimeoutSec:  3600,
 			MaxRetries:  2,
 			Tags:        []string{"security", "daily"},
@@ -266,8 +308,8 @@ type NotificationConfig struct {
 	OnSuccess  bool     `json:"on_success"`
 	OnFailure  bool     `json:"on_failure"`
 	OnTimeout  bool     `json:"on_timeout"`
-	ChannelIDs []string `json:"channel_ids"`          // 新字段：引用全局 channel ID
-	Channels   []string `json:"channels,omitempty"`   // 旧字段：向后兼容
+	ChannelIDs []string `json:"channel_ids"`           // 新字段：引用全局 channel ID
+	Channels   []string `json:"channels,omitempty"`    // 旧字段：向后兼容
 	WebhookURL string   `json:"webhook_url,omitempty"` // 旧字段：任务级 inline webhook
 	Recipients []string `json:"recipients,omitempty"`
 }
@@ -318,6 +360,10 @@ type Scheduler struct {
 	mu         sync.RWMutex
 	maxHistory int
 
+	// 生命周期控制：ctx 派生给所有执行中的任务，cancel 在 Stop 时触发
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	// 通知系统
 	notifyRegistry    *notify.Registry
 	notifyCfgProvider func() *notify.NotifyGlobalCfg
@@ -337,6 +383,7 @@ func NewScheduler(storePath string, historyPath string, maxHistory int) *Schedul
 		maxHistory = 500
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &Scheduler{
 		tasks:      make(map[string]*ScheduledTask),
 		cron:       c,
@@ -345,6 +392,8 @@ func NewScheduler(storePath string, historyPath string, maxHistory int) *Schedul
 		history:    make([]ExecutionRecord, 0),
 		maxHistory: maxHistory,
 		stopCh:     make(chan struct{}),
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 
 	if storePath != "" {
@@ -383,7 +432,7 @@ func (s *Scheduler) Load() error {
 		s.tasks[t.ID] = t
 		if t.Enabled {
 			if err := s.scheduleTask(t); err != nil {
-				log.Printf("[scheduler] failed to schedule persisted task %s (%s): %v — task loaded but will not auto-fire", t.ID, t.Name, err)
+				logger.Errorf("[scheduler] failed to schedule persisted task %s (%s): %v — task loaded but will not auto-fire", t.ID, t.Name, err)
 			}
 		}
 	}
@@ -413,7 +462,7 @@ func (s *Scheduler) saveLocked() error {
 		if cp.Payload != nil {
 			raw, err := json.Marshal(t.Payload)
 			if err != nil {
-				log.Printf("[scheduler] failed to deep-copy payload for task %s: %v", t.ID, err)
+				logger.Warnf("[scheduler] failed to deep-copy payload for task %s: %v", t.ID, err)
 				cp.Payload = make(map[string]interface{})
 			} else {
 				_ = json.Unmarshal(raw, &cp.Payload)
@@ -447,6 +496,11 @@ func (s *Scheduler) RegisterHandler(h TaskHandler) {
 func (s *Scheduler) AddTask(task *ScheduledTask) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Sanitize task name and payload strings at creation time to handle
+	// GBK-encoded input from Windows terminals / Chinese HTTP clients.
+	task.Name = sanitizeUTF8(task.Name)
+	task.Payload = sanitizePayload(task.Payload)
 
 	if task.ID == "" {
 		task.ID = s.generateID()
@@ -500,6 +554,10 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 	if !ok {
 		return fmt.Errorf("task %s not found", task.ID)
 	}
+
+	// Sanitize on update too
+	task.Name = sanitizeUTF8(task.Name)
+	task.Payload = sanitizePayload(task.Payload)
 
 	// Validate cron if changed
 	if task.CronExpr != "" && task.CronExpr != existing.CronExpr {
@@ -791,7 +849,7 @@ func (s *Scheduler) scheduleTask(task *ScheduledTask) error {
 	}
 	handler := s.handlers[task.Type]
 	if handler == nil {
-		log.Printf("[scheduler] no handler registered for task type %s (id=%s)", task.Type, task.ID)
+		logger.Warnf("[scheduler] no handler registered for task type %s (id=%s)", task.Type, task.ID)
 		return nil
 	}
 
@@ -802,7 +860,7 @@ func (s *Scheduler) scheduleTask(task *ScheduledTask) error {
 	cronExpr := normalizeCronExpr(task.CronExpr)
 	entryID, err := s.cron.AddFunc(cronExpr, schedule)
 	if err != nil {
-		log.Printf("[scheduler] failed to schedule task %s (cron=%q): %v", task.ID, task.CronExpr, err)
+		logger.Errorf("[scheduler] failed to schedule task %s (cron=%q): %v", task.ID, task.CronExpr, err)
 		return err
 	}
 	s.cronIDs[task.ID] = entryID
@@ -823,14 +881,14 @@ func (s *Scheduler) executeTask(task *ScheduledTask, handler TaskHandler, timeou
 
 	// 检查依赖链
 	if !s.areDependenciesMet(task) {
-		log.Printf("[scheduler] task %s (%s) skipped: dependencies not met", task.ID, task.Name)
+		logger.Infof("[scheduler] task %s (%s) skipped: dependencies not met", task.ID, task.Name)
 		s.recordSkippedExecution(task, "dependencies_not_met", "dependency tasks not yet successful")
 		return
 	}
 
 	// 检查执行窗口
 	if task.ExecutionWindow != nil && !s.isWithinExecutionWindow(task.ExecutionWindow) {
-		log.Printf("[scheduler] task %s (%s) skipped: outside execution window", task.ID, task.Name)
+		logger.Infof("[scheduler] task %s (%s) skipped: outside execution window", task.ID, task.Name)
 		s.recordSkippedExecution(task, "outside_window", "current time outside execution window")
 		return
 	}
@@ -850,7 +908,7 @@ func (s *Scheduler) executeTask(task *ScheduledTask, handler TaskHandler, timeou
 			time.Sleep(time.Duration(attempt*2) * time.Second) // simple backoff
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+		ctx, cancel := context.WithTimeout(s.ctx, time.Duration(timeoutSec)*time.Second)
 		var result string
 		var err error
 		func() {
@@ -934,14 +992,14 @@ func (s *Scheduler) areDependenciesMet(task *ScheduledTask) bool {
 	for _, depID := range task.DependsOn {
 		_, exists := s.tasks[depID]
 		if !exists {
-			log.Printf("[scheduler] dependency task %s not found for task %s", depID, task.ID)
+			logger.Warnf("[scheduler] dependency task %s not found for task %s", depID, task.ID)
 			return false
 		}
 
 		// Find last execution record for this dependency
 		lastRecord := s.findLastExecutionRecord(depID)
 		if lastRecord == nil || lastRecord.Status != "success" {
-			log.Printf("[scheduler] dependency task %s last status: %v (need success)", depID, lastRecord)
+			logger.Debugf("[scheduler] dependency task %s last status: %v (need success)", depID, lastRecord)
 			return false
 		}
 	}
@@ -964,7 +1022,7 @@ func (s *Scheduler) isWithinExecutionWindow(window *ExecutionWindow) bool {
 	if window.Timezone != "" {
 		loc, err := time.LoadLocation(window.Timezone)
 		if err != nil {
-			log.Printf("[scheduler] invalid timezone %q, using local time: %v", window.Timezone, err)
+			logger.Warnf("[scheduler] invalid timezone %q, using local time: %v", window.Timezone, err)
 		} else {
 			now = now.In(loc)
 		}
@@ -1060,14 +1118,20 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 
 	msg := notify.TaskNotification{
 		TaskID:    task.ID,
-		TaskName:  task.Name,
+		TaskName:  sanitizeUTF8(task.Name),
 		TaskType:  string(task.Type),
 		Status:    record.Status,
-		Result:    record.Result,
-		Error:     record.Error,
+		Result:    sanitizeUTF8(record.Result), // executor sanitizes, but double-check for old records
+		Error:     sanitizeUTF8(record.Error),
 		Duration:  float64(record.DurationMs),
 		Timestamp: time.Now(),
+		Payload:   sanitizePayload(task.Payload),
 	}
+
+	// 提取截图路径（用于飞书图片推送）
+	msg.ImagePaths = extractImagePaths(record.Result)
+	// 从通知文案中剥离系统路径，防止泄露
+	msg.Result = redactImagePaths(msg.Result, msg.ImagePaths)
 
 	timeout := s.notifyTimeout
 	if timeout == 0 {
@@ -1093,13 +1157,13 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 				}()
 				ch, err := notify.NewGenericWebhookChannel("__inline__", url, nil, true, false)
 				if err != nil {
-					log.Printf("[scheduler] inline webhook URL blocked: %v", err)
+					logger.Errorf("[scheduler] inline webhook URL blocked: %v", err)
 					return
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), timeout)
 				defer cancel()
 				if err := ch.Send(ctx, msg); err != nil {
-					log.Printf("[scheduler] notify inline webhook failed: %v", err)
+					logger.Errorf("[scheduler] notify inline webhook failed: %v", err)
 					metrics.IncSchedulerNotifyFail("webhook")
 				} else {
 					metrics.IncSchedulerNotifySuccess("webhook")
@@ -1113,7 +1177,7 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 		}
 		ch := s.notifyRegistry.Get(chID)
 		if ch == nil {
-			log.Printf("[scheduler] notify channel %q not registered, skipping", chID)
+			logger.Warnf("[scheduler] notify channel %q not registered, skipping", chID)
 			continue
 		}
 		if !ch.IsEnabled() {
@@ -1137,13 +1201,92 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			if err := ch.Send(ctx, msg); err != nil {
-				log.Printf("[scheduler] notify %s (%s) failed: %v", ch.ID(), ch.Type(), err)
+				logger.Errorf("[scheduler] notify %s (%s) failed: %v", ch.ID(), ch.Type(), err)
 				metrics.IncSchedulerNotifyFail(ch.Type())
 			} else {
 				metrics.IncSchedulerNotifySuccess(ch.Type())
 			}
 		}(ch)
 	}
+}
+
+// extractImagePaths 从任务结果中提取截图文件路径
+func extractImagePaths(result string) []string {
+	if result == "" {
+		return nil
+	}
+
+	var paths []string
+	lines := strings.Split(result, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// 匹配格式：✅ URL → filepath 或 ✅ filepath
+		if strings.Contains(line, "→") {
+			parts := strings.SplitN(line, "→", 2)
+			if len(parts) == 2 {
+				path := strings.TrimSpace(parts[1])
+				if isImageFile(path) {
+					paths = append(paths, path)
+					continue // 已通过箭头格式提取，跳过后续独立匹配
+				}
+			}
+		}
+
+		// 匹配格式：✅ 截图保存: filepath
+		if strings.Contains(line, "截图保存:") || strings.Contains(line, "截图目录:") {
+			// 这是目录路径，不是文件路径
+			continue
+		}
+
+		// 匹配直接的文件路径（以 screenshots/ 开头或包含 .png/.jpg）
+		if isImageFile(line) {
+			paths = append(paths, line)
+		}
+	}
+
+	return paths
+}
+
+// isImageFile 检查路径是否是图片文件
+func isImageFile(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".png") ||
+		strings.HasSuffix(lower, ".jpg") ||
+		strings.HasSuffix(lower, ".jpeg") ||
+		strings.HasSuffix(lower, ".gif") ||
+		strings.HasSuffix(lower, ".webp")
+}
+
+// redactImagePaths 从结果文本中剥离图片文件的完整路径，仅保留文件名。
+// 防止飞书/Webhook 通知泄露服务器目录结构。
+func redactImagePaths(result string, paths []string) string {
+	if result == "" || len(paths) == 0 {
+		return result
+	}
+	for _, p := range paths {
+		result = strings.ReplaceAll(result, p, filepath.Base(p))
+	}
+	return result
+}
+
+// sanitizePayload creates a copy of payload with all string values passed through sanitizeUTF8.
+func sanitizePayload(payload map[string]interface{}) map[string]interface{} {
+	if payload == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(payload))
+	for k, v := range payload {
+		if s, ok := v.(string); ok {
+			out[k] = sanitizeUTF8(s)
+		} else {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // migrateChannelIDs 将旧 Channels[] 字段迁移到 ChannelIDs[]
@@ -1161,10 +1304,10 @@ func migrateChannelIDs(nc *NotificationConfig) []string {
 			if nc.WebhookURL != "" {
 				ids = append(ids, "__task_inline_webhook__")
 			} else {
-				log.Printf("[scheduler] task webhook channel without URL skipped")
+				logger.Warnf("[scheduler] task webhook channel without URL skipped")
 			}
 		case "email":
-			log.Printf("[scheduler] email channel not supported, skipped")
+			logger.Warnf("[scheduler] email channel not supported, skipped")
 		}
 	}
 	return ids
@@ -1187,13 +1330,13 @@ func (s *Scheduler) sendWebhookNotification(webhookURL string, payload map[strin
 
 		jsonData, err := json.Marshal(payload)
 		if err != nil {
-			log.Printf("[scheduler] failed to marshal webhook payload: %v", err)
+			logger.Errorf("[scheduler] failed to marshal webhook payload: %v", err)
 			return
 		}
 
 		req, err := http.NewRequestWithContext(ctx, "POST", webhookURL, bytes.NewBuffer(jsonData))
 		if err != nil {
-			log.Printf("[scheduler] failed to create webhook request: %v", err)
+			logger.Errorf("[scheduler] failed to create webhook request: %v", err)
 			return
 		}
 
@@ -1203,13 +1346,13 @@ func (s *Scheduler) sendWebhookNotification(webhookURL string, payload map[strin
 		client := safeWebhookClient()
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Printf("[scheduler] failed to send webhook to %s: %v", webhookURL, err)
+			logger.Errorf("[scheduler] failed to send webhook to %s: %v", webhookURL, err)
 			return
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			log.Printf("[scheduler] webhook to %s returned non-success status: %d", webhookURL, resp.StatusCode)
+			logger.Warnf("[scheduler] webhook to %s returned non-success status: %d", webhookURL, resp.StatusCode)
 		}
 	}()
 }
@@ -1230,7 +1373,7 @@ func (s *Scheduler) saveAsync() {
 			}
 		}()
 		if err := s.Save(); err != nil {
-			log.Printf("[scheduler] saveAsync failed: %v", err)
+			logger.Errorf("[scheduler] saveAsync failed: %v", err)
 		}
 	}()
 }
@@ -1247,8 +1390,12 @@ func (s *Scheduler) Stop() {
 	close(s.stopCh)
 	s.mu.Unlock()
 
-	// Stop cron
-	s.cron.Stop()
+	// 取消所有进行中的任务（context 派生自 s.ctx 的任务将收到取消信号）
+	s.cancel()
+
+	// Stop cron and wait for it to finish
+	stopCtx := s.cron.Stop()
+	<-stopCtx.Done()
 
 	// Wait for notification goroutines to finish
 	s.notifyWg.Wait()
@@ -1396,4 +1543,3 @@ func sortInt64(s []int64) {
 		return s[i] < s[j]
 	})
 }
-

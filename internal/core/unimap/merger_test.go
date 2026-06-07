@@ -88,10 +88,10 @@ func TestMergeEmpty(t *testing.T) {
 
 func TestContains(t *testing.T) {
 	testCases := []struct {
-		name  string
-		list  string
-		item  string
-		want  bool
+		name string
+		list string
+		item string
+		want bool
 	}{
 		{"contains single", "fofa", "fofa", true},
 		{"contains in list", "fofa,hunter", "hunter", true},
@@ -336,4 +336,3 @@ func TestMergeAssets(t *testing.T) {
 		t.Errorf("expected merged sources, got %q", existing.Source)
 	}
 }
-

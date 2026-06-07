@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,10 +12,81 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 
 	"github.com/unimap/project/internal/logger"
 )
+
+// Chrome extension origin restriction state.
+// SetAllowedExtensionIDs must be called during server startup before serving requests.
+// If not called (e.g., in tests), all chrome-extension:// origins are allowed for backward compatibility.
+var (
+	extIDMu     sync.RWMutex
+	extIDSet    map[string]struct{} // non-nil + non-empty = restrict to these IDs
+	extIDLoaded bool
+)
+
+// SetAllowedExtensionIDs configures which chrome-extension:// origin IDs are permitted.
+// Pass nil or an empty slice to allow all extensions (backward-compatible default).
+func SetAllowedExtensionIDs(ids []string) {
+	m := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			m[id] = struct{}{}
+		}
+	}
+	extIDMu.Lock()
+	extIDSet = m
+	extIDLoaded = true
+	extIDMu.Unlock()
+	if len(m) == 0 {
+		logger.Warn("web.cors.allowed_extension_ids is empty; all chrome-extension:// origins will be allowed (backward compatibility). Configure allowed_extension_ids to restrict.")
+	} else {
+		snapshot := make([]string, 0, len(m))
+		for k := range m {
+			snapshot = append(snapshot, k)
+		}
+		logger.Infof("Chrome extension origin restriction enabled, allowed IDs: %v", snapshot)
+	}
+}
+
+// extractExtensionID parses the extension ID from a chrome-extension:// origin.
+// Returns "" if the origin is not a valid chrome-extension:// URL.
+func extractExtensionID(origin string) string {
+	const prefix = "chrome-extension://"
+	if !strings.HasPrefix(origin, prefix) {
+		return ""
+	}
+	rest := origin[len(prefix):]
+	if idx := strings.Index(rest, "/"); idx != -1 {
+		rest = rest[:idx]
+	}
+	return strings.TrimSpace(rest)
+}
+
+// isChromeExtensionAllowed checks whether a chrome-extension:// origin is permitted.
+// Returns true if no restriction is configured (backward compatible).
+func isChromeExtensionAllowed(origin string) bool {
+	extIDMu.RLock()
+	loaded := extIDLoaded
+	ids := extIDSet
+	extIDMu.RUnlock()
+
+	if !loaded || len(ids) == 0 {
+		return true // not configured or empty — allow all (backward compat)
+	}
+	id := extractExtensionID(origin)
+	if id == "" {
+		return false
+	}
+	_, allowed := ids[id]
+	return allowed
+}
 
 type apiErrorPayload struct {
 	Code    string      `json:"code"`
@@ -79,7 +151,20 @@ func decodeJSONReader(r io.Reader, dst interface{}) error {
 }
 
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
-	if err := decodeJSONReader(r.Body, dst); err != nil {
+	// Read body and detect GBK encoding (common on Windows with Chinese locale).
+	// Go's JSON decoder expects UTF-8, so we convert GBK→UTF-8 before parsing.
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_request_body", "failed to read request body", nil)
+		return false
+	}
+	if len(body) > 0 && !utf8.Valid(body) {
+		decoder := simplifiedchinese.GBK.NewDecoder()
+		if converted, convErr := decoder.Bytes(body); convErr == nil && utf8.Valid(converted) {
+			body = converted
+		}
+	}
+	if err := decodeJSONReader(bytes.NewReader(body), dst); err != nil {
 		if errors.Is(err, io.EOF) {
 			writeAPIError(w, http.StatusBadRequest, "invalid_request_body", "request body is required", nil)
 			return false
@@ -141,9 +226,9 @@ func isOriginAllowed(origin, host string, allowedOrigins []string) bool {
 	if isSameHostURL(origin, host) {
 		return true
 	}
-	// Allow Chrome extension origins (chrome-extension://<id>)
+	// Allow Chrome extension origins only if the extension ID is permitted.
 	if strings.HasPrefix(origin, "chrome-extension://") {
-		return true
+		return isChromeExtensionAllowed(origin)
 	}
 	return originAllowedByList(origin, allowedOrigins)
 }
@@ -180,7 +265,7 @@ func requestSizeLimitMiddleware(maxBodyBytes int64) func(http.Handler) http.Hand
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			isWebSocket := strings.Contains(r.Header.Get("Connection"), "Upgrade") &&
 				strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-			
+
 			if !isWebSocket {
 				switch r.Method {
 				case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
@@ -258,7 +343,7 @@ func corsMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeade
 	headerHeader := strings.Join(allowedHeaders, ", ")
 	exposedHeader := strings.Join(exposedHeaders, ", ")
 
-		return func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Bridge routes have their own auth (loopback + bearer token),
 			// skip CORS restrictions for them (needed for browser extensions).
@@ -331,4 +416,3 @@ func sanitizeError(err string) string {
 	}
 	return sanitized
 }
-

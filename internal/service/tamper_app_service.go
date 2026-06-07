@@ -412,4 +412,3 @@ func (s *TamperAppService) newDetector(ctx context.Context, mode string, allocat
 
 	return detector, cleanup, nil
 }
-
