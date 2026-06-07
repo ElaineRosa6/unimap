@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
+	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/utils"
 )
@@ -61,33 +62,31 @@ func (s *ShodanAdapter) translateNode(node *model.UQLNode) string {
 
 	switch node.Type {
 	case "condition":
-		// field= value 或 field IN [values]
 		field := node.Value
 		if len(node.Children) >= 2 {
 			op := node.Children[0].Value
 			val := node.Children[1].Value
 
+			mappedField := s.mapField(field)
+
 			if op == "IN" {
-				// Shodan不支持IN语法，需要转换为多个OR
+				// 同字段 OR 用逗号: port:80,443
 				values := strings.Split(val, ",")
-				conditions := []string{}
+				quoted := make([]string, 0, len(values))
 				for _, v := range values {
-					conditions = append(conditions, fmt.Sprintf("%s:%s", s.mapField(field), v))
+					quoted = append(quoted, shodanQuote(strings.TrimSpace(v)))
 				}
-				return "(" + strings.Join(conditions, " OR ") + ")"
+				return fmt.Sprintf("%s:%s", mappedField, strings.Join(quoted, ","))
 			}
 
-			// 处理特殊字段映射
-			field = s.mapField(field)
-
-			if op == "=" || op == "==" || strings.ToUpper(op) == "CONTAINS" {
-				return fmt.Sprintf("%s:%s", field, val)
-			}
 			if op == "!=" || op == "<>" {
-				return fmt.Sprintf("-%s:%s", field, val)
+				return fmt.Sprintf("-%s:%s", mappedField, shodanQuote(val))
 			}
-			// Fallback
-			return fmt.Sprintf("%s:%s", field, val)
+			// Shodan 比较操作符: field:>value, field:>=value, field:<value, field:<=value
+			if op == ">" || op == ">=" || op == "<" || op == "<=" {
+				return fmt.Sprintf("%s:%s%s", mappedField, op, shodanQuote(val))
+			}
+			return fmt.Sprintf("%s:%s", mappedField, shodanQuote(val))
 		}
 
 	case "logical":
@@ -95,21 +94,38 @@ func (s *ShodanAdapter) translateNode(node *model.UQLNode) string {
 			left := s.translateNode(node.Children[0])
 			right := s.translateNode(node.Children[1])
 			if node.Value == "OR" {
-				return fmt.Sprintf("(%s OR %s)", left, right)
+				// Shodan 不支持跨字段 OR / 括号 — 降级为 AND 语义（结果集更小但安全）
+				logger.Warnf("Shodan adapter: OR between (%s) and (%s) degraded to AND (Shodan does not support cross-field OR)", left, right)
 			}
-			return fmt.Sprintf("(%s AND %s)", left, right)
+			// AND = 空格连接（Shodan 原生语法）
+			return fmt.Sprintf("%s %s", left, right)
 		}
 	}
 
 	return ""
 }
 
+// shodanQuote 对 Shodan 值加引号：含空格或特殊字符时包裹双引号，否则原样返回。
+// 使用手动转义而非 fmt.Sprintf("%q")，避免 Go 风格的 \n \t 等转义被 Shodan 误解。
+func shodanQuote(v string) string {
+	if v == "" {
+		return v
+	}
+	// 纯数字或字母/数字/点/连字符组合（如 IP、端口、国家码）不加引号
+	for _, c := range v {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_' || c == ':') {
+			return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"`
+		}
+	}
+	return v
+}
+
 // mapField 映射统一字段到Shodan字段
 func (s *ShodanAdapter) mapField(field string) string {
 	mapping := map[string]string{
-		"body":        "html",
-		"title":       "title",
-		"header":      "http",
+		"body":        "http.html",
+		"title":       "http.title",
+		"header":      "http.html",
 		"port":        "port",
 		"protocol":    "transport",
 		"ip":          "ip",
@@ -120,13 +136,12 @@ func (s *ShodanAdapter) mapField(field string) string {
 		"org":         "org",
 		"isp":         "isp",
 		"domain":      "domain",
-		"host":        "hostnames",
-		"server":      "server",
-		"status_code": "status",
+		"host":        "hostname",
+		"server":      "product",
+		"status_code": "http.status",
 		"os":          "os",
 		"app":         "product",
 		"cert":        "ssl",
-		"url":         "hostnames",
 	}
 
 	if mapped, ok := mapping[field]; ok {

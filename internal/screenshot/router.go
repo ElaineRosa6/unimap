@@ -551,6 +551,7 @@ func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, 
 		RequestID:    fmt.Sprintf("router_open_%d", time.Now().UnixNano()),
 		URL:          searchURL,
 		WaitStrategy: "load",
+		Timeout:      30 * time.Second,
 		Action:       "open",
 	}
 	result, err := p.bridge.Submit(ctx, task)
@@ -650,6 +651,19 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 		if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
 			collectResult.Title = title
 		}
+		// Collect diagnostic fields from extension
+		if v, ok := result.StructuredCollectedData["extraction_method"].(string); ok {
+			collectResult.ExtractionMethod = v
+		}
+		if v, ok := result.StructuredCollectedData["row_selector_used"].(string); ok {
+			collectResult.RowSelectorUsed = v
+		}
+		if v, ok := result.StructuredCollectedData["rows_found"].(float64); ok {
+			collectResult.RowsFound = int(v)
+		}
+		if v, ok := result.StructuredCollectedData["extraction_error"].(string); ok {
+			collectResult.ExtractionError = v
+		}
 		// Also check login_required from structured data (second indicator from extension)
 		if lr, ok := result.StructuredCollectedData["login_required"].(bool); ok && lr {
 			collectResult.LoginRequired = true
@@ -669,9 +683,9 @@ func buildSearchEngineURL(engine, query string) string {
 	case "fofa":
 		return fmt.Sprintf("%s/result?qbase64=%s", model.FOFAOfficialWebURL, urlBase64(query))
 	case "hunter":
-		return fmt.Sprintf("https://hunter.qianxin.com/list?searchValue=%s", urlBase64(query))
+		return fmt.Sprintf("https://hunter.qianxin.com/home/list?search=%s&conditions=", urlBase64(query))
 	case "quake":
-		return fmt.Sprintf("https://quake.360.cn/quake/#/searchResult?searchVal=%s", url.QueryEscape(query))
+		return fmt.Sprintf("https://quake.360.net/quake/#/searchResult?searchVal=%s&selectIndex=quake_service&latest=true", url.QueryEscape(query))
 	case "zoomeye":
 		return fmt.Sprintf("https://www.zoomeye.org/searchResult?q=%s", url.QueryEscape(query))
 	case "shodan":

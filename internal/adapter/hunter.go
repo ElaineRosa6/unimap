@@ -113,7 +113,7 @@ func (h *HunterAdapter) translateNode(node *model.UQLNode) string {
 				for _, v := range values {
 					conditions = append(conditions, h.buildCondition(field, "=", v))
 				}
-				return "(" + strings.Join(conditions, " OR ") + ")"
+				return "(" + strings.Join(conditions, " || ") + ")"
 			}
 
 			return h.buildCondition(field, op, val)
@@ -123,18 +123,10 @@ func (h *HunterAdapter) translateNode(node *model.UQLNode) string {
 		if len(node.Children) >= 2 {
 			left := h.translateNode(node.Children[0])
 			right := h.translateNode(node.Children[1])
-
-			// Hunter supports AND, OR, NOT (via operator usually, but logical nodes are AND/OR)
-			// Ensure parentheses for precedence
-			connector := "AND"
 			if node.Value == "OR" {
-				connector = "OR"
-			} else if node.Value == "NOT" {
-				// Unary NOT? usually binary logical in this tree structure but let's see UQL
-				// If UQL "NOT" is a unary operator on a condition, it might be different structure
-				// Assuming binary tree here
+				return fmt.Sprintf("(%s || %s)", left, right)
 			}
-			return fmt.Sprintf("(%s %s %s)", left, connector, right)
+			return fmt.Sprintf("(%s && %s)", left, right)
 		}
 	}
 
@@ -142,8 +134,7 @@ func (h *HunterAdapter) translateNode(node *model.UQLNode) string {
 }
 
 func (h *HunterAdapter) buildCondition(field, op, value string) string {
-	// Hunter使用类似ES的查询语法
-	// 字段映射
+	// Hunter 字段映射（点命名空间: web.*, ip.*, app.*, header.*）
 	mapping := map[string]string{
 		"body":        "web.body",
 		"title":       "web.title",
@@ -159,11 +150,11 @@ func (h *HunterAdapter) buildCondition(field, op, value string) string {
 		"isp":         "ip.isp",
 		"domain":      "domain",
 		"status_code": "web.status_code",
-		"os":          "os",
+		"os":          "ip.os",
 		"app":         "app.name",
-		"server":      "header_server",
+		"server":      "header.server",
 		"host":        "domain",
-		"url":         "url",
+		"cert":        "cert",
 	}
 
 	mappedField, ok := mapping[field]
@@ -171,17 +162,22 @@ func (h *HunterAdapter) buildCondition(field, op, value string) string {
 		mappedField = field
 	}
 
-	// Handle Operators
 	switch op {
-	case "=", "==":
-		return fmt.Sprintf(`%s="%s"`, mappedField, value)
+	case "==":
+		return fmt.Sprintf(`%s=="%s"`, mappedField, escapeQuotes(value))
 	case "!=", "<>":
-		return fmt.Sprintf(`%s!="%s"`, mappedField, value)
-	case "CONTAINS":
-		// Hunter默认支持包含匹配
-		return fmt.Sprintf(`%s="%s"`, mappedField, value)
+		return fmt.Sprintf(`%s!="%s"`, mappedField, escapeQuotes(value))
+	case ">":
+		return fmt.Sprintf(`%s>"%s"`, mappedField, escapeQuotes(value))
+	case ">=":
+		return fmt.Sprintf(`%s>="%s"`, mappedField, escapeQuotes(value))
+	case "<":
+		return fmt.Sprintf(`%s<"%s"`, mappedField, escapeQuotes(value))
+	case "<=":
+		return fmt.Sprintf(`%s<="%s"`, mappedField, escapeQuotes(value))
 	default:
-		return fmt.Sprintf(`%s="%s"`, mappedField, value)
+		// =, CONTAINS 等均为模糊匹配
+		return fmt.Sprintf(`%s="%s"`, mappedField, escapeQuotes(value))
 	}
 }
 
