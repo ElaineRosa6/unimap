@@ -22,6 +22,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/unimap/project/internal/alerting"
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/utils"
 	"github.com/unimap/project/internal/utils/workerpool"
 )
@@ -552,6 +553,7 @@ func (d *Detector) computeHashWithHTTP(ctx context.Context, targetURL string) (*
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
+		metrics.IncBrowserDOMParseFailure("tamper")
 		return nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}
 
@@ -566,6 +568,7 @@ func (d *Detector) computeHashWithHTTP(ctx context.Context, targetURL string) (*
 func (d *Detector) ComputeHashFromHTML(url, title, html string) (*PageHashResult, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
+		metrics.IncBrowserDOMParseFailure("tamper")
 		return nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}
 
@@ -1792,4 +1795,3 @@ func (s *HashStorage) DeleteCheckRecords(url string) error {
 	recordsDir := filepath.Join(s.baseDir, "records", sanitizeFilenameForStorage(url))
 	return os.RemoveAll(recordsDir)
 }
-

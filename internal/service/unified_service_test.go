@@ -175,9 +175,9 @@ func TestQueryValidation(t *testing.T) {
 	svc := NewUnifiedService()
 
 	tests := []struct {
-		name    string
-		req     QueryRequest
-		wantErr bool
+		name        string
+		req         QueryRequest
+		wantErr     bool
 		errContains string
 	}{
 		{"empty query", QueryRequest{Query: "", Engines: []string{"fofa"}}, true, "query cannot be empty"},
@@ -340,14 +340,13 @@ type testMockAdapter struct {
 	name string
 }
 
-func (m *testMockAdapter) Name() string                                          { return m.name }
-func (m *testMockAdapter) Translate(ast *model.UQLAST) (string, error)           { return "translated", nil }
-func (m *testMockAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (m *testMockAdapter) Name() string                                { return m.name }
+func (m *testMockAdapter) Translate(ast *model.UQLAST) (string, error) { return "translated", nil }
+func (m *testMockAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	return &model.EngineResult{EngineName: m.name}, nil
 }
 func (m *testMockAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
 	return nil, nil
 }
-func (m *testMockAdapter) GetQuota() (*model.QuotaInfo, error)                    { return &model.QuotaInfo{}, nil }
-func (m *testMockAdapter) IsWebOnly() bool                                        { return false }
-
+func (m *testMockAdapter) GetQuota() (*model.QuotaInfo, error) { return &model.QuotaInfo{}, nil }
+func (m *testMockAdapter) IsWebOnly() bool                     { return false }

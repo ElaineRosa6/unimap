@@ -17,6 +17,26 @@ import (
 	"github.com/unimap/project/internal/service"
 )
 
+const (
+	// pongWait is the maximum time to wait for a pong response after sending a ping.
+	// Must be greater than pingInterval to allow time for the pong to arrive.
+	pongWait = 60 * time.Second
+
+	// pingInterval is the interval between protocol-level ping frames.
+	// Must be less than pongWait. The connection will be closed if no pong
+	// is received within pongWait after each ping.
+	pingInterval = 30 * time.Second
+
+	// writeWait is the maximum time allowed for a single write operation.
+	writeWait = 10 * time.Second
+)
+
+// setWriteDeadline sets the write deadline on the connection.
+// Should be called while holding the writeMu lock.
+func setWriteDeadline(conn *websocket.Conn) {
+	conn.SetWriteDeadline(time.Now().Add(writeWait))
+}
+
 func generateConnectionID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -48,6 +68,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	writeJSON := func(v interface{}) error {
 		managed.writeMu.Lock()
 		defer managed.writeMu.Unlock()
+		setWriteDeadline(conn)
 		return conn.WriteJSON(v)
 	}
 
@@ -70,16 +91,19 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		logger.Infof("WebSocket connection closed: %s", connID)
 	}()
 
-	// 设置连接读取超时
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	// 设置连接读取超时和pong处理器
+	// 当收到WebSocket协议级别的pong帧时，重置读取超时
+	conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
-	// 启动ping协程
+	// 启动ping协程，使用WebSocket协议级别ping帧
+	// 协议级别ping会自动触发对端的协议级别pong，
+	// 从而触发上面的PongHandler重置读取超时
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(pingInterval)
 		defer ticker.Stop()
 
 		for {
@@ -87,7 +111,11 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			case <-done:
 				return
 			case <-ticker.C:
-				if err := writeJSON(map[string]interface{}{"type": "ping"}); err != nil {
+				managed.writeMu.Lock()
+				setWriteDeadline(conn)
+				err := conn.WriteMessage(websocket.PingMessage, nil)
+				managed.writeMu.Unlock()
+				if err != nil {
 					logger.Errorf("WebSocket ping error: %v", err)
 					return
 				}
@@ -120,10 +148,10 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				}
 			case "pong":
 				// 收到pong消息，重置读取超时
-				conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+				conn.SetReadDeadline(time.Now().Add(pongWait))
 			case "query":
 				// 处理查询请求
-				s.handleWebSocketQuery(connCtx, message, writeJSON)
+				s.handleWebSocketQuery(connCtx, connID, message, writeJSON)
 			}
 		}
 	}
@@ -159,7 +187,7 @@ func (s *Server) validateWebSocketRequest(r *http.Request) bool {
 }
 
 // handleWebSocketQuery 处理WebSocket查询请求
-func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]interface{}, writeJSON func(interface{}) error) {
+func (s *Server) handleWebSocketQuery(ctx context.Context, connID string, message map[string]interface{}, writeJSON func(interface{}) error) {
 	// 解析查询参数
 	query, _ := message["query"].(string)
 	query = strings.TrimSpace(query)
@@ -236,7 +264,7 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 		defer func() {
 			if r := recover(); r != nil {
 				logger.Errorf("WebSocket query panic for %s: %v", queryID, r)
-				s.broadcastMessage(map[string]interface{}{
+				s.sendToConn(connID, map[string]interface{}{
 					"type":  "query_error",
 					"error": fmt.Sprintf("internal error: query %s failed", queryID),
 				})
@@ -250,7 +278,7 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 		defer queryCancel()
 
 		if browserQuery {
-			s.updateQueryProgress(queryID, 5)
+			s.updateQueryProgress(connID, queryID, 5)
 		}
 		browserQueryCh := s.runBrowserQueryAsync(queryCtx, query, engines, browserQuery, browserAction, queryID, func(done, total int, engine string, err error) {
 			if total <= 0 {
@@ -260,7 +288,7 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, message map[string]in
 			if progress > 50 {
 				progress = 50
 			}
-			s.updateQueryProgress(queryID, progress)
+			s.updateQueryProgress(connID, queryID, progress)
 		})
 
 		// 执行查询
@@ -379,6 +407,7 @@ func (s *Server) broadcastMessage(message interface{}) {
 
 	for _, managed := range s.connManager.connections {
 		managed.writeMu.Lock()
+		setWriteDeadline(managed.conn)
 		err := managed.conn.WriteJSON(message)
 		managed.writeMu.Unlock()
 		if err != nil {
@@ -387,9 +416,27 @@ func (s *Server) broadcastMessage(message interface{}) {
 	}
 }
 
-// 更新查询进度并广播
-func (s *Server) updateQueryProgress(queryID string, progress float64) {
-	shouldBroadcast := false
+// sendToConn 发送消息给指定连接
+func (s *Server) sendToConn(connID string, message interface{}) {
+	s.connManager.mutex.RLock()
+	managed, ok := s.connManager.connections[connID]
+	s.connManager.mutex.RUnlock()
+
+	if !ok {
+		return
+	}
+
+	managed.writeMu.Lock()
+	defer managed.writeMu.Unlock()
+	setWriteDeadline(managed.conn)
+	if err := managed.conn.WriteJSON(message); err != nil {
+		logger.Errorf("WebSocket sendToConn error for %s: %v", connID, err)
+	}
+}
+
+// updateQueryProgress 更新查询进度并仅发送给发起该查询的连接
+func (s *Server) updateQueryProgress(connID string, queryID string, progress float64) {
+	shouldSend := false
 
 	s.queryMutex.Lock()
 	if status, exists := s.queryStatus[queryID]; exists {
@@ -398,17 +445,15 @@ func (s *Server) updateQueryProgress(queryID string, progress float64) {
 		}
 		status.Progress = progress
 		s.queryStatus[queryID] = status
-		shouldBroadcast = true
+		shouldSend = true
 	}
 	s.queryMutex.Unlock()
 
-	if shouldBroadcast {
-		// 广播进度更新
-		s.broadcastMessage(map[string]interface{}{
+	if shouldSend {
+		s.sendToConn(connID, map[string]interface{}{
 			"type":     "progress_update",
 			"query_id": queryID,
 			"progress": progress,
 		})
 	}
 }
-

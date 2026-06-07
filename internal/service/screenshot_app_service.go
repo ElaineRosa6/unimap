@@ -815,4 +815,3 @@ func (s *ScreenshotAppService) normalizePathToken(raw string) string {
 	}
 	return token
 }
-

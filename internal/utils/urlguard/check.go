@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -77,20 +78,18 @@ func checkIPLiteralPrivate(host string) error {
 }
 
 // checkHostLive does the full DNS resolution check. Used at dial/redirect time.
-func checkHostLive(host string) error {
+func checkHostLive(ctx context.Context, host string) error {
 	if err := checkIPLiteralPrivate(host); err == nil {
-		// If it's an IP literal that passed, we're done.
 		if net.ParseIP(host) != nil {
 			return nil
 		}
 	}
 
-	// Hostname — must resolve to a safe IP.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	resolveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	resolver := &net.Resolver{PreferGo: true}
-	ips, err := resolver.LookupIPAddr(ctx, host)
+	ips, err := resolver.LookupIPAddr(resolveCtx, host)
 	if err != nil {
 		return fmt.Errorf("urlguard: DNS lookup failed for %q: %w", host, err)
 	}
@@ -103,6 +102,18 @@ func checkHostLive(host string) error {
 	}
 
 	return nil
+}
+
+// IsInternalHost checks whether a host resolves to a private/internal address.
+func IsInternalHost(ctx context.Context, host string) bool {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		return false
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return checkHostLive(ctx, host) != nil
 }
 
 func SafeDialer(opts CheckOptions) *net.Dialer {
@@ -123,7 +134,7 @@ func SafeHTTPClient(opts CheckOptions, timeout time.Duration) *http.Client {
 				return nil, err
 			}
 			if !opts.AllowPrivate {
-				if err := checkHostLive(host); err != nil {
+				if err := checkHostLive(ctx, host); err != nil {
 					return nil, err
 				}
 			}
@@ -137,7 +148,7 @@ func SafeHTTPClient(opts CheckOptions, timeout time.Duration) *http.Client {
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if !opts.AllowPrivate {
 				redirectHost := req.URL.Hostname()
-				if err := checkHostLive(redirectHost); err != nil {
+				if err := checkHostLive(req.Context(), redirectHost); err != nil {
 					return fmt.Errorf("urlguard: redirect to restricted host: %w", err)
 				}
 			}

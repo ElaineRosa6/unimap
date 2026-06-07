@@ -254,7 +254,7 @@ func TestSchedulerE2E_RunTaskNow(t *testing.T) {
 	task := &ScheduledTask{
 		Name:     "e2e-run-now-test",
 		Type:     handler.Type(),
-		Enabled:  false, // explicitly disabled
+		Enabled:  false,       // explicitly disabled
 		CronExpr: "0 0 1 1 *", // never fires
 	}
 

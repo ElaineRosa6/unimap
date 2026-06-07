@@ -11,6 +11,7 @@ import (
 
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 )
 
@@ -31,15 +32,53 @@ func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines
 		s.screenshotApp,
 		s.screenshotMgr,
 		s.screenshotPathToPreviewURL,
-		s.screenshotRouter,
+		s.browserQueryProvider(),
 		progress,
 	)
 }
 
+func (s *Server) browserQueryProvider() screenshot.Provider {
+	if s == nil {
+		return nil
+	}
+	if s.screenshotRouter != nil {
+		return s.screenshotRouter
+	}
+	if s.bridge != nil && s.bridge.Service != nil {
+		return screenshot.NewExtensionProvider(s.bridge.Service, s.screenshotMgr)
+	}
+	if s.screenshotMgr != nil {
+		return screenshot.NewCDPProvider(s.screenshotMgr)
+	}
+	return nil
+}
+
 func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string, explicitErrors ...string) map[string]interface{} {
+	// Build set of engines that browser query successfully handled
+	browserOK := make(map[string]bool)
+	for _, e := range browserOutcome.OpenedEngines {
+		browserOK[strings.ToLower(e)] = true
+	}
+	for _, cr := range browserOutcome.CollectedResults {
+		browserOK[strings.ToLower(cr.Engine)] = true
+	}
+
+	// Filter API errors: suppress errors for engines where browser query succeeded
 	combinedErrors := []string{}
 	if resp != nil {
-		combinedErrors = append(combinedErrors, resp.Errors...)
+		for _, e := range resp.Errors {
+			lower := strings.ToLower(e)
+			suppressed := false
+			for eng := range browserOK {
+				if strings.Contains(lower, "engine "+eng) && browserAction != "" {
+					suppressed = true
+					break
+				}
+			}
+			if !suppressed {
+				combinedErrors = append(combinedErrors, e)
+			}
+		}
 	}
 	combinedErrors = appendUniqueStrings(combinedErrors, browserOutcome.Errors)
 	combinedErrors = appendUniqueStrings(combinedErrors, browserOutcome.AutoCaptureErrors)
@@ -390,27 +429,79 @@ func (s *Server) handleQueryStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 	username := ""
 	tokenPrefix := ""
-	if s.config != nil {
+	isMultiUser := s.userRepo != nil
+
+	// Try to get current user from session
+	currentUser := s.getCurrentUser(r)
+	if currentUser != nil && currentUser.ID > 0 {
+		// Real user from user DB
+		username = currentUser.Username
+	} else if s.config != nil {
+		// Legacy config-based user
 		username = s.config.Web.Auth.Username
 		token := s.adminToken()
 		if len(token) >= 8 {
 			tokenPrefix = token[:8]
 		}
 	}
-	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "account-page", map[string]interface{}{
+
+	if !s.renderTemplateWithNonce(r, w, http.StatusOK, "account-page", map[string]interface{}{
 		"username":      username,
 		"tokenPrefix":   tokenPrefix,
 		"staticVersion": s.staticVersion,
+		"isMultiUser":   isMultiUser,
+		"userID":        currentUserID(r),
 	}) {
 		return
 	}
 }
 
-// handleChangePassword handles POST /api/account/change-password.
+// handleGetAdminToken returns the admin token for authenticated users (GET /api/account/admin-token).
+// Used by the account page to allow copying the token into the browser extension.
+func (s *Server) handleGetAdminToken(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	token := s.adminToken()
+	if token == "" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"token":   "",
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"token":   token,
+	})
+}
+
+// currentUserID returns the user ID from context, or 0.
+func currentUserID(r *http.Request) int64 {
+	if uid, ok := r.Context().Value(contextKeyUserID).(int64); ok {
+		return uid
+	}
+	return 0
+}
+
+// handleChangePassword handles POST /api/v1/account/change-password.
+// In multi-user mode, redirects user-DB users to /api/v1/users/{id}/password.
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
+	}
+
+	// Multi-user mode: if the user has a real DB account, redirect to user endpoint
+	if s.userRepo != nil {
+		uid := currentUserID(r)
+		if uid > 0 {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error":       "use /api/v1/users/" + fmt.Sprintf("%d", uid) + "/password instead",
+				"redirect_to": fmt.Sprintf("/api/v1/users/%d/password", uid),
+			})
+			return
+		}
 	}
 
 	var req struct {
@@ -456,4 +547,3 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{"success": "password updated"})
 }
-

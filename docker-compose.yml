@@ -13,6 +13,14 @@ services:
       - TZ=Asia/Shanghai
       - LOG_LEVEL=info
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
     healthcheck:
       test: ["CMD", "sh", "-c", "wget -qO- http://localhost:8448/health >/dev/null 2>&1" ]
       interval: 30s

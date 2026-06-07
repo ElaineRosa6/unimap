@@ -86,7 +86,7 @@ function Assert-NotTrue {
 # ============================================================
 Write-Step "[1/7] Pairing for bridge token..."
 $pairReq = @{ client_id = "powershell-e2e"; pair_code = "dev-pair" } | ConvertTo-Json
-$pairResp = Invoke-Authed -Method Post -Uri "$BaseUrl/api/screenshot/bridge/pair" -ContentType "application/json" -Body $pairReq
+$pairResp = Invoke-Authed -Method Post -Uri "$BaseUrl/api/v1/screenshot/bridge/pair" -ContentType "application/json" -Body $pairReq
 $token = $pairResp.token
 Assert-NotTrue -Condition (![string]::IsNullOrWhiteSpace($token)) -Label "Pairing returned a non-empty token"
 if ([string]::IsNullOrWhiteSpace($token)) { throw "Pairing failed: empty token" }
@@ -100,7 +100,7 @@ Write-Step "[1/7] Token acquired: $($token.Substring(0, [Math]::Min(16, $token.L
 if ($RotateToken) {
     Write-Step "[1.5/7] Rotate bridge token..."
     $rotateReq = @{ revoke_old = $true } | ConvertTo-Json
-    $rotateResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/screenshot/bridge/token/rotate" -Headers $authHeader -ContentType "application/json" -Body $rotateReq
+    $rotateResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/screenshot/bridge/token/rotate" -Headers $authHeader -ContentType "application/json" -Body $rotateReq
     $newToken = $rotateResp.token
     Assert-NotTrue -Condition (![string]::IsNullOrWhiteSpace($newToken)) -Label "Token rotation returned a new token"
     if ([string]::IsNullOrWhiteSpace($newToken)) { throw "Rotate token failed: empty token" }
@@ -116,7 +116,7 @@ Write-Step "[2/7] Start async batch screenshot request (screenshot action)..."
 $batchBody = @{ urls = @("https://example.com"); batch_id = $BatchId; concurrency = 1 } | ConvertTo-Json -Depth 5
 $batchJob = Start-Job -ScriptBlock {
     param($url, $body)
-    Invoke-RestMethod -Method Post -Uri "$url/api/screenshot/batch-urls" -ContentType "application/json" -Body $body
+    Invoke-RestMethod -Method Post -Uri "$url/api/v1/screenshot/batch-urls" -ContentType "application/json" -Body $body
 } -ArgumentList $BaseUrl, $batchBody
 
 Start-Sleep -Seconds 1
@@ -125,7 +125,7 @@ Start-Sleep -Seconds 1
 # Phase 3: Pull bridge task (screenshot action)
 # ============================================================
 Write-Step "[3/7] Pull first bridge task (screenshot action)..."
-$taskResp = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/screenshot/bridge/tasks/next" -Headers $authHeader
+$taskResp = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/screenshot/bridge/tasks/next" -Headers $authHeader
 Assert-NotTrue -Condition ($null -ne $taskResp.task) -Label "Got a screenshot task from bridge queue"
 if ($null -eq $taskResp.task) { throw "No task available from bridge queue" }
 $screenshotTask = $taskResp.task
@@ -138,7 +138,7 @@ Write-Step "[3b/7] Start async open-task batch request..."
 $openBatchBody = @{ urls = @("https://fofa.info"); batch_id = "${BatchId}_open"; concurrency = 1 } | ConvertTo-Json -Depth 5
 $openBatchJob = Start-Job -ScriptBlock {
     param($url, $body)
-    Invoke-RestMethod -Method Post -Uri "$url/api/screenshot/batch-urls" -ContentType "application/json" -Body $body
+    Invoke-RestMethod -Method Post -Uri "$url/api/v1/screenshot/batch-urls" -ContentType "application/json" -Body $body
 } -ArgumentList $BaseUrl, $openBatchBody
 
 Start-Sleep -Seconds 1
@@ -147,7 +147,7 @@ Start-Sleep -Seconds 1
 # Phase 3c: Pull second bridge task
 # ============================================================
 Write-Step "[3c/7] Pull second bridge task..."
-$taskResp2 = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/screenshot/bridge/tasks/next" -Headers $authHeader
+$taskResp2 = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/screenshot/bridge/tasks/next" -Headers $authHeader
 Assert-NotTrue -Condition ($null -ne $taskResp2.task) -Label "Got a second task from bridge queue"
 if ($null -ne $taskResp2.task) {
     $secondTask = $taskResp2.task
@@ -180,7 +180,7 @@ if ($StrictSignature) {
     }
 }
 
-$mockResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/screenshot/bridge/mock/result" -Headers $mockHeaders -ContentType "application/json" -Body $mockReq
+$mockResp = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/screenshot/bridge/mock/result" -Headers $mockHeaders -ContentType "application/json" -Body $mockReq
 Assert-NotTrue -Condition ($mockResp.success -eq $true) -Label "First task mock result accepted"
 
 # Result for second task (if available)
@@ -197,7 +197,7 @@ if ($null -ne $taskResp2.task) {
         error = ""
     } | ConvertTo-Json -Depth 6
 
-    $mockResp2 = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/screenshot/bridge/mock/result" -Headers $mockHeaders -ContentType "application/json" -Body $mockReq2
+    $mockResp2 = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/screenshot/bridge/mock/result" -Headers $mockHeaders -ContentType "application/json" -Body $mockReq2
     Assert-NotTrue -Condition ($mockResp2.success -eq $true) -Label "Second task mock result accepted"
 }
 
@@ -217,7 +217,7 @@ if ($null -ne $taskResp2.task) {
 # Phase 6: Query bridge status — verify timestamps
 # ============================================================
 Write-Step "[6/7] Query bridge status and verify observability fields..."
-$statusResp = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/screenshot/bridge/status" -Headers $authHeader
+$statusResp = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/v1/screenshot/bridge/status" -Headers $authHeader
 
 # Verify new timestamp fields exist and are non-zero
 Assert-NotTrue -Condition ($null -ne $statusResp.last_pair_at -and $statusResp.last_pair_at -gt 0) -Label "last_pair_at is present and non-zero"

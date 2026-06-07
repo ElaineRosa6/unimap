@@ -185,14 +185,14 @@ func (m *PluginManager) StartHealthMonitor() {
 			case <-m.healthTicker.C:
 				results := m.HealthCheck()
 				for name, status := range results {
-				if !status.Healthy {
-					logger.Warnf("Plugin %s is unhealthy: %s", name, status.Message)
-					// 触发健康检查失败钩子
-					m.hooks.TriggerHook(HookHealthCheckFailed, name, map[string]interface{}{
-						"status": status,
-					})
+					if !status.Healthy {
+						logger.Warnf("Plugin %s is unhealthy: %s", name, status.Message)
+						// 触发健康检查失败钩子
+						m.hooks.TriggerHook(HookHealthCheckFailed, name, map[string]interface{}{
+							"status": status,
+						})
+					}
 				}
-			}
 			}
 		}
 	}()
@@ -284,4 +284,3 @@ func (p *ProcessorPipeline) RemoveProcessor(name string) {
 func (p *ProcessorPipeline) GetProcessors() []ProcessorPlugin {
 	return p.processors
 }
-

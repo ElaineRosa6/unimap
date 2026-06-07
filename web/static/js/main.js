@@ -2,15 +2,18 @@
  document.addEventListener('DOMContentLoaded', function() {
 	// 初始化WebSocket连接
 	initWebSocket();
-	
+
 	// 初始化查询表单
 	initQueryForm();
-	
+
 	// 初始化结果表格
 	initResultsTable();
-	
+
 	// 初始化配额页面
 	initQuotaPage();
+
+	// 页面离开时清理所有定时器和连接，防止泄漏
+	window.addEventListener('beforeunload', stopAllPolling);
 });
 
 // 初始化查询表单
@@ -172,7 +175,8 @@ function initCDPControls() {
 	};
 
 	refresh();
-	setInterval(refresh, 15000);
+	if (cdpStatusTimer) clearInterval(cdpStatusTimer);
+	cdpStatusTimer = setInterval(refresh, 15000);
 
 	if (connectBtn) {
 		connectBtn.addEventListener('click', function() {
@@ -201,7 +205,8 @@ function initBridgeStatusControls() {
 	};
 
 	refresh();
-	setInterval(refresh, 5000);
+	if (bridgeStatusTimer) clearInterval(bridgeStatusTimer);
+	bridgeStatusTimer = setInterval(refresh, 5000);
 
 	if (refreshBtn) {
 		refreshBtn.addEventListener('click', refresh);
@@ -223,7 +228,7 @@ function initScreenshotModeSelector() {
 		radio.addEventListener('change', function() {
 			const mode = this.value;
 			localStorage.setItem('screenshotMode', mode);
-			fetch('/api/screenshot/set-mode', {
+			fetch('/api/v1/screenshot/set-mode', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ mode })
@@ -231,13 +236,13 @@ function initScreenshotModeSelector() {
 				.then(data => {
 					console.log('Screenshot mode set to:', data.mode);
 				})
-				.catch(() => {});
+				.catch(function(err) { console.warn('Screenshot mode init failed:', err); });
 		});
 	}
 }
 
 function refreshBridgeStatus(statusBadge, statusInfo) {
-	fetch('/api/screenshot/bridge/status')
+	fetch('/api/v1/screenshot/bridge/status')
 		.then(resp => resp.json())
 		.then(data => {
 			// Consume runtime state from ScreenshotRouter (authoritative)
@@ -357,7 +362,7 @@ function saveProxy(button, statusInfo) {
 	button.textContent = '保存中...';
 	button.disabled = true;
 
-	fetch('/api/cookies', {
+	fetch('/api/v1/cookies', {
 		method: 'POST',
 		body: formData
 	})
@@ -384,7 +389,7 @@ function saveProxy(button, statusInfo) {
 }
 
 function refreshCDPStatus(statusBadge, statusInfo) {
-	fetch('/api/cdp/status')
+	fetch('/api/v1/cdp/status')
 		.then(resp => resp.json())
 		.then(data => {
 			const online = data && data.online;
@@ -420,7 +425,7 @@ function connectCDP(button, statusBadge, statusInfo) {
 		formData.append('proxy_server', proxyServer.value || '');
 	}
 
-	fetch('/api/cdp/connect', {
+	fetch('/api/v1/cdp/connect', {
 		method: 'POST',
 		body: formData
 	})
@@ -434,6 +439,7 @@ function connectCDP(button, statusBadge, statusInfo) {
 					statusInfo.textContent = url ? `在线: ${url}` : '在线';
 				} else if (data && data.error) {
 					statusInfo.textContent = data.error;
+					handleBrowserError(data.error);
 				} else {
 					statusInfo.textContent = '连接失败';
 				}
@@ -471,7 +477,7 @@ function isBrowserQueryModeEnabled() {
 	return !!(checkbox && checkbox.checked);
 }
 
-// Returns the selected browser action: 'open', 'capture', 'collect', or '' if none selected.
+// Returns the selected browser action: 'open', 'collect', 'collect_and_capture', or '' if none selected.
 function getBrowserAction() {
 	const radios = document.querySelectorAll('input[name="browser-action"]');
 	for (const radio of radios) {
@@ -479,7 +485,7 @@ function getBrowserAction() {
 	}
 	// Legacy fallback
 	const checkbox = document.getElementById('browser-query-mode');
-	if (checkbox && checkbox.checked) return 'capture';
+	if (checkbox && checkbox.checked) return 'collect';
 	return '';
 }
 
@@ -516,7 +522,7 @@ function importCookieJSON(button) {
 	button.textContent = '导入中...';
 	button.disabled = true;
 
-	fetch('/api/cookies/import', {
+	fetch('/api/v1/cookies/import', {
 		method: 'POST',
 		body: formData
 	})
@@ -577,7 +583,7 @@ function verifyCookies(button) {
 	button.textContent = '验证中...';
 	button.disabled = true;
 
-	fetch('/api/cookies/verify', {
+	fetch('/api/v1/cookies/verify', {
 		method: 'POST',
 		body: formData
 	})
@@ -673,7 +679,7 @@ function clearCookies(button) {
 	button.textContent = '清空中...';
 	button.disabled = true;
 
-	fetch('/api/cookies', {
+	fetch('/api/v1/cookies', {
 		method: 'POST',
 		body: formData
 	})
@@ -731,7 +737,7 @@ function saveCookies(button) {
 	button.textContent = '保存中...';
 	button.disabled = true;
 
-	fetch('/api/cookies', {
+	fetch('/api/v1/cookies', {
 		method: 'POST',
 		body: formData
 	})
@@ -757,9 +763,16 @@ function saveCookies(button) {
 // WebSocket连接管理
 let wsConnection = null;
 let wsConnected = false;
+let wsPingTimer = null;
+let wsReconnectAttempts = 0;
+let wsReconnectTimer = null;
 let currentQueryID = null;
 let cdpOnline = false;
 let bridgeOnline = false; // tracks extension live_clients > 0
+
+// CDP/Bridge 状态轮询 interval ID（initCDPControls/initBridgeStatusControls 写入）
+let cdpStatusTimer = null;
+let bridgeStatusTimer = null;
 
 // ============================================================
 // 登录状态检测
@@ -767,11 +780,27 @@ let bridgeOnline = false; // tracks extension live_clients > 0
 
 let loginStatusPollInterval = null;
 
+// 清理所有轮询定时器和 WebSocket 连接。
+// 在 beforeunload 事件中调用，防止页面离开后定时器继续执行。
+function stopAllPolling() {
+	if (cdpStatusTimer) { clearInterval(cdpStatusTimer); cdpStatusTimer = null; }
+	if (bridgeStatusTimer) { clearInterval(bridgeStatusTimer); bridgeStatusTimer = null; }
+	if (loginStatusPollInterval) { clearInterval(loginStatusPollInterval); loginStatusPollInterval = null; }
+	if (wsPingTimer) { clearInterval(wsPingTimer); wsPingTimer = null; }
+	if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+	if (wsConnection) {
+		// 关闭前移除 onclose 回调，避免触发新一轮重连
+		wsConnection.onclose = null;
+		wsConnection.close();
+		wsConnection = null;
+	}
+}
+
 function refreshLoginStatus() {
 	const query = document.getElementById('query');
 	const queryVal = query && query.value.trim() ? query.value.trim() : 'protocol="http"';
 
-	fetch('/api/cookies/login-status?query=' + encodeURIComponent(queryVal))
+	fetch('/api/v1/cookies/login-status?query=' + encodeURIComponent(queryVal))
 		.then(resp => resp.json())
 		.then(data => {
 			if (!data || !data.success) return;
@@ -909,12 +938,13 @@ function initWebSocket() {
 
 	// 创建新连接
 	const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-	const wsUrl = wsProtocol + window.location.host + '/api/ws';
+	const wsUrl = wsProtocol + window.location.host + '/api/v1/ws';
 	wsConnection = new WebSocket(wsUrl);
 
 	wsConnection.onopen = function() {
 		console.log('WebSocket connected');
 		wsConnected = true;
+		wsReconnectAttempts = 0;
 		// 发送ping消息保持连接
 		startPingInterval();
 	};
@@ -927,8 +957,19 @@ function initWebSocket() {
 	wsConnection.onclose = function() {
 		console.log('WebSocket disconnected');
 		wsConnected = false;
-		// 尝试重连
-		setTimeout(initWebSocket, 5000);
+		if (wsPingTimer) { clearInterval(wsPingTimer); wsPingTimer = null; }
+
+		// 指数退避重连：5s → 10s → 20s → 40s → 60s(上限)，最多 6 次
+		if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+		const maxAttempts = 6;
+		if (wsReconnectAttempts >= maxAttempts) {
+			console.warn('WebSocket reconnection limit reached, giving up');
+			return;
+		}
+		const delay = Math.min(5000 * Math.pow(2, wsReconnectAttempts), 60000);
+		console.log('WebSocket will reconnect in ' + (delay / 1000) + 's (attempt ' + (wsReconnectAttempts + 1) + '/' + maxAttempts + ')');
+		wsReconnectAttempts++;
+		wsReconnectTimer = setTimeout(initWebSocket, delay);
 	};
 
 	wsConnection.onerror = function(error) {
@@ -938,8 +979,9 @@ function initWebSocket() {
 
 // 发送ping消息保持连接
 function startPingInterval() {
-	setInterval(() => {
-		if (wsConnected && wsConnection.readyState === WebSocket.OPEN) {
+	if (wsPingTimer) clearInterval(wsPingTimer);
+	wsPingTimer = setInterval(() => {
+		if (wsConnected && wsConnection && wsConnection.readyState === WebSocket.OPEN) {
 			wsConnection.send(JSON.stringify({ type: 'ping' }));
 		}
 	}, 30000);
@@ -983,6 +1025,51 @@ function sanitizePreviewPath(path) {
 	if (!str.startsWith('/screenshots/')) return '';
 	if (str.includes('..')) return '';
 	return str;
+}
+
+// 对引擎错误消息进行友好化分类，返回 {html, category}。
+// 仅做前端映射，不修改后端 adapter 错误字符串。
+function classifyEngineError(msg) {
+	if (!msg) return { html: '<span class="err-cat err-unknown">未知</span> 未知错误', category: 'unknown' };
+	var s = String(msg).toLowerCase();
+	var cat, friendly;
+
+	// 额度/余额不足
+	if (s.indexOf('402') !== -1 || s.indexOf('payment') !== -1 || s.indexOf('余额不足') !== -1
+		|| s.indexOf('f点') !== -1 || s.indexOf('credits_insufficient') !== -1
+		|| s.indexOf('insufficient') !== -1 || s.indexOf('quota') !== -1) {
+		cat = '额度';
+		friendly = '额度/余额不足，请充值或更换 API Key';
+	}
+	// 速率限制
+	else if (s.indexOf('429') !== -1 || s.indexOf('rate limit') !== -1
+		|| s.indexOf('请求太多') !== -1 || s.indexOf('too many') !== -1
+		|| s.indexOf('频率') !== -1) {
+		cat = '限流';
+		friendly = '请求频率超限，请稍后重试';
+	}
+	// 权限不足
+	else if (s.indexOf('403') !== -1 || s.indexOf('membership') !== -1
+		|| s.indexOf('requires') !== -1 || s.indexOf('付费') !== -1) {
+		cat = '权限';
+		friendly = '需要更高权限或付费会员';
+	}
+	// 认证失败
+	else if (s.indexOf('401') !== -1 || s.indexOf('unauthorized') !== -1
+		|| s.indexOf('authentication') !== -1 || s.indexOf('api key') !== -1) {
+		cat = '认证';
+		friendly = '认证失败，请检查 API Key 配置';
+	}
+	else {
+		cat = '错误';
+		friendly = escapeHtml(msg);
+		return { html: '<span class="err-cat err-other">' + escapeHtml(cat) + '</span> ' + friendly, category: 'other' };
+	}
+
+	return {
+		html: '<span class="err-cat err-' + escapeHtml(cat) + '">' + escapeHtml(cat) + '</span> ' + escapeHtml(friendly),
+		category: cat
+	};
 }
 
 // 处理查询开始
@@ -1096,7 +1183,7 @@ function executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery
 // 传统API回退方案
 function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, browserAction) {
 	// 发送API请求
-	fetch('/api/query', {
+	fetch('/api/v1/query', {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/x-www-form-urlencoded',
@@ -1120,6 +1207,7 @@ function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, b
 		
 		// 显示结果
 		if (data.error) {
+			handleBrowserError(data.error);
 			showResultsError(data.error);
 		} else {
 			showResults(data);
@@ -1138,18 +1226,50 @@ function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, b
 	});
 }
 
+// 查询结果操作委托（CSP 兼容：替代 innerHTML 中的 onclick 属性）
+function initResultsActionDelegation() {
+	var resultsContent = document.getElementById('results-content');
+	if (!resultsContent || resultsContent.dataset.actionDelegated === '1') return;
+	resultsContent.dataset.actionDelegated = '1';
+
+	resultsContent.addEventListener('click', function(e) {
+		var btn = e.target.closest('[data-action]');
+		if (!btn) {
+			// 错误信息折叠展开
+			var header = e.target.closest('.errors-header');
+			if (header) {
+				header.parentElement.classList.toggle('expanded');
+				var arrow = header.querySelector('.toggle-arrow');
+				if (arrow) arrow.classList.toggle('expanded');
+			}
+			return;
+		}
+		var action = btn.getAttribute('data-action');
+		switch (action) {
+			case 'go-home':
+				window.location.href = '/';
+				break;
+			case 'capture-all-screenshots':
+				captureAllScreenshots();
+				break;
+			case 'capture-search-engine-screenshots':
+				captureSearchEngineScreenshots();
+				break;
+		}
+	});
+}
+
 // 显示查询错误
 function showResultsError(error) {
-	const resultsContent = document.getElementById('results-content');
+	var resultsContent = document.getElementById('results-content');
 	if (resultsContent) {
-		const safeError = escapeHtml(error);
-		resultsContent.innerHTML = `
-			<div class="error-message">
-				<h3>查询错误</h3>
-				<p>${safeError}</p>
-				<button type="button" class="btn btn-primary" onclick="window.location.href='/'">返回首页</button>
-			</div>
-		`;
+		var safeError = escapeHtml(error);
+		resultsContent.innerHTML =
+			'<div class="error-message">' +
+				'<h3>查询错误</h3>' +
+				'<p>' + safeError + '</p>' +
+				'<button type="button" class="btn btn-primary" data-action="go-home">返回首页</button>' +
+			'</div>';
 	}
 }
 
@@ -1176,6 +1296,26 @@ function showResults(data) {
 				if (obj[key] !== undefined && obj[key] !== null) return obj[key];
 			}
 			return '';
+		}
+
+		// renderCollectionMethodBadge surfaces how a single asset was collected
+		// (API, browser collection, or browser fallback after API failure) so
+		// the user can tell at a glance which path produced the result.
+		function renderCollectionMethodBadge(asset) {
+			if (!asset) return '';
+			const extra = asset.extra || asset.Extra || {};
+			const method = String(extra.collection_method || '').toLowerCase();
+			if (!method) return '';
+			let cls = 'method-api';
+			let label = 'API';
+			if (method === 'browser') {
+				cls = 'method-browser';
+				label = '浏览器采集';
+			} else if (method === 'browser_fallback') {
+				cls = 'method-browser-fallback';
+				label = 'API 失败后浏览器补采';
+			}
+			return ` <span class="status-badge ${cls}" title="${escapeAttr(method)}">${escapeHtml(label)}</span>`;
 		}
 
 		// 构建结果HTML
@@ -1227,14 +1367,23 @@ function showResults(data) {
 			}
 		}
 		
-		// 显示错误信息
+		// 显示错误信息（折叠+友好化）
 		const combinedErrors = Array.from(new Set(errors.concat(browserQueryErrors).concat(autoCaptureErrors)));
 		if (combinedErrors && combinedErrors.length > 0) {
+			const hasAssets = assets && assets.length > 0;
+			const titlePrefix = hasAssets ? '⚠ 部分引擎未返回结果' : '⚠ 查询失败';
+			const titleText = `${titlePrefix}（${combinedErrors.length} 个，点击展开）`;
 			html += `
-				<div class="errors">
-					<h3>错误信息</h3>
-					<ul>
-						${combinedErrors.map(err => `<li>${escapeHtml(err)}</li>`).join('')}
+				<div class="errors errors-collapsible">
+					<div class="errors-header">
+						<span class="toggle-arrow">▶</span>
+						<span>${escapeHtml(titleText)}</span>
+					</div>
+					<ul class="errors-body">
+						${combinedErrors.map(err => {
+							const friendly = classifyEngineError(err);
+							return '<li>' + friendly.html + '</li>';
+						}).join('')}
 					</ul>
 				</div>
 			`;
@@ -1300,6 +1449,7 @@ function showResults(data) {
 								const source = pick(asset, 'source', 'Source');
 								const targetURL = pick(asset, 'url', 'URL');
 								const engineHref = escapeAttr(getEngineLink(source, ip));
+								const methodBadge = renderCollectionMethodBadge(asset);
 								return `
 									<tr>
 										<td>${escapeHtml(ip)}</td>
@@ -1309,7 +1459,7 @@ function showResults(data) {
 										<td>${escapeHtml(title)}</td>
 										<td>${escapeHtml(server)}</td>
 										<td>${escapeHtml(statusCode)}</td>
-										<td>${escapeHtml(source)}</td>
+										<td>${escapeHtml(source)}${methodBadge}</td>
 										<td>
 											<button type="button" class="btn btn-sm btn-info btn-detail" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}">详情</button>
 											<button type="button" class="btn btn-sm btn-success btn-copy" data-ip="${escapeAttr(ip)}">复制IP</button>
@@ -1341,10 +1491,10 @@ function showResults(data) {
 			<div class="screenshot-actions" style="margin: 15px 0; padding: 15px; background: #f0f8ff; border-radius: 4px; border: 1px solid #b0d4f1;">
 				<h4 style="margin-bottom: 10px;">📸 截图功能</h4>
 				<div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-					<button type="button" id="btn-screenshot-all" class="btn btn-primary" onclick="captureAllScreenshots()">
+					<button type="button" id="btn-screenshot-all" class="btn btn-primary" data-action="capture-all-screenshots">
 						批量截图所有结果
 					</button>
-					<button type="button" id="btn-screenshot-search-engines" class="btn btn-info" onclick="captureSearchEngineScreenshots()">
+					<button type="button" id="btn-screenshot-search-engines" class="btn btn-info" data-action="capture-search-engine-screenshots">
 						截图搜索引擎结果页
 					</button>
 					<span id="screenshot-status" style="margin-left: 10px; color: #666;"></span>
@@ -1361,7 +1511,7 @@ function showResults(data) {
 		// 添加返回按钮
 		html += `
 			<div class="results-footer">
-				<button type="button" class="btn btn-secondary" onclick="window.location.href='/'">返回首页</button>
+				<button type="button" class="btn btn-secondary" data-action="go-home">返回首页</button>
 			</div>
 		`;
 		
@@ -1379,6 +1529,10 @@ function showResults(data) {
 		
 		// 初始化结果表格功能
 		initResultsTable();
+		// 事件委托：资产详情/复制/截图按钮（避免翻页重复绑定）
+		initAssetActionDelegation();
+		// CSP兼容：注册结果操作事件委托
+		initResultsActionDelegation();
 	}
 }
 
@@ -1562,25 +1716,28 @@ function getSavedQueries() {
 
 // 检查引擎状态
 function checkEngineStatus() {
-	// 这里可以添加实际的引擎状态检查逻辑
-	// 例如：通过API检查引擎是否可用，API密钥是否有效等
-	
-	// 模拟引擎状态检查
-	const engines = ['fofa', 'hunter', 'zoomeye', 'quake'];
-	engines.forEach(engine => {
-		const statusElement = document.getElementById(`status-${engine}`);
-		if (statusElement) {
-			// 随机模拟状态（实际应用中应该通过API检查）
-			const isAvailable = Math.random() > 0.1; // 90%的概率可用
-			if (isAvailable) {
-				statusElement.textContent = '✓';
-				statusElement.style.color = '#27ae60';
-			} else {
-				statusElement.textContent = '✗';
-				statusElement.style.color = '#e74c3c';
-			}
-		}
-	});
+	fetch('/api/v1/config')
+		.then(r => r.json())
+		.then(data => {
+			if (!data.engines) return;
+			Object.entries(data.engines).forEach(([name, eng]) => {
+				const el = document.getElementById(`status-${name}`);
+				if (!el) return;
+				const hasKey = !!(eng.api_key && eng.api_key !== '****');
+				const enabled = eng.enabled !== false;
+				if (enabled && hasKey) {
+					el.textContent = '✓';
+					el.style.color = '#27ae60';
+				} else if (enabled) {
+					el.textContent = '!';
+					el.style.color = '#f39c12';
+				} else {
+					el.textContent = '✗';
+					el.style.color = '#e74c3c';
+				}
+			});
+		})
+		.catch(function(err) { console.warn('checkEngineStatus failed:', err); });
 }
 
 // 初始化结果表格
@@ -1843,39 +2000,89 @@ function resetFilters() {
 	}
 }
 
-// 初始化分页功能
+// 初始化分页功能（客户端分页）
 function initPagination() {
 	const prevBtn = document.getElementById('btn-prev-page');
 	const nextBtn = document.getElementById('btn-next-page');
 	const pageSizeSelect = document.getElementById('page-size');
-	
+	const tbody = document.getElementById('results-body');
+	if (!tbody) return;
+
+	const allRows = Array.from(tbody.querySelectorAll('tr'));
+	let currentPage = 1;
+	let pageSize = parseInt(pageSizeSelect?.value) || 50;
+	let totalPages = Math.max(1, Math.ceil(allRows.length / pageSize));
+
+	function renderPage() {
+		const start = (currentPage - 1) * pageSize;
+		const end = start + pageSize;
+		allRows.forEach((row, i) => {
+			row.style.display = (i >= start && i < end) ? '' : 'none';
+		});
+		if (prevBtn) prevBtn.disabled = currentPage <= 1;
+		if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+		const cp = document.getElementById('current-page');
+		const tp = document.getElementById('total-pages');
+		if (cp) cp.textContent = currentPage;
+		if (tp) tp.textContent = totalPages;
+	}
+
 	if (prevBtn) {
 		prevBtn.addEventListener('click', function() {
-			// 这里可以添加实际的分页逻辑
-			// 例如：通过API获取上一页数据
-			showMessage('上一页功能开发中', 'info');
+			if (currentPage > 1) { currentPage--; renderPage(); }
 		});
 	}
-	
 	if (nextBtn) {
 		nextBtn.addEventListener('click', function() {
-			// 这里可以添加实际的分页逻辑
-			// 例如：通过API获取下一页数据
-			showMessage('下一页功能开发中', 'info');
+			if (currentPage < totalPages) { currentPage++; renderPage(); }
 		});
 	}
-	
 	if (pageSizeSelect) {
 		pageSizeSelect.addEventListener('change', function() {
-			// 这里可以添加实际的分页逻辑
-			// 例如：通过API获取指定页大小的数据
-			showMessage('每页显示条数功能开发中', 'info');
+			pageSize = parseInt(this.value) || 50;
+			totalPages = Math.max(1, Math.ceil(allRows.length / pageSize));
+			currentPage = 1;
+			renderPage();
 		});
 	}
+
+	if (allRows.length > 0) renderPage();
 }
 
-// 初始化资产详情功能
+// 事件委托：资产详情/复制/截图按钮（仅绑定一次，翻页不影响）
+function initAssetActionDelegation() {
+	var tbody = document.getElementById('results-body');
+	if (!tbody || tbody.dataset.assetDelegated === '1') return;
+	tbody.dataset.assetDelegated = '1';
+
+	tbody.addEventListener('click', function(e) {
+		var btn = e.target.closest('button');
+		if (!btn) return;
+
+		if (btn.classList.contains('btn-detail')) {
+			var ip = btn.getAttribute('data-ip');
+			var port = btn.getAttribute('data-port');
+			showAssetDetail(ip, port);
+		} else if (btn.classList.contains('btn-copy')) {
+			var ip = btn.getAttribute('data-ip');
+			if (!ip) return;
+			copyToClipboard(ip)
+				.then(function() { showMessage('IP地址已复制到剪贴板', 'success'); })
+				.catch(function(err) { console.error('复制失败:', err); fallbackCopy(ip); });
+		} else if (btn.classList.contains('btn-screenshot')) {
+			var url = btn.getAttribute('data-url');
+			var ip = btn.getAttribute('data-ip');
+			var port = btn.getAttribute('data-port');
+			var proto = btn.getAttribute('data-protocol');
+			viewScreenshot(url, ip, port, proto);
+		}
+	});
+}
+
+// 初始化资产详情功能（保留旧函数签名，但不再被翻页调用；新逻辑见 initAssetActionDelegation）
 function initAssetDetail() {
+	// 已由 initAssetActionDelegation 事件委托替代，保留空函数以兼容旧调用
+}
 	// 详情按钮 - 使用特定类名选择
 	const detailBtns = document.querySelectorAll('.btn-detail');
 	detailBtns.forEach(btn => {
@@ -1941,55 +2148,52 @@ function fallbackCopy(text) {
 function showAssetDetail(ip, port) {
 	const modal = document.getElementById('asset-detail');
 	const content = document.getElementById('asset-detail-content');
-	
-	// 显示加载状态
-	content.innerHTML = '<div class="loading">加载中...</div>';
+	if (!modal || !content) return;
+
+	// 从表格行读取真实数据
+	const row = document.querySelector(`tr[data-ip="${ip}"][data-port="${port}"]`);
+	const d = row ? row.dataset : {};
+
+	const fields = [
+		['IP地址', ip],
+		['端口', port],
+		['协议', d.protocol],
+		['主机', d.host],
+		['标题', d.title],
+		['服务器', d.server],
+		['状态码', d.status],
+		['来源', d.source],
+		['国家', d.country],
+		['地区', d.region],
+		['城市', d.city],
+		['ASN', d.asn],
+		['组织', d.org],
+		['ISP', d.isp],
+		['URL', d.url],
+	];
+
+	content.innerHTML = fields.filter(f => f[1] && f[1] !== '0' && f[1] !== 'undefined').map(f => `
+		<div class="asset-detail-item">
+			<span class="asset-detail-label">${f[0]}：</span>
+			<span class="asset-detail-value"><code>${escapeHtml(f[1])}</code></span>
+		</div>
+	`).join('');
+
 	modal.style.display = 'block';
-	
-	// 模拟资产详情数据
-	setTimeout(() => {
-		content.innerHTML = `
-			<div class="asset-detail-item">
-				<span class="asset-detail-label">IP地址：</span>
-				<span class="asset-detail-value"><code>${ip}</code></span>
-			</div>
-			<div class="asset-detail-item">
-				<span class="asset-detail-label">端口：</span>
-				<span class="asset-detail-value">${port}</span>
-			</div>
-			<div class="asset-detail-item">
-				<span class="asset-detail-label">地理位置：</span>
-				<span class="asset-detail-value">中国 北京</span>
-			</div>
-			<div class="asset-detail-item">
-				<span class="asset-detail-label">运营商：</span>
-				<span class="asset-detail-value">中国联通</span>
-			</div>
-			<div class="asset-detail-item">
-				<span class="asset-detail-label">ASN：</span>
-				<span class="asset-detail-value">AS4808</span>
-			</div>
-			<div class="asset-detail-item">
-				<span class="asset-detail-label">风险等级：</span>
-				<span class="asset-detail-value">低</span>
-			</div>
-		`;
-	}, 500);
-	
-	// 关闭按钮事件
-	const closeBtns = modal.querySelectorAll('.close-btn');
-	closeBtns.forEach(btn => {
-		btn.addEventListener('click', function() {
-			modal.style.display = 'none';
-		});
-	});
-	
-	// 点击模态框外部关闭
-	window.addEventListener('click', function(e) {
+
+	function closeModal() {
+		modal.style.display = 'none';
+		window.removeEventListener('click', handleOutsideClick);
+	}
+	function handleOutsideClick(e) {
 		if (e.target === modal) {
-			modal.style.display = 'none';
+			closeModal();
 		}
+	}
+	modal.querySelectorAll('.close-btn').forEach(function(btn) {
+		btn.onclick = closeModal;
 	});
+	window.addEventListener('click', handleOutsideClick);
 }
 
 // 初始化配额页面
@@ -2205,33 +2409,55 @@ function exportQuota() {
 function openQuotaSettings() {
 	const modal = document.getElementById('quota-settings-modal');
 	if (!modal) return;
-	
+
+	// 加载已保存的设置
+	try {
+		const saved = JSON.parse(localStorage.getItem('unimap_quota_settings') || '{}');
+		const ri = modal.querySelector('[name="refresh-interval"]');
+		const dt = modal.querySelector('[name="default-threshold"]');
+		const ea = modal.querySelector('[name="email-alert"]');
+		const em = modal.querySelector('[name="alert-email"]');
+		if (ri && saved.refreshInterval) ri.value = saved.refreshInterval;
+		if (dt && saved.defaultThreshold) dt.value = saved.defaultThreshold;
+		if (ea) ea.checked = !!saved.emailAlert;
+		if (em && saved.alertEmail) em.value = saved.alertEmail;
+	} catch(e) {}
+
 	modal.style.display = 'block';
-	
-	// 关闭按钮事件
-	const closeBtns = modal.querySelectorAll('.close-btn');
-	closeBtns.forEach(btn => {
-		btn.addEventListener('click', function() {
-			modal.style.display = 'none';
-		});
+
+	function closeQuotaModal() {
+		modal.style.display = 'none';
+		window.removeEventListener('click', handleOutsideClick);
+	}
+	function handleOutsideClick(e) {
+		if (e.target === modal) {
+			closeQuotaModal();
+		}
+	}
+	modal.querySelectorAll('.close-btn').forEach(function(btn) {
+		btn.onclick = closeQuotaModal;
 	});
-	
-	// 保存设置按钮
+
 	const saveBtn = document.getElementById('btn-save-settings');
 	if (saveBtn) {
-		saveBtn.addEventListener('click', function() {
-			// 模拟保存设置
-			showMessage('设置保存成功', 'success');
+		saveBtn.onclick = function() {
+			const settings = {
+				refreshInterval: modal.querySelector('[name="refresh-interval"]')?.value || '60000',
+				defaultThreshold: modal.querySelector('[name="default-threshold"]')?.value || '80',
+				emailAlert: modal.querySelector('[name="email-alert"]')?.checked || false,
+				alertEmail: modal.querySelector('[name="alert-email"]')?.value || '',
+			};
+			try {
+				localStorage.setItem('unimap_quota_settings', JSON.stringify(settings));
+				showMessage('设置已保存', 'success');
+			} catch(e) {
+				showMessage('保存失败: ' + e.message, 'error');
+			}
 			modal.style.display = 'none';
-		});
+		};
 	}
-	
-	// 点击模态框外部关闭
-	window.addEventListener('click', function(e) {
-		if (e.target === modal) {
-			modal.style.display = 'none';
-		}
-	});
+
+	window.addEventListener('click', handleOutsideClick);
 }
 
 // 工具函数：格式化数字
@@ -2313,7 +2539,30 @@ function scrollToElement(elementId) {
 }
 
 // 显示消息提示
-function showMessage(message, type = 'info') {
+function handleBrowserError(err) {
+	const s = typeof err === 'string' ? err : (err && err.message ? err.message : '');
+	if (!s) return false;
+	const lower = s.toLowerCase();
+	let msg = null;
+	if (lower.includes('cdp not available') || lower.includes('invalid_chrome_path')) {
+		msg = 'Chrome 浏览器不可用，截图功能暂不可用。请检查 Chrome 是否已安装。';
+	} else if (lower.includes('extension_not_paired') || lower.includes('extension not paired')) {
+		msg = '浏览器扩展未连接，截图功能暂不可用。请检查扩展是否已安装并运行。';
+	} else if (lower.includes('bridge_unavailable') || lower.includes('bridge unavailable')) {
+		msg = '浏览器桥接服务不可用，扩展截图功能暂不可用。请检查桥接服务状态。';
+	} else if (lower.includes('screenshot_failed') && lower.includes('chrome')) {
+		msg = 'Chrome 浏览器不可用，截图功能暂不可用。请检查 Chrome 是否已安装。';
+	} else if (lower.includes('screenshot_failed') || lower.includes('cdp') || lower.includes('bridge') || lower.includes('browser') || lower.includes('extension')) {
+		msg = '浏览器服务暂不可用，请稍后重试。';
+	}
+	if (msg) {
+		showMessage(msg, 'warning', 5000);
+		return true;
+	}
+	return false;
+}
+
+function showMessage(message, type = 'info', duration = 3000) {
 	const messageDiv = document.createElement('div');
 	messageDiv.className = `message message-${type}`;
 	messageDiv.textContent = message;
@@ -2351,14 +2600,14 @@ function showMessage(message, type = 'info') {
 	
 	document.body.appendChild(messageDiv);
 	
-	// 2秒后自动消失
+	// 自动消失
 	setTimeout(() => {
 		messageDiv.style.opacity = '0';
 		messageDiv.style.transform = 'translateX(100%)';
 		setTimeout(() => {
 			document.body.removeChild(messageDiv);
 		}, 300);
-	}, 3000);
+	}, duration);
 }
 
 // 获取引擎跳转链接
@@ -2437,27 +2686,38 @@ function viewScreenshot(url, ip, port, protocol) {
 	linkBtn.href = target;
 	modal.style.display = 'block';
 	
-	// 请求截图
-	const apiUrl = `/api/screenshot?url=${encodeURIComponent(target)}`;
-	const img = new Image();
-	img.onload = function() {
+	// 请求截图 (POST)
+	fetch('/api/v1/screenshot', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: `url=${encodeURIComponent(target)}`
+	})
+	.then(resp => {
+		if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+		return resp.blob();
+	})
+	.then(blob => {
+		const imgUrl = URL.createObjectURL(blob);
 		body.innerHTML = '';
+		const img = document.createElement('img');
+		img.src = imgUrl;
 		img.style.maxWidth = '100%';
 		img.style.maxHeight = '600px';
 		img.style.border = '1px solid #ddd';
 		img.style.boxShadow = '0 0 10px rgba(0,0,0,0.1)';
 		body.appendChild(img);
-	};
-	img.onerror = function() {
-		body.innerHTML = `
-			<div style="color:#721c24; background:#f8d7da; padding:20px; border-radius:5px;">
-				<h4>截图失败</h4>
-				<p>目标可能无法访问或响应超时。</p>
-				<p>URL: ${target}</p>
-			</div>
-		`;
-	};
-	img.src = apiUrl;
+	})
+	.catch((err) => {
+		if (!handleBrowserError(err)) {
+			body.innerHTML = `
+				<div style="color:#721c24; background:#f8d7da; padding:20px; border-radius:5px;">
+					<h4>截图失败</h4>
+					<p>目标可能无法访问或响应超时。</p>
+					<p>URL: ${target}</p>
+				</div>
+			`;
+		}
+	});
 }
 
 // 截图搜索引擎结果页面
@@ -2486,7 +2746,7 @@ function captureSearchEngineScreenshots() {
 
 	engines.forEach((engine, index) => {
 		setTimeout(() => {
-			fetch(`/api/screenshot/search-engine?engine=${encodeURIComponent(engine)}&query=${encodeURIComponent(query)}&query_id=${queryID}`)
+			fetch(`/api/v1/screenshot/search-engine?engine=${encodeURIComponent(engine)}&query=${encodeURIComponent(query)}&query_id=${queryID}`)
 				.then(response => response.json())
 				.then(data => {
 					completed++;
@@ -2501,7 +2761,7 @@ function captureSearchEngineScreenshots() {
 				})
 				.catch(err => {
 					completed++;
-					logger.error(`截图 ${engine} 失败:`, err);
+					console.error(`截图 ${engine} 失败:`, err);
 					if (completed === total) {
 						statusEl.textContent = '截图完成(部分失败)';
 					}
@@ -2563,7 +2823,7 @@ function captureAllScreenshots() {
 	// 使用批量URL截图API，控制并发为3以减少内存占用
 	const batchID = queryID || `batch_${Date.now()}`;
 
-	fetch('/api/screenshot/batch-urls', {
+	fetch('/api/v1/screenshot/batch-urls', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({

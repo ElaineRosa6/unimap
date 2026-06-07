@@ -40,8 +40,10 @@
 						<div class="form-group">
 							<label>任务类型</label>
 							<select id="task-type" class="form-control">
-								{{range .TaskTypes}}
-								<option value="{{.}}">{{index $.TaskTypeLabels .}}</option>
+								{{range .TaskTypeGroups}}
+								<optgroup label="{{.Icon}} {{.Name}}">
+									{{range .Types}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
+								</optgroup>
 								{{end}}
 							</select>
 						</div>
@@ -51,6 +53,15 @@
 							<label>Cron 表达式</label>
 							<input type="text" id="task-cron" placeholder="0 0 2 * * *" class="form-control">
 							<small>秒 分 时 日 月 周，例：0 0 2 * * * = 每天凌晨2点</small>
+							<div class="cron-presets" id="cron-presets">
+								<button type="button" class="btn-sm btn-outline-secondary" data-cron="0 0 * * * *">每小时</button>
+								<button type="button" class="btn-sm btn-outline-secondary" data-cron="0 0 2 * * *">每天凌晨2点</button>
+								<button type="button" class="btn-sm btn-outline-secondary" data-cron="0 0 8 * * *">每天早8点</button>
+								<button type="button" class="btn-sm btn-outline-secondary" data-cron="0 0 9 * * 1">每周一9点</button>
+								<button type="button" class="btn-sm btn-outline-secondary" data-cron="0 0 3 1 * *">每月1号3点</button>
+								<button type="button" class="btn-sm btn-outline-secondary" data-cron="0 */5 * * * *">每5分钟</button>
+								<button type="button" class="btn-sm btn-outline-secondary" data-cron="0 */30 * * * *">每30分钟</button>
+							</div>
 						</div>
 					</div>
 					<div class="form-row">
@@ -65,7 +76,13 @@
 					</div>
 					<div class="form-group">
 						<label>任务参数（JSON）</label>
+						<div class="payload-toolbar">
+							<button type="button" class="btn-sm btn-outline-primary" id="btn-fill-template" style="display:none">从模板填充</button>
+							<button type="button" class="btn-sm btn-outline-secondary" id="btn-validate-json">校验 JSON</button>
+							<span class="json-status" id="json-status"></span>
+						</div>
 						<textarea id="task-payload" rows="4" class="form-control" placeholder='{"urls": ["https://example.com"], "engines": ["fofa"]}'></textarea>
+						<small class="param-hint" id="payload-hint"></small>
 					</div>
 					<div class="form-row">
 						<div class="form-group">
@@ -205,7 +222,7 @@
 		<input type="hidden" id="edit-task-id">
 		<div class="form-row">
 			<div class="form-group"><label>任务名称</label><input type="text" id="edit-task-name" class="form-control"></div>
-			<div class="form-group"><label>任务类型</label><select id="edit-task-type" class="form-control">{{range .TaskTypes}}<option value="{{.}}">{{index $.TaskTypeLabels .}}</option>{{end}}</select></div>
+			<div class="form-group"><label>任务类型</label><select id="edit-task-type" class="form-control">{{range .TaskTypeGroups}}<optgroup label="{{.Icon}} {{.Name}}">{{range .Types}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</optgroup>{{end}}</select></div>
 		</div>
 		<div class="form-row">
 			<div class="form-group"><label>Cron 表达式</label><input type="text" id="edit-task-cron" class="form-control"></div>
@@ -248,6 +265,14 @@
 		</div>
 	</div>
 
+	<style nonce="{{.CSPNonce}}">
+	.cron-presets { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+	.payload-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+	.param-hint { display: block; margin-top: 4px; color: var(--text-muted, #888); line-height: 1.5; }
+	.json-status { font-size: 12px; }
+	.json-status.ok { color: #2e9e5b; }
+	.json-status.err { color: #d14343; }
+	</style>
 	<script nonce="{{.CSPNonce}}">
 	// Tab switching
 	document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -269,7 +294,7 @@
 
 	async function loadTasks() {
 		try {
-			const res = await fetch('/api/scheduler/tasks' );
+			const res = await fetch('/api/v1/scheduler/tasks' );
 			const tasks = await res.json();
 			const tbody = document.getElementById('task-list');
 			tbody.innerHTML = '';
@@ -326,7 +351,7 @@
 		if (limit) params.set('limit', limit);
 
 		try {
-			const res = await fetch('/api/scheduler/history?' + params.toString() );
+			const res = await fetch('/api/v1/scheduler/history?' + params.toString() );
 			const records = await res.json();
 			const tbody = document.getElementById('history-list');
 			tbody.innerHTML = '';
@@ -385,7 +410,7 @@
 		const body = {name, type: taskType, enabled, cron_expr: cronExpr, payload, timeout_seconds: timeout, max_retries: retries};
 		if (notifyEnabled) body.notifications = notifications;
 
-		const res = await fetch('/api/scheduler/tasks/create', {
+		const res = await fetch('/api/v1/scheduler/tasks/create', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify(body)
@@ -406,7 +431,7 @@
 
 	async function deleteTask(id) {
 		if (!confirm('确定删除此任务？')) return;
-		const res = await fetch('/api/scheduler/tasks/delete' , {
+		const res = await fetch('/api/v1/scheduler/tasks/delete' , {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({id})
@@ -421,7 +446,7 @@
 	}
 
 	async function runTask(id) {
-		const res = await fetch('/api/scheduler/tasks/run' , {
+		const res = await fetch('/api/v1/scheduler/tasks/run' , {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({id})
@@ -435,7 +460,7 @@
 	}
 
 	async function toggleTask(id, enable) {
-		const endpoint = enable ? '/api/scheduler/tasks/enable' : '/api/scheduler/tasks/disable';
+		const endpoint = enable ? '/api/v1/scheduler/tasks/enable' : '/api/v1/scheduler/tasks/disable';
 		const res = await fetch(endpoint , {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
@@ -469,7 +494,7 @@
 
 	async function loadNotifyChannels() {
 		try {
-			const res = await fetch('/api/notifications/channels');
+			const res = await fetch('/api/v1/notifications/channels');
 			if (!res.ok) return;
 			const data = await res.json();
 			const channels = data.channels || [];
@@ -519,7 +544,7 @@ document.getElementById('task-list').addEventListener('click', (e) => {
 // --- Edit task modal ---
 async function editTask(id) {
 	try {
-		const res = await fetch('/api/scheduler/tasks/get?id=' + encodeURIComponent(id) );
+		const res = await fetch('/api/v1/scheduler/tasks/get?id=' + encodeURIComponent(id) );
 		if (!res.ok) { showToast('获取任务失败', 'error'); return; }
 		const task = await res.json();
 
@@ -584,7 +609,7 @@ async function saveTask() {
 	const body = {id, name, type: taskType, enabled, cron_expr: cronExpr, payload, timeout_seconds: timeout, max_retries: retries};
 	if (notifyEnabled) body.notifications = notifications;
 
-	const res = await fetch('/api/scheduler/tasks/update', {
+	const res = await fetch('/api/v1/scheduler/tasks/update', {
 		method: 'POST',
 		headers: {'Content-Type': 'application/json'},
 		body: JSON.stringify(body)
@@ -606,5 +631,94 @@ document.getElementById('btn-cancel-edit')?document.getElementById('btn-cancel-e
 document.getElementById('edit-modal-overlay').addEventListener('click', closeEditModal);
 
 	document.getElementById('btn-create-task').addEventListener('click', createTask);
+
+	// --- Task templates & parameter hints (SCHEDULER_OPTIMIZATION_PLAN §1.2 B/D) ---
+	// Pre-filled payloads for high-frequency task types. Uses precise queries
+	// (single IP + port) to keep API consumption minimal.
+	const TASK_TEMPLATES = {
+		query:             {name: '单 IP 资产扫描',    payload: {query: 'ip="47.95.120.1" && port="80"', engines: ['fofa'], page_size: 5}},
+		search_screenshot: {name: 'FOFA 搜索结果截图', payload: {engine: 'fofa', query: 'ip="47.95.120.1" && port="80"'}},
+		batch_screenshot:  {name: '官网截图巡检',      payload: {urls: ['https://www.baidu.com'], concurrency: 2}},
+		tamper_check:      {name: '首页篡改监控',      payload: {urls: ['https://www.baidu.com'], detection_mode: 'relaxed'}},
+		icp_query:         {name: '域名备案变更监控',  payload: {queries: ['baidu.com'], type: 'web', page: 1, page_size: 40}},
+		quota_monitor:     {name: 'API 配额告警',      payload: {low_threshold: 10}},
+		url_reachability:  {name: '服务存活检测',      payload: {urls: ['https://www.baidu.com']}}
+	};
+
+	// Concise parameter hints for every task type.
+	const PARAM_HINTS = {
+		query: 'query: UQL 查询语句；engines: 引擎列表；page_size: 每页结果数',
+		search_screenshot: 'engine: 单个引擎；query: 搜索语句（打开结果页截图）',
+		batch_screenshot: 'urls: URL 列表；concurrency: 并发数',
+		tamper_check: 'urls: URL 列表；detection_mode: strict/relaxed/malicious/performance/full',
+		url_reachability: 'urls: 待检测 URL 列表；concurrency: 并发数（可选）',
+		cookie_verify: 'engines: 待验证 Cookie 的引擎列表',
+		login_status_check: 'engines: 引擎列表（留空检测全部）；test_query: 探测查询（可选）',
+		distributed_submit: 'task_type: 子任务类型；priority: 优先级；timeout_seconds: 超时',
+		export: 'query/engines: 同 UQL 查询；format: json/csv/excel',
+		port_scan: 'urls: URL 列表；ports: 端口列表（可选）',
+		screenshot_cleanup: 'max_age_days: 保留天数，超过则清理',
+		tamper_cleanup: 'max_age_days: 保留天数，超过则清理',
+		quota_monitor: 'low_threshold: 低配额告警阈值',
+		alert_summary: 'days / max_age_days: 统计时间窗口（天）',
+		baseline_refresh: 'urls: 需刷新篡改基线的 URL 列表',
+		url_import: 'file_pattern: 导入目录中的文件匹配模式',
+		plugin_health: '无参数，传入 {} 即可',
+		bridge_token: '无参数，传入 {} 即可（检查 Bridge 状态）',
+		alert_silence: 'alert_type: 告警类型；duration_minutes: 静默时长（分钟）',
+		cache_warmup: 'warmup_urls: 预热的 URL 列表（内网地址会被拦截）',
+		icp_query: 'queries: 域名/单位列表；type: web/app；page/page_size: 分页',
+		icp_import: 'CSV 导入，需先在 import 目录放置文件'
+	};
+
+	function onTaskTypeChange() {
+		const type = document.getElementById('task-type').value;
+		const hintEl = document.getElementById('payload-hint');
+		const fillBtn = document.getElementById('btn-fill-template');
+		hintEl.textContent = PARAM_HINTS[type] || '';
+		const tmpl = TASK_TEMPLATES[type];
+		if (tmpl) {
+			fillBtn.style.display = '';
+			fillBtn.textContent = '从模板填充：' + tmpl.name;
+		} else {
+			fillBtn.style.display = 'none';
+		}
+		setJsonStatus('', '');
+	}
+
+	function setJsonStatus(msg, kind) {
+		const el = document.getElementById('json-status');
+		el.textContent = msg;
+		el.className = 'json-status' + (kind ? ' ' + kind : '');
+	}
+
+	function fillTemplate() {
+		const type = document.getElementById('task-type').value;
+		const tmpl = TASK_TEMPLATES[type];
+		if (!tmpl) return;
+		document.getElementById('task-payload').value = JSON.stringify(tmpl.payload, null, 2);
+		setJsonStatus('已填充模板，可按需修改', 'ok');
+	}
+
+	function validateCreatePayload() {
+		const raw = document.getElementById('task-payload').value.trim();
+		if (!raw) { setJsonStatus('参数为空（将作为 {} 提交）', 'ok'); return; }
+		try {
+			JSON.parse(raw);
+			setJsonStatus('✓ JSON 格式正确', 'ok');
+		} catch (e) {
+			setJsonStatus('✗ ' + e.message, 'err');
+		}
+	}
+
+	document.getElementById('task-type').addEventListener('change', onTaskTypeChange);
+	document.getElementById('btn-fill-template').addEventListener('click', fillTemplate);
+	document.getElementById('btn-validate-json').addEventListener('click', validateCreatePayload);
+	document.getElementById('cron-presets').addEventListener('click', (e) => {
+		const btn = e.target.closest('[data-cron]');
+		if (!btn) return;
+		document.getElementById('task-cron').value = btn.dataset.cron;
+	});
+	onTaskTypeChange(); // initialize hint/button for default selection
 	</script>
 {{template "footer" .}}

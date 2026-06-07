@@ -224,4 +224,3 @@ func (cb *circuitBreaker) GetStats() Stats {
 		LastStateChange:  cb.lastStateChange,
 	}
 }
-

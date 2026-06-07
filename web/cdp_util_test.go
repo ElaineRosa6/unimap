@@ -101,7 +101,7 @@ func TestIsRemoteDebuggerAvailable(t *testing.T) {
 // handleCDPStatus 测试（无 CDP 连接）
 func TestHandleCDPStatusOffline(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/cdp/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cdp/status", nil)
 	rec := httptest.NewRecorder()
 
 	s.handleCDPStatus(rec, req)

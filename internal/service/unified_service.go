@@ -21,23 +21,33 @@ import (
 	"github.com/unimap/project/internal/utils"
 )
 
+// BrowserFallbackConfig holds browser fallback settings.
+type BrowserFallbackConfig struct {
+	Enabled       bool
+	OnAPIError    bool
+	OnEmptyResult bool
+	Engines       map[string]bool // set of allowed engine names (lowercase)
+}
+
 // UnifiedService 统一服务层 - 为 CLI、GUI 和 Web 提供统一接口
 type UnifiedService struct {
-	pluginManager     *plugin.PluginManager
-	orchestrator      *adapter.EngineOrchestrator
-	parser            *unimap.UQLParser
-	merger            *unimap.ResultMerger
-	cache             utils.QueryCache
-	cacheTTL          time.Duration
-	cacheMaxSize      int
-	cacheCleanup      time.Duration
-	cacheBackend      string
-	strategyManager   *utils.CacheStrategyManager
-	mu                sync.RWMutex
-	maxMemoryMB       int        // 最大内存使用限制（MB）
-	maxConcurrent     int        // 最大并发查询数
-	activeQueries     int        // 当前活跃查询数
-	queryMutex        sync.Mutex // 查询并发控制锁
+	pluginManager      *plugin.PluginManager
+	orchestrator       *adapter.EngineOrchestrator
+	parser             *unimap.UQLParser
+	merger             *unimap.ResultMerger
+	cache              utils.QueryCache
+	cacheTTL           time.Duration
+	cacheMaxSize       int
+	cacheCleanup       time.Duration
+	cacheBackend       string
+	strategyManager    *utils.CacheStrategyManager
+	mu                 sync.RWMutex
+	maxMemoryMB        int                    // 最大内存使用限制（MB）
+	maxConcurrent      int                    // 最大并发查询数
+	activeQueries      int                    // 当前活跃查询数
+	queryMutex         sync.Mutex             // 查询并发控制锁
+	browserBackend     adapter.BrowserQueryBackend // browser fallback backend
+	browserFallbackCfg *BrowserFallbackConfig      // fallback configuration
 }
 
 // NewUnifiedService 创建统一服务
@@ -159,7 +169,13 @@ func (s *UnifiedService) GetOrchestrator() *adapter.EngineOrchestrator {
 
 // SetWebOnlyBrowserBackend wires a browser query backend into all WebOnly adapters.
 func (s *UnifiedService) SetWebOnlyBrowserBackend(backend adapter.BrowserQueryBackend) {
+	s.browserBackend = backend
 	s.orchestrator.SetWebOnlyBrowserBackend(backend)
+}
+
+// SetBrowserFallbackConfig configures the browser fallback behavior.
+func (s *UnifiedService) SetBrowserFallbackConfig(cfg BrowserFallbackConfig) {
+	s.browserFallbackCfg = &cfg
 }
 
 // QueryRequest 查询请求
@@ -300,6 +316,9 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 		}
 	}
 
+	// Attempt browser fallback for failed engines
+	engineResults = s.tryBrowserFallback(ctx, engineResults, queries)
+
 	// 规范化和合并结果
 	var allAssets []model.UnifiedAsset
 	engineStats := make(map[string]int)
@@ -383,6 +402,85 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 		EngineStats: engineStats,
 		Errors:      errors,
 	}, nil
+}
+
+// tryBrowserFallback attempts browser collection for engines that failed API queries.
+func (s *UnifiedService) tryBrowserFallback(ctx context.Context, engineResults []*model.EngineResult, queries []model.EngineQuery) []*model.EngineResult {
+	if s.browserFallbackCfg == nil || !s.browserFallbackCfg.Enabled || s.browserBackend == nil {
+		return engineResults
+	}
+
+	// Build query map for lookup
+	queryMap := make(map[string]string, len(queries))
+	for _, q := range queries {
+		queryMap[strings.ToLower(q.EngineName)] = q.Query
+	}
+
+	var fallbackResults []*model.EngineResult
+	for _, result := range engineResults {
+		if result == nil {
+			continue
+		}
+		engine := strings.ToLower(result.EngineName)
+
+		// Check if this engine is in the whitelist
+		if !s.browserFallbackCfg.Engines[engine] {
+			continue
+		}
+
+		// Determine if fallback should trigger
+		shouldFallback := false
+		var trigger string
+		if result.Error != "" && s.browserFallbackCfg.OnAPIError {
+			shouldFallback = true
+			trigger = "api_error"
+		} else if result.Error == "" && len(result.NormalizedData) == 0 && s.browserFallbackCfg.OnEmptyResult {
+			shouldFallback = true
+			trigger = "empty_result"
+		}
+
+		if !shouldFallback {
+			continue
+		}
+		metrics.IncBrowserFallbackTriggered(engine, trigger)
+
+		query, ok := queryMap[engine]
+		if !ok || query == "" {
+			continue
+		}
+
+		logger.CtxInfof(ctx, "browser fallback triggered for engine %s", engine)
+		queryID := fmt.Sprintf("fallback_%s_%d", engine, time.Now().UnixNano())
+		collectResults, err := s.browserBackend.CollectSearchEngineResult(ctx, engine, query, queryID)
+		if err != nil {
+			metrics.IncBrowserFallbackFailure(engine, "backend_error")
+			logger.CtxWarnf(ctx, "browser fallback failed for engine %s: %v", engine, err)
+			continue
+		}
+
+		// Build assets from collected results and tag source
+		var assets []model.UnifiedAsset
+		for _, cr := range collectResults {
+			for _, asset := range cr.Assets {
+				if asset.Extra == nil {
+					asset.Extra = make(map[string]interface{})
+				}
+				asset.Extra["collection_method"] = "browser_fallback"
+				assets = append(assets, asset)
+			}
+		}
+
+		if len(assets) > 0 {
+			metrics.IncBrowserFallbackSuccess(engine)
+			fallbackResults = append(fallbackResults, &model.EngineResult{
+				EngineName:     result.EngineName,
+				NormalizedData: assets,
+				Total:          len(assets),
+			})
+		}
+	}
+
+	return append(engineResults, fallbackResults...)
 }
 
 // resolveCacheTTL 通过策略管理器动态计算缓存TTL
@@ -634,8 +732,8 @@ func (a *enginePluginAdapter) Translate(ast *model.UQLAST) (string, error) {
 	return a.engine.Translate(ast)
 }
 
-func (a *enginePluginAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
-	return a.engine.Search(query, page, pageSize)
+func (a *enginePluginAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
+	return a.engine.Search(ctx, query, page, pageSize)
 }
 
 func (a *enginePluginAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
@@ -669,4 +767,3 @@ func (a *enginePluginAdapter) IsWebOnly() bool {
 	// 如果引擎插件没有实现IsWebOnly方法，返回默认值
 	return false
 }
-

@@ -109,7 +109,6 @@ jobs:
         with:
           version: latest
           args: --timeout=5m
-        continue-on-error: true
 
   # --- Extension scripts ---
   extension-scripts:

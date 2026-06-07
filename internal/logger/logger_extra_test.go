@@ -165,9 +165,9 @@ func TestInit_FileCreationFails(t *testing.T) {
 
 func TestInit_AsyncEnabled(t *testing.T) {
 	cfg := Config{
-		Level:    LevelInfo,
-		Encoding: "console",
-		Async:    true,
+		Level:      LevelInfo,
+		Encoding:   "console",
+		Async:      true,
 		BufferSize: 256,
 	}
 	Init(cfg)

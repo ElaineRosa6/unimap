@@ -319,4 +319,3 @@ func (m *ResultMerger) GetSourceStats(assets []model.UnifiedAsset) map[string]in
 	}
 	return stats
 }
-

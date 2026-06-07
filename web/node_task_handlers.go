@@ -152,7 +152,7 @@ func (s *Server) handleNodeTaskStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleNodeTaskGet handles GET /api/nodes/task/get - retrieve a single task
+// handleNodeTaskGet handles GET /api/v1/nodes/task/get - retrieve a single task
 func (s *Server) handleNodeTaskGet(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -190,7 +190,7 @@ func (s *Server) handleNodeTaskGet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleNodeTaskDelete handles DELETE /api/nodes/task/delete - delete a task
+// handleNodeTaskDelete handles DELETE /api/v1/nodes/task/delete - delete a task
 func (s *Server) handleNodeTaskDelete(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
@@ -222,4 +222,3 @@ func (s *Server) handleNodeTaskDelete(w http.ResponseWriter, r *http.Request) {
 		"task_id": taskID,
 	})
 }
-

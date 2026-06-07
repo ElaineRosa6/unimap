@@ -54,7 +54,7 @@ func TestRequireNodeToken_AuthNotRequired(t *testing.T) {
 	s.config.Distributed.NodeAuthTokens = map[string]string{}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
 	if !s.requireNodeToken(rec, req, "node1") {
 		t.Fatal("expected true when auth not required")
 	}
@@ -65,7 +65,7 @@ func TestRequireNodeToken_EmptyNodeID(t *testing.T) {
 	s.config.Distributed.NodeAuthTokens = map[string]string{"node1": "token1"}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
 	if s.requireNodeToken(rec, req, "") {
 		t.Fatal("expected false for empty node ID")
 	}
@@ -79,7 +79,7 @@ func TestRequireNodeToken_TokenNotConfigured(t *testing.T) {
 	s.config.Distributed.NodeAuthTokens = map[string]string{"node1": "token1"}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
 	if s.requireNodeToken(rec, req, "node2") {
 		t.Fatal("expected false when token not configured for node")
 	}
@@ -93,7 +93,7 @@ func TestRequireNodeToken_MissingToken(t *testing.T) {
 	s.config.Distributed.NodeAuthTokens = map[string]string{"node1": "token1"}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
 	if s.requireNodeToken(rec, req, "node1") {
 		t.Fatal("expected false when no token provided")
 	}
@@ -107,7 +107,7 @@ func TestRequireNodeToken_ValidBearer(t *testing.T) {
 	s.config.Distributed.NodeAuthTokens = map[string]string{"node1": "token1"}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
 	req.Header.Set("Authorization", "Bearer token1")
 	if !s.requireNodeToken(rec, req, "node1") {
 		t.Fatal("expected true for valid bearer token")
@@ -119,7 +119,7 @@ func TestRequireNodeToken_ValidXNodeToken(t *testing.T) {
 	s.config.Distributed.NodeAuthTokens = map[string]string{"node1": "token1"}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
 	req.Header.Set("X-Node-Token", "token1")
 	if !s.requireNodeToken(rec, req, "node1") {
 		t.Fatal("expected true for valid X-Node-Token header")
@@ -131,7 +131,7 @@ func TestRequireNodeToken_InvalidToken(t *testing.T) {
 	s.config.Distributed.NodeAuthTokens = map[string]string{"node1": "token1"}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
 	req.Header.Set("Authorization", "Bearer wrong")
 	if s.requireNodeToken(rec, req, "node1") {
 		t.Fatal("expected false for wrong token")
@@ -145,7 +145,7 @@ func TestRequireDistributedAdminToken_NilConfig(t *testing.T) {
 	s := &Server{config: nil}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin", nil)
 	if s.requireDistributedAdminToken(rec, req) {
 		t.Fatal("expected false for nil config")
 	}
@@ -160,7 +160,7 @@ func TestRequireDistributedAdminToken_AdminTokenEmpty_DistributedEnabled(t *test
 	s.config.Distributed.AdminToken = ""
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin", nil)
 	if s.requireDistributedAdminToken(rec, req) {
 		t.Fatal("expected false when admin token empty and distributed enabled")
 	}
@@ -175,7 +175,7 @@ func TestRequireDistributedAdminToken_AdminTokenEmpty_DistributedDisabled(t *tes
 	s.config.Distributed.AdminToken = ""
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin", nil)
 	if !s.requireDistributedAdminToken(rec, req) {
 		t.Fatal("expected true when admin token empty and distributed disabled")
 	}
@@ -187,7 +187,7 @@ func TestRequireDistributedAdminToken_ValidBearer(t *testing.T) {
 	s.config.Distributed.AdminToken = "admin-secret"
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin", nil)
 	req.Header.Set("Authorization", "Bearer admin-secret")
 	if !s.requireDistributedAdminToken(rec, req) {
 		t.Fatal("expected true for valid admin bearer token")
@@ -200,7 +200,7 @@ func TestRequireDistributedAdminToken_ValidXAdminToken(t *testing.T) {
 	s.config.Distributed.AdminToken = "admin-secret"
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin", nil)
 	req.Header.Set("X-Admin-Token", "admin-secret")
 	if !s.requireDistributedAdminToken(rec, req) {
 		t.Fatal("expected true for valid X-Admin-Token header")
@@ -213,7 +213,7 @@ func TestRequireDistributedAdminToken_InvalidToken(t *testing.T) {
 	s.config.Distributed.AdminToken = "admin-secret"
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin", nil)
 	req.Header.Set("Authorization", "Bearer wrong")
 	if s.requireDistributedAdminToken(rec, req) {
 		t.Fatal("expected false for wrong admin token")
@@ -225,7 +225,7 @@ func TestRequireDistributedAdminToken_InvalidToken(t *testing.T) {
 
 func TestHasValidDistributedAdminToken_NilServer(t *testing.T) {
 	var s *Server
-	req := httptest.NewRequest(http.MethodGet, "/api/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin", nil)
 	if s.hasValidDistributedAdminToken(req) {
 		t.Fatal("expected false for nil server")
 	}
@@ -235,7 +235,7 @@ func TestHasValidDistributedAdminToken_ValidBearer(t *testing.T) {
 	s := &Server{config: &config.Config{}}
 	s.config.Distributed.AdminToken = "admin-secret"
 
-	req := httptest.NewRequest(http.MethodGet, "/api/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin", nil)
 	req.Header.Set("Authorization", "Bearer admin-secret")
 	if !s.hasValidDistributedAdminToken(req) {
 		t.Fatal("expected true for valid admin token")
@@ -246,7 +246,7 @@ func TestHasValidDistributedAdminToken_NoToken(t *testing.T) {
 	s := &Server{config: &config.Config{}}
 	s.config.Distributed.AdminToken = "admin-secret"
 
-	req := httptest.NewRequest(http.MethodGet, "/api/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin", nil)
 	if s.hasValidDistributedAdminToken(req) {
 		t.Fatal("expected false when no token provided")
 	}
@@ -257,7 +257,7 @@ func TestRequireNodeOrAdminToken_AdminPasses(t *testing.T) {
 	s.config.Distributed.AdminToken = "admin-secret"
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
 	req.Header.Set("Authorization", "Bearer admin-secret")
 	if !s.requireNodeOrDistributedAdminToken(rec, req, "node1") {
 		t.Fatal("expected true for valid admin token")
@@ -269,10 +269,9 @@ func TestRequireNodeOrAdminToken_NodePasses(t *testing.T) {
 	s.config.Distributed.NodeAuthTokens = map[string]string{"node1": "token1"}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
 	req.Header.Set("X-Node-Token", "token1")
 	if !s.requireNodeOrDistributedAdminToken(rec, req, "node1") {
 		t.Fatal("expected true for valid node token")
 	}
 }
-

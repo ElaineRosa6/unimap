@@ -205,4 +205,3 @@ func processAssets(svc *service.UnifiedService, ctx context.Context, assets []mo
 	pipeline := plugin.NewProcessorPipeline(processors)
 	return pipeline.Process(ctx, assets)
 }
-

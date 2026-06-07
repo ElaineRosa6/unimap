@@ -5,11 +5,14 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/model"
 )
 
@@ -64,6 +67,26 @@ func (r *ScreenshotRouter) SetMetricsHooks(onModeSwitch func(from, to Screenshot
 	r.onHealthCheck = onHealthCheck
 }
 
+// SetExtensionHealthSignals injects optional liveness and activity providers
+// into the extension health checker. All parameters are optional — nil values
+// are ignored and preserve the existing checker state.
+func (r *ScreenshotRouter) SetExtensionHealthSignals(liveClient LiveClientProvider, lastActivity LastActivityProvider, cutoff time.Duration) {
+	if r.extChecker == nil {
+		return
+	}
+	if ext, ok := r.extChecker.(*ExtensionHealthChecker); ok {
+		if liveClient != nil {
+			ext.LiveClient = liveClient
+		}
+		if lastActivity != nil {
+			ext.LastActivity = lastActivity
+		}
+		if cutoff > 0 {
+			ext.RecentActivityCutoff = cutoff
+		}
+	}
+}
+
 // NewScreenshotRouter creates a new ScreenshotRouter.
 func NewScreenshotRouter(cfg RouterConfig, cdp Provider, extBridge *BridgeService, mgr *Manager) *ScreenshotRouter {
 	if cfg.ProbeInterval <= 0 {
@@ -94,8 +117,7 @@ func NewScreenshotRouter(cfg RouterConfig, cdp Provider, extBridge *BridgeServic
 		r.cdpHealthy.Store(false)
 	}
 
-	isMock := extBridge != nil && isMockBridgeClient(extBridge)
-	r.extChecker = &ExtensionHealthChecker{BridgeService: extBridge, IsMock: isMock}
+	r.extChecker = &ExtensionHealthChecker{BridgeService: extBridge}
 	r.extHealthy.Store(extBridge != nil)
 
 	// Set initial mode
@@ -123,6 +145,12 @@ func (r *ScreenshotRouter) Stop() {
 }
 
 func (r *ScreenshotRouter) probeLoop(ctx context.Context) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			logger.Errorf("panic in screenshot probeLoop: %v", rec)
+		}
+	}()
+
 	ticker := time.NewTicker(r.cfg.ProbeInterval)
 	defer ticker.Stop()
 
@@ -523,6 +551,7 @@ func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, 
 		RequestID:    fmt.Sprintf("router_open_%d", time.Now().UnixNano()),
 		URL:          searchURL,
 		WaitStrategy: "load",
+		Timeout:      30 * time.Second,
 		Action:       "open",
 	}
 	result, err := p.bridge.Submit(ctx, task)
@@ -568,6 +597,43 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 	if err != nil {
 		return nil, fmt.Errorf("extension bridge collect failed: %w", err)
 	}
+	collectResult := CollectResult{
+		Engine:    engine,
+		Query:     query,
+		RawURL:    searchURL,
+		Timestamp: time.Now().Unix(),
+	}
+
+	// Check for login wall BEFORE treating success=false as an error.
+	// The extension sets success=false + error_code="login_required" when a login wall
+	// is detected. We must return a proper CollectResult with IsLoginWall=true rather
+	// than an error, so the caller can distinguish "login required" from "actual failure".
+	isLoginWall := false
+	if len(result.StructuredCollectedData) > 0 {
+		if lw, ok := result.StructuredCollectedData["is_login_wall"].(bool); ok && lw {
+			isLoginWall = true
+		}
+	}
+	if !isLoginWall && !result.Success {
+		errCode := strings.TrimSpace(result.ErrorCode)
+		if strings.Contains(strings.ToLower(errCode), "login") {
+			isLoginWall = true
+		}
+	}
+
+	if isLoginWall {
+		collectResult.IsLoginWall = true
+		collectResult.LoginRequired = true
+		metrics.IncBrowserLoginRequired(engine)
+		if len(result.StructuredCollectedData) > 0 {
+			collectResult.Assets, collectResult.Total, collectResult.HasMore = parseStructuredCollectedData(result.StructuredCollectedData, engine)
+			if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
+				collectResult.Title = title
+			}
+		}
+		return []CollectResult{collectResult}, nil
+	}
+
 	if !result.Success {
 		errMsg := strings.TrimSpace(result.Error)
 		if errMsg == "" {
@@ -579,22 +645,29 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 		return nil, fmt.Errorf("extension bridge collect failed: %s", errMsg)
 	}
 
-	collectResult := CollectResult{
-		Engine:    engine,
-		Query:     query,
-		RawURL:    searchURL,
-		Timestamp: time.Now().Unix(),
-	}
-
 	// Anti-corruption: prefer structured data, fall back to string payload.
 	if len(result.StructuredCollectedData) > 0 {
 		collectResult.Assets, collectResult.Total, collectResult.HasMore = parseStructuredCollectedData(result.StructuredCollectedData, engine)
 		if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
 			collectResult.Title = title
 		}
-		if lw, ok := result.StructuredCollectedData["is_login_wall"].(bool); ok && lw {
-			collectResult.IsLoginWall = true
+		// Collect diagnostic fields from extension
+		if v, ok := result.StructuredCollectedData["extraction_method"].(string); ok {
+			collectResult.ExtractionMethod = v
+		}
+		if v, ok := result.StructuredCollectedData["row_selector_used"].(string); ok {
+			collectResult.RowSelectorUsed = v
+		}
+		if v, ok := result.StructuredCollectedData["rows_found"].(float64); ok {
+			collectResult.RowsFound = int(v)
+		}
+		if v, ok := result.StructuredCollectedData["extraction_error"].(string); ok {
+			collectResult.ExtractionError = v
+		}
+		// Also check login_required from structured data (second indicator from extension)
+		if lr, ok := result.StructuredCollectedData["login_required"].(bool); ok && lr {
 			collectResult.LoginRequired = true
+			metrics.IncBrowserLoginRequired(engine)
 		}
 	} else if result.CollectedData != "" {
 		collectResult.Title = result.CollectedData
@@ -604,16 +677,19 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 }
 
 // buildSearchEngineURL builds a search engine result URL for bridge capture.
+// Note: query should already be translated to engine-native syntax before calling this.
 func buildSearchEngineURL(engine, query string) string {
 	switch strings.ToLower(strings.TrimSpace(engine)) {
 	case "fofa":
 		return fmt.Sprintf("%s/result?qbase64=%s", model.FOFAOfficialWebURL, urlBase64(query))
 	case "hunter":
-		return fmt.Sprintf("https://hunter.qianxin.com/list?searchValue=%s", urlBase64(query))
+		return fmt.Sprintf("https://hunter.qianxin.com/home/list?search=%s&conditions=", urlBase64(query))
 	case "quake":
-		return fmt.Sprintf("https://quake.360.cn/quake/#/searchResult?searchVal=%s", url.QueryEscape(query))
+		return fmt.Sprintf("https://quake.360.net/quake/#/searchResult?searchVal=%s&selectIndex=quake_service&latest=true", url.QueryEscape(query))
 	case "zoomeye":
 		return fmt.Sprintf("https://www.zoomeye.org/searchResult?q=%s", url.QueryEscape(query))
+	case "shodan":
+		return fmt.Sprintf("https://www.shodan.io/search?query=%s", url.QueryEscape(query))
 	default:
 		return ""
 	}
@@ -656,13 +732,6 @@ func normalizeURL(raw string) string {
 		trimmed = "http://" + trimmed
 	}
 	return trimmed
-}
-
-// isMockBridgeClient detects if the BridgeService wraps a mock client.
-// Since we cannot inspect the wrapped client type from the BridgeService,
-// this is handled at creation time via the ExtensionHealthChecker.
-func isMockBridgeClient(svc *BridgeService) bool {
-	return false
 }
 
 // urlBase64 encodes a string as URL-safe base64.
@@ -716,6 +785,10 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 			asset.Port = int(v)
 		} else if v, ok := item["port"].(int); ok {
 			asset.Port = v
+		} else if v, ok := item["port"].(string); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				asset.Port = n
+			}
 		}
 		if v, ok := item["protocol"].(string); ok {
 			asset.Protocol = v
@@ -723,7 +796,9 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 		if v, ok := item["host"].(string); ok {
 			asset.Host = v
 		}
-		if v, ok := item["body_snippet"].(string); ok {
+		if v, ok := item["body_snippet"].(string); ok && v != "" {
+			asset.BodySnippet = v
+		} else if v, ok := item["banner"].(string); ok && v != "" {
 			asset.BodySnippet = v
 		}
 		if v, ok := item["server"].(string); ok {
@@ -731,6 +806,10 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 		}
 		if v, ok := item["status_code"].(float64); ok {
 			asset.StatusCode = int(v)
+		} else if v, ok := item["status_code"].(string); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				asset.StatusCode = n
+			}
 		}
 		if v, ok := item["country_code"].(string); ok {
 			asset.CountryCode = v
@@ -755,8 +834,9 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 		known := map[string]bool{
 			"url": true, "title": true, "ip": true, "port": true,
 			"protocol": true, "host": true, "body_snippet": true,
-			"server": true, "status_code": true, "country_code": true,
-			"region": true, "city": true, "asn": true, "org": true, "isp": true,
+			"banner": true, "server": true, "status_code": true,
+			"country_code": true, "region": true, "city": true,
+			"asn": true, "org": true, "isp": true, "os": true,
 		}
 		for k, v := range item {
 			if !known[k] {
@@ -771,4 +851,3 @@ func parseStructuredCollectedData(data map[string]interface{}, engine string) ([
 
 	return assets, total, hasMore
 }
-

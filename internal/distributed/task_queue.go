@@ -791,4 +791,3 @@ func (q *TaskQueue) loadSnapshot() {
 		}
 	}
 }
-

@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -126,26 +127,37 @@ func (q *QuakeAdapter) buildCondition(field, op, value string) string {
 		"domain":      "domain",
 		"app":         "app",
 		"os":          "os",
-		"server":      "app",
+		"server":      "server",
 		"host":        "domain",
 		"url":         "url",
 		"status_code": "status_code",
+		"cert":        "cert",
 	}
 
 	if mapped, ok := mapping[field]; ok {
 		field = mapped
 	}
 
+	escaped := escapeQuotes(value)
+
 	if op == "!=" || op == "<>" {
-		return fmt.Sprintf(`NOT %s:"%s"`, field, value)
+		return fmt.Sprintf(`NOT %s:"%s"`, field, escaped)
+	}
+	// Quake 区间语法: port:[N TO M] / port:[N TO *]
+	// 注意: Quake 的 [N TO *] 包含 N 本身，因此 > 和 >= 输出相同结果（Quake 无排他下界语法）
+	if op == ">" || op == ">=" {
+		return fmt.Sprintf(`%s:[%s TO *]`, field, escaped)
+	}
+	if op == "<" || op == "<=" {
+		return fmt.Sprintf(`%s:[* TO %s]`, field, escaped)
 	}
 
 	// Quake syntax: field:"value"
-	return fmt.Sprintf(`%s:"%s"`, field, value)
+	return fmt.Sprintf(`%s:"%s"`, field, escaped)
 }
 
 // Search 执行搜索
-func (q *QuakeAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (q *QuakeAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	var engineResult *model.EngineResult
 
 	retryConfig := utils.RetryConfig{
@@ -301,7 +313,7 @@ func (q *QuakeAdapter) GetQuota() (*model.QuotaInfo, error) {
 		Get(url)
 
 	if err != nil {
-		return nil, fmt.Errorf("request error: %v", err)
+		return nil, fmt.Errorf("request error: %w", err)
 	}
 
 	if resp.StatusCode() != 200 {
@@ -312,7 +324,7 @@ func (q *QuakeAdapter) GetQuota() (*model.QuotaInfo, error) {
 	// returning 0/0/0 when the schema changes.
 	var raw map[string]interface{}
 	if err := json.Unmarshal(resp.Body(), &raw); err != nil {
-		return nil, fmt.Errorf("parse error: %v", err)
+		return nil, fmt.Errorf("parse error: %w", err)
 	}
 
 	code := raw["code"]
@@ -453,4 +465,3 @@ func NewQuakeAdapterWebOnly() *QuakeAdapterWebOnly {
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "quake"),
 	}
 }
-

@@ -21,7 +21,7 @@ func newBridgeState() *BridgeState {
 
 func TestHandleScreenshotBridgeHealth_Success(t *testing.T) {
 	s := &Server{bridge: newBridgeState()}
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/bridge/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/bridge/health", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshotBridgeHealth(w, req)
 
@@ -36,7 +36,7 @@ func TestHandleScreenshotBridgeHealth_Success(t *testing.T) {
 
 func TestHandleScreenshotBridgeHealth_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/health", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/health", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshotBridgeHealth(w, req)
 
@@ -51,7 +51,7 @@ func TestHandleScreenshotBridgeHealth_WrongMethod(t *testing.T) {
 
 func TestHandleScreenshotBridgeStatus_Success(t *testing.T) {
 	s := &Server{bridge: newBridgeState()}
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/bridge/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/bridge/status", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshotBridgeStatus(w, req)
 
@@ -66,7 +66,7 @@ func TestHandleScreenshotBridgeStatus_Success(t *testing.T) {
 
 func TestHandleScreenshotBridgeStatus_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/status", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/status", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshotBridgeStatus(w, req)
 
@@ -81,7 +81,7 @@ func TestHandleScreenshotBridgeStatus_WrongMethod(t *testing.T) {
 
 func TestHandleScreenshotBridgePair_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/bridge/pair", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/bridge/pair", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshotBridgePair(w, req)
 
@@ -93,7 +93,7 @@ func TestHandleScreenshotBridgePair_WrongMethod(t *testing.T) {
 func TestHandleScreenshotBridgePair_NonLoopback(t *testing.T) {
 	s := &Server{bridge: newBridgeState()}
 	body := strings.NewReader(`{"client_id":"test","pair_code":"123456"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/pair", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/pair", body)
 	req.RemoteAddr = "1.2.3.4:12345"
 	req.Header.Set("X-Forwarded-For", "1.2.3.4")
 	w := httptest.NewRecorder()
@@ -110,7 +110,7 @@ func TestHandleScreenshotBridgePair_NonLoopback(t *testing.T) {
 func TestHandleScreenshotBridgePair_MissingFields(t *testing.T) {
 	s := &Server{bridge: newBridgeState()}
 	body := strings.NewReader(`{}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/pair", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/pair", body)
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.Host = "localhost:8080"
 	w := httptest.NewRecorder()
@@ -127,7 +127,7 @@ func TestHandleScreenshotBridgePair_MissingFields(t *testing.T) {
 func TestHandleScreenshotBridgePair_InvalidJSON(t *testing.T) {
 	s := &Server{bridge: newBridgeState()}
 	body := strings.NewReader(`not-json`)
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/pair", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/pair", body)
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.Host = "localhost:8080"
 	w := httptest.NewRecorder()
@@ -144,7 +144,7 @@ func TestHandleScreenshotBridgePair_InvalidJSON(t *testing.T) {
 
 func TestHandleScreenshotBridgeRotateToken_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/screenshot/bridge/rotate-token", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/bridge/rotate-token", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshotBridgeRotateToken(w, req)
 
@@ -155,7 +155,7 @@ func TestHandleScreenshotBridgeRotateToken_WrongMethod(t *testing.T) {
 
 func TestHandleScreenshotBridgeRotateToken_NonLoopback(t *testing.T) {
 	s := &Server{bridge: newBridgeState()}
-	req := httptest.NewRequest(http.MethodPost, "/api/screenshot/bridge/rotate-token", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/bridge/rotate-token", nil)
 	req.RemoteAddr = "1.2.3.4:12345"
 	w := httptest.NewRecorder()
 	s.handleScreenshotBridgeRotateToken(w, req)

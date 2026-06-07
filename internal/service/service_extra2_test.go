@@ -347,7 +347,7 @@ func (m *mockEngineAdapter) Translate(ast *model.UQLAST) (string, error) {
 	}
 	return "translated", nil
 }
-func (m *mockEngineAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (m *mockEngineAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	return nil, nil
 }
 func (m *mockEngineAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
@@ -387,4 +387,3 @@ func (m *mockScreenshotProvider) CollectSearchEngineResult(ctx context.Context, 
 	m.collectedQueries = append(m.collectedQueries, query)
 	return []screenshot.CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query}}, nil
 }
-

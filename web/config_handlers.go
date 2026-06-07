@@ -8,7 +8,7 @@ import (
 	"github.com/unimap/project/internal/logger"
 )
 
-// handleGetConfig returns the current config with secrets masked (GET /api/config).
+// handleGetConfig returns the current config with secrets masked (GET /api/v1/config).
 // Only sections needed by the settings page are exposed.
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
@@ -91,7 +91,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// configSaveRequest is the POST /api/config payload.
+// configSaveRequest is the POST /api/v1/config payload.
 type configSaveRequest struct {
 	Section string                 `json:"section"`
 	Data    map[string]interface{} `json:"data"`
@@ -196,6 +196,9 @@ func applyScreenshotSection(c *config.Config, data map[string]interface{}) {
 	if c == nil {
 		return
 	}
+	if v, ok := boolField(data, "enabled"); ok {
+		c.Screenshot.Enabled = v
+	}
 	if v, ok := stringField(data, "engine"); ok {
 		c.Screenshot.Engine = strings.TrimSpace(v)
 	}
@@ -244,7 +247,7 @@ func applyEngineSections(c *config.Config, data map[string]interface{}) {
 		}
 		switch name {
 		case "fofa":
-			if v, _ := boolField(eng, "enabled"); v {
+			if v, ok := boolField(eng, "enabled"); ok {
 				c.Engines.Fofa.Enabled = v
 			}
 			if v, _ := stringField(eng, "api_base_url"); v != "" {
@@ -263,7 +266,7 @@ func applyEngineSections(c *config.Config, data map[string]interface{}) {
 				c.Engines.Fofa.Timeout = v
 			}
 		case "hunter":
-			if v, _ := boolField(eng, "enabled"); v {
+			if v, ok := boolField(eng, "enabled"); ok {
 				c.Engines.Hunter.Enabled = v
 			}
 			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
@@ -279,7 +282,7 @@ func applyEngineSections(c *config.Config, data map[string]interface{}) {
 				c.Engines.Hunter.Timeout = v
 			}
 		case "zoomeye":
-			if v, _ := boolField(eng, "enabled"); v {
+			if v, ok := boolField(eng, "enabled"); ok {
 				c.Engines.Zoomeye.Enabled = v
 			}
 			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
@@ -295,7 +298,7 @@ func applyEngineSections(c *config.Config, data map[string]interface{}) {
 				c.Engines.Zoomeye.Timeout = v
 			}
 		case "quake":
-			if v, _ := boolField(eng, "enabled"); v {
+			if v, ok := boolField(eng, "enabled"); ok {
 				c.Engines.Quake.Enabled = v
 			}
 			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
@@ -311,7 +314,7 @@ func applyEngineSections(c *config.Config, data map[string]interface{}) {
 				c.Engines.Quake.Timeout = v
 			}
 		case "shodan":
-			if v, _ := boolField(eng, "enabled"); v {
+			if v, ok := boolField(eng, "enabled"); ok {
 				c.Engines.Shodan.Enabled = v
 			}
 			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
@@ -379,4 +382,3 @@ func isMaskedSecret(s string) bool {
 	}
 	return strings.Contains(s, "****")
 }
-

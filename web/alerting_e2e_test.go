@@ -167,4 +167,3 @@ func TestAlerting_WebhookWithAuthHeader(t *testing.T) {
 		t.Errorf("expected Authorization header 'Bearer test-token-123', got %q", auth)
 	}
 }
-

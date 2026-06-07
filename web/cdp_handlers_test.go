@@ -13,7 +13,7 @@ import (
 
 func TestHandleCDPStatus_Online(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/cdp/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cdp/status", nil)
 	w := httptest.NewRecorder()
 	s.handleCDPStatus(w, req)
 
@@ -33,7 +33,7 @@ func TestHandleCDPStatus_Online(t *testing.T) {
 
 func TestHandleCDPConnect_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/cdp/connect", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cdp/connect", nil)
 	w := httptest.NewRecorder()
 	s.handleCDPConnect(w, req)
 
@@ -44,7 +44,7 @@ func TestHandleCDPConnect_WrongMethod(t *testing.T) {
 
 func TestHandleCDPConnect_EmptyBody(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/cdp/connect", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cdp/connect", nil)
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()

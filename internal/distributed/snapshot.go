@@ -13,10 +13,10 @@ import (
 
 // SnapshotData represents the complete state for persistence
 type SnapshotData struct {
-	Version   int            `json:"version"`
-	Timestamp time.Time      `json:"timestamp"`
-	Nodes     []NodeRecord   `json:"nodes"`
-	Tasks     []TaskRecord   `json:"tasks"`
+	Version   int          `json:"version"`
+	Timestamp time.Time    `json:"timestamp"`
+	Nodes     []NodeRecord `json:"nodes"`
+	Tasks     []TaskRecord `json:"tasks"`
 }
 
 // SnapshotManager handles file-based snapshot persistence

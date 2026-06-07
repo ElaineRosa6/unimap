@@ -10,6 +10,7 @@ import (
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/notify"
+	"github.com/unimap/project/internal/service"
 )
 
 func (s *Server) handleNotificationChannels(w http.ResponseWriter, r *http.Request) {
@@ -28,6 +29,10 @@ func (s *Server) handleNotificationChannels(w http.ResponseWriter, r *http.Reque
 			"id":      ch.ID,
 			"type":    ch.Type,
 			"enabled": ch.Enabled,
+		}
+		if ch.Type == "feishu_app" {
+			infos[i]["app_id"] = ch.AppID
+			infos[i]["chat_id"] = ch.ChatID
 		}
 	}
 
@@ -66,6 +71,9 @@ func (s *Server) reloadNotifyChannels() {
 			Enabled:        cc.Enabled,
 			WebhookURL:     cc.WebhookURL,
 			Secret:         cc.Secret,
+			AppID:          cc.AppID,
+			AppSecret:      cc.AppSecret,
+			ChatID:         cc.ChatID,
 			Headers:        cc.Headers,
 			AllowPrivateIP: cc.AllowPrivateIP,
 		})
@@ -167,12 +175,29 @@ func (s *Server) reloadEngineAdapters() {
 		}
 	}
 
-	if s.screenshotRouter != nil {
-		s.orchestrator.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: s.screenshotRouter})
+	if provider := s.browserQueryProvider(); provider != nil {
+		s.orchestrator.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: provider})
+	}
+
+	if s.service != nil && s.config != nil {
+		if s.config.Query.BrowserFallback.Enabled {
+			bfEngines := make(map[string]bool)
+			for _, e := range s.config.Query.BrowserFallback.Engines {
+				bfEngines[strings.ToLower(e)] = true
+			}
+			s.service.SetBrowserFallbackConfig(service.BrowserFallbackConfig{
+				Enabled:       true,
+				OnAPIError:    s.config.Query.BrowserFallback.OnAPIError,
+				OnEmptyResult: s.config.Query.BrowserFallback.OnEmptyResult,
+				Engines:       bfEngines,
+			})
+		} else {
+			s.service.SetBrowserFallbackConfig(service.BrowserFallbackConfig{Enabled: false})
+		}
 	}
 }
 
-// handleNotifyChannelSave handles POST /api/notifications/channels — create or update a channel.
+// handleNotifyChannelSave handles POST /api/v1/notifications/channels — create or update a channel.
 func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -192,6 +217,9 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 		Enabled        bool              `json:"enabled"`
 		WebhookURL     string            `json:"webhook_url"`
 		Secret         string            `json:"secret"`
+		AppID          string            `json:"app_id"`
+		AppSecret      string            `json:"app_secret"`
+		ChatID         string            `json:"chat_id"`
 		Headers        map[string]string `json:"headers"`
 		AllowPrivateIP bool              `json:"allow_private_ip"`
 	}
@@ -202,6 +230,9 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 	req.ID = strings.TrimSpace(req.ID)
 	req.Type = strings.TrimSpace(req.Type)
 	req.WebhookURL = strings.TrimSpace(req.WebhookURL)
+	req.AppID = strings.TrimSpace(req.AppID)
+	req.AppSecret = strings.TrimSpace(req.AppSecret)
+	req.ChatID = strings.TrimSpace(req.ChatID)
 
 	if req.ID == "" {
 		writeAPIError(w, http.StatusBadRequest, "invalid_id", "channel id is required", nil)
@@ -211,13 +242,20 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 		writeAPIError(w, http.StatusBadRequest, "invalid_type", "channel type is required", nil)
 		return
 	}
-	validTypes := map[string]bool{"dingtalk": true, "feishu": true, "wecom": true, "webhook": true, "log": true}
+	validTypes := map[string]bool{"dingtalk": true, "feishu": true, "feishu_app": true, "wecom": true, "webhook": true, "log": true}
 	if !validTypes[req.Type] {
 		writeAPIError(w, http.StatusBadRequest, "invalid_type",
 			"unsupported channel type", map[string]string{"type": req.Type})
 		return
 	}
-	if req.Type != "log" && req.WebhookURL == "" {
+	// feishu_app uses app_id/app_secret/chat_id instead of webhook_url
+	if req.Type == "feishu_app" {
+		if req.AppID == "" || req.AppSecret == "" || req.ChatID == "" {
+			writeAPIError(w, http.StatusBadRequest, "missing_feishu_app_params",
+				"feishu_app requires app_id, app_secret, and chat_id", nil)
+			return
+		}
+	} else if req.Type != "log" && req.WebhookURL == "" {
 		writeAPIError(w, http.StatusBadRequest, "missing_webhook_url", "webhook_url is required for this channel type", nil)
 		return
 	}
@@ -232,9 +270,14 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 			if secret == "" {
 				secret = s.config.Notifications.Channels[i].Secret // preserve existing
 			}
+			appSecret := req.AppSecret
+			if appSecret == "" {
+				appSecret = s.config.Notifications.Channels[i].AppSecret // preserve existing
+			}
 			s.config.Notifications.Channels[i] = config.NotificationChannelCfg{
 				ID: req.ID, Type: req.Type, Enabled: req.Enabled,
 				WebhookURL: req.WebhookURL, Secret: secret,
+				AppID: req.AppID, AppSecret: appSecret, ChatID: req.ChatID,
 				Headers: req.Headers, AllowPrivateIP: req.AllowPrivateIP,
 			}
 			found = true
@@ -246,6 +289,7 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 			config.NotificationChannelCfg{
 				ID: req.ID, Type: req.Type, Enabled: req.Enabled,
 				WebhookURL: req.WebhookURL, Secret: req.Secret,
+				AppID: req.AppID, AppSecret: req.AppSecret, ChatID: req.ChatID,
 				Headers: req.Headers, AllowPrivateIP: req.AllowPrivateIP,
 			})
 	}
@@ -268,7 +312,7 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// handleNotifyChannelDelete handles DELETE /api/notifications/channels — delete a channel.
+// handleNotifyChannelDelete handles DELETE /api/v1/notifications/channels — delete a channel.
 func (s *Server) handleNotifyChannelDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -324,7 +368,7 @@ func (s *Server) handleNotifyChannelDelete(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// handleNotifyChannelTest handles POST /api/notifications/channels/test — send a test message.
+// handleNotifyChannelTest handles POST /api/v1/notifications/channels/test — send a test message.
 func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -339,6 +383,9 @@ func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request)
 		Type           string            `json:"type"`
 		WebhookURL     string            `json:"webhook_url"`
 		Secret         string            `json:"secret"`
+		AppID          string            `json:"app_id"`
+		AppSecret      string            `json:"app_secret"`
+		ChatID         string            `json:"chat_id"`
 		Headers        map[string]string `json:"headers"`
 		AllowPrivateIP bool              `json:"allow_private_ip"`
 	}
@@ -346,9 +393,10 @@ func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// If webhook_url is missing OR secret is missing, look up the channel in saved config
-	// to get the decrypted secret.
-	if req.WebhookURL == "" || req.Secret == "" {
+	// If config fields are missing, look up the channel in saved config
+	// to get the decrypted values.
+	needLookup := req.WebhookURL == "" || req.Secret == "" || req.AppID == "" || req.AppSecret == "" || req.ChatID == ""
+	if needLookup {
 		s.configMutex.Lock()
 		for _, ch := range s.config.Notifications.Channels {
 			if ch.ID == req.ID {
@@ -358,6 +406,15 @@ func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request)
 				if req.Secret == "" {
 					req.Secret = ch.Secret
 					logger.Infof("notify test: loaded decrypted secret for channel %q (len=%d)", req.ID, len(req.Secret))
+				}
+				if req.AppID == "" {
+					req.AppID = ch.AppID
+				}
+				if req.AppSecret == "" {
+					req.AppSecret = ch.AppSecret
+				}
+				if req.ChatID == "" {
+					req.ChatID = ch.ChatID
 				}
 				if req.Type == "" {
 					req.Type = ch.Type
@@ -374,19 +431,28 @@ func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request)
 		writeAPIError(w, http.StatusBadRequest, "missing_type", "channel type is required", nil)
 		return
 	}
-	if req.WebhookURL == "" {
+	if req.Type == "feishu_app" {
+		if req.AppID == "" || req.AppSecret == "" || req.ChatID == "" {
+			writeAPIError(w, http.StatusBadRequest, "missing_feishu_app_params",
+				"feishu_app test requires app_id, app_secret, and chat_id — either provide them or save the channel first", nil)
+			return
+		}
+	} else if req.WebhookURL == "" {
 		writeAPIError(w, http.StatusBadRequest, "missing_webhook_url", "webhook_url is required — either provide it in the request or save the channel first", nil)
 		return
 	}
 
 	// Build a temporary channel to test
-	logger.Infof("notify test: channel=%q type=%q secret_len=%d webhook_set=%v", req.ID, req.Type, len(req.Secret), req.WebhookURL != "")
+	logger.Infof("notify test: channel=%q type=%q", req.ID, req.Type)
 	chCfg := notify.ChannelConfig{
 		ID:             req.ID,
 		Type:           req.Type,
 		Enabled:        true,
 		WebhookURL:     req.WebhookURL,
 		Secret:         req.Secret,
+		AppID:          req.AppID,
+		AppSecret:      req.AppSecret,
+		ChatID:         req.ChatID,
 		Headers:        req.Headers,
 		AllowPrivateIP: req.AllowPrivateIP,
 	}
@@ -416,4 +482,3 @@ func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request)
 		"message": "test message sent successfully",
 	})
 }
-

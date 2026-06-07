@@ -8,6 +8,10 @@
   新手与部署人员入门必读，涵盖基础配置与三端（Web/CLI/GUI）快速启动。
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** 
   高阶开发者指南，图解平台核心组件交互及数据流转架构（多引擎聚合、截图高可用、自动篡改监测调度、分布式架构）。
+- **[BROWSER_RUNTIME_STRATEGY.md](./BROWSER_RUNTIME_STRATEGY.md)**
+  CDP 与 Chrome Extension 的职责边界、运行环境矩阵、默认配置和后续演进策略。
+- **[BROWSER_QUERY_FALLBACK_PLAN.md](./BROWSER_QUERY_FALLBACK_PLAN.md)**
+  浏览器查询降级的安全实施计划、配置建议、测试矩阵和回滚策略。
 - **[UQL_GUIDE.md](./UQL_GUIDE.md)** 
   多引擎通用聚合查询语言（UQL）语法白皮书及多场景字典。
 - **[RUNBOOK.md](./RUNBOOK.md)** 

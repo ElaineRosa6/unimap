@@ -67,7 +67,7 @@ func Backup(cfg BackupConfig) (*BackupResult, error) {
 
 	// 收集所有要备份的文件（带基础目录信息）
 	type fileWithBase struct {
-		path   string
+		path    string
 		baseDir string
 	}
 	var files []fileWithBase
@@ -256,4 +256,3 @@ func cleanupOldBackups(dir, prefix string, maxBackups int) {
 		}
 	}
 }
-

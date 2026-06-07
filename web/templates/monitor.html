@@ -60,7 +60,7 @@
 				<button type="button" class="btn btn-secondary" id="btn-clear">清空</button>
 				<button type="button" class="btn btn-secondary" id="btn-load-example">加载示例</button>
 				<button type="button" class="btn btn-secondary" id="btn-import-file">导入文件</button>
-				<input type="file" id="file-input" accept=".txt,.csv" class="hidden-input">
+				<input type="file" id="file-input" accept=".txt,.csv,.xlsx,.xls" class="hidden-input">
 			</div>
 
 			<div class="progress-container" id="progress-container">
@@ -151,4 +151,417 @@
 		</section>
 	</main>
 
+<script nonce="{{.CSPNonce}}">
+document.addEventListener('DOMContentLoaded', function() {
+	const urlList = document.getElementById('url-list');
+	const concurrency = document.getElementById('concurrency');
+	const tamperMode = document.getElementById('tamper-mode');
+	const batchId = document.getElementById('batch-id');
+	const progressContainer = document.getElementById('progress-container');
+	const progressBarFill = document.getElementById('progress-bar-fill');
+	const progressText = document.getElementById('progress-text');
+	const resultsSection = document.getElementById('results-section');
+
+	// URL 统计
+	urlList.addEventListener('input', function() {
+		const lines = urlList.value.split('\n').filter(l => l.trim());
+		document.getElementById('total-urls').textContent = lines.length;
+		const valid = lines.filter(l => /^(https?:\/\/|[\w.-]+:\d+)/.test(l.trim()));
+		document.getElementById('valid-urls').textContent = valid.length;
+		document.getElementById('invalid-urls').textContent = lines.length - valid.length;
+	});
+
+	// Tab 切换
+	document.querySelectorAll('.tab[data-tab]').forEach(tab => {
+		tab.addEventListener('click', function() {
+			document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+			document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+			tab.classList.add('active');
+			document.getElementById(tab.dataset.tab + '-tab').classList.add('active');
+		});
+	});
+
+	// 加载示例
+	document.getElementById('btn-load-example').addEventListener('click', function() {
+		urlList.value = 'https://www.example.com\nhttps://www.baidu.com\nhttps://www.bing.com';
+		urlList.dispatchEvent(new Event('input'));
+	});
+	// CSP兼容：注册基线删除事件委托
+	(function() {
+			var container = document.getElementById('history-results');
+			if (!container || container.dataset.delegated) return;
+			container.dataset.delegated = '1';
+			container.addEventListener('click', function(e) {
+				var btn = e.target.closest('.js-delete-baseline');
+				if (btn && btn.dataset.url) {
+					deleteBaseline(btn.dataset.url);
+				}
+			});
+	})();
+
+	// 清空
+	document.getElementById('btn-clear').addEventListener('click', function() {
+		urlList.value = '';
+		urlList.dispatchEvent(new Event('input'));
+		document.getElementById('results-section').classList.add('hidden');
+	});
+
+	// 导入文件
+	document.getElementById('btn-import-file').addEventListener('click', function() {
+		document.getElementById('file-input').click();
+	});
+	document.getElementById('file-input').addEventListener('change', function(e) {
+		const file = e.target.files[0];
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = function(ev) {
+			urlList.value = ev.target.result;
+			urlList.dispatchEvent(new Event('input'));
+		};
+		reader.readAsText(file);
+		e.target.value = '';
+	});
+
+	// 篡改检测
+	document.getElementById('btn-tamper-check').addEventListener('click', async function() {
+		const urls = urlList.value.split('\n').map(l => l.trim()).filter(Boolean);
+		if (urls.length === 0) { alert('请输入至少一个URL'); return; }
+		const btn = this;
+		btn.disabled = true; btn.textContent = '检测中...';
+		progressContainer.style.display = 'block';
+		progressBarFill.style.width = '0%';
+		progressText.textContent = '正在检测...';
+		try {
+			const resp = await fetch('/api/v1/tamper/check', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({ urls, concurrency: parseInt(concurrency.value)||5, mode: tamperMode.value })
+			});
+			const data = await resp.json();
+			progressBarFill.style.width = '100%';
+			progressText.textContent = '检测完成';
+			resultsSection.classList.remove('hidden');
+			// 显示摘要 (后端字段: total, tampered, safe, noBaseline, unreachable, failed)
+			if (data.summary) {
+				document.getElementById('tamper-summary').classList.remove('hidden');
+				document.getElementById('tamper-total').textContent = data.summary.total || 0;
+				document.getElementById('tamper-count').textContent = data.summary.tampered || 0;
+				document.getElementById('tamper-safe').textContent = data.summary.safe || 0;
+				document.getElementById('tamper-first').textContent = data.summary.noBaseline || 0;
+				document.getElementById('tamper-unreachable').textContent = (data.summary.unreachable || 0) + (data.summary.failed || 0);
+			}
+			// 显示结果列表 (后端字段: url, status, tampered, error_message, changes, tampered_segments, suspicious_flags)
+			const container = document.getElementById('tamper-results');
+			container.innerHTML = '';
+			(data.results || []).forEach(r => {
+				const div = document.createElement('div');
+				div.className = 'result-item';
+				const statusMap = {
+					'tampered': '⚠️ 篡改',
+					'normal': '✅ 安全',
+					'no_baseline': '⚪ 无基线（需先设置基线）',
+					'unreachable': '❌ 不可达',
+					'failed': '❌ 失败',
+					'suspicious': '⚠️ 可疑'
+				};
+				const label = statusMap[r.status] || r.status || '未知';
+				const changeCount = (r.changes && r.changes.length) || 0;
+				const changes = changeCount > 0 ? ` <a href="#" class="change-link" style="color:#e67e22;cursor:pointer">(${changeCount}处变更 ▸)</a>` : '';
+				const flags = (r.suspicious_flags && r.suspicious_flags.length > 0) ? ` [${r.suspicious_flags.join(', ')}]` : '';
+				const err = r.error_message ? ` — ${r.error_message}` : '';
+				div.innerHTML = `<strong>${r.url}</strong> — ${label}${changes}${flags}${err}`;
+
+				// 点击变更链接展开详情
+				if (changeCount > 0) {
+					const link = div.querySelector('.change-link');
+					const detailId = 'detail-' + Math.random().toString(36).slice(2);
+					const detailDiv = document.createElement('div');
+					detailDiv.id = detailId;
+					detailDiv.style.display = 'none';
+					detailDiv.style.marginTop = '8px';
+					detailDiv.style.padding = '8px';
+					detailDiv.style.background = '#f8f9fa';
+					detailDiv.style.borderRadius = '4px';
+					detailDiv.style.fontSize = '13px';
+
+					let detailHTML = '<table style="width:100%;border-collapse:collapse">';
+					detailHTML += '<tr style="border-bottom:1px solid #ddd"><th style="text-align:left;padding:4px">区域</th><th style="text-align:left;padding:4px">变更类型</th><th style="text-align:left;padding:4px">说明</th></tr>';
+					r.changes.forEach(c => {
+						detailHTML += `<tr style="border-bottom:1px solid #eee">
+							<td style="padding:4px"><code>${c.segment || '-'}</code></td>
+							<td style="padding:4px">${c.change_type || '-'}</td>
+							<td style="padding:4px">${c.description || '-'}</td>
+						</tr>`;
+					});
+					detailHTML += '</table>';
+					if (r.tampered_segments && r.tampered_segments.length > 0) {
+						detailHTML += `<div style="margin-top:6px;color:#c0392b">受影响区域: ${r.tampered_segments.join(', ')}</div>`;
+					}
+					detailDiv.innerHTML = detailHTML;
+
+					link.addEventListener('click', function(e) {
+						e.preventDefault();
+						const visible = detailDiv.style.display !== 'none';
+						detailDiv.style.display = visible ? 'none' : 'block';
+						link.textContent = visible ? `(${changeCount}处变更 ▸)` : `(${changeCount}处变更 ▾)`;
+					});
+					div.appendChild(detailDiv);
+				}
+				container.appendChild(div);
+			});
+		} catch(e) {
+			progressText.textContent = '检测失败: ' + e.message;
+		}
+		btn.disabled = false; btn.textContent = '篡改检测';
+	});
+
+	// 设置基线
+	document.getElementById('btn-set-baseline').addEventListener('click', async function() {
+		const urls = urlList.value.split('\n').map(l => l.trim()).filter(Boolean);
+		if (urls.length === 0) { alert('请输入至少一个URL'); return; }
+		const btn = this;
+		btn.disabled = true; btn.textContent = '设置中...';
+		progressContainer.style.display = 'block';
+		progressBarFill.style.width = '0%';
+		progressText.textContent = '正在设置基线...';
+		try {
+			const resp = await fetch('/api/v1/tamper/baseline', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({ urls, concurrency: parseInt(concurrency.value)||5 })
+			});
+			const data = await resp.json();
+			progressBarFill.style.width = '100%';
+			progressText.textContent = '基线设置完成';
+			resultsSection.classList.remove('hidden');
+			// 切换到篡改检测tab显示结果
+			document.querySelector('.tab[data-tab="tamper"]').click();
+			// 显示摘要 (后端字段: total, saved, unreachable, failed)
+			if (data.summary) {
+				document.getElementById('tamper-summary').classList.remove('hidden');
+				document.getElementById('tamper-total').textContent = data.summary.total || 0;
+				document.getElementById('tamper-count').textContent = '0';
+				document.getElementById('tamper-safe').textContent = data.summary.saved || 0;
+				document.getElementById('tamper-first').textContent = data.summary.total || 0;
+				document.getElementById('tamper-unreachable').textContent = (data.summary.unreachable || 0) + (data.summary.failed || 0);
+			}
+			// 显示结果列表
+			const container = document.getElementById('tamper-results');
+			container.innerHTML = '';
+			(data.results || []).forEach(r => {
+				const div = document.createElement('div');
+				div.className = 'result-item';
+				const ok = r.success !== false && !r.error;
+				div.innerHTML = `<strong>${r.url || r.target_url}</strong> — ${ok ? '✅ 基线已保存' : '❌ ' + (r.error || '失败')}`;
+				container.appendChild(div);
+			});
+			if (!data.results || data.results.length === 0) {
+				const div = document.createElement('div');
+				div.className = 'result-item';
+				div.innerHTML = `✅ 基线设置完成 — ${data.summary ? JSON.stringify(data.summary) : '成功'}`;
+				container.appendChild(div);
+			}
+		} catch(e) {
+			progressText.textContent = '设置失败: ' + e.message;
+		}
+		btn.disabled = false; btn.textContent = '设置基线';
+	});
+
+	// 刷新历史记录
+	document.getElementById('btn-refresh-history').addEventListener('click', async function() {
+		await loadHistory();
+	});
+
+	async function loadHistory() {
+		try {
+			const params = new URLSearchParams();
+			const q = document.getElementById('history-query')?.value;
+			const urlFilter = document.getElementById('history-url-filter')?.value;
+			const typeFilter = document.getElementById('history-type-filter')?.value;
+			const modeFilter = document.getElementById('history-mode-filter')?.value;
+			if (q) params.set('q', q);
+			if (urlFilter) params.set('url', urlFilter);
+			if (typeFilter) params.set('type', typeFilter);
+			if (modeFilter) params.set('mode', modeFilter);
+
+			const resp = await fetch('/api/v1/tamper/history?' + params.toString());
+			const data = await resp.json();
+			resultsSection.classList.remove('hidden');
+			document.querySelector('.tab[data-tab="history"]').click();
+
+			// 填充URL下拉
+			const urlSelect = document.getElementById('history-url-filter');
+			if (urlSelect && data.urls) {
+				const current = urlSelect.value;
+				urlSelect.innerHTML = '<option value="">全部URL</option>';
+				data.urls.forEach(u => {
+					const opt = document.createElement('option');
+					opt.value = u;
+					opt.textContent = u;
+					urlSelect.appendChild(opt);
+				});
+				urlSelect.value = current;
+			}
+
+			// 显示历史记录
+			const container = document.getElementById('history-results');
+			container.innerHTML = '';
+			const records = data.records || [];
+			if (records.length === 0) {
+				container.innerHTML = '<div class="result-item">暂无检测历史记录</div>';
+				return;
+			}
+			const statusMap = {
+				'tampered': '⚠️ 篡改',
+				'normal': '✅ 正常',
+				'no_baseline': '⚪ 无基线',
+				'first_check': '🔍 首次检测',
+				'unreachable': '❌ 不可达',
+				'suspicious': '⚠️ 可疑'
+			};
+			records.forEach(r => {
+				const div = document.createElement('div');
+				div.className = 'result-item';
+				const label = statusMap[r.status] || r.status;
+				const time = r.timestamp ? new Date(r.timestamp * 1000).toLocaleString() : '';
+				const mode = r.detection_mode ? ` [${r.detection_mode}]` : '';
+				const changeCount = r.changes_count || 0;
+				const changes = changeCount > 0 ? ` (${changeCount}处变更)` : '';
+				const segments = (r.tampered_segments && r.tampered_segments.length > 0) ? ` — 影响区域: ${r.tampered_segments.join(', ')}` : '';
+				const hashes = [];
+				if (r.baseline_full_hash) hashes.push(`基线: ${r.baseline_full_hash.slice(0,12)}...`);
+				if (r.current_full_hash) hashes.push(`当前: ${r.current_full_hash.slice(0,12)}...`);
+				const hashInfo = hashes.length > 0 ? `<br><small style="color:#888">${hashes.join(' | ')}</small>` : '';
+				div.innerHTML = `<strong>${r.url}</strong> — ${label}${mode}${changes}${segments} <small>${time}</small>${hashInfo}`;
+				container.appendChild(div);
+			});
+		} catch(e) {
+			alert('加载历史失败: ' + e.message);
+		}
+	}
+
+	// 查看已有基线
+	async function loadBaselineList() {
+		try {
+			const resp = await fetch('/api/v1/tamper/baseline/list');
+			const data = await resp.json();
+			resultsSection.classList.remove('hidden');
+			document.querySelector('.tab[data-tab="history"]').click();
+			const container = document.getElementById('history-results');
+			container.innerHTML = '';
+			if (data.urls && data.urls.length > 0) {
+				const header = document.createElement('div');
+				header.className = 'result-item';
+				header.innerHTML = `<strong>已保存 ${data.urls.length} 条基线</strong>`;
+				container.appendChild(header);
+				data.urls.forEach(url => {
+					const div = document.createElement('div');
+					div.className = 'result-item';
+					div.innerHTML = `<span>${url}</span> <button class="btn btn-sm btn-danger js-delete-baseline" data-url="${url.replace(/"/g, '&quot;')}">删除</button>`;
+					container.appendChild(div);
+				});
+			} else {
+				const div = document.createElement('div');
+				div.className = 'result-item';
+				div.textContent = '暂无已保存的基线';
+				container.appendChild(div);
+			}
+		} catch(e) {
+			alert('加载基线列表失败: ' + e.message);
+		}
+	}
+
+	async function deleteBaseline(url) {
+		if (!confirm('确定删除该基线？')) return;
+		try {
+			await fetch('/api/v1/tamper/baseline/delete?url=' + encodeURIComponent(url), { method: 'DELETE' });
+			loadBaselineList();
+		} catch(e) {
+			alert('删除失败: ' + e.message);
+		}
+	}
+
+	// 批量截图
+	document.getElementById('btn-batch-screenshot').addEventListener('click', async function() {
+		const urls = urlList.value.split('\n').map(l => l.trim()).filter(Boolean);
+		if (urls.length === 0) { alert('请输入至少一个URL'); return; }
+		const btn = this;
+		btn.disabled = true; btn.textContent = '截图中...';
+		progressContainer.style.display = 'block';
+		progressBarFill.style.width = '0%';
+		progressText.textContent = '正在截图...';
+		try {
+			const resp = await fetch('/api/v1/screenshot/batch-urls', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({ urls, concurrency: parseInt(concurrency.value)||5, batch_id: batchId.value||'' })
+			});
+			const data = await resp.json();
+			if (!resp.ok || data.error) {
+				progressText.textContent = '截图失败: ' + (data.error?.message || data.message || '请求被拒绝');
+				btn.disabled = false; btn.textContent = '批量截图';
+				return;
+			}
+			progressBarFill.style.width = '100%';
+			progressText.textContent = '截图完成';
+			resultsSection.classList.remove('hidden');
+			document.querySelector('.tab[data-tab="screenshot"]').click();
+			const container = document.getElementById('screenshot-results');
+			container.innerHTML = '';
+			(data.results || []).forEach(r => {
+				const div = document.createElement('div');
+				div.className = 'result-item';
+				div.innerHTML = `<strong>${r.url}</strong> — ${r.success ? '✅ 成功' : '❌ 失败'} ${r.error || ''}`;
+				container.appendChild(div);
+			});
+		} catch(e) {
+			progressText.textContent = '截图失败: ' + e.message;
+		}
+		btn.disabled = false; btn.textContent = '批量截图';
+	});
+
+	// 刷新历史
+	document.getElementById('btn-refresh-history').addEventListener('click', async function() {
+		try {
+			const resp = await fetch('/api/v1/tamper/history');
+			const data = await resp.json();
+			const container = document.getElementById('history-results');
+			container.innerHTML = '';
+			(data.history || data.results || []).forEach(r => {
+				const div = document.createElement('div');
+				div.className = 'result-item';
+				div.innerHTML = `<strong>${r.url || r.target_url}</strong> — ${r.type || r.status} — ${r.created_at || r.timestamp || ''}`;
+				container.appendChild(div);
+			});
+		} catch(e) {
+			alert('加载历史失败: ' + e.message);
+		}
+	});
+
+	// 导出 JSON
+	document.getElementById('btn-export-json').addEventListener('click', function() {
+		const items = document.querySelectorAll('#tamper-results .result-item');
+		if (items.length === 0) { alert('没有可导出的结果'); return; }
+		const data = Array.from(items).map(el => el.textContent);
+		const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = 'tamper-results.json';
+		a.click();
+	});
+
+	// 导出 Excel (CSV)
+	document.getElementById('btn-export-excel').addEventListener('click', function() {
+		const items = document.querySelectorAll('#tamper-results .result-item');
+		if (items.length === 0) { alert('没有可导出的结果'); return; }
+		let csv = '结果\n';
+		Array.from(items).forEach(el => { csv += '"' + el.textContent.replace(/"/g,'""') + '"\n'; });
+		const blob = new Blob(['﻿' + csv], {type: 'text/csv;charset=utf-8'});
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = 'tamper-results.csv';
+		a.click();
+	});
+});
+</script>
 {{template "footer" .}}

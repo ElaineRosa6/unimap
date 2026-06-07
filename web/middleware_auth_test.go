@@ -119,8 +119,8 @@ func TestIsPublicPath(t *testing.T) {
 		{"/static/js/main.js", true},
 		{"/screenshots/test.png", true},
 		{"/dashboard", false},
-		{"/api/query", false},
-		{"/api/nodes/status", false},
+		{"/api/v1/query", false},
+		{"/api/v1/nodes/status", false},
 	}
 
 	for _, tc := range tests {
@@ -149,4 +149,3 @@ func TestAdminToken(t *testing.T) {
 		t.Fatalf("expected empty when config nil, got %q", got)
 	}
 }
-

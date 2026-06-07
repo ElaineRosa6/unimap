@@ -525,7 +525,7 @@ func hasCookies(cookies []config.Cookie) bool {
 }
 
 // handleCookieLoginStatus returns per-engine login status for the UI.
-// GET /api/cookies/login-status?query=...
+// GET /api/v1/cookies/login-status?query=...
 // Detects: CDP connected, Extension paired, per-engine login wall detection.
 func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
@@ -654,4 +654,3 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 		"engines":       results,
 	})
 }
-

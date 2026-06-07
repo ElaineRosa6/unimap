@@ -1,9 +1,11 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/unimap/project/internal/adapter"
 	icpdb "github.com/unimap/project/internal/icp/database"
@@ -44,7 +46,7 @@ func (s *Server) handleICPPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleICPQuery handles GET /api/icp/query?type=web&search=xxx&page=1&page_size=20.
+// handleICPQuery handles GET /api/v1/icp/query?type=web&search=xxx&page=1&page_size=20.
 func (s *Server) handleICPQuery(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -73,14 +75,30 @@ func (s *Server) handleICPQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	queryType := strings.TrimSpace(r.URL.Query().Get("type"))
-	if queryType == "" {
-		queryType = defaultType
+	// 解析 type 参数：支持逗号分隔的多类型（如 "web,app,mapp"）
+	rawType := strings.TrimSpace(r.URL.Query().Get("type"))
+	if rawType == "" {
+		rawType = defaultType
 	}
-	if !adapter.IsValidICPQueryType(queryType) {
-		writeAPIError(w, http.StatusBadRequest, "invalid_type",
-			"invalid ICP query type", map[string]string{"type": queryType})
-		return
+	var types []string
+	seen := make(map[string]bool)
+	for _, part := range strings.Split(rawType, ",") {
+		t := strings.TrimSpace(part)
+		if t == "" {
+			continue
+		}
+		if !adapter.IsValidICPQueryType(t) {
+			writeAPIError(w, http.StatusBadRequest, "invalid_type",
+				"invalid ICP query type", map[string]string{"type": t})
+			return
+		}
+		if !seen[t] {
+			seen[t] = true
+			types = append(types, t)
+		}
+	}
+	if len(types) == 0 {
+		types = []string{defaultType}
 	}
 
 	search := strings.TrimSpace(r.URL.Query().Get("search"))
@@ -101,25 +119,28 @@ func (s *Server) handleICPQuery(w http.ResponseWriter, r *http.Request) {
 		pageSize = 100
 	}
 
-	results, total, err := adapter.ICPSearch(baseURL, apiKey, adapter.ICPSearchRequest{
-		Query:    search,
-		Type:     queryType,
-		Page:     page,
-		PageSize: pageSize,
-	})
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	groups, err := adapter.ICPSearchMultiType(ctx, baseURL, apiKey, search, types, page, pageSize)
 	if err != nil {
 		writeAPIError(w, http.StatusBadGateway, "icp_query_failed",
 			sanitizeError(err.Error()), nil)
 		return
 	}
 
+	// 汇总总结果数（仅统计成功的组）
+	total := 0
+	for _, g := range groups {
+		total += g.Total
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":   true,
-		"type":      queryType,
 		"total":     total,
 		"page":      page,
 		"page_size": pageSize,
-		"results":   results,
+		"groups":    groups,
 	})
 }
 
@@ -137,7 +158,53 @@ func parsePositiveInt(raw string, fallback int) int {
 	return n
 }
 
-// handleICPHistory handles GET /api/icp/history?task_id=xxx&keyword=xxx&type=web&limit=20.
+// handleICPHealth handles GET /api/v1/icp/health — tests connectivity to the ICP sidecar.
+func (s *Server) handleICPHealth(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	if s.config == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "config_not_loaded", "config not loaded", nil)
+		return
+	}
+
+	s.configMutex.Lock()
+	baseURL := strings.TrimSpace(s.config.ICP.BaseURL)
+	apiKey := s.config.ICP.APIKey
+	timeout := s.config.ICP.Timeout
+	s.configMutex.Unlock()
+
+	if baseURL == "" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"error":   "base_url is not configured",
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	icpCfg := adapter.ICPConfig{BaseURL: baseURL, APIKey: apiKey, Timeout: timeout}
+	icpAdapter := adapter.NewICPAdapter(icpCfg, adapter.ICPWeb)
+
+	if err := icpAdapter.HealthCheck(ctx); err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":  true,
+		"base_url": baseURL,
+		"message":  "ICP sidecar is healthy",
+	})
+}
+
+// handleICPHistory handles GET /api/v1/icp/history?task_id=xxx&keyword=xxx&type=web&limit=20.
 func (s *Server) handleICPHistory(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -181,7 +248,7 @@ func (s *Server) handleICPHistory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleICPHistoryResults handles GET /api/icp/history/results?run_id=123.
+// handleICPHistoryResults handles GET /api/v1/icp/history/results?run_id=123.
 func (s *Server) handleICPHistoryResults(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -214,7 +281,7 @@ func (s *Server) handleICPHistoryResults(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// handleICPCompare handles GET /api/icp/compare?keyword=xxx&type=web.
+// handleICPCompare handles GET /api/v1/icp/compare?keyword=xxx&type=web.
 // Returns latest and previous results for side-by-side comparison.
 func (s *Server) handleICPCompare(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
@@ -328,4 +395,3 @@ func compareICPResults(latest, previous []*icpdb.ICPResultRow) []ICPChange {
 
 	return changes
 }
-

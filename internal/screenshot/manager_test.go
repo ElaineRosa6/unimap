@@ -15,9 +15,10 @@ func TestBuildSearchEngineURL(t *testing.T) {
 		want   string
 	}{
 		{"fofa", "domain=\"example.com\"", "https://fofa.info/result?qbase64="},
-		{"hunter", "domain=\"example.com\"", "https://hunter.qianxin.com/list?searchValue="},
-		{"quake", "domain:\"example.com\"", "https://quake.360.cn/quake/#/searchResult?searchVal="},
+		{"hunter", "domain=\"example.com\"", "https://hunter.qianxin.com/home/list?search="},
+		{"quake", "domain:\"example.com\"", "https://quake.360.net/quake/#/searchResult?searchVal="},
 		{"zoomeye", "domain:example.com", "https://www.zoomeye.org/searchResult?q="},
+		{"shodan", "port:443", "https://www.shodan.io/search?query="},
 		{"unknown", "test", ""},
 		{"FOFA", "test", "https://fofa.info/result?qbase64="}, // case insensitive
 	}

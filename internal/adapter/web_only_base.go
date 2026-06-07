@@ -49,13 +49,12 @@ func (w *WebOnlyAdapterBase) Translate(ast *model.UQLAST) (string, error) {
 }
 
 // Search 搜索。If a browser backend is available, collect results via browser.
-func (w *WebOnlyAdapterBase) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (w *WebOnlyAdapterBase) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if w.backend == nil {
 		return nil, fmt.Errorf("web-only mode: no browser backend configured for %s", w.name)
 	}
 
 	queryID := fmt.Sprintf("webonly_%s_%d_%d", w.name, page, pageSize)
-	ctx := context.Background()
 
 	results, err := w.backend.CollectSearchEngineResult(ctx, w.name, query, queryID)
 	if err != nil {
@@ -105,4 +104,3 @@ func (w *WebOnlyAdapterBase) GetQuota() (*model.QuotaInfo, error) {
 func (w *WebOnlyAdapterBase) IsWebOnly() bool {
 	return true
 }
-

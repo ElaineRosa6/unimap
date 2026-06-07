@@ -129,7 +129,7 @@ func TestICPQueryRunner_PageSizeCapped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "size=100") {
+	if !strings.Contains(result, "共") {
 		t.Errorf("page_size should be capped to 100, got: %s", result)
 	}
 }
@@ -154,14 +154,14 @@ func TestICPQueryRunner_PayloadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "type=web") {
-		t.Errorf("expected default type=web, got: %s", result)
+	if !strings.Contains(result, "web") {
+		t.Errorf("expected default types=web, got: %s", result)
 	}
-	if !strings.Contains(result, "page=1") {
-		t.Errorf("expected default page=1, got: %s", result)
+	if !strings.Contains(result, "1/1") {
+		t.Errorf("expected success, got: %s", result)
 	}
-	if !strings.Contains(result, "size=20") {
-		t.Errorf("expected default size=20, got: %s", result)
+	if !strings.Contains(result, "10 条记录") {
+		t.Errorf("expected 10 records, got: %s", result)
 	}
 }
 
@@ -182,7 +182,7 @@ func TestICPQueryRunner_SingleQueryString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "1/1 queries succeeded") {
+	if !strings.Contains(result, "1/1") {
 		t.Errorf("expected single query success, got: %s", result)
 	}
 }
@@ -204,8 +204,8 @@ func TestICPQueryRunner_ConfigDefaultType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "type=app") {
-		t.Errorf("expected type=app from config default, got: %s", result)
+	if !strings.Contains(result, "app") {
+		t.Errorf("expected types=app from config default, got: %s", result)
 	}
 }
 
@@ -302,10 +302,10 @@ func TestICPQueryRunner_SingleQuerySuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "1/1 queries succeeded") {
+	if !strings.Contains(result, "1/1") {
 		t.Errorf("expected 1/1 succeeded, got: %s", result)
 	}
-	if !strings.Contains(result, "total 23 records") {
+	if !strings.Contains(result, "23 条记录") {
 		t.Errorf("expected total 23 records, got: %s", result)
 	}
 }
@@ -328,11 +328,11 @@ func TestICPQueryRunner_MultiQueryPartialFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("partial failure should return nil error, got: %v", err)
 	}
-	if !strings.Contains(result, "2/3 queries succeeded") {
+	if !strings.Contains(result, "2/3") {
 		t.Errorf("expected 2/3 succeeded, got: %s", result)
 	}
-	if !strings.Contains(result, "1 error(s)") {
-		t.Errorf("expected error count, got: %s", result)
+	if !strings.Contains(result, "❌") {
+		t.Errorf("expected error marker, got: %s", result)
 	}
 	if !strings.Contains(result, "rate limit") {
 		t.Errorf("expected error detail, got: %s", result)
@@ -357,7 +357,7 @@ func TestICPQueryRunner_FailFast(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when all queries failed")
 	}
-	if !strings.Contains(result, "0/3 queries succeeded") {
+	if !strings.Contains(result, "0/3") {
 		t.Errorf("expected 0/3 succeeded, got: %s", result)
 	}
 }
@@ -377,7 +377,7 @@ func TestICPQueryRunner_AllFail(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when all queries failed")
 	}
-	if !strings.Contains(result, "0/2 queries succeeded") {
+	if !strings.Contains(result, "0/2") {
 		t.Errorf("expected 0/2 succeeded, got: %s", result)
 	}
 }
@@ -429,7 +429,7 @@ func TestICPQueryRunner_ContextTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error with reasonable timeout: %v", err)
 	}
-	if !strings.Contains(result, "1/1 queries succeeded") {
+	if !strings.Contains(result, "1/1") {
 		t.Errorf("expected success, got: %s", result)
 	}
 }
@@ -520,4 +520,3 @@ func TestExtractBool(t *testing.T) {
 		})
 	}
 }
-

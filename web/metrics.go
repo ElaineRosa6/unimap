@@ -37,4 +37,3 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	promhttp.Handler().ServeHTTP(w, r)
 }
-

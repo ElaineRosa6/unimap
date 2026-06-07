@@ -67,31 +67,31 @@ func (m *DecoderManager) TryDecode(data string) string {
 
 // MultiDecode 尝试多次解码（处理多重编码）
 func (m *DecoderManager) MultiDecode(data string, maxAttempts int) (string, []string, error) {
-	if maxAttempts<= 0 {
+	if maxAttempts <= 0 {
 		maxAttempts = 5
 	}
-	
+
 	var decodingSteps []string
 	currentData := data
-	
+
 	for i := 0; i < maxAttempts; i++ {
 		decoded, decoderName, err := m.DetectAndDecode(currentData)
 		if err != nil {
 			break
 		}
-		
+
 		if decoded == currentData {
 			break
 		}
-		
+
 		decodingSteps = append(decodingSteps, decoderName)
 		currentData = decoded
 	}
-	
+
 	if len(decodingSteps) == 0 {
 		return data, nil, fmt.Errorf("no decoding performed")
 	}
-	
+
 	return currentData, decodingSteps, nil
 }
 
@@ -107,12 +107,12 @@ func (d *Base64Decoder) CanDecode(data string) bool {
 	if len(data) == 0 {
 		return false
 	}
-	
+
 	// 检查是否符合Base64格式
 	if len(data)%4 != 0 {
 		return false
 	}
-	
+
 	// 检查是否只包含Base64字符
 	matched, _ := regexp.MatchString(`^[A-Za-z0-9+/]*={0,2}$`, data)
 	return matched
@@ -138,7 +138,7 @@ func (d *HexDecoder) CanDecode(data string) bool {
 	if len(data) == 0 || len(data)%2 != 0 {
 		return false
 	}
-	
+
 	matched, _ := regexp.MatchString(`^[0-9a-fA-F]+$`, data)
 	return matched
 }
@@ -170,17 +170,17 @@ func (d *UnicodeDecoder) Decode(data string) (string, error) {
 		if len(match) != 6 {
 			return match
 		}
-		
+
 		codePoint, err := strconv.ParseUint(match[2:], 16, 16)
 		if err != nil {
 			return match
 		}
-		
+
 		r := rune(codePoint)
 		if r == 0 {
 			return match
 		}
-		
+
 		return string(r)
 	}), nil
 }
@@ -204,12 +204,12 @@ func (d *URLDecoder) Decode(data string) (string, error) {
 		if len(match) != 3 {
 			return match
 		}
-		
+
 		byteValue, err := strconv.ParseUint(match[1:], 16, 8)
 		if err != nil {
 			return match
 		}
-		
+
 		return string(byte(byteValue))
 	}), nil
 }
@@ -234,27 +234,27 @@ func (d *HTMLDecoder) Decode(data string) (string, error) {
 	data = strings.ReplaceAll(data, "&gt;", ">")
 	data = strings.ReplaceAll(data, "&quot;", "\"")
 	data = strings.ReplaceAll(data, "&#39;", "'")
-	
+
 	// 处理数字实体
 	re := regexp.MustCompile(`&#(\d+);`)
 	data = re.ReplaceAllStringFunc(data, func(match string) string {
 		if len(match) < 3 {
 			return match
 		}
-		
+
 		codePoint, err := strconv.ParseUint(match[2:len(match)-1], 10, 32)
 		if err != nil {
 			return match
 		}
-		
+
 		r := rune(codePoint)
 		if !utf8.ValidRune(r) {
 			return match
 		}
-		
+
 		return string(r)
 	})
-	
+
 	return data, nil
 }
 

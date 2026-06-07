@@ -355,6 +355,7 @@
 
 				<div class="cfg-actions">
 					<button class="cfg-btn cfg-btn-save" id="btn-icp-save">保存配置</button>
+					<button class="cfg-btn cfg-btn-test" id="btn-icp-test" style="margin-left:8px;">测试连接</button>
 					<span class="cfg-result" id="icp-result"></span>
 				</div>
 			</div>
@@ -496,14 +497,18 @@
 					<div class="cfg-row"><span class="cfg-key">类型</span><div class="cfg-val">
 						<select id="nch-type">
 							<option value="dingtalk">钉钉 (DingTalk)</option>
-							<option value="feishu">飞书 (Feishu)</option>
+							<option value="feishu">飞书自定义机器人 (Feishu)</option>
+							<option value="feishu_app">飞书应用机器人 (Feishu App)</option>
 							<option value="wecom">企业微信 (WeCom)</option>
 							<option value="webhook">通用 Webhook</option>
 							<option value="log">日志输出</option>
 						</select>
 					</div></div>
-					<div class="cfg-row"><span class="cfg-key">Webhook URL</span><div class="cfg-val"><input type="text" id="nch-url" placeholder="https://..."><div class="hint">log 类型无需填写</div></div></div>
-					<div class="cfg-row"><span class="cfg-key">签名密钥</span><div class="cfg-val"><input type="password" id="nch-secret" placeholder="可空" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">钉钉/飞书加签密钥，留空不签名</div></div></div>
+					<div class="cfg-row nch-webhook-row"><span class="cfg-key">Webhook URL</span><div class="cfg-val"><input type="text" id="nch-url" placeholder="https://..."><div class="hint">飞书应用/日志类型无需填写</div></div></div>
+					<div class="cfg-row nch-webhook-row"><span class="cfg-key">签名密钥</span><div class="cfg-val"><input type="password" id="nch-secret" placeholder="可空" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">钉钉/飞书加签密钥，留空不签名</div></div></div>
+						<div class="cfg-row nch-app-row" style="display:none"><span class="cfg-key">App ID</span><div class="cfg-val"><input type="text" id="nch-app-id" placeholder="cli_xxxxxxxx"><div class="hint">飞书应用 App ID</div></div></div>
+						<div class="cfg-row nch-app-row" style="display:none"><span class="cfg-key">App Secret</span><div class="cfg-val"><input type="password" id="nch-app-secret" placeholder="输入 App Secret" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">加密存储，编辑时留空保留原值</div></div></div>
+						<div class="cfg-row nch-app-row" style="display:none"><span class="cfg-key">Chat ID</span><div class="cfg-val"><input type="text" id="nch-chat-id" placeholder="oc_xxxxxxxx"><div class="hint">飞书群聊 Chat ID</div></div></div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="nch-enabled" checked><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此渠道</span></label></div></div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">allow_private_ip</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="nch-private-ip"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">允许内网地址（测试用）</span></label></div></div>
 					<div class="cfg-actions">
@@ -560,7 +565,7 @@
 
 	async function loadConfig() {
 		try {
-			var resp = await fetch('/api/config', { headers: { 'Authorization': 'Bearer ' + tok() } });
+			var resp = await fetch('/api/v1/config', { headers: { 'Authorization': 'Bearer ' + tok() } });
 			if (!resp.ok) throw new Error('Failed to load config');
 			var data = await resp.json();
 
@@ -615,7 +620,7 @@
 				var ct = document.getElementById('cache-ttl');
 				if (ct) ct.value = data.system.cache_ttl || 3600;
 				var cs = document.getElementById('cache-max-size');
-				if (cs) cs.value = data.system.cache_max_size || 1000;
+				if (cs) cs.value = data.system.cache_max_entries || 1000;
 			}
 		} catch (e) { console.error('Config load error:', e); }
 	}
@@ -647,7 +652,7 @@
 		});
 
 		try {
-			var resp = await fetch('/api/config', {
+			var resp = await fetch('/api/v1/config', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
 				body: JSON.stringify({ section: 'engines', data: data })
@@ -665,7 +670,7 @@
 
 	window.saveICP = async function() {
 		try {
-			var resp = await fetch('/api/config', {
+			var resp = await fetch('/api/v1/config', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
 				body: JSON.stringify({ section: 'icp', data: {
@@ -681,9 +686,30 @@
 		} catch (e) { showResult('icp-result', 'fail', '保存失败: ' + e.message); }
 	};
 
+	window.testICP = async function() {
+		var btn = document.getElementById('btn-icp-test');
+		var originalText = btn.textContent;
+		btn.textContent = '检测中…';
+		btn.disabled = true;
+		try {
+			var resp = await fetch('/api/v1/icp/health', { headers: { 'Authorization': 'Bearer ' + tok() } });
+			var data = await resp.json();
+			if (data.success) {
+				showResult('icp-result', 'ok', '连接成功: ' + (data.base_url || ''));
+			} else {
+				showResult('icp-result', 'fail', '连接失败: ' + (data.error || '未知错误'));
+			}
+		} catch (e) {
+			showResult('icp-result', 'fail', '检测失败: ' + e.message);
+		} finally {
+			btn.textContent = originalText;
+			btn.disabled = false;
+		}
+	};
+
 	window.saveScreenshot = async function() {
 		try {
-			var resp = await fetch('/api/config', {
+			var resp = await fetch('/api/v1/config', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
 				body: JSON.stringify({ section: 'screenshot', data: {
@@ -700,13 +726,13 @@
 
 	window.saveSystem = async function() {
 		try {
-			var resp = await fetch('/api/config', {
+			var resp = await fetch('/api/v1/config', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
 				body: JSON.stringify({ section: 'system', data: {
 					max_concurrent: parseInt(document.getElementById('max-concurrent').value),
 					cache_ttl: parseInt(document.getElementById('cache-ttl').value),
-					cache_max_size: parseInt(document.getElementById('cache-max-size').value)
+					cache_max_entries: parseInt(document.getElementById('cache-max-size').value)
 				}})
 			});
 			var result = await resp.json();
@@ -744,7 +770,7 @@
 			if (el) form.append('cookie_' + eng, el.value);
 		});
 		try {
-			var resp = await fetch('/api/cookies', {
+			var resp = await fetch('/api/v1/cookies', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + tok() },
 				body: form.toString()
@@ -757,7 +783,7 @@
 
 	async function verifyCookiesPanel() {
 		try {
-			var resp = await fetch('/api/cookies/verify', {
+			var resp = await fetch('/api/v1/cookies/verify', {
 				method: 'POST',
 				headers: { 'Authorization': 'Bearer ' + tok() }
 			});
@@ -769,7 +795,7 @@
 
 	async function refreshCookieLoginStatus() {
 		try {
-			var resp = await fetch('/api/cookies/login-status');
+			var resp = await fetch('/api/v1/cookies/login-status');
 			var data = await resp.json();
 			var engines = (data && data.engines) || {};
 			Object.keys(ckIds).forEach(function(eng) {
@@ -793,7 +819,7 @@
 		form.append('engine', engine);
 		form.append('cookie_json', jsonStr);
 		try {
-			var resp = await fetch('/api/cookies/import', {
+			var resp = await fetch('/api/v1/cookies/import', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + tok() },
 				body: form.toString()
@@ -821,11 +847,11 @@
 	// --- Session panel ---
 	async function refreshCDPStatusPanel() {
 		try {
-			var resp = await fetch('/api/cdp/status');
+			var resp = await fetch('/api/v1/cdp/status');
 			var data = await resp.json();
 			var el = document.getElementById('sess-cdp-status');
 			if (!el) return;
-			el.textContent = data.connected ? ('已连接 ' + (data.url || '')) : '未连接';
+			el.textContent = data.online ? ('已连接 ' + (data.url || '')) : '未连接';
 		} catch (e) {
 			var el2 = document.getElementById('sess-cdp-status');
 			if (el2) el2.textContent = '检测失败';
@@ -837,7 +863,7 @@
 		var form = new URLSearchParams();
 		if (proxy) form.append('proxy_server', proxy);
 		try {
-			var resp = await fetch('/api/cdp/connect', {
+			var resp = await fetch('/api/v1/cdp/connect', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + tok() },
 				body: form.toString()
@@ -851,7 +877,7 @@
 
 	async function refreshBridgeStatusPanel() {
 		try {
-			var resp = await fetch('/api/screenshot/bridge/status');
+			var resp = await fetch('/api/v1/screenshot/bridge/status');
 			var data = await resp.json();
 			var el = document.getElementById('sess-bridge-status');
 			if (!el) return;
@@ -868,7 +894,7 @@
 		var mode = (document.getElementById('sess-mode') || {}).value;
 		if (!mode) return;
 		try {
-			var resp = await fetch('/api/screenshot/set-mode', {
+			var resp = await fetch('/api/v1/screenshot/set-mode', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
 				body: JSON.stringify({ mode: mode })
@@ -893,7 +919,7 @@
 	var editingChannelId = null;
 
 	function loadNotifyChannelsPanel() {
-		fetch('/api/notifications/channels', { headers: { 'Authorization': 'Bearer ' + tok() } })
+		fetch('/api/v1/notifications/channels', { headers: { 'Authorization': 'Bearer ' + tok() } })
 			.then(function(r) { return r.json(); })
 			.then(function(data) {
 				notifyChannels = (data && data.channels) || [];
@@ -912,8 +938,8 @@
 			return;
 		}
 
-		var typeNames = { dingtalk: '钉钉', feishu: '飞书', wecom: '企业微信', webhook: 'Webhook', log: '日志' };
-		var typeBadge = { dingtalk: '#1677FF', feishu: '#3370FF', wecom: '#07C160', webhook: '#722ED1', log: '#8B8B8B' };
+		var typeNames = { dingtalk: '钉钉', feishu: '飞书', feishu_app: '飞书应用', wecom: '企业微信', webhook: 'Webhook', log: '日志' };
+		var typeBadge = { dingtalk: '#1677FF', feishu: '#3370FF', feishu_app: '#00C9A7', wecom: '#07C160', webhook: '#722ED1', log: '#8B8B8B' };
 
 		var html = '<div class="cfg-group"><div class="cfg-group-title">已配置渠道 (' + notifyChannels.length + ')</div>';
 		for (var i = 0; i < notifyChannels.length; i++) {
@@ -935,6 +961,15 @@
 		container.innerHTML = html;
 	}
 
+	function updateNotifyFormVisibility() {
+		var type = document.getElementById('nch-type').value;
+		var isApp = type === 'feishu_app';
+		var webhookRows = document.querySelectorAll('.nch-webhook-row');
+		var appRows = document.querySelectorAll('.nch-app-row');
+		webhookRows.forEach(function(row) { row.style.display = isApp ? 'none' : ''; });
+		appRows.forEach(function(row) { row.style.display = isApp ? '' : 'none'; });
+	}
+
 	function showNotifyForm(isEdit) {
 		editingChannelId = isEdit || null;
 		document.getElementById('notify-form-title').textContent = isEdit ? '编辑渠道: ' + isEdit : '新增渠道';
@@ -948,6 +983,9 @@
 				document.getElementById('nch-type').value = ch.type;
 				document.getElementById('nch-url').value = '';
 				document.getElementById('nch-secret').value = '';
+				document.getElementById('nch-app-id').value = ch.app_id || '';
+				document.getElementById('nch-app-secret').value = '';
+				document.getElementById('nch-chat-id').value = ch.chat_id || '';
 				document.getElementById('nch-enabled').checked = ch.enabled;
 			}
 			document.getElementById('btn-nch-test').style.display = '';
@@ -957,10 +995,14 @@
 			document.getElementById('nch-type').value = 'dingtalk';
 			document.getElementById('nch-url').value = '';
 			document.getElementById('nch-secret').value = '';
+			document.getElementById('nch-app-id').value = '';
+			document.getElementById('nch-app-secret').value = '';
+			document.getElementById('nch-chat-id').value = '';
 			document.getElementById('nch-enabled').checked = true;
 			document.getElementById('nch-private-ip').checked = false;
 			document.getElementById('btn-nch-test').style.display = 'none';
 		}
+		updateNotifyFormVisibility();
 		hideResult('notify-form-result');
 	}
 
@@ -985,15 +1027,25 @@
 		var secret = document.getElementById('nch-secret').value;
 		var enabled = document.getElementById('nch-enabled').checked;
 		var allowPrivate = document.getElementById('nch-private-ip').checked;
+		var appId = document.getElementById('nch-app-id').value.trim();
+		var appSecret = document.getElementById('nch-app-secret').value;
+		var chatId = document.getElementById('nch-chat-id').value.trim();
 
 		if (!id) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '请输入渠道 ID'); return; }
-		if (type !== 'log' && !url) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '请输入 Webhook URL'); return; }
+		if (type === 'feishu_app') {
+			if (!appId || !appSecret || !chatId) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '飞书应用需要填写 App ID、App Secret 和 Chat ID'); return; }
+		} else if (type !== 'log' && !url) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '请输入 Webhook URL'); return; }
 
 		var body = { id: id, type: type, enabled: enabled, webhook_url: url, allow_private_ip: allowPrivate };
 		if (secret) body.secret = secret;
+		if (type === 'feishu_app') {
+			body.app_id = appId;
+			body.app_secret = appSecret;
+			body.chat_id = chatId;
+		}
 
 		try {
-			var resp = await fetch('/api/notifications/channels', {
+			var resp = await fetch('/api/v1/notifications/channels', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
 				body: JSON.stringify(body)
@@ -1012,7 +1064,7 @@
 	async function deleteNotifyChannel(id) {
 		if (!confirm('确定删除渠道 "' + id + '"？此操作不可撤销。')) return;
 		try {
-			var resp = await fetch('/api/notifications/channels?id=' + encodeURIComponent(id), {
+			var resp = await fetch('/api/v1/notifications/channels?id=' + encodeURIComponent(id), {
 				method: 'DELETE',
 				headers: { 'Authorization': 'Bearer ' + tok() }
 			});
@@ -1050,13 +1102,19 @@
 		showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'ok', '测试发送中…');
 
 		try {
-			var resp = await fetch('/api/notifications/channels/test', {
+			var body = {
+				id: ch.id, type: ch.type, webhook_url: ch.webhook_url,
+				secret: secret, allow_private_ip: document.getElementById('nch-private-ip').checked
+			};
+			if (ch.type === 'feishu_app' || document.getElementById('nch-type').value === 'feishu_app') {
+				body.app_id = document.getElementById('nch-app-id').value.trim() || ch.app_id || '';
+				body.app_secret = document.getElementById('nch-app-secret').value || ch.app_secret || '';
+				body.chat_id = document.getElementById('nch-chat-id').value.trim() || ch.chat_id || '';
+			}
+			var resp = await fetch('/api/v1/notifications/channels/test', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
-				body: JSON.stringify({
-					id: ch.id, type: ch.type, webhook_url: ch.webhook_url,
-					secret: secret, allow_private_ip: document.getElementById('nch-private-ip').checked
-				})
+				body: JSON.stringify(body)
 			});
 			var data = await resp.json();
 			if (data.success) {
@@ -1099,6 +1157,8 @@
 	if (btnEnginesSave) btnEnginesSave.addEventListener('click', window.saveAllEngines);
 	var btnIcpSave = document.getElementById('btn-icp-save');
 	if (btnIcpSave) btnIcpSave.addEventListener('click', window.saveICP);
+	var btnIcpTest = document.getElementById('btn-icp-test');
+	if (btnIcpTest) btnIcpTest.addEventListener('click', window.testICP);
 	var btnScreenshotSave = document.getElementById('btn-screenshot-save');
 	if (btnScreenshotSave) btnScreenshotSave.addEventListener('click', window.saveScreenshot);
 	var btnSystemSave = document.getElementById('btn-system-save');
@@ -1113,6 +1173,8 @@
 	if (btnCancel) btnCancel.addEventListener('click', hideNotifyForm);
 	var btnTest = document.getElementById('btn-nch-test');
 	if (btnTest) btnTest.addEventListener('click', function() { testNotifyChannel(editingChannelId); });
+	var nchType = document.getElementById('nch-type');
+	if (nchType) nchType.addEventListener('change', updateNotifyFormVisibility);
 
 	// Event delegation for dynamically rendered channel action buttons
 	var notifyList = document.getElementById('notify-channel-list');

@@ -48,7 +48,7 @@ func TestHandleTamperHistoryDelete(t *testing.T) {
 
 	s := &Server{tamperApp: service.NewTamperAppService("./hash_store", nil)}
 
-	missingReq := httptest.NewRequest(http.MethodDelete, "/api/tamper/history/delete", nil)
+	missingReq := httptest.NewRequest(http.MethodDelete, "/api/v1/tamper/history/delete", nil)
 	missingReq.Header.Set("Origin", "http://localhost:8448")
 	missingW := httptest.NewRecorder()
 	s.handleTamperHistoryDelete(missingW, missingReq)
@@ -56,7 +56,7 @@ func TestHandleTamperHistoryDelete(t *testing.T) {
 		t.Fatalf("expected 400 for missing url, got %d", missingW.Code)
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/tamper/history/delete?url=https://example.com", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/tamper/history/delete?url=https://example.com", nil)
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleTamperHistoryDelete(w, req)
@@ -83,7 +83,7 @@ func TestHandleTamperHistoryDelete(t *testing.T) {
 func TestHandleTamperBaselineDeleteMethodContract(t *testing.T) {
 	s := &Server{tamperApp: service.NewTamperAppService("./hash_store", nil)}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/tamper/baseline/delete?url=https://example.com", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tamper/baseline/delete?url=https://example.com", nil)
 	w := httptest.NewRecorder()
 	s.handleTamperBaselineDelete(w, req)
 
@@ -117,7 +117,7 @@ func TestHandleTamperBaselineDeleteByQueryParam(t *testing.T) {
 
 	s := &Server{tamperApp: service.NewTamperAppService("./hash_store", nil)}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/tamper/baseline/delete?url=https://example.com", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/tamper/baseline/delete?url=https://example.com", nil)
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleTamperBaselineDelete(w, req)
@@ -139,7 +139,7 @@ func TestHandleTamperBaselineDeleteByQueryParam(t *testing.T) {
 
 func TestHandleTamperCheck_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/tamper/check", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tamper/check", nil)
 	w := httptest.NewRecorder()
 	s.handleTamperCheck(w, req)
 
@@ -150,7 +150,7 @@ func TestHandleTamperCheck_WrongMethod(t *testing.T) {
 
 func TestHandleTamperCheck_InvalidJSON(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/tamper/check", strings.NewReader("not-json"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tamper/check", strings.NewReader("not-json"))
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleTamperCheck(w, req)
@@ -163,7 +163,7 @@ func TestHandleTamperCheck_InvalidJSON(t *testing.T) {
 func TestHandleTamperCheck_EmptyURLs(t *testing.T) {
 	s := &Server{}
 	body := strings.NewReader(`{"urls":[]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/tamper/check", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tamper/check", body)
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleTamperCheck(w, req)
@@ -182,7 +182,7 @@ func TestHandleTamperCheck_EmptyURLs(t *testing.T) {
 
 func TestHandleTamperBaseline_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/tamper/baseline", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tamper/baseline", nil)
 	w := httptest.NewRecorder()
 	s.handleTamperBaseline(w, req)
 
@@ -194,7 +194,7 @@ func TestHandleTamperBaseline_WrongMethod(t *testing.T) {
 func TestHandleTamperBaseline_EmptyURLs(t *testing.T) {
 	s := &Server{tamperApp: service.NewTamperAppService("./hash_store", nil)}
 	body := strings.NewReader(`{"urls":[]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/tamper/baseline", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tamper/baseline", body)
 	req.Header.Set("Origin", "http://localhost:8448")
 	w := httptest.NewRecorder()
 	s.handleTamperBaseline(w, req)
@@ -210,7 +210,7 @@ func TestHandleTamperBaseline_EmptyURLs(t *testing.T) {
 
 func TestHandleTamperBaselineList_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/tamper/baseline/list", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tamper/baseline/list", nil)
 	w := httptest.NewRecorder()
 	s.handleTamperBaselineList(w, req)
 
@@ -221,7 +221,7 @@ func TestHandleTamperBaselineList_WrongMethod(t *testing.T) {
 
 func TestHandleTamperBaselineList_Empty(t *testing.T) {
 	s := &Server{tamperApp: service.NewTamperAppService("./hash_store", nil)}
-	req := httptest.NewRequest(http.MethodGet, "/api/tamper/baseline/list", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tamper/baseline/list", nil)
 	w := httptest.NewRecorder()
 	s.handleTamperBaselineList(w, req)
 
@@ -236,7 +236,7 @@ func TestHandleTamperBaselineList_Empty(t *testing.T) {
 
 func TestHandleTamperHistory_WrongMethod(t *testing.T) {
 	s := &Server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/tamper/history", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tamper/history", nil)
 	w := httptest.NewRecorder()
 	s.handleTamperHistory(w, req)
 
@@ -247,7 +247,7 @@ func TestHandleTamperHistory_WrongMethod(t *testing.T) {
 
 func TestHandleTamperHistory_Empty(t *testing.T) {
 	s := &Server{tamperApp: service.NewTamperAppService("./hash_store", nil)}
-	req := httptest.NewRequest(http.MethodGet, "/api/tamper/history", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tamper/history", nil)
 	w := httptest.NewRecorder()
 	s.handleTamperHistory(w, req)
 
@@ -287,4 +287,3 @@ func TestTamperAllocatorFactory_NilMgr(t *testing.T) {
 		t.Fatal("expected nil factory when screenshotMgr is nil")
 	}
 }
-

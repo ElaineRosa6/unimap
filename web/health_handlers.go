@@ -43,6 +43,43 @@ func (s *Server) handleHealthReady(w http.ResponseWriter, r *http.Request) {
 		checks["distributed"] = "not initialized"
 	}
 
+	// 检查 ICP 数据库
+	if s.icpDB != nil {
+		if err := s.icpDB.DB().PingContext(r.Context()); err != nil {
+			checks["icp_db"] = fmt.Sprintf("unavailable: %v", err)
+			ready = false
+		} else {
+			checks["icp_db"] = "ok"
+		}
+	} else {
+		checks["icp_db"] = "not configured"
+	}
+
+	// 检查截图路由
+	if s.screenshotRouter != nil {
+		cdpHealthy, extHealthy := s.screenshotRouter.HealthStatus()
+		if !cdpHealthy && !extHealthy {
+			checks["screenshot"] = "degraded (no healthy backend)"
+			ready = false
+		} else {
+			mode := s.screenshotRouter.ActiveMode()
+			checks["screenshot"] = fmt.Sprintf("ok (mode=%s, cdp=%v, ext=%v)", mode, cdpHealthy, extHealthy)
+		}
+	} else {
+		checks["screenshot"] = "not configured"
+	}
+
+	// 检查代理池
+	if s.proxyPool != nil {
+		if s.proxyPool.Enabled() {
+			checks["proxy_pool"] = "ok"
+		} else {
+			checks["proxy_pool"] = "configured but disabled"
+		}
+	} else {
+		checks["proxy_pool"] = "not configured"
+	}
+
 	status := "ok"
 	if !ready {
 		status = "degraded"
@@ -80,4 +117,3 @@ func livenessCheck(ctx context.Context) bool {
 		return true
 	}
 }
-

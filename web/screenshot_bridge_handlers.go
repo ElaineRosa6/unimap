@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/screenshot"
 	"golang.org/x/image/webp"
 )
@@ -188,12 +189,16 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body exceeds configured limit", nil)
 		return
 	}
-	if err := s.validateBridgeCallbackSignatureIfRequired(r, rawBody, token); err != nil {
-		s.setBridgeLastError("unauthorized_bridge: invalid callback signature")
-		writeAPIError(w, http.StatusUnauthorized, "unauthorized_bridge", "invalid callback signature", err.Error())
-		return
+	// Skip callback signature when authenticated via admin session (loopback + session cookie).
+	// The token is non-empty only when bridge token auth was used.
+	if token != "" {
+		if err := s.validateBridgeCallbackSignatureIfRequired(r, rawBody, token); err != nil {
+			s.setBridgeLastError("unauthorized_bridge: invalid callback signature")
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized_bridge", "invalid callback signature", err.Error())
+			return
+		}
+		s.touchBridgeToken(token)
 	}
-	s.touchBridgeToken(token)
 
 	var req struct {
 		RequestID               string                 `json:"request_id"`
@@ -237,6 +242,37 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 			return
 		}
 		resolvedPath = savedPath
+	}
+
+	// Diagnostic: log structured collect data to trace the data loss issue
+	if req.StructuredCollectedData != nil {
+		itemsRaw := req.StructuredCollectedData["items"]
+		itemCount := 0
+		if items, ok := itemsRaw.([]interface{}); ok {
+			itemCount = len(items)
+		}
+		logger.Infof("[bridge-collect] request_id=%s items=%d total=%v has_more=%v engine=%v method=%v rows=%v row_sel=%q",
+			strings.TrimSpace(req.RequestID),
+			itemCount,
+			req.StructuredCollectedData["total"],
+			req.StructuredCollectedData["has_more"],
+			req.StructuredCollectedData["engine"],
+			req.StructuredCollectedData["extraction_method"],
+			req.StructuredCollectedData["rows_found"],
+			req.StructuredCollectedData["row_selector_used"])
+		// Log first 3 items for debugging
+		if items, ok := itemsRaw.([]interface{}); ok && len(items) > 0 {
+			for i := 0; i < len(items) && i < 3; i++ {
+				if m, ok := items[i].(map[string]interface{}); ok {
+					logger.Infof("[bridge-collect] item[%d]: ip=%v port=%v title=%v",
+						i, m["ip"], m["port"], m["title"])
+				}
+			}
+		} else {
+			logger.Warnf("[bridge-collect] request_id=%s has structured_collected_data but items is empty or missing", strings.TrimSpace(req.RequestID))
+		}
+	} else {
+		logger.Warnf("[bridge-collect] request_id=%s has nil StructuredCollectedData", strings.TrimSpace(req.RequestID))
 	}
 
 	s.bridge.Mock.PushResult(screenshot.BridgeResult{
@@ -328,6 +364,7 @@ func (s *Server) validateBridgeAuthIfRequired(w http.ResponseWriter, r *http.Req
 	if !required {
 		return "", true
 	}
+
 	raw := strings.TrimSpace(r.Header.Get("Authorization"))
 	if raw == "" || !strings.HasPrefix(strings.ToLower(raw), "bearer ") {
 		s.setBridgeLastError("unauthorized_bridge: missing bridge bearer token")
@@ -335,6 +372,17 @@ func (s *Server) validateBridgeAuthIfRequired(w http.ResponseWriter, r *http.Req
 		return "", false
 	}
 	token := strings.TrimSpace(raw[7:])
+
+	// Accept the admin token as a valid bridge credential for loopback requests.
+	// This allows the extension to work after server restart without re-pairing:
+	// the admin token is static (from config.yaml) and survives restarts.
+	loopback := isLoopbackRequest(r)
+	adminTok := s.adminToken()
+	if loopback && adminTok != "" && subtle.ConstantTimeCompare([]byte(token), []byte(adminTok)) == 1 {
+		logger.Debugf("[bridge-auth] admin token accepted for loopback request")
+		return "", true
+	}
+
 	if token == "" || !s.validateBridgeToken(token) {
 		s.setBridgeLastError("unauthorized_bridge: invalid or expired bridge token")
 		writeAPIError(w, http.StatusUnauthorized, "unauthorized_bridge", "invalid or expired bridge token", nil)
@@ -345,10 +393,12 @@ func (s *Server) validateBridgeAuthIfRequired(w http.ResponseWriter, r *http.Req
 
 func (s *Server) validateBridgeCallbackSignatureIfRequired(r *http.Request, body []byte, token string) error {
 	required := false
+	pairingRequired := true
 	skewSeconds := 300
 	nonceTTLSeconds := 600
 	if s.config != nil {
 		required = s.config.Screenshot.Extension.CallbackSignatureRequired
+		pairingRequired = s.config.Screenshot.Extension.PairingRequired
 		if s.config.Screenshot.Extension.CallbackSignatureSkewSeconds > 0 {
 			skewSeconds = s.config.Screenshot.Extension.CallbackSignatureSkewSeconds
 		}
@@ -356,7 +406,8 @@ func (s *Server) validateBridgeCallbackSignatureIfRequired(r *http.Request, body
 			nonceTTLSeconds = s.config.Screenshot.Extension.CallbackNonceTTLSeconds
 		}
 	}
-	if !required {
+	// Callback signature requires a pairing token; skip if pairing is disabled.
+	if !required || !pairingRequired {
 		return nil
 	}
 	if strings.TrimSpace(token) == "" {
@@ -401,7 +452,9 @@ func (s *Server) validateBridgeCallbackSignatureIfRequired(r *http.Request, body
 	bodyHash := sha256.Sum256(body)
 	canonical := fmt.Sprintf("%d\n%s\n%s", ts, nonce, hex.EncodeToString(bodyHash[:]))
 	mac := hmac.New(sha256.New, []byte(token))
-	_, _ = mac.Write([]byte(canonical))
+	if _, err := mac.Write([]byte(canonical)); err != nil {
+		return fmt.Errorf("bridge HMAC write failed: %w", err)
+	}
 	expected := mac.Sum(nil)
 	if !hmac.Equal(provided, expected) {
 		return fmt.Errorf("bridge signature mismatch")
@@ -845,4 +898,3 @@ func (s *Server) screenshotRouterExtHealthy() bool {
 	}
 	return false
 }
-

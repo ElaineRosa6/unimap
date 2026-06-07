@@ -53,7 +53,7 @@ func auditMiddleware(next http.Handler) http.Handler {
 // auditResponseWriter 包装 ResponseWriter 以捕获状态码
 type auditResponseWriter struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode  int
 	wroteHeader bool
 }
 
@@ -64,4 +64,3 @@ func (w *auditResponseWriter) WriteHeader(code int) {
 	}
 	w.ResponseWriter.WriteHeader(code)
 }
-

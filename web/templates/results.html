@@ -98,7 +98,7 @@
 					</thead>
 					<tbody id="results-body">
 						{{range .assets}}
-						<tr>
+						<tr data-ip="{{.IP}}" data-port="{{.Port}}" data-protocol="{{.Protocol}}" data-host="{{.Host}}" data-title="{{.Title}}" data-server="{{.Server}}" data-status="{{.StatusCode}}" data-source="{{.Source}}" data-country="{{.CountryCode}}" data-region="{{.Region}}" data-city="{{.City}}" data-asn="{{.ASN}}" data-org="{{.Org}}" data-isp="{{.ISP}}" data-url="{{.URL}}">
 							<td>{{.IP}}</td>
 							<td>{{.Port}}</td>
 							<td>{{.Protocol}}</td>
@@ -108,8 +108,8 @@
 							<td>{{.StatusCode}}</td>
 							<td>{{.Source}}</td>
 							<td>
-								<button type="button" class="btn-sm btn-outline-primary" data-ip="{{.IP}}" data-port="{{.Port}}">详情</button>
-								<button type="button" class="btn-sm btn-outline-secondary" data-ip="{{.IP}}">复制</button>
+								<button type="button" class="btn-sm btn-outline-primary btn-detail" data-ip="{{.IP}}" data-port="{{.Port}}">详情</button>
+								<button type="button" class="btn-sm btn-outline-secondary btn-copy" data-ip="{{.IP}}">复制</button>
 							</td>
 						</tr>
 						{{end}}

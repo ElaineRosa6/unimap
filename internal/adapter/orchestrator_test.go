@@ -26,7 +26,7 @@ func (m *mockAdapter) Translate(ast *model.UQLAST) (string, error) {
 	return m.translate, nil
 }
 
-func (m *mockAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
+func (m *mockAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if m.searchErr != nil {
 		return nil, m.searchErr
 	}
@@ -54,28 +54,28 @@ func (m *mockAdapter) IsWebOnly() bool { return false }
 // 表驱动测试：TranslateQuery
 func TestTranslateQuery(t *testing.T) {
 	tests := []struct {
-		name          string
-		adapters      []EngineAdapter
-		engineNames   []string
-		wantErr       bool
-		wantCount     int
-		wantErrCount  int
+		name         string
+		adapters     []EngineAdapter
+		engineNames  []string
+		wantErr      bool
+		wantCount    int
+		wantErrCount int
 	}{
 		{
-			name:          "empty engines",
-			adapters:      nil,
-			engineNames:   []string{},
-			wantErr:       true,
-			wantCount:     0,
-			wantErrCount:  0,
+			name:         "empty engines",
+			adapters:     nil,
+			engineNames:  []string{},
+			wantErr:      true,
+			wantCount:    0,
+			wantErrCount: 0,
 		},
 		{
-			name:          "single adapter success",
-			adapters:      []EngineAdapter{&mockAdapter{name: "fofa", translate: "fofa_query"}},
-			engineNames:   []string{"fofa"},
-			wantErr:       false,
-			wantCount:     1,
-			wantErrCount:  0,
+			name:         "single adapter success",
+			adapters:     []EngineAdapter{&mockAdapter{name: "fofa", translate: "fofa_query"}},
+			engineNames:  []string{"fofa"},
+			wantErr:      false,
+			wantCount:    1,
+			wantErrCount: 0,
 		},
 		{
 			name: "multiple adapters partial success",
@@ -100,12 +100,12 @@ func TestTranslateQuery(t *testing.T) {
 			wantErrCount: 2,
 		},
 		{
-			name:          "missing adapter",
-			adapters:      []EngineAdapter{&mockAdapter{name: "fofa", translate: "fofa_query"}},
-			engineNames:   []string{"fofa", "missing"},
-			wantErr:       false,
-			wantCount:     1,
-			wantErrCount:  1,
+			name:         "missing adapter",
+			adapters:     []EngineAdapter{&mockAdapter{name: "fofa", translate: "fofa_query"}},
+			engineNames:  []string{"fofa", "missing"},
+			wantErr:      false,
+			wantCount:    1,
+			wantErrCount: 1,
 		},
 	}
 
@@ -378,4 +378,3 @@ func BenchmarkOrchestratorGetAdapter(b *testing.B) {
 		o.GetAdapter("fofa")
 	}
 }
-

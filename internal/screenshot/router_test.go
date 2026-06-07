@@ -268,6 +268,94 @@ func TestExtensionProvider_CollectSearchEngineResult_LoginWall(t *testing.T) {
 	}
 }
 
+// loginWallFailBridgeClient simulates the real extension behavior:
+// success=false + is_login_wall in structured data.
+type loginWallFailBridgeClient struct {
+	mockBridgeClient
+}
+
+func (l *loginWallFailBridgeClient) SubmitTask(ctx context.Context, task BridgeTask) error {
+	return nil
+}
+
+func (l *loginWallFailBridgeClient) AwaitResult(ctx context.Context, requestID string) (BridgeResult, error) {
+	return BridgeResult{
+		RequestID: requestID,
+		Success:   false,
+		Error:     "login wall detected on https://fofa.info/result",
+		ErrorCode: "login_required",
+		StructuredCollectedData: map[string]interface{}{
+			"items":         []interface{}{},
+			"total":         float64(0),
+			"is_login_wall": true,
+			"title":         "FOFA Login",
+		},
+	}, nil
+}
+
+func TestExtensionProvider_CollectSearchEngineResult_LoginWall_SuccessFalse(t *testing.T) {
+	client := &loginWallFailBridgeClient{}
+	svc := NewBridgeService(client, 1, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	provider := NewExtensionProvider(svc, nil)
+	results, err := provider.CollectSearchEngineResult(context.Background(), "fofa", `country="CN"`, "q1")
+	if err != nil {
+		t.Fatalf("login wall with success=false should NOT return error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].IsLoginWall {
+		t.Error("expected IsLoginWall=true")
+	}
+	if !results[0].LoginRequired {
+		t.Error("expected LoginRequired=true")
+	}
+}
+
+// loginWallErrorCodeClient simulates extension with success=false + error_code="login_required"
+// but no structured data is_login_wall field (text-marker fallback).
+type loginWallErrorCodeClient struct {
+	mockBridgeClient
+}
+
+func (l *loginWallErrorCodeClient) SubmitTask(ctx context.Context, task BridgeTask) error {
+	return nil
+}
+
+func (l *loginWallErrorCodeClient) AwaitResult(ctx context.Context, requestID string) (BridgeResult, error) {
+	return BridgeResult{
+		RequestID: requestID,
+		Success:   false,
+		Error:     "login required for hunter",
+		ErrorCode: "login_required",
+	}, nil
+}
+
+func TestExtensionProvider_CollectSearchEngineResult_LoginWall_ErrorCodeFallback(t *testing.T) {
+	client := &loginWallErrorCodeClient{}
+	svc := NewBridgeService(client, 1, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	provider := NewExtensionProvider(svc, nil)
+	results, err := provider.CollectSearchEngineResult(context.Background(), "hunter", `ip="1.2.3.4"`, "q2")
+	if err != nil {
+		t.Fatalf("login wall detected via error_code should NOT return error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].IsLoginWall {
+		t.Error("expected IsLoginWall=true via error_code fallback")
+	}
+	if !results[0].LoginRequired {
+		t.Error("expected LoginRequired=true")
+	}
+}
+
 // mockProvider is a minimal Provider implementation for testing.
 type mockProvider struct{}
 
@@ -400,5 +488,106 @@ func TestParseStructuredCollectedData_MissingItemsKey(t *testing.T) {
 	}
 	if total != 0 || hasMore {
 		t.Fatal("expected total 0 and has_more false")
+	}
+}
+
+func TestParseStructuredCollectedData_PortAsString(t *testing.T) {
+	// Extension sends port as a string (from DOM text content), not a number
+	data := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"ip":   "10.0.0.1",
+				"port": "80",
+			},
+		},
+	}
+	assets, _, _ := parseStructuredCollectedData(data, "shodan")
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 asset, got %d", len(assets))
+	}
+	if assets[0].Port != 80 {
+		t.Fatalf("expected port 80 from string, got %d", assets[0].Port)
+	}
+}
+
+func TestParseStructuredCollectedData_PortAsInvalidString(t *testing.T) {
+	data := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"ip":   "10.0.0.1",
+				"port": "not-a-number",
+			},
+		},
+	}
+	assets, _, _ := parseStructuredCollectedData(data, "shodan")
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 asset, got %d", len(assets))
+	}
+	if assets[0].Port != 0 {
+		t.Fatalf("expected port 0 for invalid string, got %d", assets[0].Port)
+	}
+}
+
+func TestParseStructuredCollectedData_StatusCodeAsString(t *testing.T) {
+	// Extension sends status_code as a string (from DOM text content)
+	data := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"ip":          "10.0.0.1",
+				"status_code": "200",
+			},
+		},
+	}
+	assets, _, _ := parseStructuredCollectedData(data, "hunter")
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 asset, got %d", len(assets))
+	}
+	if assets[0].StatusCode != 200 {
+		t.Fatalf("expected status_code 200 from string, got %d", assets[0].StatusCode)
+	}
+}
+
+func TestParseStructuredCollectedData_BannerToBodySnippet(t *testing.T) {
+	// Extension sends "banner" field (not "body_snippet")
+	data := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"ip":     "10.0.0.1",
+				"banner": "HTTP/1.1 200 OK\r\nServer: nginx",
+			},
+		},
+	}
+	assets, _, _ := parseStructuredCollectedData(data, "shodan")
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 asset, got %d", len(assets))
+	}
+	if assets[0].BodySnippet != "HTTP/1.1 200 OK\r\nServer: nginx" {
+		t.Fatalf("expected banner mapped to BodySnippet, got %q", assets[0].BodySnippet)
+	}
+	// banner should NOT appear in Extra (it's a known field)
+	if assets[0].Extra != nil {
+		if _, ok := assets[0].Extra["banner"]; ok {
+			t.Fatal("banner should not appear in Extra after mapping to BodySnippet")
+		}
+	}
+}
+
+func TestParseStructuredCollectedData_BodySnippetPreferredOverBanner(t *testing.T) {
+	// If both body_snippet and banner are present, body_snippet takes priority
+	data := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{
+				"ip":           "10.0.0.1",
+				"body_snippet": "Primary snippet",
+				"banner":       "Fallback banner",
+			},
+		},
+	}
+	assets, _, _ := parseStructuredCollectedData(data, "fofa")
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 asset, got %d", len(assets))
+	}
+	if assets[0].BodySnippet != "Primary snippet" {
+		t.Fatalf("expected body_snippet to take priority, got %q", assets[0].BodySnippet)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/proxypool"
+	"github.com/unimap/project/internal/utils/urlguard"
 	"github.com/unimap/project/internal/utils/workerpool"
 )
 
@@ -88,6 +89,19 @@ func (t *portScanTask) Execute() error {
 	}
 
 	host := strings.TrimSpace(parsed.Hostname())
+
+	// SSRF protection: reject internal/private addresses
+	if urlguard.IsInternalHost(t.ctx, host) {
+		t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
+			Input:       t.input,
+			URL:         normalizedURL,
+			Host:        host,
+			Status:      "blocked",
+			CDNDetected: false,
+			Reason:      "target resolves to private/internal address (SSRF protection)",
+		}}
+		return nil
+	}
 	resolveCtx, resolveCancel := context.WithTimeout(t.ctx, 6*time.Second)
 	defer resolveCancel()
 
@@ -449,4 +463,3 @@ func isLikelyCDNIP(ipText string) bool {
 	}
 	return false
 }
-

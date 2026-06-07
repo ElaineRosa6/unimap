@@ -5,13 +5,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/requestid"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
+
+// ensureUTF8 converts GBK-encoded strings to UTF-8.
+// On Windows, curl and some HTTP clients send Chinese characters in GBK encoding.
+// The ICP sidecar expects UTF-8, so we need to normalize.
+func ensureUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	decoded, _, err := transform.String(simplifiedchinese.GBK.NewDecoder(), s)
+	if err != nil {
+		return s
+	}
+	return decoded
+}
 
 type ICPQueryType string
 
@@ -171,8 +189,8 @@ func (a *ICPAdapter) Translate(ast *model.UQLAST) (string, error) {
 	return query, nil
 }
 
-func (a *ICPAdapter) Search(query string, page, pageSize int) (*model.EngineResult, error) {
-	return a.SearchWithContext(context.Background(), query, page, pageSize)
+func (a *ICPAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
+	return a.SearchWithContext(ctx, query, page, pageSize)
 }
 
 func (a *ICPAdapter) SearchWithContext(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
@@ -267,7 +285,7 @@ func (a *ICPAdapter) doSearch(ctx context.Context, query string, page, pageSize 
 		pageSize = 20
 	}
 	req := a.client.R().SetContext(ctx).
-		SetQueryParam("search", query).
+		SetQueryParam("search", ensureUTF8(query)).
 		SetQueryParam("pageNum", fmt.Sprintf("%d", page)).
 		SetQueryParam("pageSize", fmt.Sprintf("%d", pageSize)).
 		SetResult(&resp)
@@ -393,19 +411,12 @@ func IsValidICPQueryType(raw string) bool {
 }
 
 func (a *ICPAdapter) HealthCheck(ctx context.Context) error {
-	var health struct {
-		Status  string `json:"status"`
-		Service string `json:"service"`
-	}
-	resp, err := a.client.R().SetContext(ctx).SetResult(&health).Get(fmt.Sprintf("%s/health", a.baseURL))
+	resp, err := a.client.R().SetContext(ctx).Get(strings.TrimRight(a.baseURL, "/"))
 	if err != nil {
 		return fmt.Errorf("ICP health check failed: %w", err)
 	}
 	if resp.StatusCode() != 200 {
 		return fmt.Errorf("ICP health check returned HTTP %d", resp.StatusCode())
-	}
-	if health.Status != "ok" {
-		return fmt.Errorf("ICP service unhealthy: %s", health.Status)
 	}
 	return nil
 }
@@ -438,7 +449,7 @@ func ICPSearchWithContext(ctx context.Context, baseURL string, apiKey string, re
 	}
 	var resp icpAPIResponse
 	httpResp, err := client.R().SetContext(ctx).
-		SetQueryParam("search", req.Query).
+		SetQueryParam("search", ensureUTF8(req.Query)).
 		SetQueryParam("pageNum", fmt.Sprintf("%d", req.Page)).
 		SetQueryParam("pageSize", fmt.Sprintf("%d", req.PageSize)).
 		SetResult(&resp).
@@ -460,7 +471,51 @@ func ICPSearchWithContext(ctx context.Context, baseURL string, apiKey string, re
 	return resp.List, resp.Total, nil
 }
 
+// ICPTypeGroup 表示单个类型的查询结果分组，用于多类型查询返回。
+type ICPTypeGroup struct {
+	Type    string      `json:"type"`
+	Label   string      `json:"label"`
+	Total   int         `json:"total"`
+	Results []ICPResult `json:"results"`
+	Error   string      `json:"error,omitempty"`
+}
+
+// ICPSearchMultiType 并发查询多个 ICP 备案类型。
+// 每个 type 独立请求 sidecar，任一 type 失败只记入该组 Error，不影响其它组。
+// 返回结果按 types 入参顺序排列。
+func ICPSearchMultiType(ctx context.Context, baseURL, apiKey, query string, types []string, page, pageSize int) ([]ICPTypeGroup, error) {
+	if len(types) == 0 {
+		return nil, fmt.Errorf("no ICP types provided")
+	}
+
+	groups := make([]ICPTypeGroup, len(types))
+	var wg sync.WaitGroup
+
+	for i, t := range types {
+		wg.Add(1)
+		go func(idx int, tp string) {
+			defer wg.Done()
+			results, total, err := ICPSearchWithContext(ctx, baseURL, apiKey, ICPSearchRequest{
+				Query:    query,
+				Type:     tp,
+				Page:     page,
+				PageSize: pageSize,
+			})
+			g := ICPTypeGroup{Type: tp, Label: ICPTypeLabel(ICPQueryType(tp))}
+			if err != nil {
+				g.Error = err.Error()
+			} else {
+				g.Results = results
+				g.Total = total
+			}
+			groups[idx] = g
+		}(i, t)
+	}
+
+	wg.Wait()
+	return groups, nil
+}
+
 func requestIDFromContext(ctx context.Context) string {
 	return requestid.FromContext(ctx)
 }
-

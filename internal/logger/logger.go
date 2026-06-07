@@ -582,4 +582,3 @@ func asyncLogWriter() {
 		}
 	}
 }
-

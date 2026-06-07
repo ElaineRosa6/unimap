@@ -18,10 +18,10 @@ type DeduplicationProcessor struct {
 type DeduplicationStrategy string
 
 const (
-	StrategyIPPort   DeduplicationStrategy = "ip_port"    // 基于 IP:Port 去重
-	StrategyURL      DeduplicationStrategy = "url"        // 基于 URL 去重
-	StrategyHost     DeduplicationStrategy = "host"       // 基于 Host 去重
-	StrategyAdvanced DeduplicationStrategy = "advanced"   // 高级去重（综合多字段）
+	StrategyIPPort   DeduplicationStrategy = "ip_port"  // 基于 IP:Port 去重
+	StrategyURL      DeduplicationStrategy = "url"      // 基于 URL 去重
+	StrategyHost     DeduplicationStrategy = "host"     // 基于 Host 去重
+	StrategyAdvanced DeduplicationStrategy = "advanced" // 高级去重（综合多字段）
 )
 
 // NewDeduplicationProcessor 创建去重处理器
@@ -186,10 +186,10 @@ func (p *DeduplicationProcessor) deduplicateAdvanced(assets []model.UnifiedAsset
 
 // DataCleaningProcessor 数据清洗处理器
 type DataCleaningProcessor struct {
-	removeEmpty      bool
-	normalizeURLs    bool
-	trimWhitespace   bool
-	lowercaseFields  []string
+	removeEmpty     bool
+	normalizeURLs   bool
+	trimWhitespace  bool
+	lowercaseFields []string
 }
 
 // NewDataCleaningProcessor 创建数据清洗处理器
@@ -265,12 +265,12 @@ func (p *DataCleaningProcessor) Process(ctx context.Context, assets []model.Unif
 
 	for _, asset := range assets {
 		cleaned := p.cleanAsset(asset)
-		
+
 		// 如果配置为移除空资产且资产为空，则跳过
 		if p.removeEmpty && p.isEmptyAsset(cleaned) {
 			continue
 		}
-		
+
 		result = append(result, cleaned)
 	}
 
@@ -320,12 +320,12 @@ func (p *DataCleaningProcessor) cleanAsset(asset model.UnifiedAsset) model.Unifi
 // normalizeURL 规范化 URL
 func (p *DataCleaningProcessor) normalizeURL(url string) string {
 	url = strings.TrimSpace(url)
-	
+
 	// 移除尾部斜杠
 	if strings.HasSuffix(url, "/") && len(url) > 1 {
 		url = strings.TrimSuffix(url, "/")
 	}
-	
+
 	return url
 }
 
@@ -333,4 +333,3 @@ func (p *DataCleaningProcessor) normalizeURL(url string) string {
 func (p *DataCleaningProcessor) isEmptyAsset(asset model.UnifiedAsset) bool {
 	return asset.IP == "" && asset.Host == "" && asset.URL == ""
 }
-

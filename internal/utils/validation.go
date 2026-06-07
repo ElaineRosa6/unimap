@@ -264,4 +264,3 @@ func ValidateRequestSize(contentLength int64, maxSizeMB int) bool {
 func ValidateContentType(contentType, expectedType string) bool {
 	return strings.HasPrefix(strings.ToLower(contentType), strings.ToLower(expectedType))
 }
-

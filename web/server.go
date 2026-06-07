@@ -105,6 +105,8 @@ type Server struct {
 	icpRepo          icpdb.ICPResultRepository
 	notifyRegistry   *notify.Registry
 	apiAuth          *auth.AuthMiddleware
+	userDB           *auth.UserDB
+	userRepo         auth.UserRepository
 	shutdownCtx      context.Context
 	shutdownCancel   context.CancelFunc
 	revocationStore  *sessionRevocationStore
@@ -314,10 +316,10 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 			NodeRegistry:  nodeRegistry,
 			NodeTaskQueue: nodeTaskQueue,
 		},
-		apiAuth:        auth.NewAuthMiddleware(auth.NewAPIKeyManager("./data/api_keys.json")),
-		shutdownCtx:    shutdownCtx,
-		shutdownCancel:   shutdownCancel,
-		revocationStore:  newSessionRevocationStore(),
+		apiAuth:         auth.NewAuthMiddleware(auth.NewAPIKeyManager("./data/api_keys.json")),
+		shutdownCtx:     shutdownCtx,
+		shutdownCancel:  shutdownCancel,
+		revocationStore: newSessionRevocationStore(),
 	}
 
 	// 初始化 ICP 结果数据库（持久化 + 变更告警依赖此 DB）
@@ -334,6 +336,21 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 			srv.icpDB = db
 			srv.icpRepo = icpdb.NewICPResultRepository(db.DB())
 		}
+	}
+
+	// 初始化用户数据库
+	userDBPath := "./data/users.db"
+	if err := os.MkdirAll(filepath.Dir(userDBPath), 0o755); err != nil {
+		logger.Warnf("user DB dir create failed (%s): %v", userDBPath, err)
+	} else if udb, err := auth.NewUserDB(userDBPath); err != nil {
+		logger.Warnf("user DB unavailable at %s: %v", userDBPath, err)
+	} else if err := udb.InitSchema(); err != nil {
+		logger.Warnf("user DB schema init failed: %v", err)
+		_ = udb.Close()
+	} else {
+		srv.userDB = udb
+		srv.userRepo = auth.NewUserRepository(udb.DB())
+		logger.Infof("user database initialized at %s", userDBPath)
 	}
 
 	// 初始化定时任务调度器
@@ -385,6 +402,26 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 	// 初始化通知系统
 	notifyReg := notify.NewRegistry()
 	notifyReg.Register(notify.NewLogChannel("builtin-log", true))
+
+	// 注册飞书应用渠道（支持图片上传）
+	if cfg != nil && cfg.Notifications.FeishuApp != nil {
+		feishuApp := cfg.Notifications.FeishuApp
+		if feishuApp.AppID != "" && feishuApp.AppSecret != "" && feishuApp.ChatID != "" {
+			feishuAppCh := notify.NewFeishuAppChannel(
+				feishuApp.AppID,
+				feishuApp.AppSecret,
+				feishuApp.ChatID,
+				cfg.Notifications.Enabled,
+			)
+			if err := notifyReg.Register(feishuAppCh); err != nil {
+				logger.Warnf("Failed to register feishu app channel: %v", err)
+			} else {
+				notifyReg.Pin("feishu_app") // 不受 Reload 影响
+				logger.Infof("Feishu app channel registered (chat_id=%s)", feishuApp.ChatID)
+			}
+		}
+	}
+
 	sched.SetNotifyRegistry(notifyReg)
 
 	if cfg != nil {
@@ -477,17 +514,41 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 				metrics.IncScreenshotHealthCheck(mode, healthy)
 			},
 		)
+
+		// Inject extension health signals from bridge state.
+		// LiveClient: any extension client seen within the last 5 minutes.
+		// LastActivity: most recent task pull or callback timestamp.
+		const recentActivityCutoff = 5 * time.Minute
+		router.SetExtensionHealthSignals(
+			func() bool {
+				srv.bridge.mu.Lock()
+				defer srv.bridge.mu.Unlock()
+				cutoff := time.Now().Unix() - int64(recentActivityCutoff.Seconds())
+				for _, ts := range srv.bridge.LastSeen {
+					if ts >= cutoff {
+						return true
+					}
+				}
+				return false
+			},
+			func() int64 {
+				srv.bridge.mu.Lock()
+				defer srv.bridge.mu.Unlock()
+				pull := srv.bridge.LastTaskPullAt
+				cb := srv.bridge.LastCallbackAt
+				if pull > cb {
+					return pull
+				}
+				return cb
+			},
+			recentActivityCutoff,
+		)
+
 		router.Start(shutdownCtx)
 		srv.screenshotRouter = router
 
-		// Wire browser backend to WebOnly adapters so engines without API keys
-		// can collect structured results via browser DOM extraction.
-		if unifiedSvc != nil && srv.screenshotRouter != nil {
-			unifiedSvc.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: srv.screenshotRouter})
-		}
-
 		logger.Infof("Screenshot router initialized: mode=auto, priority=%s, fallback=%v", priority, fallback)
-	} else if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Screenshot.Engine), "extension") {
+	} else if cfg != nil && (screenshotMode == "extension" || strings.EqualFold(strings.TrimSpace(cfg.Screenshot.Engine), "extension")) {
 		// 传统 extension 单模式
 		mockClient := newBridgeMockClient()
 		bridgeSvc := screenshot.NewBridgeService(mockClient, cfg.Screenshot.Extension.MaxConcurrency, time.Duration(cfg.Screenshot.Extension.TaskTimeoutSeconds)*time.Second)
@@ -495,11 +556,28 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		srv.bridge.Mock = mockClient
 		srv.bridge.Service = bridgeSvc
 		screenshotApp.SetBridgeService(bridgeSvc)
+	}
 
-		// Wire browser backend for WebOnly adapters in extension-only mode
-		if unifiedSvc != nil && screenshotMgr != nil {
-			extProvider := screenshot.NewExtensionProvider(bridgeSvc, screenshotMgr)
-			unifiedSvc.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: extProvider})
+	// Wire browser backend to WebOnly adapters so engines without API keys can
+	// collect structured results through the active browser runtime. This must
+	// work in CDP, extension, and auto modes.
+	if unifiedSvc != nil {
+		if provider := srv.browserQueryProvider(); provider != nil {
+			unifiedSvc.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: provider})
+		}
+
+		// Wire browser fallback config
+		if cfg != nil && cfg.Query.BrowserFallback.Enabled {
+			bfEngines := make(map[string]bool)
+			for _, e := range cfg.Query.BrowserFallback.Engines {
+				bfEngines[strings.ToLower(e)] = true
+			}
+			unifiedSvc.SetBrowserFallbackConfig(service.BrowserFallbackConfig{
+				Enabled:       true,
+				OnAPIError:    cfg.Query.BrowserFallback.OnAPIError,
+				OnEmptyResult: cfg.Query.BrowserFallback.OnEmptyResult,
+				Engines:       bfEngines,
+			})
 		}
 	}
 
@@ -601,7 +679,7 @@ func securityMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		w.Header().Set("Content-Security-Policy",
-			fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s' 'unsafe-hashes'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.font.im; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com https://fonts.gstatic.font.im;", nonce))
+			fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s' 'unsafe-hashes'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.googleapis.font.im https://fonts.gstatic.font.im; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com https://fonts.gstatic.font.im;", nonce))
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 
@@ -646,6 +724,20 @@ func (s *Server) Start() error {
 	}
 
 	allowedOrigins := allowedOriginsFromConfig(s.config)
+
+	// Initialize Chrome extension ID restriction from config or env var
+	extIDs := allowedExtensionIDsFromConfig(s.config)
+	if len(extIDs) == 0 {
+		if envVal := os.Getenv("UNIMAP_ALLOWED_EXTENSION_IDS"); envVal != "" {
+			for _, part := range strings.Split(envVal, ",") {
+				part = strings.TrimSpace(part)
+				if part != "" {
+					extIDs = append(extIDs, part)
+				}
+			}
+		}
+	}
+	SetAllowedExtensionIDs(extIDs)
 	allowedMethods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 	allowedHeaders := []string{"Content-Type", "Authorization", "X-Admin-Token", "X-Requested-With", "X-WebSocket-Token", "X-Bridge-Timestamp", "X-Bridge-Nonce", "X-Bridge-Signature", requestid.HeaderName}
 	exposedHeaders := []string{requestid.HeaderName}
@@ -690,7 +782,7 @@ func (s *Server) Start() error {
 		isWebSocket := strings.Contains(r.Header.Get("Connection"), "Upgrade") &&
 			strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 
-		if isWebSocket && r.URL.Path == "/api/ws" {
+		if isWebSocket && (r.URL.Path == "/api/v1/ws" || r.URL.Path == "/api/ws") {
 			// WebSocket auth: cookie → query param → header
 			if s.adminToken() != "" && !s.isPublicPath(r.URL.Path) {
 				token := s.getSessionToken(r)
@@ -720,8 +812,11 @@ func (s *Server) Start() error {
 
 	addr := fmt.Sprintf("%s:%d", s.bindAddr(), s.port)
 	s.httpServer = &http.Server{
-		Addr:    addr,
-		Handler: rootHandler,
+		Addr:         addr,
+		Handler:      rootHandler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	go s.cleanupStaleQueries()
@@ -760,6 +855,20 @@ func allowedOriginsFromConfig(cfg *config.Config) []string {
 	return origins
 }
 
+func allowedExtensionIDsFromConfig(cfg *config.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(cfg.Web.CORS.AllowedExtensionIDs))
+	for _, id := range cfg.Web.CORS.AllowedExtensionIDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // Shutdown 优雅关闭Web服务器
 func (s *Server) Shutdown(ctx context.Context) error {
 	if s.httpServer == nil {
@@ -771,6 +880,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// 取消所有后台goroutine
 	if s.shutdownCancel != nil {
 		s.shutdownCancel()
+	}
+
+	// 先关闭HTTP服务器，排空活跃请求，确保不再有新请求访问DB等资源
+	if err := s.httpServer.Shutdown(ctx); err != nil {
+		return fmt.Errorf("web server shutdown error: %w", err)
 	}
 
 	// 停止分布式组件
@@ -786,15 +900,18 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.scheduler.Stop()
 	}
 
-	// 关闭 ICP 结果数据库
+	// 关闭 ICP 结果数据库（HTTP已排空，无并发访问）
 	if s.icpDB != nil {
 		if err := s.icpDB.Close(); err != nil {
 			logger.Warnf("ICP result DB close error: %v", err)
 		}
 	}
 
-	if err := s.httpServer.Shutdown(ctx); err != nil {
-		return fmt.Errorf("web server shutdown error: %w", err)
+	// 关闭用户数据库
+	if s.userDB != nil {
+		if err := s.userDB.Close(); err != nil {
+			logger.Warnf("user DB close error: %v", err)
+		}
 	}
 
 	// 停止截图Router（停止健康探测goroutine）
@@ -1085,4 +1202,3 @@ func maskAPIKey(apiKey string) string {
 	}
 	return apiKey[:4] + "****" + apiKey[len(apiKey)-4:]
 }
-

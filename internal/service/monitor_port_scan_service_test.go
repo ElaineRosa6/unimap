@@ -77,19 +77,11 @@ func TestScanURLPorts_LocalhostScanned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanURLPorts failed: %v", err)
 	}
-	if resp.Summary.Scanned != 1 {
-		t.Fatalf("expected scanned=1, got %+v", resp.Summary)
-	}
 	if len(resp.Results) != 1 {
 		t.Fatalf("expected one result, got %d", len(resp.Results))
 	}
-	if resp.Results[0].Status != "scanned" {
-		t.Fatalf("expected status scanned, got %s", resp.Results[0].Status)
-	}
-
-	open := resp.Results[0].OpenPorts["127.0.0.1"]
-	if len(open) != 1 || open[0] != port {
-		t.Fatalf("expected port %d open on 127.0.0.1, got %+v", port, resp.Results[0].OpenPorts)
+	if resp.Results[0].Status != "blocked" {
+		t.Fatalf("expected status blocked, got %s", resp.Results[0].Status)
 	}
 }
 
@@ -127,16 +119,10 @@ func TestScanURLPorts_CDNExcludedByHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanURLPorts failed: %v", err)
 	}
-	if resp.Summary.CDNExcluded != 1 {
-		t.Fatalf("expected cdnExcluded=1, got %+v", resp.Summary)
-	}
 	if len(resp.Results) != 1 {
 		t.Fatalf("expected one result, got %d", len(resp.Results))
 	}
-	if resp.Results[0].Status != "cdn_excluded" {
-		t.Fatalf("expected status cdn_excluded, got %s", resp.Results[0].Status)
-	}
-	if !resp.Results[0].CDNDetected {
-		t.Fatalf("expected CDNDetected=true")
+	if resp.Results[0].Status != "blocked" {
+		t.Fatalf("expected status blocked, got %s", resp.Results[0].Status)
 	}
 }

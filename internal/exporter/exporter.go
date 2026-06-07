@@ -100,4 +100,3 @@ func (e *ExcelExporter) Export(assets []model.UnifiedAsset, filepath string) err
 
 	return nil
 }
-
