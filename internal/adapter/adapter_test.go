@@ -233,6 +233,54 @@ func TestFofaAdapter_Translate(t *testing.T) {
 			}},
 			want: `((port="80" || port="443") && country="CN")`,
 		},
+		{
+			name: "exact match operator == (B-4a fix)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "title",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "=="},
+					{Type: "value", Value: "admin"},
+				},
+			}},
+			want: `title=="admin"`,
+		},
+		{
+			name: "field mapping cert.subject.cn (B-7 fix)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "cert.subject.cn",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "baidu.com"},
+				},
+			}},
+			want: `cert.subject.cn="baidu.com"`,
+		},
+		{
+			name: "field mapping cert.issuer.cn (B-7 fix)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "cert.issuer.cn",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "DigiCert"},
+				},
+			}},
+			want: `cert.issuer.cn="DigiCert"`,
+		},
+		{
+			name: "isp field passthrough (FOFA has no isp, B-1a)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "isp",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "China Telecom"},
+				},
+			}},
+			want: `isp="China Telecom"`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
