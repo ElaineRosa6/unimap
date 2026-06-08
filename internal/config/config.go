@@ -63,6 +63,14 @@ type Config struct {
 			QPS     int    `yaml:"qps"`
 			Timeout int    `yaml:"timeout"`
 		} `yaml:"shodan"`
+		Censys struct {
+			Enabled   bool   `yaml:"enabled"`
+			APIID     string `yaml:"api_id"`
+			APISecret string `yaml:"api_secret"`
+			BaseURL   string `yaml:"base_url"`
+			QPS       int    `yaml:"qps"`
+			Timeout   int    `yaml:"timeout"`
+		} `yaml:"censys"`
 	} `yaml:"engines"`
 
 	// 系统配置
@@ -313,6 +321,7 @@ func (c *Config) Clone() *Config {
 	clone.Engines.Fofa = c.Engines.Fofa
 	clone.Engines.Fofa.Cookies = cloneCookies(c.Engines.Fofa.Cookies)
 	clone.Engines.Shodan = c.Engines.Shodan
+	clone.Engines.Censys = c.Engines.Censys
 
 	// System, Log are all primitives — safe to copy directly
 	clone.System = c.System
@@ -479,6 +488,11 @@ func (m *Manager) resolveEnv(config *Config) {
 	config.Engines.Fofa.APIBaseURL = m.ResolveEnv(config.Engines.Fofa.APIBaseURL)
 	config.Engines.Fofa.WebBaseURL = m.ResolveEnv(config.Engines.Fofa.WebBaseURL)
 
+	// 解析Censys配置
+	config.Engines.Censys.APIID = m.ResolveEnv(config.Engines.Censys.APIID)
+	config.Engines.Censys.APISecret = m.ResolveEnv(config.Engines.Censys.APISecret)
+	config.Engines.Censys.BaseURL = m.ResolveEnv(config.Engines.Censys.BaseURL)
+
 	// 解析系统配置
 	config.System.UserAgent = m.ResolveEnv(config.System.UserAgent)
 
@@ -558,6 +572,7 @@ func (m *Manager) applyDefaults(config *Config) {
 	config.Engines.Hunter.Enabled = true
 	config.Engines.Fofa.Enabled = true
 	config.Engines.Shodan.Enabled = true
+	config.Engines.Censys.Enabled = true
 	config.Engines.Fofa.UseWebAPI = true
 
 	// 默认引擎配置
@@ -619,6 +634,16 @@ func (m *Manager) applyDefaults(config *Config) {
 	}
 	if config.Engines.Shodan.Timeout == 0 {
 		config.Engines.Shodan.Timeout = 30
+	}
+
+	if config.Engines.Censys.BaseURL == "" {
+		config.Engines.Censys.BaseURL = "https://search.censys.io"
+	}
+	if config.Engines.Censys.QPS == 0 {
+		config.Engines.Censys.QPS = 2
+	}
+	if config.Engines.Censys.Timeout == 0 {
+		config.Engines.Censys.Timeout = 30
 	}
 
 	// 默认系统配置
@@ -919,6 +944,7 @@ func (m *Manager) applyDefaults(config *Config) {
 		"hunter":  {Enabled: true, TTL: 3600, MaxSize: 500},
 		"fofa":    {Enabled: true, TTL: 1800, MaxSize: 500}, // FOFA 数据更新频繁
 		"shodan":  {Enabled: true, TTL: 7200, MaxSize: 500}, // Shodan 数据相对稳定
+		"censys":  {Enabled: true, TTL: 7200, MaxSize: 500}, // Censys 数据相对稳定
 	}
 
 	for engine, defaultCfg := range engineDefaults {
@@ -939,7 +965,7 @@ func (m *Manager) applyDefaults(config *Config) {
 
 	// 默认查询降级配置 — 全部关闭，不影响现有用户
 	if config.Query.BrowserFallback.Engines == nil {
-		config.Query.BrowserFallback.Engines = []string{"fofa", "zoomeye", "shodan"}
+		config.Query.BrowserFallback.Engines = []string{"fofa", "zoomeye", "shodan", "censys"}
 	}
 
 	// 默认通知配置
@@ -1132,7 +1158,7 @@ func (m *Manager) validate(config *Config) error {
 	}
 
 	// 验证浏览器降级引擎白名单
-	validBFEngines := map[string]bool{"fofa": true, "zoomeye": true, "shodan": true, "hunter": true, "quake": true}
+	validBFEngines := map[string]bool{"fofa": true, "zoomeye": true, "shodan": true, "hunter": true, "quake": true, "censys": true}
 	for _, e := range config.Query.BrowserFallback.Engines {
 		if !validBFEngines[strings.ToLower(e)] {
 			return fmt.Errorf("query.browser_fallback.engines: unknown engine %q, must be one of: fofa, zoomeye, shodan, hunter, quake", e)
@@ -1162,6 +1188,10 @@ func (m *Manager) GetEngineConfig(name string) (interface{}, error) {
 		return &m.config.Engines.Hunter, nil
 	case "fofa":
 		return &m.config.Engines.Fofa, nil
+	case "shodan":
+		return &m.config.Engines.Shodan, nil
+	case "censys":
+		return &m.config.Engines.Censys, nil
 	default:
 		return nil, fmt.Errorf("unknown engine: %s", name)
 	}

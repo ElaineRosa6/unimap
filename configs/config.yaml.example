@@ -26,6 +26,13 @@ engines:
         qps: 3
         timeout: 30
         use_web_api: true
+    censys:
+        enabled: true
+        api_id: "${CENSYS_API_ID}"
+        api_secret: "${CENSYS_API_SECRET}"
+        base_url: https://search.censys.io
+        qps: 2
+        timeout: 30
 system:
     max_concurrent: 10
     cache_ttl: 3600
