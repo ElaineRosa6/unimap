@@ -273,7 +273,7 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 | 优先级 | 引擎 | 理由 | 语法兼容度 | 预估工作量 |
 |--------|------|------|-----------|-----------|
 | **P1** | **Censys** | 国际主流，API 文档完善，证书搜索强 | 分隔符 `:` + `AND`/`OR`/`NOT`（类 Quake） | ✅ 已完成 |
-| **P1** | **DayDayMap** | 国内平台，语法最丰富，兼容 FOFA/Hunter | 分隔符 `=` + `&&`/`||`（类 FOFA） | 1-2 天 |
+| **P1** | **DayDayMap** | 国内平台，语法最丰富，兼容 FOFA/Hunter | 分隔符 `=` + `&&`/`||`（类 FOFA） | ✅ 已完成 |
 | **P2** | **BinaryEdge** | 国际，API 简洁，协议字段丰富 | 分隔符 `:` + 空格/`OR`/`-`（类 Shodan） | 1-2 天 |
 | **P2** | **Onyphe** | OQL 语法差异大，但功能独特（暗网/威胁列表） | 分隔符 `:` + `+`(AND) | 2-3 天 |
 | **P3** | **GreyNoise** | 威胁情报补充，字段少 API 简单 | 分隔符 `:` + 空格/`OR`/`-` | 1 天 |
@@ -330,6 +330,9 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 ```
 
 ### 2.3 DayDayMap 实施详情
+
+> **状态**: ✅ 已完成（2026-06-08）
+> **文件**: `internal/adapter/daydaymap.go` + `daydaymap_test.go`（37 测试）
 
 **API**: 待确认（需注册获取 API Key，官网 `www.daydaymap.com`）
 **认证**: API Key

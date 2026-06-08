@@ -71,6 +71,13 @@ type Config struct {
 			QPS       int    `yaml:"qps"`
 			Timeout   int    `yaml:"timeout"`
 		} `yaml:"censys"`
+		Daydaymap struct {
+			Enabled bool   `yaml:"enabled"`
+			APIKey  string `yaml:"api_key"`
+			BaseURL string `yaml:"base_url"`
+			QPS     int    `yaml:"qps"`
+			Timeout int    `yaml:"timeout"`
+		} `yaml:"daydaymap"`
 	} `yaml:"engines"`
 
 	// 系统配置
@@ -322,6 +329,7 @@ func (c *Config) Clone() *Config {
 	clone.Engines.Fofa.Cookies = cloneCookies(c.Engines.Fofa.Cookies)
 	clone.Engines.Shodan = c.Engines.Shodan
 	clone.Engines.Censys = c.Engines.Censys
+	clone.Engines.Daydaymap = c.Engines.Daydaymap
 
 	// System, Log are all primitives — safe to copy directly
 	clone.System = c.System
@@ -493,6 +501,10 @@ func (m *Manager) resolveEnv(config *Config) {
 	config.Engines.Censys.APISecret = m.ResolveEnv(config.Engines.Censys.APISecret)
 	config.Engines.Censys.BaseURL = m.ResolveEnv(config.Engines.Censys.BaseURL)
 
+	// 解析DayDayMap配置
+	config.Engines.Daydaymap.APIKey = m.ResolveEnv(config.Engines.Daydaymap.APIKey)
+	config.Engines.Daydaymap.BaseURL = m.ResolveEnv(config.Engines.Daydaymap.BaseURL)
+
 	// 解析系统配置
 	config.System.UserAgent = m.ResolveEnv(config.System.UserAgent)
 
@@ -573,6 +585,7 @@ func (m *Manager) applyDefaults(config *Config) {
 	config.Engines.Fofa.Enabled = true
 	config.Engines.Shodan.Enabled = true
 	config.Engines.Censys.Enabled = true
+	config.Engines.Daydaymap.Enabled = true
 	config.Engines.Fofa.UseWebAPI = true
 
 	// 默认引擎配置
@@ -644,6 +657,16 @@ func (m *Manager) applyDefaults(config *Config) {
 	}
 	if config.Engines.Censys.Timeout == 0 {
 		config.Engines.Censys.Timeout = 30
+	}
+
+	if config.Engines.Daydaymap.BaseURL == "" {
+		config.Engines.Daydaymap.BaseURL = "https://www.daydaymap.com"
+	}
+	if config.Engines.Daydaymap.QPS == 0 {
+		config.Engines.Daydaymap.QPS = 3
+	}
+	if config.Engines.Daydaymap.Timeout == 0 {
+		config.Engines.Daydaymap.Timeout = 30
 	}
 
 	// 默认系统配置
@@ -944,7 +967,8 @@ func (m *Manager) applyDefaults(config *Config) {
 		"hunter":  {Enabled: true, TTL: 3600, MaxSize: 500},
 		"fofa":    {Enabled: true, TTL: 1800, MaxSize: 500}, // FOFA 数据更新频繁
 		"shodan":  {Enabled: true, TTL: 7200, MaxSize: 500}, // Shodan 数据相对稳定
-		"censys":  {Enabled: true, TTL: 7200, MaxSize: 500}, // Censys 数据相对稳定
+		"censys":    {Enabled: true, TTL: 7200, MaxSize: 500}, // Censys 数据相对稳定
+		"daydaymap": {Enabled: true, TTL: 3600, MaxSize: 500},
 	}
 
 	for engine, defaultCfg := range engineDefaults {
@@ -1035,6 +1059,18 @@ func (m *Manager) validate(config *Config) error {
 		}
 		if config.Engines.Fofa.Timeout <= 0 {
 			return fmt.Errorf("fofa engine timeout must be greater than 0")
+		}
+	}
+
+	if config.Engines.Daydaymap.Enabled {
+		if config.Engines.Daydaymap.BaseURL == "" {
+			return fmt.Errorf("daydaymap engine enabled but base_url not set")
+		}
+		if config.Engines.Daydaymap.QPS <= 0 {
+			return fmt.Errorf("daydaymap engine qps must be greater than 0")
+		}
+		if config.Engines.Daydaymap.Timeout <= 0 {
+			return fmt.Errorf("daydaymap engine timeout must be greater than 0")
 		}
 	}
 
@@ -1158,7 +1194,7 @@ func (m *Manager) validate(config *Config) error {
 	}
 
 	// 验证浏览器降级引擎白名单
-	validBFEngines := map[string]bool{"fofa": true, "zoomeye": true, "shodan": true, "hunter": true, "quake": true, "censys": true}
+	validBFEngines := map[string]bool{"fofa": true, "zoomeye": true, "shodan": true, "hunter": true, "quake": true, "censys": true, "daydaymap": true}
 	for _, e := range config.Query.BrowserFallback.Engines {
 		if !validBFEngines[strings.ToLower(e)] {
 			return fmt.Errorf("query.browser_fallback.engines: unknown engine %q, must be one of: fofa, zoomeye, shodan, hunter, quake", e)
@@ -1192,6 +1228,8 @@ func (m *Manager) GetEngineConfig(name string) (interface{}, error) {
 		return &m.config.Engines.Shodan, nil
 	case "censys":
 		return &m.config.Engines.Censys, nil
+	case "daydaymap":
+		return &m.config.Engines.Daydaymap, nil
 	default:
 		return nil, fmt.Errorf("unknown engine: %s", name)
 	}
