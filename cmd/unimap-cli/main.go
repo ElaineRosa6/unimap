@@ -185,6 +185,9 @@ func getEnabledEngines(cfg *config.Config) []string {
 	if cfg.Engines.Shodan.Enabled {
 		list = append(list, "shodan")
 	}
+	if cfg.Engines.Censys.Enabled {
+		list = append(list, "censys")
+	}
 	return list
 }
 
@@ -228,6 +231,15 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 			cfg.Engines.Shodan.APIKey,
 			cfg.Engines.Shodan.QPS,
 			time.Duration(cfg.Engines.Shodan.Timeout)*time.Second,
+		))
+	}
+	if cfg.Engines.Censys.Enabled {
+		svc.RegisterAdapter(adapter.NewCensysAdapter(
+			cfg.Engines.Censys.BaseURL,
+			cfg.Engines.Censys.APIID,
+			cfg.Engines.Censys.APISecret,
+			cfg.Engines.Censys.QPS,
+			time.Duration(cfg.Engines.Censys.Timeout)*time.Second,
 		))
 	}
 }

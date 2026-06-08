@@ -176,4 +176,21 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 			logger.Info("Shodan engine registered (Web-only mode)")
 		}
 	}
+
+	// 注册Censys
+	if cfg.Engines.Censys.Enabled {
+		if cfg.Engines.Censys.APIID != "" && cfg.Engines.Censys.APISecret != "" {
+			svc.RegisterAdapter(adapter.NewCensysAdapter(
+				cfg.Engines.Censys.BaseURL,
+				cfg.Engines.Censys.APIID,
+				cfg.Engines.Censys.APISecret,
+				cfg.Engines.Censys.QPS,
+				time.Duration(cfg.Engines.Censys.Timeout)*time.Second,
+			))
+			logger.Info("Censys engine registered (API mode)")
+		} else {
+			svc.RegisterAdapter(adapter.NewCensysAdapterWebOnly())
+			logger.Info("Censys engine registered (Web-only mode)")
+		}
+	}
 }

@@ -272,7 +272,7 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 
 | 优先级 | 引擎 | 理由 | 语法兼容度 | 预估工作量 |
 |--------|------|------|-----------|-----------|
-| **P1** | **Censys** | 国际主流，API 文档完善，证书搜索强 | 分隔符 `:` + `AND`/`OR`/`NOT`（类 Quake） | 2-3 天 |
+| **P1** | **Censys** | 国际主流，API 文档完善，证书搜索强 | 分隔符 `:` + `AND`/`OR`/`NOT`（类 Quake） | ✅ 已完成 |
 | **P1** | **DayDayMap** | 国内平台，语法最丰富，兼容 FOFA/Hunter | 分隔符 `=` + `&&`/`||`（类 FOFA） | 1-2 天 |
 | **P2** | **BinaryEdge** | 国际，API 简洁，协议字段丰富 | 分隔符 `:` + 空格/`OR`/`-`（类 Shodan） | 1-2 天 |
 | **P2** | **Onyphe** | OQL 语法差异大，但功能独特（暗网/威胁列表） | 分隔符 `:` + `+`(AND) | 2-3 天 |
@@ -280,6 +280,11 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 | **P3** | **DnsDB** | DNS 历史记录，场景特殊 | 分隔符 `:` + 空格 | 1 天 |
 
 ### 2.2 Censys 实施详情
+
+> **状态**: ✅ 已完成（2026-06-08）
+> **文件**: `internal/adapter/censys.go`（462 行）+ `censys_test.go`（813 行，36 测试）
+> **配置**: `config.yaml.example` 新增 censys 节 + config.go + 3 个入口注册
+> **测试**: `go test -race ./internal/adapter/` 全绿
 
 **API**: `search.censys.io/api/v2/hosts/search`
 **认证**: API ID + Secret（HTTP Basic Auth）

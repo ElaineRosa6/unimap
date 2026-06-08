@@ -710,4 +710,13 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 			time.Duration(cfg.Engines.Quake.Timeout)*time.Second,
 		))
 	}
+	if cfg.Engines.Censys.Enabled && cfg.Engines.Censys.APIID != "" && cfg.Engines.Censys.APISecret != "" {
+		svc.RegisterAdapter(adapter.NewCensysAdapter(
+			cfg.Engines.Censys.BaseURL,
+			cfg.Engines.Censys.APIID,
+			cfg.Engines.Censys.APISecret,
+			cfg.Engines.Censys.QPS,
+			time.Duration(cfg.Engines.Censys.Timeout)*time.Second,
+		))
+	}
 }
