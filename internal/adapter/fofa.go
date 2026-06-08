@@ -91,7 +91,10 @@ func (f *FofaAdapter) translateNode(node *model.UQLNode) string {
 			// 处理特殊字段映射
 			field = f.mapField(field)
 
-			if op == "=" || op == "==" || strings.ToUpper(op) == "CONTAINS" {
+			if op == "==" {
+				return fmt.Sprintf(`%s=="%s"`, field, val)
+			}
+			if op == "=" || strings.ToUpper(op) == "CONTAINS" {
 				return fmt.Sprintf(`%s="%s"`, field, val)
 			}
 			if op == "!=" || op == "<>" {
@@ -137,14 +140,16 @@ func (f *FofaAdapter) mapField(field string) string {
 		"city":        "city",
 		"asn":         "asn",
 		"org":         "org",
-		"isp":         "isp",
+		// "isp" removed — FOFA has no isp field (B-1a)
 		"domain":      "domain",
 		"host":        "host",
 		"server":      "server",
 		"status_code": "status_code",
 		"os":          "os",
 		"app":         "app",
-		"cert":        "cert",
+		"cert":            "cert",
+		"cert.subject.cn": "cert.subject.cn",
+		"cert.issuer.cn":  "cert.issuer.cn",
 		"url":         "host",
 	}
 

@@ -81,10 +81,19 @@
 ✅ 已完成:
   SEC-1  admin token 泄露 → 已轮换+清理 (commit 3fd93de，2026-06-08)
 
-高优先（影响稳定性/正确性）— 待官方语法核实后开工:
-  CR-3   比较操作符引号确认（ZoomEye/Hunter）
-  CR-5   ZoomEye url 映射确认
-  B 类   阶段一 5-6 处可疑映射核实（见 §1.0，与 CR-3/CR-5 同源）
+✅ 已完成（2026-06-08 全量核查 + 修复）:
+  B-1b   Hunter asn→ip.asn 修正 ✅
+  B-1a   FOFA isp 移除 ✅
+  B-2    Quake body→response 确认 + header→headers 修正 ✅
+  B-3    ZoomEye url→site 确认 ✅
+  B-4    比较操作符引号确认（各引擎行为不同）✅
+  B-4a   FOFA == 运算符修正 ✅
+  B-5    Shodan server→http.server 修正 ✅
+  B-6    Shodan header→http.headers_hash 修正 ✅
+  B-7    FOFA cert 子字段补充 ✅
+  ZoomEye 分隔符确认 (=) ✅
+
+高优先（剩余）:
   ARC-4  API 端点抓包验证
 
 中优先（技术债务/架构改进）:
@@ -130,15 +139,15 @@
 | # | 引擎 | 现状映射 | 待确认 | 官方文档 |
 |---|------|---------|--------|---------|
 | B-1 | Hunter | `port → port` | ✅ 已确认 Hunter 短格式 `port="80"` 有效（官方语法），映射正确 | 已查证 |
-| B-1a | FOFA | `isp → isp` | ⚠️ 已确认 FOFA 官方语法**无 `isp` 字段**（核查 2026-06-08）。当前映射会透传未知字段给 API，需决定移除或改映射 | 已查证 |
+| B-1a | FOFA | `isp → isp` | ✅ 已修复：从 mapField 移除（改为 passthrough fallback）。测试 `isp field passthrough` 通过 | ✅ 已修复 |
 | B-1b | Hunter | `asn → ip.asn` | ✅ 已修复：`ip.asn` → `asn`（commit 待提交）。测试 `field mapping asn short format (B-1b fix)` 通过 | ✅ 已修复 |
 | B-2 | Quake | `body → response` | ✅ 已确认映射正确。同时修复 `header → headers`（已删除，改为 passthrough）。测试 `field mapping header passthrough` 通过 | ✅ 已修复 |
 | B-3 | ZoomEye | `url → site` | ✅ 已确认 ZoomEye 用 `site` 搜索域名，映射正确 | 已查证 |
 | B-4 | ZoomEye/Hunter | `port>"80"`（值带引号） | 部分解答：Hunter `port_count>"2"` 带引号；ZoomEye `port!=80` 不带引号。**FOFA 无数值比较**。各引擎行为不同 | 已查证 |
-| B-4a | FOFA | 比较运算符 | ⚠️ 已确认 FOFA 官方语法：`=`(匹配)、`==`(完全匹配)、`!=`、`*=`(模糊)；**无 `>` `<` 等数值比较**。当前 adapter 的比较操作符需确认 FOFA API 是否静默忽略 | 已查证 |
+| B-4a | FOFA | 比较运算符 | ✅ 已修复：`==` 运算符输出从 `field="value"` 修正为 `field=="value"`（精确匹配）。`>` `<` 无 FOFA 等效，保留 fallback 为 `=`。测试 `exact match operator ==` 通过 | ✅ 已修复 |
 | B-5 | Shodan | `server → product` | ✅ 已修复：`product` → `http.server`。测试 `field mapping server to http.server (B-5 fix)` 通过 | ✅ 已修复 |
 | B-6 | Shodan | `header → http.html` | ✅ 已修复：`http.html` → `http.headers_hash`。测试 `field mapping header to http.headers_hash (B-6 fix)` 通过 | ✅ 已修复 |
-| B-7 | FOFA | `cert.subject.cn` / `cert.issuer.cn` | FOFA 官方语法已有独立字段，当前映射仅有 `cert.subject`/`cert.issuer`，缺少子字段映射 | 已查证 |
+| B-7 | FOFA | `cert.subject.cn` / `cert.issuer.cn` | ✅ 已修复：补充 cert.subject.cn 和 cert.issuer.cn 映射。测试 `field mapping cert.subject.cn` 和 `field mapping cert.issuer.cn` 通过 | ✅ 已修复 |
 
 **C 类候选（favicon 跨引擎统一维度示例）**：
 FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favicon` / Hunter `web.icon`
@@ -160,7 +169,7 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 | — | `cert.subject.cn` / `cert.issuer.cn` / `cert.domain` / `cert.subject.org` / `cert.issuer.org` | B-7 子字段 | FOFA 官方有独立子字段，需补充映射（当前仅有 `cert.subject`/`cert.issuer`） |
 | — | `link` | ❌ 不在官方语法 | 旧文档遗留，已从参考手册删除 |
 
-**FOFA 待处理**: B-1a（移除 isp）+ B-7（补充 cert 子字段映射）+ B-4a（确认比较运算符行为）
+**FOFA 待处理**: ✅ B-1a（isp 已移除）+ B-7（cert 子字段已补充）+ B-4a（`==` 运算符已修正）
 
 ### 1.2 Hunter（`internal/adapter/hunter.go`）
 
@@ -202,7 +211,7 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 | — | `http.body_hash` / `http.header_hash` / `http.header.version` | A 类同名 | parser fallback 已能工作 |
 | — | `dig` / `filehash` / `after` / `before` / `cidr` / `product` / `protocol` | A 类同名 | parser fallback 已能工作 |
 
-**ZoomEye 待处理**: 确认 adapter 的 `Translate` 函数是否正确输出 `=` 分隔符（非 `:`）
+**ZoomEye 待处理**: ✅ 已确认 adapter 的 `buildCondition` 输出 `field="value"` 格式（`=` 分隔符），与官方语法一致
 
 ### 1.4 Quake（`internal/adapter/quake.go`）
 
