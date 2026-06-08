@@ -241,4 +241,20 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 			logger.Info("Onyphe engine registered (Web-only mode)")
 		}
 	}
+
+	// 注册GreyNoise
+	if cfg.Engines.Greynoise.Enabled {
+		if cfg.Engines.Greynoise.APIKey != "" {
+			svc.RegisterAdapter(adapter.NewGreyNoiseAdapter(
+				cfg.Engines.Greynoise.BaseURL,
+				cfg.Engines.Greynoise.APIKey,
+				cfg.Engines.Greynoise.QPS,
+				time.Duration(cfg.Engines.Greynoise.Timeout)*time.Second,
+			))
+			logger.Info("GreyNoise engine registered (API mode)")
+		} else {
+			svc.RegisterAdapter(adapter.NewGreyNoiseAdapterWebOnly())
+			logger.Info("GreyNoise engine registered (Web-only mode)")
+		}
+	}
 }

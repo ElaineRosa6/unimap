@@ -275,6 +275,14 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 			time.Duration(cfg.Engines.Onyphe.Timeout)*time.Second,
 		))
 	}
+	if cfg.Engines.Greynoise.Enabled {
+		svc.RegisterAdapter(adapter.NewGreyNoiseAdapter(
+			cfg.Engines.Greynoise.BaseURL,
+			cfg.Engines.Greynoise.APIKey,
+			cfg.Engines.Greynoise.QPS,
+			time.Duration(cfg.Engines.Greynoise.Timeout)*time.Second,
+		))
+	}
 }
 
 func saveResults(assets []model.UnifiedAsset, path string) error {

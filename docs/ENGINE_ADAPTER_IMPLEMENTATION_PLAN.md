@@ -1,8 +1,8 @@
 # 全量实施计划 — 空间搜索引擎 + 遗留问题
 
 > **创建日期**: 2026-06-07
-> **最后更新**: 2026-06-08
-> **状态**: 🔄 阶段一✅ 阶段二 P1/P2✅ P3待实施 阶段三待启动
+> **最后更新**: 2026-06-09
+> **状态**: 🔄 阶段一✅ 阶段二✅ (P1/P2/P3全部完成) 阶段三待启动
 > **基准文档**: `SEARCH_ENGINE_SYNTAX_REFERENCE.md`（12 引擎语法，含归档）、`SEARCH_ENGINE_SYNTAX.md`（UQL→引擎翻译基准）
 > **前置依赖**: commit `0e3fcc3`（5 引擎语法修正闭环）
 > **来源**: CLAUDE.md 已知待修复事项、code review 发现、memory 遗留缺陷、三层采集架构设计评审、外部语法审计
@@ -277,7 +277,7 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 | **P1** | **DayDayMap** | 国内平台，语法最丰富，兼容 FOFA/Hunter | 分隔符 `=` + `&&`/`||`（类 FOFA） | ✅ 已完成 |
 | ~~P2~~ | ~~**BinaryEdge**~~ | ⚠️ **已关闭**（2025-03-31），API 不可用 | — | 代码保留，默认禁用 |
 | **P2** | **Onyphe** | OQL 语法差异大，但功能独特（暗网/威胁列表） | 分隔符 `:` + `+`(AND) | ✅ 已完成 |
-| **P3** | **GreyNoise** | 威胁情报补充，字段少 API 简单 | 分隔符 `:` + 空格/`OR`/`-` | 1 天 |
+| **P3** | **GreyNoise** | 威胁情报补充，字段少 API 简单 | 分隔符 `:` + 空格/`OR`/`-` | ✅ 已完成 |
 | ~~P3~~ | ~~**DnsDB**~~ | ⚠️ **已停用**，服务不可用 | — | 不实施 |
 
 ### 2.2 Censys 实施详情
@@ -429,22 +429,38 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 
 ### 2.6 GreyNoise 实施详情
 
-**API**: `api.greynoise.io/v3/gnql/search`
-**认证**: API Key（`key` 参数或 `X-Api-Key` header）
-**分页**: `scroll` 参数
+> **状态**: ✅ 已完成（2026-06-09）
+> **文件**: `internal/adapter/greynoise.go` + `greynoise_test.go`
+> **配置**: `config.yaml.example` 新增 greynoise 节 + config.go + 3 个入口注册
+
+**API**: `api.greynoise.io/v3/experimental/gnql`
+**认证**: API Key（`key` header）
+**分页**: 不支持偏移分页，使用 `scroll` 参数或一次性返回
 
 **UQL → GreyNoise 字段映射**:
 
 | UQL 字段 | GreyNoise 字段 | 说明 |
 |----------|---------------|------|
 | ip | `ip` | |
-| country | `metadata.country_code` | |
-| org | `metadata.organization` | |
+| classification / class | `classification` | malicious/suspicious/benign/unknown |
+| tag / tags | `tags` | 活动标签 |
+| org / isp | `metadata.organization` | |
 | os | `metadata.os` | |
-| app | `metadata.device` | |
+| country | `metadata.country` | |
+| city | `metadata.city` | |
+| category | `metadata.category` | |
+| port | `raw_data.scan.port` | |
+| protocol | `raw_data.scan.protocol` | |
+| noise | `noise` | 是否为互联网噪音 |
+| riot | `riot` | 是否为常见业务服务 |
+| spoofable | `spoofable` | IP 是否可被欺骗 |
+| vpn / vpn_service | `vpn_service` | VPN 服务名 |
+| first_seen | `first_seen` | |
+| last_seen | `last_seen` | |
+| asn | `metadata.asn` | |
 
 **布尔语法**: 空格(AND) / `OR` / `-`(NOT)
-**特殊**: GreyNoise 专注威胁情报，字段较少，主要价值在 `classification`/`tag`/`noise`/`riot`/`c2` 等威胁维度
+**特殊**: GreyNoise 专注威胁情报，字段较少，主要价值在 `classification`/`tags`/`noise`/`riot` 等威胁维度。比较操作符（> >= < <=）不支持，降级为等值查询。
 
 ### 2.7 DnsDB 实施详情 ⚠️ 已停用
 
@@ -573,7 +589,7 @@ Phase 4: 浏览器探针 + Network 健康检测（1-2 天）
   └── 阶段三 Phase 1: L1 Network 层
 
 2026-07 中旬
-  ├── 阶段二 P3: GreyNoise 适配器（DnsDB 已停用，不实施）
+  ├── 阶段二 P3: GreyNoise 适配器 ✅ 已完成（DnsDB 已停用，不实施）
   ├── TD-1/TD-2: 文件/函数拆分
   └── 阶段三 Phase 2: L2 Hook 层（如需）
 
