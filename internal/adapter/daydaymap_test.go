@@ -156,6 +156,18 @@ func TestDayDayMapAdapter_Translate(t *testing.T) {
 			want: `web.server="nginx"`,
 		},
 		{
+			name: "field mapping cert to cert.subject",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "cert",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "baidu"},
+				},
+			}},
+			want: `cert.subject="baidu"`,
+		},
+		{
 			name: "field mapping cert.subject.cn",
 			ast: &model.UQLAST{Root: &model.UQLNode{
 				Type:  "condition",

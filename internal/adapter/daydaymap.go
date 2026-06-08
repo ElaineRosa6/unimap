@@ -137,7 +137,7 @@ func (d *DayDayMapAdapter) mapField(field string) string {
 		"status_code": "web.status_code",
 		"os":          "ip.os",
 		"app":         "app.name",
-		"cert":            "cert.subject.cn",
+		"cert":            "cert.subject",
 		"cert.subject.cn": "cert.subject.cn",
 		"cert.issuer.cn":  "cert.issuer.cn",
 		"url":         "domain",
