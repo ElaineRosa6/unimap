@@ -193,4 +193,20 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 			logger.Info("Censys engine registered (Web-only mode)")
 		}
 	}
+
+	// 注册DayDayMap
+	if cfg.Engines.Daydaymap.Enabled {
+		if cfg.Engines.Daydaymap.APIKey != "" {
+			svc.RegisterAdapter(adapter.NewDayDayMapAdapter(
+				cfg.Engines.Daydaymap.BaseURL,
+				cfg.Engines.Daydaymap.APIKey,
+				cfg.Engines.Daydaymap.QPS,
+				time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second,
+			))
+			logger.Info("DayDayMap engine registered (API mode)")
+		} else {
+			svc.RegisterAdapter(adapter.NewDayDayMapAdapterWebOnly())
+			logger.Info("DayDayMap engine registered (Web-only mode)")
+		}
+	}
 }

@@ -719,4 +719,12 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 			time.Duration(cfg.Engines.Censys.Timeout)*time.Second,
 		))
 	}
+	if cfg.Engines.Daydaymap.Enabled && cfg.Engines.Daydaymap.APIKey != "" {
+		svc.RegisterAdapter(adapter.NewDayDayMapAdapter(
+			cfg.Engines.Daydaymap.BaseURL,
+			cfg.Engines.Daydaymap.APIKey,
+			cfg.Engines.Daydaymap.QPS,
+			time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second,
+		))
+	}
 }
