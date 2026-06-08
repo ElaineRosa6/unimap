@@ -145,7 +145,7 @@ func (h *HunterAdapter) buildCondition(field, op, value string) string {
 		"country":     "ip.country",
 		"region":      "ip.province",
 		"city":        "ip.city",
-		"asn":         "ip.asn",
+		"asn":         "asn",
 		"org":         "ip.org",
 		"isp":         "ip.isp",
 		"domain":      "domain",

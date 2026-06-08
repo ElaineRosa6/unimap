@@ -571,6 +571,42 @@ func TestHunterAdapter_Translate(t *testing.T) {
 			}},
 			want: `ip.os="centos"`,
 		},
+		{
+			name: "field mapping asn short format (B-1b fix)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "asn",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "136800"},
+				},
+			}},
+			want: `asn="136800"`,
+		},
+		{
+			name: "field mapping cert",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "cert",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "baidu"},
+				},
+			}},
+			want: `cert="baidu"`,
+		},
+		{
+			name: "field mapping country short format",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "country",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "CN"},
+				},
+			}},
+			want: `ip.country="CN"`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -904,6 +940,66 @@ func TestShodanAdapter_Translate(t *testing.T) {
 			}},
 			want: `org:"Beijing University"`,
 		},
+		{
+			name: "field mapping server to http.server (B-5 fix)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "server",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "nginx"},
+				},
+			}},
+			want: `http.server:nginx`,
+		},
+		{
+			name: "field mapping header to http.headers_hash (B-6 fix)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "header",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "elastic"},
+				},
+			}},
+			want: `http.headers_hash:elastic`,
+		},
+		{
+			name: "field mapping app to product",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "app",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "Apache"},
+				},
+			}},
+			want: `product:Apache`,
+		},
+		{
+			name: "field mapping body to http.html",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "body",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "login"},
+				},
+			}},
+			want: `http.html:login`,
+		},
+		{
+			name: "field mapping title to http.title",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "title",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "admin"},
+				},
+			}},
+			want: `http.title:admin`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1162,7 +1258,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 			want: `response:"nginx"`,
 		},
 		{
-			name: "field mapping header->headers",
+			name: "field mapping header passthrough (no Quake header field)",
 			ast: &model.UQLAST{Root: &model.UQLNode{
 				Type:  "condition",
 				Value: "header",
@@ -1171,7 +1267,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "nginx"},
 				},
 			}},
-			want: `headers:"nginx"`,
+			want: `header:"nginx"`,
 		},
 	}
 	for _, tt := range tests {

@@ -125,7 +125,7 @@ func (s *ShodanAdapter) mapField(field string) string {
 	mapping := map[string]string{
 		"body":        "http.html",
 		"title":       "http.title",
-		"header":      "http.html",
+		"header":      "http.headers_hash",
 		"port":        "port",
 		"protocol":    "transport",
 		"ip":          "ip",
@@ -137,7 +137,7 @@ func (s *ShodanAdapter) mapField(field string) string {
 		"isp":         "isp",
 		"domain":      "domain",
 		"host":        "hostname",
-		"server":      "product",
+		"server":      "http.server",
 		"status_code": "http.status",
 		"os":          "os",
 		"app":         "product",

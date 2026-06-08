@@ -114,7 +114,7 @@ func (q *QuakeAdapter) buildCondition(field, op, value string) string {
 	mapping := map[string]string{
 		"body":        "response",
 		"title":       "title",
-		"header":      "headers",
+		// "header" removed — Quake has no header field; falls through to passthrough
 		"port":        "port",
 		"protocol":    "service",
 		"ip":          "ip",
