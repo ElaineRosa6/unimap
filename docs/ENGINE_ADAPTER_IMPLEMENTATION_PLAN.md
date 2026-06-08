@@ -28,7 +28,7 @@
 
 | # | 问题 | 来源 | 状态 | 行动 |
 |---|------|------|------|------|
-| SEC-1 | `.claude/settings.local.json` 含 admin token `1AggpIRXaHIQnH73SawdMLDfB8RnIy3X`，是 git 已跟踪文件 | memory 2026-06-07 | ⚠️ 未处理 | 加入 `.gitignore`；若曾提交历史需评估是否轮换 token |
+| SEC-1 | `.claude/settings.local.json` 含 admin token `<ADMIN_TOKEN_REDACTED>`，是 git 已跟踪文件 | memory 2026-06-07 | ⚠️ 未处理 | 加入 `.gitignore`；若曾提交历史需评估是否轮换 token |
 | SEC-2 | API 版本化旧路径 shim sundown **2026-09-01** | memory 2026-05-31 | ⏰ 待处理 | 届时移除无 `/api/v1` 前缀的旧路由注册（`server.go` 73 条 shim） |
 
 ### 0.2 代码质量 — 技术债务（CLAUDE.md 记录）
