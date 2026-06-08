@@ -727,4 +727,20 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 			time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second,
 		))
 	}
+	if cfg.Engines.Binaryedge.Enabled && cfg.Engines.Binaryedge.APIKey != "" {
+		svc.RegisterAdapter(adapter.NewBinaryEdgeAdapter(
+			cfg.Engines.Binaryedge.BaseURL,
+			cfg.Engines.Binaryedge.APIKey,
+			cfg.Engines.Binaryedge.QPS,
+			time.Duration(cfg.Engines.Binaryedge.Timeout)*time.Second,
+		))
+	}
+	if cfg.Engines.Onyphe.Enabled && cfg.Engines.Onyphe.APIKey != "" {
+		svc.RegisterAdapter(adapter.NewOnypheAdapter(
+			cfg.Engines.Onyphe.BaseURL,
+			cfg.Engines.Onyphe.APIKey,
+			cfg.Engines.Onyphe.QPS,
+			time.Duration(cfg.Engines.Onyphe.Timeout)*time.Second,
+		))
+	}
 }

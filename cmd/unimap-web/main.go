@@ -209,4 +209,36 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 			logger.Info("DayDayMap engine registered (Web-only mode)")
 		}
 	}
+
+	// 注册BinaryEdge
+	if cfg.Engines.Binaryedge.Enabled {
+		if cfg.Engines.Binaryedge.APIKey != "" {
+			svc.RegisterAdapter(adapter.NewBinaryEdgeAdapter(
+				cfg.Engines.Binaryedge.BaseURL,
+				cfg.Engines.Binaryedge.APIKey,
+				cfg.Engines.Binaryedge.QPS,
+				time.Duration(cfg.Engines.Binaryedge.Timeout)*time.Second,
+			))
+			logger.Info("BinaryEdge engine registered (API mode)")
+		} else {
+			svc.RegisterAdapter(adapter.NewBinaryEdgeAdapterWebOnly())
+			logger.Info("BinaryEdge engine registered (Web-only mode)")
+		}
+	}
+
+	// 注册Onyphe
+	if cfg.Engines.Onyphe.Enabled {
+		if cfg.Engines.Onyphe.APIKey != "" {
+			svc.RegisterAdapter(adapter.NewOnypheAdapter(
+				cfg.Engines.Onyphe.BaseURL,
+				cfg.Engines.Onyphe.APIKey,
+				cfg.Engines.Onyphe.QPS,
+				time.Duration(cfg.Engines.Onyphe.Timeout)*time.Second,
+			))
+			logger.Info("Onyphe engine registered (API mode)")
+		} else {
+			svc.RegisterAdapter(adapter.NewOnypheAdapterWebOnly())
+			logger.Info("Onyphe engine registered (Web-only mode)")
+		}
+	}
 }

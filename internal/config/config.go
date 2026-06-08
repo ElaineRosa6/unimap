@@ -78,6 +78,20 @@ type Config struct {
 			QPS     int    `yaml:"qps"`
 			Timeout int    `yaml:"timeout"`
 		} `yaml:"daydaymap"`
+		Binaryedge struct {
+			Enabled bool   `yaml:"enabled"`
+			APIKey  string `yaml:"api_key"`
+			BaseURL string `yaml:"base_url"`
+			QPS     int    `yaml:"qps"`
+			Timeout int    `yaml:"timeout"`
+		} `yaml:"binaryedge"`
+		Onyphe struct {
+			Enabled bool   `yaml:"enabled"`
+			APIKey  string `yaml:"api_key"`
+			BaseURL string `yaml:"base_url"`
+			QPS     int    `yaml:"qps"`
+			Timeout int    `yaml:"timeout"`
+		} `yaml:"onyphe"`
 	} `yaml:"engines"`
 
 	// 系统配置
@@ -330,6 +344,8 @@ func (c *Config) Clone() *Config {
 	clone.Engines.Shodan = c.Engines.Shodan
 	clone.Engines.Censys = c.Engines.Censys
 	clone.Engines.Daydaymap = c.Engines.Daydaymap
+	clone.Engines.Binaryedge = c.Engines.Binaryedge
+	clone.Engines.Onyphe = c.Engines.Onyphe
 
 	// System, Log are all primitives — safe to copy directly
 	clone.System = c.System
@@ -505,6 +521,14 @@ func (m *Manager) resolveEnv(config *Config) {
 	config.Engines.Daydaymap.APIKey = m.ResolveEnv(config.Engines.Daydaymap.APIKey)
 	config.Engines.Daydaymap.BaseURL = m.ResolveEnv(config.Engines.Daydaymap.BaseURL)
 
+	// 解析BinaryEdge配置
+	config.Engines.Binaryedge.APIKey = m.ResolveEnv(config.Engines.Binaryedge.APIKey)
+	config.Engines.Binaryedge.BaseURL = m.ResolveEnv(config.Engines.Binaryedge.BaseURL)
+
+	// 解析Onyphe配置
+	config.Engines.Onyphe.APIKey = m.ResolveEnv(config.Engines.Onyphe.APIKey)
+	config.Engines.Onyphe.BaseURL = m.ResolveEnv(config.Engines.Onyphe.BaseURL)
+
 	// 解析系统配置
 	config.System.UserAgent = m.ResolveEnv(config.System.UserAgent)
 
@@ -586,6 +610,8 @@ func (m *Manager) applyDefaults(config *Config) {
 	config.Engines.Shodan.Enabled = true
 	config.Engines.Censys.Enabled = true
 	config.Engines.Daydaymap.Enabled = true
+	config.Engines.Binaryedge.Enabled = true
+	config.Engines.Onyphe.Enabled = true
 	config.Engines.Fofa.UseWebAPI = true
 
 	// 默认引擎配置
@@ -667,6 +693,26 @@ func (m *Manager) applyDefaults(config *Config) {
 	}
 	if config.Engines.Daydaymap.Timeout == 0 {
 		config.Engines.Daydaymap.Timeout = 30
+	}
+
+	if config.Engines.Binaryedge.BaseURL == "" {
+		config.Engines.Binaryedge.BaseURL = "https://api.binaryedge.io"
+	}
+	if config.Engines.Binaryedge.QPS == 0 {
+		config.Engines.Binaryedge.QPS = 2
+	}
+	if config.Engines.Binaryedge.Timeout == 0 {
+		config.Engines.Binaryedge.Timeout = 30
+	}
+
+	if config.Engines.Onyphe.BaseURL == "" {
+		config.Engines.Onyphe.BaseURL = "https://www.onyphe.io"
+	}
+	if config.Engines.Onyphe.QPS == 0 {
+		config.Engines.Onyphe.QPS = 1
+	}
+	if config.Engines.Onyphe.Timeout == 0 {
+		config.Engines.Onyphe.Timeout = 30
 	}
 
 	// 默认系统配置
@@ -968,7 +1014,9 @@ func (m *Manager) applyDefaults(config *Config) {
 		"fofa":    {Enabled: true, TTL: 1800, MaxSize: 500}, // FOFA 数据更新频繁
 		"shodan":  {Enabled: true, TTL: 7200, MaxSize: 500}, // Shodan 数据相对稳定
 		"censys":    {Enabled: true, TTL: 7200, MaxSize: 500}, // Censys 数据相对稳定
-		"daydaymap": {Enabled: true, TTL: 3600, MaxSize: 500},
+		"daydaymap":  {Enabled: true, TTL: 3600, MaxSize: 500},
+		"binaryedge": {Enabled: true, TTL: 7200, MaxSize: 500}, // BinaryEdge data relatively stable
+		"onyphe":     {Enabled: true, TTL: 7200, MaxSize: 500}, // Onyphe data relatively stable
 	}
 
 	for engine, defaultCfg := range engineDefaults {
@@ -1071,6 +1119,30 @@ func (m *Manager) validate(config *Config) error {
 		}
 		if config.Engines.Daydaymap.Timeout <= 0 {
 			return fmt.Errorf("daydaymap engine timeout must be greater than 0")
+		}
+	}
+
+	if config.Engines.Binaryedge.Enabled {
+		if config.Engines.Binaryedge.BaseURL == "" {
+			return fmt.Errorf("binaryedge engine enabled but base_url not set")
+		}
+		if config.Engines.Binaryedge.QPS <= 0 {
+			return fmt.Errorf("binaryedge engine qps must be greater than 0")
+		}
+		if config.Engines.Binaryedge.Timeout <= 0 {
+			return fmt.Errorf("binaryedge engine timeout must be greater than 0")
+		}
+	}
+
+	if config.Engines.Onyphe.Enabled {
+		if config.Engines.Onyphe.BaseURL == "" {
+			return fmt.Errorf("onyphe engine enabled but base_url not set")
+		}
+		if config.Engines.Onyphe.QPS <= 0 {
+			return fmt.Errorf("onyphe engine qps must be greater than 0")
+		}
+		if config.Engines.Onyphe.Timeout <= 0 {
+			return fmt.Errorf("onyphe engine timeout must be greater than 0")
 		}
 	}
 
@@ -1194,7 +1266,7 @@ func (m *Manager) validate(config *Config) error {
 	}
 
 	// 验证浏览器降级引擎白名单
-	validBFEngines := map[string]bool{"fofa": true, "zoomeye": true, "shodan": true, "hunter": true, "quake": true, "censys": true, "daydaymap": true}
+	validBFEngines := map[string]bool{"fofa": true, "zoomeye": true, "shodan": true, "hunter": true, "quake": true, "censys": true, "daydaymap": true, "binaryedge": true, "onyphe": true}
 	for _, e := range config.Query.BrowserFallback.Engines {
 		if !validBFEngines[strings.ToLower(e)] {
 			return fmt.Errorf("query.browser_fallback.engines: unknown engine %q, must be one of: fofa, zoomeye, shodan, hunter, quake", e)
@@ -1230,6 +1302,10 @@ func (m *Manager) GetEngineConfig(name string) (interface{}, error) {
 		return &m.config.Engines.Censys, nil
 	case "daydaymap":
 		return &m.config.Engines.Daydaymap, nil
+	case "binaryedge":
+		return &m.config.Engines.Binaryedge, nil
+	case "onyphe":
+		return &m.config.Engines.Onyphe, nil
 	default:
 		return nil, fmt.Errorf("unknown engine: %s", name)
 	}

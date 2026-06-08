@@ -191,6 +191,12 @@ func getEnabledEngines(cfg *config.Config) []string {
 	if cfg.Engines.Daydaymap.Enabled {
 		list = append(list, "daydaymap")
 	}
+	if cfg.Engines.Binaryedge.Enabled {
+		list = append(list, "binaryedge")
+	}
+	if cfg.Engines.Onyphe.Enabled {
+		list = append(list, "onyphe")
+	}
 	return list
 }
 
@@ -251,6 +257,22 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 			cfg.Engines.Daydaymap.APIKey,
 			cfg.Engines.Daydaymap.QPS,
 			time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second,
+		))
+	}
+	if cfg.Engines.Binaryedge.Enabled {
+		svc.RegisterAdapter(adapter.NewBinaryEdgeAdapter(
+			cfg.Engines.Binaryedge.BaseURL,
+			cfg.Engines.Binaryedge.APIKey,
+			cfg.Engines.Binaryedge.QPS,
+			time.Duration(cfg.Engines.Binaryedge.Timeout)*time.Second,
+		))
+	}
+	if cfg.Engines.Onyphe.Enabled {
+		svc.RegisterAdapter(adapter.NewOnypheAdapter(
+			cfg.Engines.Onyphe.BaseURL,
+			cfg.Engines.Onyphe.APIKey,
+			cfg.Engines.Onyphe.QPS,
+			time.Duration(cfg.Engines.Onyphe.Timeout)*time.Second,
 		))
 	}
 }
