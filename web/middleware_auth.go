@@ -121,8 +121,7 @@ func isBrowserRequest(r *http.Request) bool {
 
 // isScreenshotBridgePath returns true for paths under the screenshot bridge API.
 func isScreenshotBridgePath(path string) bool {
-	return strings.HasPrefix(path, "/api/v1/screenshot/bridge/") ||
-		strings.HasPrefix(path, "/api/screenshot/bridge/")
+	return strings.HasPrefix(path, "/api/v1/screenshot/bridge/")
 }
 
 // isPublicPath returns true for paths that do not require authentication.
@@ -131,7 +130,6 @@ func (s *Server) isPublicPath(path string) bool {
 		"/static/",
 		"/screenshots/",
 		"/api/v1/screenshot/bridge/",
-		"/api/screenshot/bridge/",
 	}
 	for _, prefix := range publicPrefixes {
 		if strings.HasPrefix(path, prefix) {
@@ -145,8 +143,6 @@ func (s *Server) isPublicPath(path string) bool {
 		"/login",
 		"/api/v1/login",
 		"/api/v1/logout",
-		"/api/login",
-		"/api/logout",
 	}
 	for _, p := range publicExact {
 		if path == p {
@@ -154,7 +150,7 @@ func (s *Server) isPublicPath(path string) bool {
 		}
 	}
 	// Registration is public only when no users exist (bootstrap mode)
-	if path == "/api/v1/users/register" || path == "/api/users/register" {
+	if path == "/api/v1/users/register" {
 		return s.isRegistrationPublic()
 	}
 	return false

@@ -782,7 +782,7 @@ func (s *Server) Start() error {
 		isWebSocket := strings.Contains(r.Header.Get("Connection"), "Upgrade") &&
 			strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 
-		if isWebSocket && (r.URL.Path == "/api/v1/ws" || r.URL.Path == "/api/ws") {
+		if isWebSocket && r.URL.Path == "/api/v1/ws" {
 			// WebSocket auth: cookie → query param → header
 			if s.adminToken() != "" && !s.isPublicPath(r.URL.Path) {
 				token := s.getSessionToken(r)
