@@ -92,6 +92,13 @@ type Config struct {
 			QPS     int    `yaml:"qps"`
 			Timeout int    `yaml:"timeout"`
 		} `yaml:"onyphe"`
+		Greynoise struct {
+			Enabled bool   `yaml:"enabled"`
+			APIKey  string `yaml:"api_key"`
+			BaseURL string `yaml:"base_url"`
+			QPS     int    `yaml:"qps"`
+			Timeout int    `yaml:"timeout"`
+		} `yaml:"greynoise"`
 	} `yaml:"engines"`
 
 	// 系统配置
@@ -346,6 +353,7 @@ func (c *Config) Clone() *Config {
 	clone.Engines.Daydaymap = c.Engines.Daydaymap
 	clone.Engines.Binaryedge = c.Engines.Binaryedge
 	clone.Engines.Onyphe = c.Engines.Onyphe
+	clone.Engines.Greynoise = c.Engines.Greynoise
 
 	// System, Log are all primitives — safe to copy directly
 	clone.System = c.System
@@ -528,6 +536,10 @@ func (m *Manager) resolveEnv(config *Config) {
 	// 解析Onyphe配置
 	config.Engines.Onyphe.APIKey = m.ResolveEnv(config.Engines.Onyphe.APIKey)
 	config.Engines.Onyphe.BaseURL = m.ResolveEnv(config.Engines.Onyphe.BaseURL)
+
+	// 解析GreyNoise配置
+	config.Engines.Greynoise.APIKey = m.ResolveEnv(config.Engines.Greynoise.APIKey)
+	config.Engines.Greynoise.BaseURL = m.ResolveEnv(config.Engines.Greynoise.BaseURL)
 
 	// 解析系统配置
 	config.System.UserAgent = m.ResolveEnv(config.System.UserAgent)
