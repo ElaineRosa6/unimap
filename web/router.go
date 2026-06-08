@@ -202,20 +202,11 @@ func (r *Router) addRoute(name, method, pattern string, handler http.HandlerFunc
 	})
 }
 
-// deprecateMiddleware wraps a handler to add Deprecation headers for legacy /api/ paths.
-func deprecateMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Deprecation", "true")
-		w.Header().Set("Sunset", "2026-09-01")
-		next(w, r)
-	}
-}
-
-// addAPIRoute registers both /api/v1/... (canonical) and /api/... (legacy with deprecation) paths.
+// addAPIRoute registers an API route under /api/v1/... path.
+// Legacy /api/... shim removed 2026-06-09 — all consumers have migrated to /api/v1/.
 func (r *Router) addAPIRoute(name, method, apiPath string, handler http.HandlerFunc, rateLimited bool) {
 	v1Path := "/api/v1" + strings.TrimPrefix(apiPath, "/api")
 	r.addRoute(name, method, v1Path, handler, rateLimited)
-	r.addRoute(name+"-legacy", method, apiPath, deprecateMiddleware(handler), rateLimited)
 }
 
 // GetRoutes 获取所有路由（用于调试/文档）
