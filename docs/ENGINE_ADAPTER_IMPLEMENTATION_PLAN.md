@@ -277,7 +277,7 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 | ~~P2~~ | ~~**BinaryEdge**~~ | ⚠️ **已关闭**（2025-03-31），API 不可用 | — | 代码保留，默认禁用 |
 | **P2** | **Onyphe** | OQL 语法差异大，但功能独特（暗网/威胁列表） | 分隔符 `:` + `+`(AND) | 2-3 天 |
 | **P3** | **GreyNoise** | 威胁情报补充，字段少 API 简单 | 分隔符 `:` + 空格/`OR`/`-` | 1 天 |
-| **P3** | **DnsDB** | DNS 历史记录，场景特殊 | 分隔符 `:` + 空格 | 1 天 |
+| ~~P3~~ | ~~**DnsDB**~~ | ⚠️ **已停用**，服务不可用 | — | 不实施 |
 
 ### 2.2 Censys 实施详情
 
@@ -441,9 +441,11 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 **布尔语法**: 空格(AND) / `OR` / `-`(NOT)
 **特殊**: GreyNoise 专注威胁情报，字段较少，主要价值在 `classification`/`tag`/`noise`/`riot`/`c2` 等威胁维度
 
-### 2.7 DnsDB 实施详情
+### 2.7 DnsDB 实施详情 ⚠️ 已停用
 
-**API**: `api.dnsdb.io/lookup/...`（需确认）
+> **状态**: ❌ 不实施（DnsDB 服务已停止）
+
+**API**: `api.dnsdb.io/lookup/...`（已不可用）
 **认证**: API Key
 **字段**: `domain`/`ip`/`type`/`value`/`time`
 **特殊**: 专注 DNS 历史解析记录，与其它引擎功能不重叠
@@ -566,7 +568,7 @@ Phase 4: 浏览器探针 + Network 健康检测（1-2 天）
   └── 阶段三 Phase 1: L1 Network 层
 
 2026-07 中旬
-  ├── 阶段二 P3: GreyNoise + DnsDB 适配器
+  ├── 阶段二 P3: GreyNoise 适配器（DnsDB 已停用，不实施）
   ├── TD-1/TD-2: 文件/函数拆分
   └── 阶段三 Phase 2: L2 Hook 层（如需）
 
