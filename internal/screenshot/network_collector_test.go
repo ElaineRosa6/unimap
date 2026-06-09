@@ -65,6 +65,29 @@ func TestParseZoomEyeNetworkResponse(t *testing.T) {
 	}
 }
 
+func TestParseZoomEyeNetworkResponse_ResultsFallback(t *testing.T) {
+	body := []byte(`{
+		"total": 1,
+		"results": [
+			{"ip": "8.8.8.8", "port": 53, "service": "dns", "domain": "dns.google", "title": "Google DNS"}
+		]
+	}`)
+
+	assets, total, err := parseZoomEyeNetworkResponse(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected total 1, got %d", total)
+	}
+	if len(assets) != 1 {
+		t.Fatalf("expected 1 asset, got %d", len(assets))
+	}
+	if assets[0].IP != "8.8.8.8" || assets[0].Port != 53 || assets[0].Host != "dns.google" {
+		t.Fatalf("unexpected asset: %#v", assets[0])
+	}
+}
+
 func TestParseHunterNetworkResponse(t *testing.T) {
 	body := []byte(`{
 		"code": 200,

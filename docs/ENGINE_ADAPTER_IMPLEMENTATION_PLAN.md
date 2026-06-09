@@ -2,7 +2,7 @@
 
 > **创建日期**: 2026-06-07
 > **最后更新**: 2026-06-09
-> **状态**: 🔄 阶段一✅ 阶段二✅ (P1/P2/P3全部完成) 阶段三待启动
+> **状态**: 🔄 阶段一✅ 阶段二✅ (P1/P2/P3全部完成) 阶段三：L1✅ L2暂缓 L3✅
 > **基准文档**: `SEARCH_ENGINE_SYNTAX_REFERENCE.md`（12 引擎语法，含归档）、`SEARCH_ENGINE_SYNTAX.md`（UQL→引擎翻译基准）
 > **前置依赖**: commit `0e3fcc3`（5 引擎语法修正闭环）
 > **来源**: CLAUDE.md 已知待修复事项、code review 发现、memory 遗留缺陷、三层采集架构设计评审、外部语法审计
@@ -105,12 +105,12 @@
   ARC-7  Extension 域名收窄 ✅ 已完成 (2026-06-09，<all_urls> → 10引擎域名+localhost)
   ARC-8  context 合并 ✅ 已完成 (2026-06-09，CollectAndCapture 单次导航)
 
-低优先（渐进改进）:
-  TD-3   错误消息大写
-  TD-4   map[string]interface{} 强类型
-  CR-1   Quake 排他区间已知限制
-  CR-2   Shodan OR 降级已知限制
-  CR-4   Shodan header/body 折中已知限制
+低优先（渐进改进，非阻塞）:
+  TD-3   错误消息大写 — 23处，多数为缩写词可接受，渐进修正
+  TD-4   map[string]interface{} 强类型 — 插件接口广泛使用，渐进重构
+  CR-1   Quake 排他区间 — 已知限制，Quake 语法不支持排他区间，文档已记录
+  CR-2   Shodan OR 降级 — 已知限制，已加 logger.Warnf，长期考虑 UI 提示
+  CR-4   Shodan header/body 折中 — 已接受折中，文档已记录
 ```
 
 ---
@@ -533,22 +533,22 @@ UQL 统一字段 → 各引擎原生字段对照表（含新增引擎）：
 
 ### 当前状态
 
-双路互备（CDP ↔ Extension），两条链路均基于 DOM 解析（L3）。
+L1 Network 层已实现（ZoomEye/Hunter/Quake），FOFA/Shodan 保持 L3 DOM。combined collect+capture 路径已集成 L1。
 
 | 层级 | 状态 | 说明 |
 |------|------|------|
-| L1 Network (CDP `Network.responseReceived`) | ❌ 缺失 | CDP 仅用 `network.SetCookie`，无网络监听 |
-| L2 Hook (Extension fetch/XHR Hook) | ❌ 缺失 | 需 MAIN world 注入 + postMessage 桥（ARC-1/ARC-2） |
-| L3 DOM | ✅ 已有 | 5 引擎全覆盖，多级 fallback |
+| L1 Network (CDP `Network.responseReceived`) | ✅ 已实现 | ZoomEye/Hunter/Quake 三引擎支持，2s bounded wait + DOM fallback |
+| L2 Hook (Extension fetch/XHR Hook) | ⏸ 暂缓 | 需 MAIN world 注入 + postMessage 桥（ARC-1/ARC-2），非阻塞 |
+| L3 DOM | ✅ 已有 | 5 引擎全覆盖，多级 fallback，L1 失败时自动降级 |
 
 ### 实施路径
 
 ```
-Phase -1: 抓包 spike（验 ARC-4/ARC-5，1-2 天）
+Phase -1: 抓包 spike ✅ (ARC-4，2026-06-09)
     ↓
-Phase 0: 迁独立包 internal/collection/（ARC-6，1 天）
+Phase 0: 迁独立包 internal/collection/ ✅ (ARC-6，2026-06-09)
     ↓
-Phase 1: 只做 L1 Network 层（同 context 复用 ARC-8，3-5 天）
+Phase 1: L1 Network 层 ✅ (3 引擎 CDP 拦截 + combined collect+capture 集成)
     ↓
 Phase 2: L2 Hook 层（暂缓，需解决 ARC-1/ARC-2/ARC-7，5-7 天）
     ↓

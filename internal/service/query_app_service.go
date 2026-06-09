@@ -169,24 +169,32 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 					return
 				}
 
-				// Open search engine result page (always done for all actions)
-				if browserRouter != nil {
-					if _, err := browserRouter.OpenSearchEngineResult(ctx, engine, browserQuery); err != nil {
+				var combined CombinedBrowserRouter
+				combinedAvailable := false
+				if action == "collect_and_capture" && captureAvailable && browserRouter != nil {
+					combined, combinedAvailable = browserRouter.(CombinedBrowserRouter)
+				}
+
+				// Open search engine result page unless the combined path will navigate once itself.
+				if !combinedAvailable {
+					if browserRouter != nil {
+						if _, err := browserRouter.OpenSearchEngineResult(ctx, engine, browserQuery); err != nil {
+							engineErr = err
+							outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
+							return
+						}
+						outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
+					} else if screenshotMgr == nil {
+						outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open skipped for %s: no browser provider", engine))
+						engineErr = fmt.Errorf("no browser provider")
+						return
+					} else if _, err := screenshotMgr.OpenSearchEngineResult(ctx, engine, browserQuery); err != nil {
 						engineErr = err
 						outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
 						return
+					} else {
+						outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
 					}
-					outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
-				} else if screenshotMgr == nil {
-					outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open skipped for %s: no browser provider", engine))
-					engineErr = fmt.Errorf("no browser provider")
-					return
-				} else if _, err := screenshotMgr.OpenSearchEngineResult(ctx, engine, browserQuery); err != nil {
-					engineErr = err
-					outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
-					return
-				} else {
-					outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
 				}
 
 				// Action-specific follow-up
@@ -208,9 +216,9 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 					}
 
 				case "collect_and_capture":
-					// Collect structured data from DOM + take evidence screenshot.
+					// Collect structured data + take evidence screenshot.
 					// 优先使用合并方法（单次导航），降级为分步调用。
-					if combined, ok := browserRouter.(CombinedBrowserRouter); ok && captureAvailable {
+					if combinedAvailable {
 						captureQueryID := queryID
 						if captureQueryID == "" {
 							captureQueryID = fmt.Sprintf("query_%d", time.Now().UnixNano())
@@ -220,9 +228,13 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 							engineErr = err
 							outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser collect+capture failed for %s: %v", engine, err))
 						} else {
+							outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
 							tagBrowserAssets(collected)
 							outcome.CollectedResults = append(outcome.CollectedResults, collected...)
 							if path != "" && previewURLBuilder != nil {
+								if outcome.AutoCapturedPaths == nil {
+									outcome.AutoCapturedPaths = make(map[string]string)
+								}
 								if previewURL := previewURLBuilder(path); previewURL != "" {
 									outcome.AutoCapturedPaths[engine] = previewURL
 								}
@@ -249,6 +261,9 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 							if err != nil {
 								outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("screenshot failed for %s: %v", engine, err))
 							} else if previewURLBuilder != nil {
+								if outcome.AutoCapturedPaths == nil {
+									outcome.AutoCapturedPaths = make(map[string]string)
+								}
 								if previewURL := previewURLBuilder(path); previewURL != "" {
 									outcome.AutoCapturedPaths[engine] = previewURL
 								}
