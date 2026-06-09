@@ -30,7 +30,7 @@
 | # | 问题 | 来源 | 状态 | 行动 |
 |---|------|------|------|------|
 | SEC-1 | admin token 泄露 | memory 2026-06-07 | ✅ 已完成 (commit `3fd93de`) | **定位纠正**：真正泄露点非 settings.local.json（历史 0 次），而是已推送 GitHub 的 `docs/E2E_COLLECTION_VERIFICATION`(commit `3ce543d`) 与本文件(commit `fd583b3`)。已轮换 token + docs 打码 + settings.local.json 加 gitignore/rm --cached。详见 memory `project_sec1_token_rotation_2026-06-08.md` |
-| SEC-2 | API 版本化旧路径 shim sundown **2026-09-01** | memory 2026-05-31 | ⏰ 待处理 | 届时移除无 `/api/v1` 前缀的旧路由注册（`server.go` 73 条 shim） |
+| SEC-2 | API 版本化旧路径 shim sundown **2026-09-01** | memory 2026-05-31 | ✅ 已提前完成 (commit `24a37f7`, 2026-06-09) | 移除 `deprecateMiddleware` + 73条 legacy 路由 + middleware 旧路径检查 |
 
 ### 0.2 代码质量 — 技术债务（CLAUDE.md 记录）
 
@@ -98,7 +98,7 @@
   ARC-4  API 端点抓包验证
 
 中优先（技术债务/架构改进）:
-  SEC-2  API 旧路径 shim 移除（2026-09-01 前）
+  SEC-2  API 旧路径 shim 移除 ✅ 已完成 (2026-06-09)
   TD-1   文件拆分（800 行上限）
   TD-2   函数拆分（50 行上限）
   ARC-6  collection 包迁移
@@ -597,13 +597,13 @@ Phase 4: 浏览器探针 + Network 健康检测（1-2 天）
   ├── 阶段三 Phase 3: 校验层
   └── ARC-7: Extension 域名收窄
 
-2026-08
-  ├── SEC-2: API 旧路径 shim 移除准备
-  ├── TD-3/TD-4: 渐进代码质量改进
-  └── 阶段三 Phase 4: 浏览器探针
+2026-06-09
+  ├── SEC-2: API 旧路径 shim 移除 ✅ 已提前完成 (commit 24a37f7)
+  └── TD-1: 5个大文件拆分 ✅ 已完成 (detector/executor/scheduler x2/config)
 
-2026-09-01
-  └── SEC-2: API 旧路径 shim 移除（sundown deadline）
+2026-08
+  ├── TD-3/TD-4: 渐进代码质量改进（剩余4文件拆分）
+  └── 阶段三 Phase 4: 浏览器探针
 ```
 
 ---
@@ -618,5 +618,5 @@ Phase 4: 浏览器探针 + Network 健康检测（1-2 天）
 | 新引擎 API 变更频繁 | 字段映射失效 | 每引擎添加版本检查 + 健壮的错误处理 |
 | 配置文件引擎枚举 | 新引擎需改配置/注册 | orchestrator 动态注册，配置文件新增 `engines.{name}` 节 |
 | 三层采集 L2 MAIN world 限制 | MV3 架构限制 | 两段式注入 + postMessage 桥（ARC-1/ARC-2） |
-| API 旧路径 sundown 2026-09-01 | 过期后旧客户端 404 | 提前通知用户迁移，8 月前完成清理 |
+| ~~API 旧路径 sundown 2026-09-01~~ | ✅ 已提前完成 (2026-06-09) | shim 已移除，所有消费者已迁移到 /api/v1/ |
 | token 泄露风险 | 安全事件 | 评估历史提交，必要时轮换 token |
