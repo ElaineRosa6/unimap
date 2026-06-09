@@ -36,7 +36,7 @@
 
 | # | 问题 | 来源 | 行动 |
 |---|------|------|------|
-| TD-1 | 10 个文件超 800 行（最大 `monitor_native.go` 2150 行） | CLAUDE.md Medium | 按功能拆分模块，优先拆 `monitor_native.go` |
+| TD-1 | ~~10 个文件超 800 行~~ ✅ 已全部拆分完成（2026-06-09，最大 `metrics.go` 795 行） | CLAUDE.md Medium | 15 个 commit 拆分 10 个文件，全部 ≤ 795 行 |
 | TD-2 | 34 个函数超 50 行（最大 `createMonitorTab` 390 行） | CLAUDE.md Medium | 提取子函数，遵循 <50 行规范 |
 | TD-3 | 错误消息大写 23 处（多数为缩写词可接受） | CLAUDE.md Low | 逐条审查，非缩写词改为小写 |
 | TD-4 | `map[string]interface{}` 强类型（插件接口广泛使用） | CLAUDE.md Low | 渐进重构，定义 `PluginResult` 等结构体 |
@@ -99,7 +99,7 @@
 
 中优先（技术债务/架构改进）:
   SEC-2  API 旧路径 shim 移除 ✅ 已完成 (2026-06-09)
-  TD-1   文件拆分（800 行上限）
+  TD-1   文件拆分（800 行上限）✅ 已完成 (2026-06-09)
   TD-2   函数拆分（50 行上限）
   ARC-6  collection 包迁移
   ARC-7  Extension 域名收窄
