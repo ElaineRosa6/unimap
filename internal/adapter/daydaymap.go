@@ -151,101 +151,83 @@ func (d *DayDayMapAdapter) mapField(field string) string {
 // Search 执行DayDayMap搜索
 func (d *DayDayMapAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if d.apiKey == "" {
-		return &model.EngineResult{
-			EngineName: d.Name(),
-			Error:      "DayDayMap API key not configured",
-		}, nil
+		return &model.EngineResult{EngineName: d.Name(), Error: "DayDayMap API key not configured"}, nil
 	}
-
 	var engineResult *model.EngineResult
+	err := utils.Retry(d.searchRetryConfig(), func() error {
+		return d.executeDayDayMapSearch(query, page, pageSize, &engineResult)
+	})
+	if err != nil {
+		return &model.EngineResult{EngineName: d.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
+	}
+	return engineResult, nil
+}
 
-	retryConfig := utils.RetryConfig{
-		MaxRetries:  3,
-		BaseDelay:   100 * time.Millisecond,
-		MaxDelay:    2 * time.Second,
-		Exponential: true,
-		Jitter:      true,
+func (d *DayDayMapAdapter) searchRetryConfig() utils.RetryConfig {
+	return utils.RetryConfig{
+		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
+		Exponential: true, Jitter: true,
 		RetryableFunc: func(err error) bool {
 			errStr := err.Error()
-			// 非临时性错误不重试：认证失败、余额不足
-			if strings.Contains(errStr, "HTTP 401") ||
-				strings.Contains(errStr, "HTTP 403") {
+			if strings.Contains(errStr, "HTTP 401") || strings.Contains(errStr, "HTTP 403") {
 				return false
 			}
-			// 其他错误（网络、5xx、429限流等）可重试
 			return true
 		},
 	}
+}
 
-	err := utils.Retry(retryConfig, func() error {
-		searchURL := fmt.Sprintf("%s/api/v1/search", d.baseURL)
-
-		resp, err := d.client.R().
-			SetQueryParams(map[string]string{
-				"apikey":   d.apiKey,
-				"query":    query,
-				"page":     fmt.Sprintf("%d", page),
-				"pagesize": fmt.Sprintf("%d", pageSize),
-			}).
-			Get(searchURL)
-
-		if err != nil {
-			return err
-		}
-
-		if resp.StatusCode() != 200 {
-			return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
-		}
-
-		var result struct {
-			Code    int             `json:"code"`
-			Message string          `json:"message"`
-			Data    json.RawMessage `json:"data"`
-			Total   int             `json:"total"`
-		}
-
-		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return err
-		}
-
-		if result.Code != 0 && result.Code != 200 {
-			errMsg := result.Message
-			if errMsg == "" {
-				errMsg = "DayDayMap API reported an error (unknown cause)"
-			}
-			return fmt.Errorf("DayDayMap API error: %s", errMsg)
-		}
-
-		// 解析 data 数组
-		var dataItems []map[string]interface{}
-		if err := json.Unmarshal(result.Data, &dataItems); err != nil {
-			return fmt.Errorf("parse data error: %w", err)
-		}
-
-		rawData := make([]interface{}, 0, len(dataItems))
-		for _, item := range dataItems {
-			rawData = append(rawData, item)
-		}
-
-		engineResult = &model.EngineResult{
-			EngineName: d.Name(),
-			RawData:    rawData,
-			Total:      result.Total,
-			Page:       page,
-			HasMore:    (page * pageSize) < result.Total,
-		}
-
-		return nil
-	})
-
+// executeDayDayMapSearch 执行单次 DayDayMap API 调用
+func (d *DayDayMapAdapter) executeDayDayMapSearch(query string, page, pageSize int, result **model.EngineResult) error {
+	searchURL := fmt.Sprintf("%s/api/v1/search", d.baseURL)
+	resp, err := d.client.R().
+		SetQueryParams(map[string]string{
+			"apikey":   d.apiKey,
+			"query":    query,
+			"page":     fmt.Sprintf("%d", page),
+			"pagesize": fmt.Sprintf("%d", pageSize),
+		}).
+		Get(searchURL)
 	if err != nil {
-		return &model.EngineResult{
-			EngineName: d.Name(),
-			Error:      fmt.Sprintf("search error: %v", err),
-		}, nil
+		return err
 	}
+	if resp.StatusCode() != 200 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
+	}
+	return parseDayDayMapSearchResponse(resp.Body(), page, pageSize, d.Name(), result)
+}
 
-	return engineResult, nil
+// parseDayDayMapSearchResponse 解析 DayDayMap 搜索响应
+func parseDayDayMapSearchResponse(body []byte, page, pageSize int, engineName string, result **model.EngineResult) error {
+	var resp struct {
+		Code    int             `json:"code"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
+		Total   int             `json:"total"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return err
+	}
+	if resp.Code != 0 && resp.Code != 200 {
+		errMsg := resp.Message
+		if errMsg == "" {
+			errMsg = "DayDayMap API reported an error (unknown cause)"
+		}
+		return fmt.Errorf("DayDayMap API error: %s", errMsg)
+	}
+	var dataItems []map[string]interface{}
+	if err := json.Unmarshal(resp.Data, &dataItems); err != nil {
+		return fmt.Errorf("parse data error: %w", err)
+	}
+	rawData := make([]interface{}, 0, len(dataItems))
+	for _, item := range dataItems {
+		rawData = append(rawData, item)
+	}
+	*result = &model.EngineResult{
+		EngineName: engineName, RawData: rawData, Total: resp.Total,
+		Page: page, HasMore: (page * pageSize) < resp.Total,
+	}
+	return nil
 }
 
 // Normalize 标准化DayDayMap结果

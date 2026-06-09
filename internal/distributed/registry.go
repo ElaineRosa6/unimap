@@ -429,89 +429,74 @@ func cloneLabels(in map[string]string) map[string]string {
 
 // calculateHealthScore 计算节点健康评分并设置健康状态
 func (r *Registry) calculateHealthScore(record *NodeRecord) {
-	// 权重配置
-	weights := map[string]float64{
-		"cpu":          0.20,
-		"memory":       0.20,
-		"disk":         0.15,
-		"network":      0.15,
-		"error_rate":   0.15,
-		"success_rate": 0.10,
-		"load":         0.05,
-	}
+	totalScore := 0.20*calculateResourceScore(record.CPUUsage, 80, 90) +
+		0.20*calculateResourceScore(record.MemoryUsage, 80, 90) +
+		0.15*calculateResourceScore(record.DiskUsage, 85, 95) +
+		0.15*calculateNetworkScore(record.NetworkLatency) +
+		0.15*calculateErrorRateScore(record.ErrorRate) +
+		0.10*record.SuccessRate5m*100 +
+		0.05*calculateLoadScore(record.ActiveTasks, record.MaxConcurrency)
 
-	// 计算各项得分（满分100）
-	cpuScore := calculateResourceScore(record.CPUUsage, 80, 90)
-	memoryScore := calculateResourceScore(record.MemoryUsage, 80, 90)
-	diskScore := calculateResourceScore(record.DiskUsage, 85, 95)
-
-	// 网络延迟评分（越低越好）
-	networkScore := 100.0
-	if record.NetworkLatency > 0 {
-		if record.NetworkLatency > 1000 {
-			networkScore = 0
-		} else if record.NetworkLatency > 500 {
-			networkScore = 50
-		} else if record.NetworkLatency > 200 {
-			networkScore = 75
-		} else {
-			networkScore = 100
-		}
-	}
-
-	// 错误率评分（越低越好）
-	errorRateScore := 100.0
-	if record.ErrorRate > 0 {
-		if record.ErrorRate > 0.5 {
-			errorRateScore = 0
-		} else if record.ErrorRate > 0.2 {
-			errorRateScore = 50
-		} else if record.ErrorRate > 0.1 {
-			errorRateScore = 75
-		} else {
-			errorRateScore = 100
-		}
-	}
-
-	// 成功率评分（越高越好）
-	successRateScore := record.SuccessRate5m * 100
-
-	// 负载评分（基于活跃任务数与最大并发数的比例）
-	loadScore := 100.0
-	if record.MaxConcurrency > 0 {
-		loadRatio := float64(record.ActiveTasks) / float64(record.MaxConcurrency)
-		if loadRatio > 1.2 {
-			loadScore = 0
-		} else if loadRatio > 0.9 {
-			loadScore = 50
-		} else if loadRatio > 0.7 {
-			loadScore = 75
-		} else {
-			loadScore = 100
-		}
-	}
-
-	// 计算加权总分
-	totalScore := weights["cpu"]*cpuScore +
-		weights["memory"]*memoryScore +
-		weights["disk"]*diskScore +
-		weights["network"]*networkScore +
-		weights["error_rate"]*errorRateScore +
-		weights["success_rate"]*successRateScore +
-		weights["load"]*loadScore
-
-	// 设置健康评分
 	record.HealthScore = totalScore
+	record.HealthStatus = healthStatusFromScore(record.Online, totalScore)
+}
 
-	// 设置健康状态
-	if !record.Online {
-		record.HealthStatus = "offline"
-	} else if totalScore >= 80 {
-		record.HealthStatus = "healthy"
-	} else if totalScore >= 60 {
-		record.HealthStatus = "warning"
-	} else {
-		record.HealthStatus = "critical"
+func calculateNetworkScore(latencyMs float64) float64 {
+	switch {
+	case latencyMs <= 0 || latencyMs <= 200:
+		return 100
+	case latencyMs <= 500:
+		return 75
+	case latencyMs <= 1000:
+		return 50
+	default:
+		return 0
+	}
+}
+
+func calculateErrorRateScore(rate float64) float64 {
+	switch {
+	case rate <= 0:
+		return 100
+	case rate <= 0.1:
+		return 100
+	case rate <= 0.2:
+		return 75
+	case rate <= 0.5:
+		return 50
+	default:
+		return 0
+	}
+}
+
+func calculateLoadScore(activeTasks, maxConcurrency int) float64 {
+	if maxConcurrency <= 0 {
+		return 100
+	}
+	ratio := float64(activeTasks) / float64(maxConcurrency)
+	switch {
+	case ratio <= 0.7:
+		return 100
+	case ratio <= 0.9:
+		return 75
+	case ratio <= 1.2:
+		return 50
+	default:
+		return 0
+	}
+}
+
+func healthStatusFromScore(online bool, score float64) string {
+	if !online {
+		return "offline"
+	}
+	switch {
+	case score >= 80:
+		return "healthy"
+	case score >= 60:
+		return "warning"
+	default:
+		return "critical"
 	}
 }
 

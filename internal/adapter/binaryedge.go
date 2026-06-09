@@ -161,87 +161,72 @@ func (b *BinaryEdgeAdapter) mapField(field string) string {
 // Search 执行BinaryEdge搜索
 func (b *BinaryEdgeAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if b.apiKey == "" {
-		return &model.EngineResult{
-			EngineName: b.Name(),
-			Error:      "BinaryEdge API key not configured",
-		}, nil
+		return &model.EngineResult{EngineName: b.Name(), Error: "BinaryEdge API key not configured"}, nil
 	}
-
 	var engineResult *model.EngineResult
+	err := utils.Retry(b.searchRetryConfig(), func() error {
+		return b.executeBinaryEdgeSearch(query, page, pageSize, &engineResult)
+	})
+	if err != nil {
+		return &model.EngineResult{EngineName: b.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
+	}
+	return engineResult, nil
+}
 
-	retryConfig := utils.RetryConfig{
-		MaxRetries:  3,
-		BaseDelay:   100 * time.Millisecond,
-		MaxDelay:    2 * time.Second,
-		Exponential: true,
-		Jitter:      true,
+func (b *BinaryEdgeAdapter) searchRetryConfig() utils.RetryConfig {
+	return utils.RetryConfig{
+		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
+		Exponential: true, Jitter: true,
 		RetryableFunc: func(err error) bool {
 			errStr := err.Error()
-			// 非临时性错误不重试：认证失败
-			if strings.Contains(errStr, "HTTP 401") ||
-				strings.Contains(errStr, "HTTP 403") {
+			if strings.Contains(errStr, "HTTP 401") || strings.Contains(errStr, "HTTP 403") {
 				return false
 			}
 			return true
 		},
 	}
+}
 
-	err := utils.Retry(retryConfig, func() error {
-		searchURL := fmt.Sprintf("%s/v2/query/search", b.baseURL)
-
-		resp, err := b.client.R().
-			SetHeader("X-Key", b.apiKey).
-			SetQueryParams(map[string]string{
-				"query": query,
-				"page":  fmt.Sprintf("%d", page),
-			}).
-			Get(searchURL)
-
-		if err != nil {
-			return err
-		}
-
-		if resp.StatusCode() != 200 {
-			return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
-		}
-
-		var result struct {
-			Events []json.RawMessage `json:"events"`
-			Total  int              `json:"total"`
-		}
-
-		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return err
-		}
-
-		rawData := make([]interface{}, 0, len(result.Events))
-		for _, event := range result.Events {
-			var item map[string]interface{}
-			if err := json.Unmarshal(event, &item); err != nil {
-				continue
-			}
-			rawData = append(rawData, item)
-		}
-
-		engineResult = &model.EngineResult{
-			EngineName: b.Name(),
-			RawData:    rawData,
-			Total:      result.Total,
-			Page:       page,
-			HasMore:    (page * pageSize) < result.Total,
-		}
-
-		return nil
-	})
-
+// executeBinaryEdgeSearch 执行单次 BinaryEdge API 调用
+func (b *BinaryEdgeAdapter) executeBinaryEdgeSearch(query string, page, pageSize int, result **model.EngineResult) error {
+	searchURL := fmt.Sprintf("%s/v2/query/search", b.baseURL)
+	resp, err := b.client.R().
+		SetHeader("X-Key", b.apiKey).
+		SetQueryParams(map[string]string{
+			"query": query, "page": fmt.Sprintf("%d", page),
+		}).
+		Get(searchURL)
 	if err != nil {
-		return &model.EngineResult{
-			EngineName: b.Name(),
-			Error:      fmt.Sprintf("search error: %v", err),
-		}, nil
+		return err
 	}
+	if resp.StatusCode() != 200 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
+	}
+	return parseBinaryEdgeSearchResponse(resp.Body(), page, pageSize, b.Name(), result)
+}
 
-	return engineResult, nil
+// parseBinaryEdgeSearchResponse 解析 BinaryEdge 搜索响应
+func parseBinaryEdgeSearchResponse(body []byte, page, pageSize int, engineName string, result **model.EngineResult) error {
+	var resp struct {
+		Events []json.RawMessage `json:"events"`
+		Total  int              `json:"total"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return err
+	}
+	rawData := make([]interface{}, 0, len(resp.Events))
+	for _, event := range resp.Events {
+		var item map[string]interface{}
+		if err := json.Unmarshal(event, &item); err != nil {
+			continue
+		}
+		rawData = append(rawData, item)
+	}
+	*result = &model.EngineResult{
+		EngineName: engineName, RawData: rawData, Total: resp.Total,
+		Page: page, HasMore: (page * pageSize) < resp.Total,
+	}
+	return nil
 }
 
 // Normalize 标准化BinaryEdge结果

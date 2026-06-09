@@ -171,95 +171,72 @@ type CensysSearchResult struct {
 // Search 执行Censys搜索
 func (c *CensysAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if c.apiID == "" || c.apiSecret == "" {
-		return &model.EngineResult{
-			EngineName: c.Name(),
-			Error:      "Censys API credentials not configured",
-		}, nil
+		return &model.EngineResult{EngineName: c.Name(), Error: "Censys API credentials not configured"}, nil
 	}
-
 	var engineResult *model.EngineResult
-
-	retryConfig := utils.RetryConfig{
-		MaxRetries:  3,
-		BaseDelay:   100 * time.Millisecond,
-		MaxDelay:    2 * time.Second,
-		Exponential: true,
-		Jitter:      true,
-		RetryableFunc: func(err error) bool {
-			// 网络错误可重试
-			return true
-		},
-	}
-
-	err := utils.Retry(retryConfig, func() error {
-		// Censys API v2: search endpoint
-		searchURL := fmt.Sprintf("%s/api/v2/hosts/search", c.baseURL)
-
-		params := map[string]string{
-			"q":        query,
-			"per_page": fmt.Sprintf("%d", pageSize),
-		}
-
-		// Censys v2 uses cursor-based pagination; page > 1 is approximated
-		if page > 1 {
-			logger.Warnf("Censys adapter: cursor-based pagination does not support arbitrary page jumps; attempting per_page*page offset for page %d", page)
-			params["per_page"] = fmt.Sprintf("%d", pageSize*page)
-		}
-
-		resp, err := c.client.R().
-			SetBasicAuth(c.apiID, c.apiSecret).
-			SetQueryParams(params).
-			Get(searchURL)
-
-		if err != nil {
-			return err
-		}
-
-		if resp.StatusCode() != 200 {
-			return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
-		}
-
-		var result CensysSearchResult
-		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return err
-		}
-
-		// 转换为通用格式
-		hits := result.Result.Hits
-		// For page > 1, slice to get the requested page
-		if page > 1 && len(hits) > pageSize {
-			hits = hits[len(hits)-pageSize:]
-		}
-
-		rawData := make([]interface{}, 0, len(hits))
-		for _, hit := range hits {
-			var data map[string]interface{}
-			if err := json.Unmarshal(hit, &data); err != nil {
-				logger.Warnf("Censys adapter: failed to parse hit: %v", err)
-				continue
-			}
-			rawData = append(rawData, data)
-		}
-
-		engineResult = &model.EngineResult{
-			EngineName: c.Name(),
-			RawData:    rawData,
-			Total:      result.Result.Total,
-			Page:       page,
-			HasMore:    result.Result.Links.Next != "",
-		}
-
-		return nil
+	err := utils.Retry(c.searchRetryConfig(), func() error {
+		return c.executeCensysSearch(query, page, pageSize, &engineResult)
 	})
-
 	if err != nil {
-		return &model.EngineResult{
-			EngineName: c.Name(),
-			Error:      fmt.Sprintf("search error: %v", err),
-		}, nil
+		return &model.EngineResult{EngineName: c.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
 	}
-
 	return engineResult, nil
+}
+
+func (c *CensysAdapter) searchRetryConfig() utils.RetryConfig {
+	return utils.RetryConfig{
+		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
+		Exponential: true, Jitter: true, RetryableFunc: func(err error) bool { return true },
+	}
+}
+
+// executeCensysSearch 执行单次 Censys API 调用
+func (c *CensysAdapter) executeCensysSearch(query string, page, pageSize int, result **model.EngineResult) error {
+	searchURL := fmt.Sprintf("%s/api/v2/hosts/search", c.baseURL)
+	params := map[string]string{
+		"q": query, "per_page": fmt.Sprintf("%d", pageSize),
+	}
+	if page > 1 {
+		logger.Warnf("Censys adapter: cursor-based pagination does not support arbitrary page jumps; attempting per_page*page offset for page %d", page)
+		params["per_page"] = fmt.Sprintf("%d", pageSize*page)
+	}
+	resp, err := c.client.R().
+		SetBasicAuth(c.apiID, c.apiSecret).
+		SetQueryParams(params).
+		Get(searchURL)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode() != 200 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
+	}
+	return parseCensysSearchResponse(resp.Body(), page, pageSize, c.Name(), result)
+}
+
+// parseCensysSearchResponse 解析 Censys 搜索响应
+func parseCensysSearchResponse(body []byte, page, pageSize int, engineName string, result **model.EngineResult) error {
+	var resp CensysSearchResult
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return err
+	}
+	hits := resp.Result.Hits
+	if page > 1 && len(hits) > pageSize {
+		hits = hits[len(hits)-pageSize:]
+	}
+	rawData := make([]interface{}, 0, len(hits))
+	for _, hit := range hits {
+		var data map[string]interface{}
+		if err := json.Unmarshal(hit, &data); err != nil {
+			logger.Warnf("Censys adapter: failed to parse hit: %v", err)
+			continue
+		}
+		rawData = append(rawData, data)
+	}
+	*result = &model.EngineResult{
+		EngineName: engineName, RawData: rawData, Total: resp.Result.Total,
+		Page: page, HasMore: resp.Result.Links.Next != "",
+	}
+	return nil
 }
 
 // Normalize 标准化Censys结果

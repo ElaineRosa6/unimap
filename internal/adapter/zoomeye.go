@@ -144,103 +144,84 @@ func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
 // Search 执行搜索
 func (z *ZoomEyeAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	var engineResult *model.EngineResult
+	err := utils.Retry(z.searchRetryConfig(), func() error {
+		return z.executeZoomEyeSearch(query, page, pageSize, &engineResult)
+	})
+	if err != nil {
+		return &model.EngineResult{EngineName: z.Name(), Error: err.Error()}, nil
+	}
+	return engineResult, nil
+}
 
-	retryConfig := utils.RetryConfig{
-		MaxRetries:  3,
-		BaseDelay:   100 * time.Millisecond,
-		MaxDelay:    2 * time.Second,
-		Exponential: true,
-		Jitter:      true,
+func (z *ZoomEyeAdapter) searchRetryConfig() utils.RetryConfig {
+	return utils.RetryConfig{
+		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
+		Exponential: true, Jitter: true,
 		RetryableFunc: func(err error) bool {
-			// 网络错误可重试，但402错误（需要付费）不可重试
 			errMsg := err.Error()
 			return !strings.Contains(errMsg, "402") && !strings.Contains(errMsg, "Payment Required")
 		},
 	}
+}
 
-	err := utils.Retry(retryConfig, func() error {
-		// 实现搜索逻辑
-		// ZoomEye API endpoint: /v2/search
-		url := fmt.Sprintf("%s/v2/search", z.baseURL)
+// executeZoomEyeSearch 执行单次 ZoomEye API 调用
+func (z *ZoomEyeAdapter) executeZoomEyeSearch(query string, page, pageSize int, result **model.EngineResult) error {
+	url := fmt.Sprintf("%s/v2/search", z.baseURL)
 
-		// 将查询语句转换为Base64编码
-		encodedQuery := base64.StdEncoding.EncodeToString([]byte(query))
-		// 替换Base64编码中的不安全字符，确保URL安全
-		encodedQuery = strings.ReplaceAll(encodedQuery, "+", "-")
-		encodedQuery = strings.ReplaceAll(encodedQuery, "/", "_")
-		encodedQuery = strings.TrimRight(encodedQuery, "=")
+	encodedQuery := base64.StdEncoding.EncodeToString([]byte(query))
+	encodedQuery = strings.ReplaceAll(encodedQuery, "+", "-")
+	encodedQuery = strings.ReplaceAll(encodedQuery, "/", "_")
+	encodedQuery = strings.TrimRight(encodedQuery, "=")
 
-		// 构建请求体
-		requestBody := map[string]interface{}{
-			"qbase64":  encodedQuery,
-			"page":     page,
-			"pagesize": pageSize,
-		}
-
-		// 记录请求信息，方便调试
-		logger.Debugf("ZoomEye search request: URL=%s, Query=%s, EncodedQuery=%s, Page=%d, PageSize=%d", url, query, encodedQuery, page, pageSize)
-
-		resp, err := z.client.R().
-			SetHeader("Content-Type", "application/json").
-			SetBody(requestBody).
-			Post(url)
-
-		if err != nil {
-			return err
-		}
-
-		if resp.StatusCode() != 200 {
-			errMsg := fmt.Sprintf("HTTP %d: %s", resp.StatusCode(), resp.String())
-			if resp.StatusCode() == 402 {
-				errMsg = fmt.Sprintf("ZoomEye API Payment Required (402): %s. Please check if your account is mobile-verified or if you have sufficient quota/credits.", resp.String())
-			}
-			return fmt.Errorf("%s", errMsg)
-		}
-
-		// 解析ZoomEye响应
-		var result struct {
-			Code    int           `json:"code"`
-			Error   string        `json:"error"`
-			Message string        `json:"message"`
-			Total   int           `json:"total"`
-			Query   string        `json:"query"`
-			Data    []interface{} `json:"data"`
-		}
-
-		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return err
-		}
-
-		// 检查响应代码
-		if result.Code != 60000 {
-			// 构建详细的错误信息
-			errorMsg := fmt.Sprintf("ZoomEye API error (code=%d, error=%s): %s", result.Code, result.Error, result.Message)
-			// 特别处理额度不足的情况
-			if result.Code == 50000 && result.Error == "credits_insufficient" {
-				errorMsg = fmt.Sprintf("ZoomEye API credits insufficient: %s. Please check your account balance or upgrade your plan.", result.Message)
-			}
-			return fmt.Errorf("%s", errorMsg)
-		}
-
-		engineResult = &model.EngineResult{
-			EngineName: z.Name(),
-			RawData:    result.Data,
-			Total:      result.Total,
-			Page:       page,
-			HasMore:    (page * pageSize) < result.Total,
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return &model.EngineResult{
-			EngineName: z.Name(),
-			Error:      err.Error(),
-		}, nil
+	requestBody := map[string]interface{}{
+		"qbase64":  encodedQuery,
+		"page":     page,
+		"pagesize": pageSize,
 	}
 
-	return engineResult, nil
+	logger.Debugf("ZoomEye search request: URL=%s, Query=%s, EncodedQuery=%s, Page=%d, PageSize=%d", url, query, encodedQuery, page, pageSize)
+
+	resp, err := z.client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(requestBody).
+		Post(url)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode() != 200 {
+		if resp.StatusCode() == 402 {
+			return fmt.Errorf("ZoomEye API Payment Required (402): %s. Please check if your account is mobile-verified or if you have sufficient quota/credits.", resp.String())
+		}
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
+	}
+	return parseZoomEyeSearchResponse(resp.Body(), page, pageSize, z.Name(), result)
+}
+
+// parseZoomEyeSearchResponse 解析 ZoomEye 搜索响应
+func parseZoomEyeSearchResponse(body []byte, page, pageSize int, engineName string, result **model.EngineResult) error {
+	var resp struct {
+		Code    int           `json:"code"`
+		Error   string        `json:"error"`
+		Message string        `json:"message"`
+		Total   int           `json:"total"`
+		Query   string        `json:"query"`
+		Data    []interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return err
+	}
+	if resp.Code != 60000 {
+		errorMsg := fmt.Sprintf("ZoomEye API error (code=%d, error=%s): %s", resp.Code, resp.Error, resp.Message)
+		if resp.Code == 50000 && resp.Error == "credits_insufficient" {
+			errorMsg = fmt.Sprintf("ZoomEye API credits insufficient: %s. Please check your account balance or upgrade your plan.", resp.Message)
+		}
+		return fmt.Errorf("%s", errorMsg)
+	}
+	*result = &model.EngineResult{
+		EngineName: engineName, RawData: resp.Data, Total: resp.Total,
+		Page: page, HasMore: (page * pageSize) < resp.Total,
+	}
+	return nil
 }
 
 // Normalize 标准化结果

@@ -57,104 +57,92 @@ func NewUnifiedService() *UnifiedService {
 
 // NewUnifiedServiceWithConfig 使用配置创建统一服务。
 func NewUnifiedServiceWithConfig(cfg *config.Config) *UnifiedService {
-	cacheTTL := 30 * time.Minute
-	cacheCleanupInterval := 5 * time.Minute
-	memoryMaxSize := 1000
-	cacheBackend := "memory"
-	maxMemoryMB := 512  // 默认最大内存限制512MB
-	maxConcurrent := 10 // 默认最大并发查询数
+	svcCfg := extractServiceConfig(cfg)
+	cache := utils.NewCacheWithConfig(svcCfg.cacheBackend, svcCfg.redisCfg, svcCfg.memoryMaxSize, svcCfg.cacheCleanupInterval)
+	strategyManager, configStrategy := initCacheStrategies(svcCfg.cacheTTL)
+	orchestrator := initOrchestrator(cfg, svcCfg, configStrategy)
 
-	var redisCfg utils.RedisConfig
-
-	if cfg != nil {
-		if cfg.System.CacheTTL > 0 {
-			cacheTTL = time.Duration(cfg.System.CacheTTL) * time.Second
-		}
-		if cfg.System.CacheCleanupInterval > 0 {
-			cacheCleanupInterval = time.Duration(cfg.System.CacheCleanupInterval) * time.Second
-		}
-		if cfg.System.CacheMaxSize > 0 {
-			memoryMaxSize = cfg.System.CacheMaxSize
-		}
-		if cfg.System.MaxConcurrent > 0 {
-			maxConcurrent = cfg.System.MaxConcurrent
-		}
-		cacheBackend = strings.ToLower(strings.TrimSpace(cfg.Cache.Backend))
-		if cacheBackend == "" {
-			cacheBackend = "memory"
-		}
-
-		// 构建Redis配置
-		redisCfg = utils.RedisConfig{
-			Addr:            strings.TrimSpace(cfg.Cache.Redis.Addr),
-			Password:        cfg.Cache.Redis.Password,
-			DB:              cfg.Cache.Redis.DB,
-			Prefix:          strings.TrimSpace(cfg.Cache.Redis.Prefix),
-			PoolSize:        cfg.Cache.Redis.PoolSize,
-			MinIdleConns:    cfg.Cache.Redis.MinIdleConns,
-			MaxIdleConns:    cfg.Cache.Redis.MaxIdleConns,
-			MaxRetries:      cfg.Cache.Redis.MaxRetries,
-			DialTimeout:     time.Duration(cfg.Cache.Redis.DialTimeout) * time.Millisecond,
-			ReadTimeout:     time.Duration(cfg.Cache.Redis.ReadTimeout) * time.Millisecond,
-			WriteTimeout:    time.Duration(cfg.Cache.Redis.WriteTimeout) * time.Millisecond,
-			PoolTimeout:     time.Duration(cfg.Cache.Redis.PoolTimeout) * time.Millisecond,
-			ConnMaxLifetime: time.Duration(cfg.Cache.Redis.ConnMaxLifetime) * time.Millisecond,
-			ConnMaxIdleTime: time.Duration(cfg.Cache.Redis.ConnMaxIdleTime) * time.Millisecond,
-		}
+	if _, ok := cache.(*utils.RedisCache); !ok {
+		svcCfg.cacheBackend = "memory"
 	}
 
-	// 初始化缓存
-	cache := utils.NewCacheWithConfig(cacheBackend, redisCfg, memoryMaxSize, cacheCleanupInterval)
+	return &UnifiedService{
+		pluginManager: plugin.NewPluginManager(), orchestrator: orchestrator,
+		parser: unimap.NewUQLParser(), merger: unimap.NewResultMerger(),
+		cache: cache, cacheTTL: svcCfg.cacheTTL, cacheMaxSize: svcCfg.memoryMaxSize,
+		cacheCleanup: svcCfg.cacheCleanupInterval, cacheBackend: svcCfg.cacheBackend,
+		strategyManager: strategyManager, maxMemoryMB: svcCfg.maxMemoryMB,
+		maxConcurrent: svcCfg.maxConcurrent,
+	}
+}
 
-	// 初始化缓存策略管理器
-	strategyManager := utils.NewCacheStrategyManager()
-	dynamicStrategy := utils.NewDynamicCacheStrategy(cacheTTL, 5*time.Minute, 2*time.Hour)
-	strategyManager.RegisterStrategy("dynamic", dynamicStrategy)
-	configStrategy := utils.NewConfigBasedCacheStrategy(cacheTTL)
-	strategyManager.RegisterStrategy("config", configStrategy)
+type serviceConfig struct {
+	cacheTTL           time.Duration
+	cacheCleanupInterval time.Duration
+	memoryMaxSize      int
+	cacheBackend       string
+	maxMemoryMB        int
+	maxConcurrent      int
+	redisCfg           utils.RedisConfig
+}
 
-	// 检测实际使用的缓存后端
-	useRedis := strings.EqualFold(cacheBackend, "redis")
-	orchestrator := adapter.NewEngineOrchestratorWithConfig(useRedis, redisCfg.Addr, redisCfg.Password, redisCfg.DB)
+func extractServiceConfig(cfg *config.Config) serviceConfig {
+	c := serviceConfig{
+		cacheTTL: 30 * time.Minute, cacheCleanupInterval: 5 * time.Minute,
+		memoryMaxSize: 1000, cacheBackend: "memory", maxMemoryMB: 512, maxConcurrent: 10,
+	}
+	if cfg == nil {
+		return c
+	}
+	if cfg.System.CacheTTL > 0 { c.cacheTTL = time.Duration(cfg.System.CacheTTL) * time.Second }
+	if cfg.System.CacheCleanupInterval > 0 { c.cacheCleanupInterval = time.Duration(cfg.System.CacheCleanupInterval) * time.Second }
+	if cfg.System.CacheMaxSize > 0 { c.memoryMaxSize = cfg.System.CacheMaxSize }
+	if cfg.System.MaxConcurrent > 0 { c.maxConcurrent = cfg.System.MaxConcurrent }
+	c.cacheBackend = strings.ToLower(strings.TrimSpace(cfg.Cache.Backend))
+	if c.cacheBackend == "" { c.cacheBackend = "memory" }
+	c.redisCfg = buildRedisConfig(cfg)
+	return c
+}
+
+func buildRedisConfig(cfg *config.Config) utils.RedisConfig {
+	r := cfg.Cache.Redis
+	return utils.RedisConfig{
+		Addr: strings.TrimSpace(r.Addr), Password: r.Password, DB: r.DB,
+		Prefix: strings.TrimSpace(r.Prefix), PoolSize: r.PoolSize,
+		MinIdleConns: r.MinIdleConns, MaxIdleConns: r.MaxIdleConns, MaxRetries: r.MaxRetries,
+		DialTimeout: time.Duration(r.DialTimeout) * time.Millisecond,
+		ReadTimeout: time.Duration(r.ReadTimeout) * time.Millisecond,
+		WriteTimeout: time.Duration(r.WriteTimeout) * time.Millisecond,
+		PoolTimeout: time.Duration(r.PoolTimeout) * time.Millisecond,
+		ConnMaxLifetime: time.Duration(r.ConnMaxLifetime) * time.Millisecond,
+		ConnMaxIdleTime: time.Duration(r.ConnMaxIdleTime) * time.Millisecond,
+	}
+}
+
+func initCacheStrategies(cacheTTL time.Duration) (*utils.CacheStrategyManager, *utils.ConfigBasedCacheStrategy) {
+	sm := utils.NewCacheStrategyManager()
+	sm.RegisterStrategy("dynamic", utils.NewDynamicCacheStrategy(cacheTTL, 5*time.Minute, 2*time.Hour))
+	cs := utils.NewConfigBasedCacheStrategy(cacheTTL)
+	sm.RegisterStrategy("config", cs)
+	return sm, cs
+}
+
+func initOrchestrator(cfg *config.Config, svcCfg serviceConfig, configStrategy *utils.ConfigBasedCacheStrategy) *adapter.EngineOrchestrator {
+	useRedis := strings.EqualFold(svcCfg.cacheBackend, "redis")
+	orch := adapter.NewEngineOrchestratorWithConfig(useRedis, svcCfg.redisCfg.Addr, svcCfg.redisCfg.Password, svcCfg.redisCfg.DB)
 	if cfg != nil {
-		orchestrator.SetConcurrency(cfg.System.MaxConcurrent)
-
-		// 设置默认缓存TTL
-		orchestrator.SetDefaultCacheTTL(cacheTTL)
-
-		// 从配置加载引擎级别的缓存设置，同步到策略管理器
+		orch.SetConcurrency(cfg.System.MaxConcurrent)
+		orch.SetDefaultCacheTTL(svcCfg.cacheTTL)
 		for engineName, engineCfg := range cfg.Cache.Engines {
 			if engineCfg.TTL > 0 {
-				orchestrator.SetEngineCacheTTL(engineName, time.Duration(engineCfg.TTL)*time.Second, engineCfg.Enabled)
+				orch.SetEngineCacheTTL(engineName, time.Duration(engineCfg.TTL)*time.Second, engineCfg.Enabled)
 				configStrategy.SetEngineConfig(engineName, &utils.SimpleEngineCacheConfig{
-					Enabled: engineCfg.Enabled,
-					TTL:     time.Duration(engineCfg.TTL) * time.Second,
-					MaxSize: engineCfg.MaxSize,
+					Enabled: engineCfg.Enabled, TTL: time.Duration(engineCfg.TTL) * time.Second, MaxSize: engineCfg.MaxSize,
 				})
 			}
 		}
 	}
-
-	// Redis连接失败时，缓存工厂会回退到内存缓存。
-	if _, ok := cache.(*utils.RedisCache); !ok {
-		cacheBackend = "memory"
-	}
-
-	return &UnifiedService{
-		pluginManager:   plugin.NewPluginManager(),
-		orchestrator:    orchestrator,
-		parser:          unimap.NewUQLParser(),
-		merger:          unimap.NewResultMerger(),
-		cache:           cache,
-		cacheTTL:        cacheTTL,
-		cacheMaxSize:    memoryMaxSize,
-		cacheCleanup:    cacheCleanupInterval,
-		cacheBackend:    cacheBackend,
-		strategyManager: strategyManager,
-		maxMemoryMB:     maxMemoryMB,
-		maxConcurrent:   maxConcurrent,
-		activeQueries:   0,
-	}
+	return orch
 }
 
 // RegisterAdapter 注册引擎适配器

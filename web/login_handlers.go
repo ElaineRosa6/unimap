@@ -46,21 +46,14 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 
 // handleLoginAPI validates credentials and sets session cookie (POST /api/v1/login).
 func (s *Server) handleLoginAPI(w http.ResponseWriter, r *http.Request) {
-	// Rate limiting
 	clientIP := getClientIP(r)
 	if !loginRateLimiter.Allow(clientIP) {
 		logger.Warnf("login rate limited: ip=%s", clientIP)
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{
-			"error": "too many login attempts, please try again later",
-		})
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many login attempts, please try again later"})
 		return
 	}
-
-	// Parse form
 	if err := r.ParseForm(); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "invalid request",
-		})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
 
@@ -68,74 +61,68 @@ func (s *Server) handleLoginAPI(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	csrfToken := r.FormValue("csrf_token")
 
-	// Validate CSRF
-	expectedCSRF := getCSRFToken(r)
-	if expectedCSRF == "" || csrfToken == "" || !secureCompare(csrfToken, expectedCSRF) {
-		logger.Warnf("login CSRF validation failed: ip=%s", clientIP)
-		writeJSON(w, http.StatusForbidden, map[string]string{
-			"error": "invalid CSRF token",
-		})
+	if !s.validateLoginCSRF(w, r, csrfToken, clientIP) {
 		return
 	}
 
-	// Try user database first (multi-user mode)
-	var loginUserID int64
-	var loginSuccess bool
-
-	if s.userRepo != nil {
-		user, err := s.userRepo.GetByUsername(username)
-		if err != nil {
-			logger.Errorf("login: db error: %v", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
-			return
-		}
-		if user != nil && user.Status == "active" {
-			if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err == nil {
-				loginUserID = user.ID
-				loginSuccess = true
-			}
-		}
-	}
-
-	// Fall back to config-based auth (single-user legacy mode)
-	if !loginSuccess {
-		if s.config == nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server configuration error"})
-			return
-		}
-		expectedUser := s.config.Web.Auth.Username
-		expectedHash := s.config.Web.Auth.PasswordHash
-		if expectedUser == "" || expectedHash == "" {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "login not configured"})
-			return
-		}
-		if !secureCompare(username, expectedUser) || !config.CheckPassword(password, expectedHash) {
-			logger.Warnf("login failed: ip=%s username=%s", clientIP, username)
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid username or password"})
-			return
-		}
-		loginSuccess = true
-		// loginUserID stays 0 (legacy mode)
-	}
-
-	if !loginSuccess {
-		logger.Warnf("login failed: ip=%s username=%s", clientIP, username)
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid username or password"})
+	loginUserID, ok := s.validateLoginCredentials(w, username, password, clientIP)
+	if !ok {
 		return
 	}
 
-	// Set session cookie with user ID
 	if err := s.setSessionCookieForUser(w, r, loginUserID); err != nil {
 		logger.Errorf("login: failed to set session cookie: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
 	}
-
 	logger.Infof("login successful: ip=%s username=%s userID=%d", clientIP, username, loginUserID)
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":  true,
-		"redirect": "/",
-	})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "redirect": "/"})
+}
+
+// validateLoginCSRF 验证 CSRF token
+func (s *Server) validateLoginCSRF(w http.ResponseWriter, r *http.Request, csrfToken, clientIP string) bool {
+	expectedCSRF := getCSRFToken(r)
+	if expectedCSRF == "" || csrfToken == "" || !secureCompare(csrfToken, expectedCSRF) {
+		logger.Warnf("login CSRF validation failed: ip=%s", clientIP)
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid CSRF token"})
+		return false
+	}
+	return true
+}
+
+// validateLoginCredentials 验证登录凭据（用户数据库 → 配置文件降级）
+func (s *Server) validateLoginCredentials(w http.ResponseWriter, username, password, clientIP string) (int64, bool) {
+	// 用户数据库（多用户模式）
+	if s.userRepo != nil {
+		user, err := s.userRepo.GetByUsername(username)
+		if err != nil {
+			logger.Errorf("login: db error: %v", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return 0, false
+		}
+		if user != nil && user.Status == "active" {
+			if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err == nil {
+				return user.ID, true
+			}
+		}
+	}
+	// 配置文件降级（单用户遗留模式）
+	if s.config == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server configuration error"})
+		return 0, false
+	}
+	expectedUser := s.config.Web.Auth.Username
+	expectedHash := s.config.Web.Auth.PasswordHash
+	if expectedUser == "" || expectedHash == "" {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "login not configured"})
+		return 0, false
+	}
+	if !secureCompare(username, expectedUser) || !config.CheckPassword(password, expectedHash) {
+		logger.Warnf("login failed: ip=%s username=%s", clientIP, username)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid username or password"})
+		return 0, false
+	}
+	return 0, true
 }
 
 // handleLogoutAPI clears the session cookie (POST /api/v1/logout).

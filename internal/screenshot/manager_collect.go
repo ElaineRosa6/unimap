@@ -15,8 +15,25 @@ import (
 )
 
 // CollectSearchEngineResult opens a search engine result page and extracts
-// structured asset data from it using per-engine DOM selectors.
+// structured asset data. Tries L1 Network first (for supported engines),
+// falls back to L3 DOM extraction.
 func (m *Manager) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error) {
+	// L1: 尝试 Network 拦截（仅支持 SPA 引擎）
+	if IsL1Supported(engine) {
+		results, err := m.CollectViaNetwork(ctx, engine, query, queryID)
+		if err == nil && len(results) > 0 && len(results[0].Assets) > 0 {
+			logger.Infof("L1 network collection succeeded for %s: %d assets", engine, len(results[0].Assets))
+			return results, nil
+		}
+		logger.Warnf("L1 network collection failed for %s, falling back to L3 DOM: %v", engine, err)
+	}
+
+	// L3: DOM 解析（所有引擎）
+	return m.collectViaDOM(ctx, engine, query, queryID)
+}
+
+// collectViaDOM 通过 L3 DOM 解析采集搜索结果
+func (m *Manager) collectViaDOM(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error) {
 	searchURL := m.BuildSearchEngineURL(engine, query)
 	if searchURL == "" {
 		return nil, fmt.Errorf("unsupported engine: %s", engine)

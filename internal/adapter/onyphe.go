@@ -163,89 +163,75 @@ type OnypheSearchResponse struct {
 // Search 执行Onyphe搜索
 func (o *OnypheAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if o.apiKey == "" {
-		return &model.EngineResult{
-			EngineName: o.Name(),
-			Error:      "Onyphe API key not configured",
-		}, nil
+		return &model.EngineResult{EngineName: o.Name(), Error: "Onyphe API key not configured"}, nil
 	}
-
 	var engineResult *model.EngineResult
+	err := utils.Retry(o.searchRetryConfig(), func() error {
+		return o.executeOnypheSearch(query, page, pageSize, &engineResult)
+	})
+	if err != nil {
+		return &model.EngineResult{EngineName: o.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
+	}
+	return engineResult, nil
+}
 
-	retryConfig := utils.RetryConfig{
-		MaxRetries:  3,
-		BaseDelay:   100 * time.Millisecond,
-		MaxDelay:    2 * time.Second,
-		Exponential: true,
-		Jitter:      true,
+func (o *OnypheAdapter) searchRetryConfig() utils.RetryConfig {
+	return utils.RetryConfig{
+		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
+		Exponential: true, Jitter: true,
 		RetryableFunc: func(err error) bool {
 			errStr := err.Error()
-			if strings.Contains(errStr, "HTTP 401") ||
-				strings.Contains(errStr, "HTTP 403") {
+			if strings.Contains(errStr, "HTTP 401") || strings.Contains(errStr, "HTTP 403") {
 				return false
 			}
 			return true
 		},
 	}
+}
 
-	err := utils.Retry(retryConfig, func() error {
-		searchURL := fmt.Sprintf("%s/api/v2/simple/search", o.baseURL)
-
-		resp, err := o.client.R().
-			SetHeader("Authorization", fmt.Sprintf("apikey %s", o.apiKey)).
-			SetQueryParams(map[string]string{
-				"query": query,
-				"page":  fmt.Sprintf("%d", page),
-			}).
-			Get(searchURL)
-
-		if err != nil {
-			return err
-		}
-
-		if resp.StatusCode() != 200 {
-			return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
-		}
-
-		var result OnypheSearchResponse
-		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return err
-		}
-
-		if result.Error != "" {
-			return fmt.Errorf("Onyphe API error: %s", result.Error)
-		}
-		if result.ErrMsg != "" {
-			return fmt.Errorf("Onyphe API error: %s", result.ErrMsg)
-		}
-
-		rawData := make([]interface{}, 0, len(result.Results))
-		for _, item := range result.Results {
-			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
-				continue
-			}
-			rawData = append(rawData, data)
-		}
-
-		engineResult = &model.EngineResult{
-			EngineName: o.Name(),
-			RawData:    rawData,
-			Total:      result.Total,
-			Page:       result.Page,
-			HasMore:    result.Page < result.MaxPage,
-		}
-
-		return nil
-	})
-
+// executeOnypheSearch 执行单次 Onyphe API 调用
+func (o *OnypheAdapter) executeOnypheSearch(query string, page, pageSize int, result **model.EngineResult) error {
+	searchURL := fmt.Sprintf("%s/api/v2/simple/search", o.baseURL)
+	resp, err := o.client.R().
+		SetHeader("Authorization", fmt.Sprintf("apikey %s", o.apiKey)).
+		SetQueryParams(map[string]string{
+			"query": query, "page": fmt.Sprintf("%d", page),
+		}).
+		Get(searchURL)
 	if err != nil {
-		return &model.EngineResult{
-			EngineName: o.Name(),
-			Error:      fmt.Sprintf("search error: %v", err),
-		}, nil
+		return err
 	}
+	if resp.StatusCode() != 200 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
+	}
+	return parseOnypheSearchResponse(resp.Body(), page, pageSize, o.Name(), result)
+}
 
-	return engineResult, nil
+// parseOnypheSearchResponse 解析 Onyphe 搜索响应
+func parseOnypheSearchResponse(body []byte, page, pageSize int, engineName string, result **model.EngineResult) error {
+	var resp OnypheSearchResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return err
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("Onyphe API error: %s", resp.Error)
+	}
+	if resp.ErrMsg != "" {
+		return fmt.Errorf("Onyphe API error: %s", resp.ErrMsg)
+	}
+	rawData := make([]interface{}, 0, len(resp.Results))
+	for _, item := range resp.Results {
+		var data map[string]interface{}
+		if err := json.Unmarshal(item, &data); err != nil {
+			continue
+		}
+		rawData = append(rawData, data)
+	}
+	*result = &model.EngineResult{
+		EngineName: engineName, RawData: rawData, Total: resp.Total,
+		Page: resp.Page, HasMore: resp.Page < resp.MaxPage,
+	}
+	return nil
 }
 
 // Normalize 标准化Onyphe结果
