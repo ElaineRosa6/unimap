@@ -60,7 +60,7 @@
 | ARC-1 | L2 hook 在 ISOLATED world，拦不到 fetch/XHR | 🔴 C-1 | MV3 content script 默认 ISOLATED world，不共享 JS 全局 | Phase 1 前置：`world: MAIN` 注入 + postMessage 桥（见 ARC-2） |
 | ARC-2 | MAIN world 无 `chrome.runtime` | 🔴 C-2 | 拦截(MAIN) 与 回传(ISOLATED) 互斥 | 两段式注入：MAIN world 拦截 → postMessage → ISOLATED world 回传 |
 | ARC-3 | L1 与 L2 同源冗余非正交 | 🟠 H-1 | 都拦同一份 API 响应，改端点/加密同时失效 | 建议先做 L1，L2 暂缓 |
-| ARC-4 | API 端点为猜测需抓包验证 | 🟠 H-2 | Shodan 列的是官方 API 非网页端点 | Phase -1：抓包 spike 验证各引擎网页端点 |
+| ARC-4 | API 端点为猜测需抓包验证 | 🟠 H-2 | Shodan 列的是官方 API 非网页端点 | ✅ 已完成：Hunter(`POST /api/search`)、ZoomEye(`GET /api/search`)、Quake(`POST /api/visitor/search/query_string/quake_service`) 为 SPA+XHR；FOFA/Shodan 为 SSR (2026-06-09) |
 | ARC-5 | 加密响应体无应对 | 🟠 H-3 | 强反爬引擎 L1/L2 归零退回 DOM | 2026-06-07 更新：5 引擎 Extension 采集已全部打通，H-3 风险评估不变 |
 | ARC-6 | collection 代码塞进 `internal/screenshot/` 包 | 🟡 M-1 | 职责膨胀 | ✅ 已完成：`CollectResult`+解析函数迁移到 `internal/collection/` (2026-06-09) |
 | ARC-7 | `<all_urls>` 全网注入 | 🟡 M-2 | 与"降低检测"矛盾 | ✅ 已完成：收窄至 10 引擎域名 + localhost (2026-06-09) |
@@ -95,7 +95,7 @@
   ZoomEye 分隔符确认 (=) ✅
 
 高优先（剩余）:
-  ARC-4  API 端点抓包验证
+  ARC-4  API 端点抓包验证 ✅ 已完成 (2026-06-09，5引擎全量：Hunter/ZoomEye/Quake=SPA+XHR，FOFA/Shodan=SSR)
 
 中优先（技术债务/架构改进）:
   SEC-2  API 旧路径 shim 移除 ✅ 已完成 (2026-06-09)

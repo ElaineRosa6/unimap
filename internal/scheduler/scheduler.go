@@ -503,58 +503,43 @@ func (s *Scheduler) scheduleTask(task *ScheduledTask) error {
 
 // executeTask runs a single task execution with optional retries.
 func (s *Scheduler) executeTask(task *ScheduledTask, handler TaskHandler, timeoutSec int, maxRetries int) {
-	now := time.Now()
-	taskType := string(task.Type)
-	var elapsed time.Duration
-
-	// 检查依赖链
 	if !s.areDependenciesMet(task) {
 		logger.Infof("[scheduler] task %s (%s) skipped: dependencies not met", task.ID, task.Name)
 		s.recordSkippedExecution(task, "dependencies_not_met", "dependency tasks not yet successful")
 		return
 	}
-
-	// 检查执行窗口
 	if task.ExecutionWindow != nil && !s.isWithinExecutionWindow(task.ExecutionWindow) {
 		logger.Infof("[scheduler] task %s (%s) skipped: outside execution window", task.ID, task.Name)
 		s.recordSkippedExecution(task, "outside_window", "current time outside execution window")
 		return
 	}
 
+	record := s.executeTaskWithRetry(task, handler, timeoutSec, maxRetries)
+	s.finalizeTaskExecution(task, record)
+}
+
+// executeTaskWithRetry 带重试的任务执行
+func (s *Scheduler) executeTaskWithRetry(task *ScheduledTask, handler TaskHandler, timeoutSec, maxRetries int) ExecutionRecord {
+	now := time.Now()
+	taskType := string(task.Type)
 	record := ExecutionRecord{
-		TaskID:     task.ID,
-		TaskName:   task.Name,
-		TaskType:   taskType,
-		StartedAt:  now.Format(time.RFC3339),
-		RetryCount: 0,
+		TaskID: task.ID, TaskName: task.Name, TaskType: taskType,
+		StartedAt: now.Format(time.RFC3339),
 	}
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
 			record.RetryCount = attempt
 			metrics.IncSchedulerTaskRetry(taskType)
-			time.Sleep(time.Duration(attempt*2) * time.Second) // simple backoff
+			time.Sleep(time.Duration(attempt*2) * time.Second)
 		}
-
-		ctx, cancel := context.WithTimeout(s.ctx, time.Duration(timeoutSec)*time.Second)
-		var result string
-		var err error
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					err = fmt.Errorf("panic in runner: %v", r)
-				}
-			}()
-			result, err = handler.Execute(ctx, task.Payload)
-		}()
-		cancel()
-
-		elapsed = time.Since(now)
+		result, err := s.runTaskHandler(handler, task.Payload, timeoutSec)
+		elapsed := time.Since(now)
 		record.FinishedAt = time.Now().Format(time.RFC3339)
 		record.DurationMs = elapsed.Milliseconds()
 
 		if err != nil {
-			if ctx.Err() == context.DeadlineExceeded {
+			if elapsed >= time.Duration(timeoutSec)*time.Second {
 				record.Status = "timeout"
 				record.Error = fmt.Sprintf("task timed out after %s", elapsed.Round(time.Millisecond))
 			} else {
@@ -563,35 +548,44 @@ func (s *Scheduler) executeTask(task *ScheduledTask, handler TaskHandler, timeou
 			}
 			continue
 		}
-
 		record.Status = "success"
 		record.Result = result
 		break
 	}
+	return record
+}
 
-	// Record metrics
-	metrics.IncSchedulerTaskExecution(taskType, record.Status)
-	metrics.ObserveSchedulerTaskExecutionDuration(taskType, elapsed)
+// runTaskHandler 执行单次任务 handler（带 panic 恢复和超时）
+func (s *Scheduler) runTaskHandler(handler TaskHandler, payload map[string]interface{}, timeoutSec int) (string, error) {
+	ctx, cancel := context.WithTimeout(s.ctx, time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+	var result string
+	var err error
+	func() {
+		defer func() {
+			if r := recover(); r != nil { err = fmt.Errorf("panic in runner: %v", r) }
+		}()
+		result, err = handler.Execute(ctx, payload)
+	}()
+	return result, err
+}
 
-	// Update task state
+// finalizeTaskExecution 更新任务状态、记录历史、发送通知
+func (s *Scheduler) finalizeTaskExecution(task *ScheduledTask, record ExecutionRecord) {
+	metrics.IncSchedulerTaskExecution(record.TaskType, record.Status)
+	metrics.ObserveSchedulerTaskExecutionDuration(record.TaskType, time.Duration(record.DurationMs)*time.Millisecond)
+
 	s.mu.Lock()
 	if t, ok := s.tasks[task.ID]; ok {
+		now := time.Now()
 		t.LastRunAt = &now
-		if next := s.getNextRunTime(task.ID); !next.IsZero() {
-			t.NextRunAt = &next
-		}
+		if next := s.getNextRunTime(task.ID); !next.IsZero() { t.NextRunAt = &next }
 	}
-
-	// Append history
 	s.history = append(s.history, record)
-	if len(s.history) > s.maxHistory {
-		s.history = s.history[len(s.history)-s.maxHistory:]
-	}
+	if len(s.history) > s.maxHistory { s.history = s.history[len(s.history)-s.maxHistory:] }
 	s.mu.Unlock()
 
 	s.updateMetrics()
-
-	// 发送通知
 	s.sendNotification(task, record)
 }
 

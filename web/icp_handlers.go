@@ -51,97 +51,80 @@ func (s *Server) handleICPQuery(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-
-	if s.config == nil {
-		writeAPIError(w, http.StatusServiceUnavailable, "config_not_loaded", "config not loaded", nil)
-		return
-	}
-
-	s.configMutex.Lock()
-	enabled := s.config.ICP.Enabled
-	baseURL := strings.TrimSpace(s.config.ICP.BaseURL)
-	apiKey := s.config.ICP.APIKey
-	defaultType := s.config.ICP.DefaultType
-	s.configMutex.Unlock()
-
+	enabled, baseURL, apiKey, defaultType := s.getICPConfig()
 	if !enabled {
-		writeAPIError(w, http.StatusServiceUnavailable, "icp_disabled",
-			"ICP query is disabled; enable it in settings", nil)
+		writeAPIError(w, http.StatusServiceUnavailable, "icp_disabled", "ICP query is disabled; enable it in settings", nil)
 		return
 	}
 	if baseURL == "" {
-		writeAPIError(w, http.StatusServiceUnavailable, "icp_not_configured",
-			"ICP base_url is not configured", nil)
+		writeAPIError(w, http.StatusServiceUnavailable, "icp_not_configured", "ICP base_url is not configured", nil)
 		return
 	}
 
-	// 解析 type 参数：支持逗号分隔的多类型（如 "web,app,mapp"）
-	rawType := strings.TrimSpace(r.URL.Query().Get("type"))
-	if rawType == "" {
-		rawType = defaultType
-	}
-	var types []string
-	seen := make(map[string]bool)
-	for _, part := range strings.Split(rawType, ",") {
-		t := strings.TrimSpace(part)
-		if t == "" {
-			continue
-		}
-		if !adapter.IsValidICPQueryType(t) {
-			writeAPIError(w, http.StatusBadRequest, "invalid_type",
-				"invalid ICP query type", map[string]string{"type": t})
-			return
-		}
-		if !seen[t] {
-			seen[t] = true
-			types = append(types, t)
-		}
-	}
-	if len(types) == 0 {
-		types = []string{defaultType}
-	}
-
-	search := strings.TrimSpace(r.URL.Query().Get("search"))
-	if search == "" {
-		writeAPIError(w, http.StatusBadRequest, "missing_search",
-			"search parameter is required", nil)
+	types, ok := parseICPQueryTypes(w, r, defaultType)
+	if !ok {
 		return
 	}
-	if len(search) > 256 {
-		writeAPIError(w, http.StatusBadRequest, "search_too_long",
-			"search must be 256 chars or fewer", nil)
+	search, ok := validateICPSearch(w, r)
+	if !ok {
 		return
 	}
 
 	page := parsePositiveInt(r.URL.Query().Get("page"), 1)
 	pageSize := parsePositiveInt(r.URL.Query().Get("page_size"), 20)
-	if pageSize > 100 {
-		pageSize = 100
-	}
+	if pageSize > 100 { pageSize = 100 }
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
 	groups, err := adapter.ICPSearchMultiType(ctx, baseURL, apiKey, search, types, page, pageSize)
 	if err != nil {
-		writeAPIError(w, http.StatusBadGateway, "icp_query_failed",
-			sanitizeError(err.Error()), nil)
+		writeAPIError(w, http.StatusBadGateway, "icp_query_failed", sanitizeError(err.Error()), nil)
 		return
 	}
-
-	// 汇总总结果数（仅统计成功的组）
 	total := 0
-	for _, g := range groups {
-		total += g.Total
-	}
-
+	for _, g := range groups { total += g.Total }
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":   true,
-		"total":     total,
-		"page":      page,
-		"page_size": pageSize,
-		"groups":    groups,
+		"success": true, "total": total, "page": page, "page_size": pageSize, "groups": groups,
 	})
+}
+
+func (s *Server) getICPConfig() (enabled bool, baseURL, apiKey, defaultType string) {
+	if s.config == nil { return }
+	s.configMutex.Lock()
+	defer s.configMutex.Unlock()
+	return s.config.ICP.Enabled, strings.TrimSpace(s.config.ICP.BaseURL), s.config.ICP.APIKey, s.config.ICP.DefaultType
+}
+
+func parseICPQueryTypes(w http.ResponseWriter, r *http.Request, defaultType string) ([]string, bool) {
+	rawType := strings.TrimSpace(r.URL.Query().Get("type"))
+	if rawType == "" { rawType = defaultType }
+	var types []string
+	seen := make(map[string]bool)
+	for _, part := range strings.Split(rawType, ",") {
+		t := strings.TrimSpace(part)
+		if t == "" { continue }
+		if !adapter.IsValidICPQueryType(t) {
+			writeAPIError(w, http.StatusBadRequest, "invalid_type", "invalid ICP query type", map[string]string{"type": t})
+			return nil, false
+		}
+		if !seen[t] { seen[t] = true; types = append(types, t) }
+	}
+	if len(types) == 0 { types = []string{defaultType} }
+	return types, true
+}
+
+func validateICPSearch(w http.ResponseWriter, r *http.Request) (string, bool) {
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	if search == "" {
+		writeAPIError(w, http.StatusBadRequest, "missing_search", "search parameter is required", nil)
+		return "", false
+	}
+	if len(search) > 256 {
+		writeAPIError(w, http.StatusBadRequest, "search_too_long", "search must be 256 chars or fewer", nil)
+		return "", false
+	}
+	return search, true
 }
 
 // parsePositiveInt parses a positive integer from a query string value; returns

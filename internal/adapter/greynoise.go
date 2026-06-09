@@ -176,87 +176,72 @@ type GreyNoiseSearchResponse struct {
 // Search 执行GreyNoise搜索
 func (g *GreyNoiseAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if g.apiKey == "" {
-		return &model.EngineResult{
-			EngineName: g.Name(),
-			Error:      "GreyNoise API key not configured",
-		}, nil
+		return &model.EngineResult{EngineName: g.Name(), Error: "GreyNoise API key not configured"}, nil
 	}
-
 	var engineResult *model.EngineResult
+	err := utils.Retry(g.searchRetryConfig(), func() error {
+		return g.executeGreyNoiseSearch(query, page, pageSize, &engineResult)
+	})
+	if err != nil {
+		return &model.EngineResult{EngineName: g.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
+	}
+	return engineResult, nil
+}
 
-	retryConfig := utils.RetryConfig{
-		MaxRetries:  3,
-		BaseDelay:   100 * time.Millisecond,
-		MaxDelay:    2 * time.Second,
-		Exponential: true,
-		Jitter:      true,
+func (g *GreyNoiseAdapter) searchRetryConfig() utils.RetryConfig {
+	return utils.RetryConfig{
+		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
+		Exponential: true, Jitter: true,
 		RetryableFunc: func(err error) bool {
 			errStr := err.Error()
-			if strings.Contains(errStr, "HTTP 401") ||
-				strings.Contains(errStr, "HTTP 403") {
+			if strings.Contains(errStr, "HTTP 401") || strings.Contains(errStr, "HTTP 403") {
 				return false
 			}
 			return true
 		},
 	}
+}
 
-	err := utils.Retry(retryConfig, func() error {
-		searchURL := fmt.Sprintf("%s/v3/experimental/gnql", g.baseURL)
-
-		resp, err := g.client.R().
-			SetHeader("key", g.apiKey).
-			SetQueryParams(map[string]string{
-				"query": query,
-				"size":  fmt.Sprintf("%d", pageSize),
-			}).
-			Get(searchURL)
-
-		if err != nil {
-			return err
-		}
-
-		if resp.StatusCode() != 200 {
-			return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
-		}
-
-		var result GreyNoiseSearchResponse
-		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return err
-		}
-
-		if result.Message != "" && result.Count == 0 {
-			return fmt.Errorf("GreyNoise API error: %s", result.Message)
-		}
-
-		rawData := make([]interface{}, 0, len(result.Data))
-		for _, item := range result.Data {
-			var data map[string]interface{}
-			if err := json.Unmarshal(item, &data); err != nil {
-				continue
-			}
-			rawData = append(rawData, data)
-		}
-
-		// GreyNoise GNQL API 不支持分页偏移，使用 scroll 或一次性返回
-		engineResult = &model.EngineResult{
-			EngineName: g.Name(),
-			RawData:    rawData,
-			Total:      result.Count,
-			Page:       1,
-			HasMore:    !result.Complete && result.Scroll != "",
-		}
-
-		return nil
-	})
-
+// executeGreyNoiseSearch 执行单次 GreyNoise API 调用
+func (g *GreyNoiseAdapter) executeGreyNoiseSearch(query string, page, pageSize int, result **model.EngineResult) error {
+	searchURL := fmt.Sprintf("%s/v3/experimental/gnql", g.baseURL)
+	resp, err := g.client.R().
+		SetHeader("key", g.apiKey).
+		SetQueryParams(map[string]string{
+			"query": query, "size": fmt.Sprintf("%d", pageSize),
+		}).
+		Get(searchURL)
 	if err != nil {
-		return &model.EngineResult{
-			EngineName: g.Name(),
-			Error:      fmt.Sprintf("search error: %v", err),
-		}, nil
+		return err
 	}
+	if resp.StatusCode() != 200 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
+	}
+	return parseGreyNoiseSearchResponse(resp.Body(), pageSize, g.Name(), result)
+}
 
-	return engineResult, nil
+// parseGreyNoiseSearchResponse 解析 GreyNoise 搜索响应
+func parseGreyNoiseSearchResponse(body []byte, pageSize int, engineName string, result **model.EngineResult) error {
+	var resp GreyNoiseSearchResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return err
+	}
+	if resp.Message != "" && resp.Count == 0 {
+		return fmt.Errorf("GreyNoise API error: %s", resp.Message)
+	}
+	rawData := make([]interface{}, 0, len(resp.Data))
+	for _, item := range resp.Data {
+		var data map[string]interface{}
+		if err := json.Unmarshal(item, &data); err != nil {
+			continue
+		}
+		rawData = append(rawData, data)
+	}
+	*result = &model.EngineResult{
+		EngineName: engineName, RawData: rawData, Total: resp.Count,
+		Page: 1, HasMore: !resp.Complete && resp.Scroll != "",
+	}
+	return nil
 }
 
 // Normalize 标准化GreyNoise结果
