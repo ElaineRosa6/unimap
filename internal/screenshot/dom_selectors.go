@@ -37,6 +37,32 @@ var selectorsByEngine = map[string]*engineSelectors{
 		PaginationNext: "li.ant-pagination-next button",
 		TotalSelector:  ".total-count",
 	},
+	"shodan": {
+		RowSelector:    ".row.l-search-results .result",
+		ExtractJS:      extractShodanJS,
+		PaginationNext: ".pagination .next a",
+		TotalSelector:  ".result-count",
+	},
+	"censys": {
+		RowSelector:    "[class*='result-card']",
+		PaginationNext: "[class*='next']",
+		TotalSelector:  "[class*='total']",
+	},
+	"daydaymap": {
+		RowSelector:    "[class*='result-item']",
+		PaginationNext: ".el-pagination__next",
+		TotalSelector:  "[class*='total']",
+	},
+	"onyphe": {
+		RowSelector:    "table tbody tr",
+		PaginationNext: "[class*='next']",
+		TotalSelector:  "[class*='total']",
+	},
+	"greynoise": {
+		RowSelector:    "table tbody tr",
+		PaginationNext: "[class*='next']",
+		TotalSelector:  "[class*='total']",
+	},
 }
 
 func getSelectors(engine string) *engineSelectors {
@@ -154,6 +180,36 @@ const extractQuakeJS = `
   });
   var total = 0;
   var hasNext = !!document.querySelector('li.ant-pagination-next:not(.ant-pagination-disabled) button');
+  return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
+})()
+`
+
+const extractShodanJS = `
+(function() {
+  var results = document.querySelectorAll('.row.l-search-results .result');
+  var assets = [];
+  results.forEach(function(el) {
+    var asset = {};
+    var ipLink = el.querySelector("a[href*='/host/']");
+    if (ipLink) {
+      var m = ipLink.getAttribute('href').match(/\\/host\\/([^/?#]+)/);
+      if (m) asset.ip = m[1];
+    }
+    var portLink = el.querySelector("a[href*='/port/']");
+    if (portLink) asset.port = parseInt(portLink.textContent.trim()) || 0;
+    var heading = el.querySelector('.heading a, a.title');
+    if (heading) asset.title = heading.textContent.trim();
+    var details = el.querySelector('.result-details');
+    if (details) asset.org = details.textContent.trim().split('\\n')[0];
+    var banner = el.querySelector('.banner-data, pre');
+    if (banner) asset.banner = banner.textContent.trim().substring(0, 200);
+    asset.source = 'shodan';
+    if (asset.ip) assets.push(asset);
+  });
+  var total = 0;
+  var totalEl = document.querySelector('.result-count, [class*="total"]');
+  if (totalEl) { var m = totalEl.textContent.match(/(\\d+)/); if (m) total = parseInt(m[1]); }
+  var hasNext = !!document.querySelector('.pagination .next:not(.disabled) a, a[rel="next"]');
   return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
 })()
 `

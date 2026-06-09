@@ -435,16 +435,63 @@ func NewICPQueryRunner(p func() adapter.ICPConfig, store ICPResultStore, alertSe
 
 func (r *ICPQueryRunner) Type() TaskType { return TaskICPQuery }
 
+type icpQueryResult struct {
+	query   string
+	qtype   string
+	total   int
+	domains []string
+}
+
 func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
 	cfg := r.cfgProvider()
+	if err := validateICPConfig(cfg); err != nil {
+		return "", err
+	}
 
+	queries, err := extractICPQueries(payload)
+	if err != nil {
+		return "", err
+	}
+
+	types, err := parseICPTypes(payload, cfg.DefaultType)
+	if err != nil {
+		return "", err
+	}
+
+	page, pageSize := extractICPPagination(payload)
+	failFast := extractBool(payload, "fail_fast", false)
+	taskID := extractString(payload, "_task_id", "")
+
+	baseURL := strings.TrimSpace(cfg.BaseURL)
+	apiKey := cfg.APIKey
+	startedAt := time.Now()
+
+	execRes := r.executeICPQueries(
+		ctx, queries, types, baseURL, apiKey, page, pageSize, failFast, taskID, startedAt,
+	)
+	if execRes.ctxErr != nil {
+		return "", execRes.ctxErr
+	}
+
+	result := formatICPResults(types, queries, execRes.succeeded, execRes.totalRecords, execRes.queryResults, execRes.errs)
+
+	if execRes.succeeded == 0 && len(execRes.errs) > 0 {
+		return result, fmt.Errorf("all %d ICP query(ies) failed", len(execRes.errs))
+	}
+	return result, nil
+}
+
+func validateICPConfig(cfg adapter.ICPConfig) error {
 	if !cfg.Enabled {
-		return "", fmt.Errorf("ICP query is disabled")
+		return fmt.Errorf("ICP query is disabled")
 	}
 	if strings.TrimSpace(cfg.BaseURL) == "" {
-		return "", fmt.Errorf("ICP base_url not configured")
+		return fmt.Errorf("ICP base_url not configured")
 	}
+	return nil
+}
 
+func extractICPQueries(payload map[string]interface{}) ([]string, error) {
 	queries := extractStrings(payload, "queries", nil)
 	if len(queries) == 0 {
 		if q := extractString(payload, "query", ""); q != "" {
@@ -452,13 +499,16 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 		}
 	}
 	if len(queries) == 0 {
-		return "", fmt.Errorf("missing 'queries' or 'query' in payload")
+		return nil, fmt.Errorf("missing 'queries' or 'query' in payload")
 	}
 	if len(queries) > icpMaxQueries {
-		return "", fmt.Errorf("too many queries (%d), maximum is %d", len(queries), icpMaxQueries)
+		return nil, fmt.Errorf("too many queries (%d), maximum is %d", len(queries), icpMaxQueries)
 	}
+	return queries, nil
+}
 
-	rawType := extractString(payload, "type", cfg.DefaultType)
+func parseICPTypes(payload map[string]interface{}, defaultType string) ([]string, error) {
+	rawType := extractString(payload, "type", defaultType)
 	if rawType == "" {
 		rawType = "web"
 	}
@@ -470,7 +520,7 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 			continue
 		}
 		if !adapter.IsValidICPQueryType(t) {
-			return "", fmt.Errorf("invalid ICP query type: %q", t)
+			return nil, fmt.Errorf("invalid ICP query type: %q", t)
 		}
 		if !seen[t] {
 			seen[t] = true
@@ -480,39 +530,40 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 	if len(types) == 0 {
 		types = []string{"web"}
 	}
+	return types, nil
+}
 
-	page := extractInt(payload, "page", 1)
-	pageSize := extractInt(payload, "page_size", 20)
+func extractICPPagination(payload map[string]interface{}) (page, pageSize int) {
+	page = extractInt(payload, "page", 1)
+	pageSize = extractInt(payload, "page_size", 20)
 	if pageSize > icpMaxPageSize {
 		pageSize = icpMaxPageSize
 	}
 	if pageSize <= 0 {
 		pageSize = 20
 	}
+	return page, pageSize
+}
 
-	failFast := extractBool(payload, "fail_fast", false)
-	taskID := extractString(payload, "_task_id", "")
+type icpExecResult struct {
+	totalRecords int
+	succeeded    int
+	errs         []string
+	queryResults []icpQueryResult
+	ctxErr       error
+}
 
-	totalRecords := 0
-	succeeded := 0
-	var errs []string
-	type icpQueryResult struct {
-		query   string
-		qtype   string
-		total   int
-		domains []string
-	}
-	var queryResults []icpQueryResult
-
-	baseURL := strings.TrimSpace(cfg.BaseURL)
-	apiKey := cfg.APIKey
-	startedAt := time.Now()
-
+func (r *ICPQueryRunner) executeICPQueries(
+	ctx context.Context, queries, types []string, baseURL, apiKey string,
+	page, pageSize int, failFast bool, taskID string, startedAt time.Time,
+) icpExecResult {
+	var res icpExecResult
 	for _, q := range queries {
 		for _, queryType := range types {
 			select {
 			case <-ctx.Done():
-				return "", ctx.Err()
+				res.ctxErr = ctx.Err()
+				return res
 			default:
 			}
 
@@ -523,30 +574,33 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 				PageSize: pageSize,
 			})
 			if err != nil {
-				errs = append(errs, fmt.Sprintf("%q [type=%s]: %s", q, queryType, err.Error()))
+				res.errs = append(res.errs, fmt.Sprintf("%q [type=%s]: %s", q, queryType, err.Error()))
 				if failFast {
 					break
 				}
 				continue
 			}
-			succeeded++
-			totalRecords += total
+			res.succeeded++
+			res.totalRecords += total
 
 			var domains []string
-			for _, res := range results {
-				if res.Domain != "" {
-					domains = append(domains, res.Domain)
+			for _, item := range results {
+				if item.Domain != "" {
+					domains = append(domains, item.Domain)
 				}
 			}
-			queryResults = append(queryResults, icpQueryResult{query: q, qtype: queryType, total: total, domains: domains})
+			res.queryResults = append(res.queryResults, icpQueryResult{query: q, qtype: queryType, total: total, domains: domains})
 
 			r.persistRun(taskID, q, queryType, page, pageSize, total, results, startedAt)
 		}
-		if failFast && len(errs) > 0 {
+		if failFast && len(res.errs) > 0 {
 			break
 		}
 	}
+	return res
+}
 
+func formatICPResults(types, queries []string, succeeded, totalRecords int, queryResults []icpQueryResult, errs []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "ICP 备案查询完成（类型: %s）\n\n", strings.Join(types, ","))
 	fmt.Fprintf(&b, "📊 成功: %d/%d，共 %d 条记录\n\n", succeeded, len(queries)*len(types), totalRecords)
@@ -567,12 +621,7 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interfa
 	for _, e := range errs {
 		fmt.Fprintf(&b, "❌ %s\n", e)
 	}
-	result := sanitizeUTF8(b.String())
-
-	if succeeded == 0 && len(errs) > 0 {
-		return result, fmt.Errorf("all %d ICP query(ies) failed", len(errs))
-	}
-	return result, nil
+	return sanitizeUTF8(b.String())
 }
 
 func (r *ICPQueryRunner) persistRun(taskID, keyword, queryType string, page, pageSize, total int, results []adapter.ICPResult, startedAt time.Time) {

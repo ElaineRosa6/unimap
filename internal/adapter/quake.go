@@ -304,40 +304,40 @@ func (q *QuakeAdapter) GetQuota() (*model.QuotaInfo, error) {
 	if q.apiKey == "" {
 		return nil, fmt.Errorf("Quake API key not configured")
 	}
-
-	// Quake API endpoint for quota info
 	url := fmt.Sprintf("%s/v3/user/info", q.baseURL)
-
-	resp, err := q.client.R().
-		SetQueryParam("key", q.apiKey).
-		Get(url)
-
+	resp, err := q.client.R().SetQueryParam("key", q.apiKey).Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("request error: %w", err)
 	}
-
 	if resp.StatusCode() != 200 {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
 	}
+	return parseQuakeQuotaResponse(resp.Body())
+}
 
-	// Quake quota response structure can vary; parse defensively to avoid silently
-	// returning 0/0/0 when the schema changes.
+// parseQuakeQuotaResponse 防御性解析 Quake 配额响应（支持多种响应结构）
+func parseQuakeQuotaResponse(body []byte) (*model.QuotaInfo, error) {
 	var raw map[string]interface{}
-	if err := json.Unmarshal(resp.Body(), &raw); err != nil {
+	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("parse error: %w", err)
 	}
-
 	code := raw["code"]
 	message, _ := raw["message"].(string)
 	if !quakeIsSuccessCode(code) {
 		return nil, fmt.Errorf("quake API error (code=%v): %s", code, message)
 	}
 
-	asMap := func(v interface{}) (map[string]interface{}, bool) {
-		m, ok := v.(map[string]interface{})
-		return m, ok
+	total, used, remain, found := extractQuakeQuotaValues(raw)
+	if !found {
+		logger.Warnf("Quake quota response structure different than expected, using default values: %v", raw)
+		return &model.QuotaInfo{Unit: "queries"}, nil
 	}
-	asInt := func(v interface{}) (int, bool) {
+	return &model.QuotaInfo{Remaining: remain, Total: total, Used: used, Unit: "queries"}, nil
+}
+
+// extractQuakeQuotaValues 尝试从多种响应结构中提取配额值
+func extractQuakeQuotaValues(raw map[string]interface{}) (total, used, remain int, found bool) {
+	qInt := func(v interface{}) (int, bool) {
 		switch vv := v.(type) {
 		case int:
 			return vv, true
@@ -350,102 +350,61 @@ func (q *QuakeAdapter) GetQuota() (*model.QuotaInfo, error) {
 			if vv == "" {
 				return 0, false
 			}
-			// best-effort parse
 			var n int
 			_, err := fmt.Sscanf(vv, "%d", &n)
-			if err != nil {
-				return 0, false
-			}
-			return n, true
+			return n, err == nil
 		default:
 			return 0, false
 		}
 	}
+	qMap := func(v interface{}) (map[string]interface{}, bool) {
+		m, ok := v.(map[string]interface{})
+		return m, ok
+	}
+	extractFromLimit := func(ql map[string]interface{}) bool {
+		t, tOk := qInt(ql["total"])
+		u, uOk := qInt(ql["used"])
+		r, rOk := qInt(ql["remain"])
+		if tOk || uOk || rOk {
+			total, used, remain = t, u, r
+			return true
+		}
+		return false
+	}
 
-	// 尝试不同的响应结构
-	var total, used, remain int
-	var found bool
-
-	// 结构1: data.resource.query_limit 或 data.resource.queryLimit
-	data, dataOk := asMap(raw["data"])
-	if dataOk {
-		resource, resourceOk := asMap(data["resource"])
-		if resourceOk {
-			// Prefer snake_case query_limit but accept camelCase queryLimit as well.
-			queryLimit, ok := asMap(resource["query_limit"])
-			if !ok {
-				queryLimit, ok = asMap(resource["queryLimit"])
+	// 结构1: data.resource.query_limit / queryLimit
+	if data, ok := qMap(raw["data"]); ok {
+		if resource, ok := qMap(data["resource"]); ok {
+			if ql, ok := qMap(resource["query_limit"]); ok && extractFromLimit(ql) {
+				return total, used, remain, true
 			}
-			if ok {
-				total, _ = asInt(queryLimit["total"])
-				used, _ = asInt(queryLimit["used"])
-				remain, _ = asInt(queryLimit["remain"])
-				found = true
+			if ql, ok := qMap(resource["queryLimit"]); ok && extractFromLimit(ql) {
+				return total, used, remain, true
 			}
 		}
-	}
-
-	// 结构2: 直接在data中
-	if !found && dataOk {
-		queryLimit, ok := asMap(data["query_limit"])
-		if !ok {
-			queryLimit, ok = asMap(data["queryLimit"])
+		// 结构2: data.query_limit / queryLimit
+		if ql, ok := qMap(data["query_limit"]); ok && extractFromLimit(ql) {
+			return total, used, remain, true
 		}
-		if ok {
-			total, _ = asInt(queryLimit["total"])
-			used, _ = asInt(queryLimit["used"])
-			remain, _ = asInt(queryLimit["remain"])
-			found = true
+		if ql, ok := qMap(data["queryLimit"]); ok && extractFromLimit(ql) {
+			return total, used, remain, true
 		}
-	}
-
-	// 结构3: Quake实际响应结构 - data.credit 和 data.month_remaining_credit
-	if !found && dataOk {
-		t, totalOk := asInt(data["credit"])
-		r, remainOk := asInt(data["month_remaining_credit"])
-		if totalOk && remainOk {
-			total = t
-			remain = r
-			used = total - remain
-			found = true
-			logger.Infof("Quake quota: total=%d, used=%d, remain=%d", total, used, remain)
+		// 结构3: data.credit + data.month_remaining_credit
+		t, tOk := qInt(data["credit"])
+		r, rOk := qInt(data["month_remaining_credit"])
+		if tOk && rOk {
+			logger.Infof("Quake quota: total=%d, used=%d, remain=%d", t, t-r, r)
+			return t, t - r, r, true
 		}
 	}
-
-	// 结构4: 直接在raw中
-	if !found {
-		queryLimit, ok := asMap(raw["query_limit"])
-		if !ok {
-			queryLimit, ok = asMap(raw["queryLimit"])
-		}
-		if ok {
-			total, _ = asInt(queryLimit["total"])
-			used, _ = asInt(queryLimit["used"])
-			remain, _ = asInt(queryLimit["remain"])
-			found = true
-		}
+	// 结构4: raw.query_limit / queryLimit
+	if ql, ok := qMap(raw["query_limit"]); ok && extractFromLimit(ql) {
+		return total, used, remain, true
 	}
-
-	// 如果仍然没找到，返回默认值而不是错误
-	if !found {
-		logger.Warnf("Quake quota response structure different than expected, using default values: %v", raw)
-		// 返回默认配额信息，避免查询失败
-		return &model.QuotaInfo{
-			Remaining: 0,
-			Total:     0,
-			Used:      0,
-			Unit:      "queries",
-			Expiry:    "",
-		}, nil
+	if ql, ok := qMap(raw["queryLimit"]); ok && extractFromLimit(ql) {
+		return total, used, remain, true
 	}
-
-	return &model.QuotaInfo{
-		Remaining: remain,
-		Total:     total,
-		Used:      used,
-		Unit:      "queries",
-		Expiry:    "", // Quake API doesn't return expiry info
-	}, nil
+	return 0, 0, 0, false
 }
 
 // IsWebOnly 检查是否为 Web-only 模式

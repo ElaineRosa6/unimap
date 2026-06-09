@@ -370,97 +370,133 @@ func (s *Server) resolveChromePath() string {
 func (s *Server) resolveChromePathWithDiagnostics() (string, []string) {
 	checked := make([]string, 0, 16)
 
+	if path, ok := s.resolveChromeFromConfigOrEnv(checked); ok {
+		return path, checked
+	}
+
+	if path, c, ok := resolveChromeFromOS(checked); ok {
+		return path, c
+	}
+
+	return resolveChromeFromLookPath(checked)
+}
+
+// resolveChromeFromConfigOrEnv checks config and env var for Chrome path.
+func (s *Server) resolveChromeFromConfigOrEnv(checked []string) (string, bool) {
 	if s.config != nil {
 		if raw := strings.TrimSpace(s.config.Screenshot.ChromePath); raw != "" {
 			checked = append(checked, "config:screenshot.chrome_path")
-			return raw, checked
+			return raw, true
 		}
 		checked = append(checked, "config:screenshot.chrome_path(empty)")
 	}
 	if env := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PATH")); env != "" {
 		checked = append(checked, "env:UNIMAP_CHROME_PATH")
-		return env, checked
+		return env, true
 	}
 	checked = append(checked, "env:UNIMAP_CHROME_PATH(empty)")
+	return "", false
+}
 
-	if runtime.GOOS == "windows" {
-		for _, regPath := range []string{
-			`HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\chrome.exe`,
-			`HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\chrome.exe`,
-			`HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe`,
-			`HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe`,
-		} {
-			p := strings.TrimSpace(queryWindowsAppPath(regPath))
-			if p == "" {
-				checked = append(checked, "registry:"+regPath+"(empty)")
-				continue
-			}
-			checked = append(checked, "registry:"+regPath)
-			if _, err := os.Stat(p); err == nil {
-				return p, checked
-			}
-			checked = append(checked, "registry-target-missing:"+p)
-		}
+// resolveChromeFromOS searches OS-specific paths for Chrome.
+func resolveChromeFromOS(checked []string) (string, []string, bool) {
+	switch runtime.GOOS {
+	case "windows":
+		return resolveChromeWindows(checked)
+	case "darwin":
+		return resolveChromeDarwin(checked)
+	case "linux":
+		return resolveChromeLinux(checked)
+	}
+	return "", checked, false
+}
 
-		windowsCandidates := []string{
-			`C:\Program Files\Google\Chrome\Application\chrome.exe`,
-			`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
-			`C:\Program Files\Microsoft\Edge\Application\msedge.exe`,
-			`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
+// resolveChromeWindows searches Windows registry and common paths.
+func resolveChromeWindows(checked []string) (string, []string, bool) {
+	for _, regPath := range []string{
+		`HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\chrome.exe`,
+		`HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\chrome.exe`,
+		`HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe`,
+		`HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe`,
+	} {
+		p := strings.TrimSpace(queryWindowsAppPath(regPath))
+		if p == "" {
+			checked = append(checked, "registry:"+regPath+"(empty)")
+			continue
 		}
-		if localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); localAppData != "" {
-			windowsCandidates = append(windowsCandidates,
-				filepath.Join(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
-				filepath.Join(localAppData, "Microsoft", "Edge", "Application", "msedge.exe"),
-			)
+		checked = append(checked, "registry:"+regPath)
+		if _, err := os.Stat(p); err == nil {
+			return p, checked, true
 		}
-		for _, p := range windowsCandidates {
-			checked = append(checked, "path:"+p)
-			if _, err := os.Stat(p); err == nil {
-				return p, checked
-			}
-		}
+		checked = append(checked, "registry-target-missing:"+p)
 	}
 
-	if runtime.GOOS == "darwin" {
-		for _, p := range []string{
-			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-			"/Applications/Chromium.app/Contents/MacOS/Chromium",
-			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-		} {
-			checked = append(checked, "path:"+p)
-			if _, err := os.Stat(p); err == nil {
-				return p, checked
-			}
-		}
-		if homeDir, err := os.UserHomeDir(); err == nil {
-			userChrome := filepath.Join(homeDir, "Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome")
-			checked = append(checked, "path:"+userChrome)
-			if _, err := os.Stat(userChrome); err == nil {
-				return userChrome, checked
-			}
+	candidates := []string{
+		`C:\Program Files\Google\Chrome\Application\chrome.exe`,
+		`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
+		`C:\Program Files\Microsoft\Edge\Application\msedge.exe`,
+		`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
+	}
+	if localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); localAppData != "" {
+		candidates = append(candidates,
+			filepath.Join(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
+			filepath.Join(localAppData, "Microsoft", "Edge", "Application", "msedge.exe"),
+		)
+	}
+	for _, p := range candidates {
+		checked = append(checked, "path:"+p)
+		if _, err := os.Stat(p); err == nil {
+			return p, checked, true
 		}
 	}
+	return "", checked, false
+}
 
-	if runtime.GOOS == "linux" {
-		for _, p := range []string{
-			"/usr/bin/google-chrome",
-			"/usr/bin/google-chrome-stable",
-			"/usr/bin/google-chrome-beta",
-			"/usr/bin/chromium",
-			"/usr/bin/chromium-browser",
-			"/snap/bin/chromium",
-			"/usr/bin/microsoft-edge",
-			"/usr/bin/microsoft-edge-stable",
-			"/opt/google/chrome/chrome",
-		} {
-			checked = append(checked, "path:"+p)
-			if _, err := os.Stat(p); err == nil {
-				return p, checked
-			}
+// resolveChromeDarwin searches macOS paths for Chrome.
+func resolveChromeDarwin(checked []string) (string, []string, bool) {
+	for _, p := range []string{
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+		"/Applications/Chromium.app/Contents/MacOS/Chromium",
+		"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+	} {
+		checked = append(checked, "path:"+p)
+		if _, err := os.Stat(p); err == nil {
+			return p, checked, true
 		}
 	}
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		userChrome := filepath.Join(homeDir, "Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome")
+		checked = append(checked, "path:"+userChrome)
+		if _, err := os.Stat(userChrome); err == nil {
+			return userChrome, checked, true
+		}
+	}
+	return "", checked, false
+}
 
+// resolveChromeLinux searches Linux paths for Chrome.
+func resolveChromeLinux(checked []string) (string, []string, bool) {
+	for _, p := range []string{
+		"/usr/bin/google-chrome",
+		"/usr/bin/google-chrome-stable",
+		"/usr/bin/google-chrome-beta",
+		"/usr/bin/chromium",
+		"/usr/bin/chromium-browser",
+		"/snap/bin/chromium",
+		"/usr/bin/microsoft-edge",
+		"/usr/bin/microsoft-edge-stable",
+		"/opt/google/chrome/chrome",
+	} {
+		checked = append(checked, "path:"+p)
+		if _, err := os.Stat(p); err == nil {
+			return p, checked, true
+		}
+	}
+	return "", checked, false
+}
+
+// resolveChromeFromLookPath uses exec.LookPath as a final fallback.
+func resolveChromeFromLookPath(checked []string) (string, []string) {
 	for _, name := range []string{"chrome", "chrome.exe", "msedge", "msedge.exe", "chromium", "chromium.exe"} {
 		checked = append(checked, "lookpath:"+name)
 		if path, err := exec.LookPath(name); err == nil {

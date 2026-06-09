@@ -5,11 +5,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/model"
 )
@@ -204,21 +204,47 @@ func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, 
 	return searchURL, nil
 }
 
-func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
+func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error) {
 	if p == nil || p.bridge == nil {
 		return nil, fmt.Errorf("extension provider not initialized")
 	}
-	searchURL := ""
-	if p.mgr != nil {
-		searchURL = strings.TrimSpace(p.mgr.BuildSearchEngineURL(engine, query))
-	}
-	if searchURL == "" {
-		searchURL = buildSearchEngineURL(engine, query)
-	}
+	searchURL := p.resolveSearchURL(engine, query)
 	if searchURL == "" {
 		return nil, fmt.Errorf("unsupported engine: %s", engine)
 	}
 
+	result, err := p.submitCollectTask(ctx, searchURL, queryID)
+	if err != nil {
+		return nil, err
+	}
+
+	collectResult := collection.CollectResult{
+		Engine: engine, Query: query, RawURL: searchURL, Timestamp: time.Now().Unix(),
+	}
+
+	if isLoginWallDetected(result) {
+		return p.handleLoginWallResult(collectResult, result, engine), nil
+	}
+	if !result.Success {
+		return nil, collectBridgeError(result)
+	}
+
+	p.populateCollectResultFromBridge(&collectResult, result, engine)
+	return []collection.CollectResult{collectResult}, nil
+}
+
+// resolveSearchURL builds the search engine URL for collection.
+func (p *ExtensionProvider) resolveSearchURL(engine, query string) string {
+	if p.mgr != nil {
+		if u := strings.TrimSpace(p.mgr.BuildSearchEngineURL(engine, query)); u != "" {
+			return u
+		}
+	}
+	return buildSearchEngineURL(engine, query)
+}
+
+// submitCollectTask submits a collect action to the bridge.
+func (p *ExtensionProvider) submitCollectTask(ctx context.Context, searchURL, queryID string) (BridgeResult, error) {
 	task := BridgeTask{
 		RequestID:    fmt.Sprintf("router_collect_%d", time.Now().UnixNano()),
 		URL:          searchURL,
@@ -228,85 +254,82 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 	}
 	result, err := p.bridge.Submit(ctx, task)
 	if err != nil {
-		return nil, fmt.Errorf("extension bridge collect failed: %w", err)
+		return result, fmt.Errorf("extension bridge collect failed: %w", err)
 	}
-	collectResult := CollectResult{
-		Engine:    engine,
-		Query:     query,
-		RawURL:    searchURL,
-		Timestamp: time.Now().Unix(),
-	}
+	return result, nil
+}
 
-	// Check for login wall BEFORE treating success=false as an error.
-	// The extension sets success=false + error_code="login_required" when a login wall
-	// is detected. We must return a proper CollectResult with IsLoginWall=true rather
-	// than an error, so the caller can distinguish "login required" from "actual failure".
-	isLoginWall := false
+// isLoginWallDetected checks if the bridge result indicates a login wall.
+func isLoginWallDetected(result BridgeResult) bool {
 	if len(result.StructuredCollectedData) > 0 {
 		if lw, ok := result.StructuredCollectedData["is_login_wall"].(bool); ok && lw {
-			isLoginWall = true
+			return true
 		}
 	}
-	if !isLoginWall && !result.Success {
+	if !result.Success {
 		errCode := strings.TrimSpace(result.ErrorCode)
 		if strings.Contains(strings.ToLower(errCode), "login") {
-			isLoginWall = true
+			return true
 		}
 	}
+	return false
+}
 
-	if isLoginWall {
-		collectResult.IsLoginWall = true
-		collectResult.LoginRequired = true
-		metrics.IncBrowserLoginRequired(engine)
-		if len(result.StructuredCollectedData) > 0 {
-			collectResult.Assets, collectResult.Total, collectResult.HasMore = parseStructuredCollectedData(result.StructuredCollectedData, engine)
-			if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
-				collectResult.Title = title
-			}
-		}
-		return []CollectResult{collectResult}, nil
-	}
-
-	if !result.Success {
-		errMsg := strings.TrimSpace(result.Error)
-		if errMsg == "" {
-			errMsg = strings.TrimSpace(result.ErrorCode)
-		}
-		if errMsg == "" {
-			errMsg = "unknown bridge error"
-		}
-		return nil, fmt.Errorf("extension bridge collect failed: %s", errMsg)
-	}
-
-	// Anti-corruption: prefer structured data, fall back to string payload.
+// handleLoginWallResult processes a login wall detection into a collection.CollectResult.
+func (p *ExtensionProvider) handleLoginWallResult(cr collection.CollectResult, result BridgeResult, engine string) []collection.CollectResult {
+	cr.IsLoginWall = true
+	cr.LoginRequired = true
+	metrics.IncBrowserLoginRequired(engine)
 	if len(result.StructuredCollectedData) > 0 {
-		collectResult.Assets, collectResult.Total, collectResult.HasMore = parseStructuredCollectedData(result.StructuredCollectedData, engine)
+		cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedData(result.StructuredCollectedData, engine)
 		if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
-			collectResult.Title = title
+			cr.Title = title
 		}
-		// Collect diagnostic fields from extension
-		if v, ok := result.StructuredCollectedData["extraction_method"].(string); ok {
-			collectResult.ExtractionMethod = v
-		}
-		if v, ok := result.StructuredCollectedData["row_selector_used"].(string); ok {
-			collectResult.RowSelectorUsed = v
-		}
-		if v, ok := result.StructuredCollectedData["rows_found"].(float64); ok {
-			collectResult.RowsFound = int(v)
-		}
-		if v, ok := result.StructuredCollectedData["extraction_error"].(string); ok {
-			collectResult.ExtractionError = v
-		}
-		// Also check login_required from structured data (second indicator from extension)
-		if lr, ok := result.StructuredCollectedData["login_required"].(bool); ok && lr {
-			collectResult.LoginRequired = true
-			metrics.IncBrowserLoginRequired(engine)
-		}
-	} else if result.CollectedData != "" {
-		collectResult.Title = result.CollectedData
 	}
+	return []collection.CollectResult{cr}
+}
 
-	return []CollectResult{collectResult}, nil
+// collectBridgeError builds an error from a failed bridge result.
+func collectBridgeError(result BridgeResult) error {
+	errMsg := strings.TrimSpace(result.Error)
+	if errMsg == "" {
+		errMsg = strings.TrimSpace(result.ErrorCode)
+	}
+	if errMsg == "" {
+		errMsg = "unknown bridge error"
+	}
+	return fmt.Errorf("extension bridge collect failed: %s", errMsg)
+}
+
+// populateCollectResultFromBridge fills a collection.CollectResult from bridge structured data.
+func (p *ExtensionProvider) populateCollectResultFromBridge(cr *collection.CollectResult, result BridgeResult, engine string) {
+	if len(result.StructuredCollectedData) == 0 {
+		if result.CollectedData != "" {
+			cr.Title = result.CollectedData
+		}
+		return
+	}
+	data := result.StructuredCollectedData
+	cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedData(data, engine)
+	if title, ok := data["title"].(string); ok && title != "" {
+		cr.Title = title
+	}
+	if v, ok := data["extraction_method"].(string); ok {
+		cr.ExtractionMethod = v
+	}
+	if v, ok := data["row_selector_used"].(string); ok {
+		cr.RowSelectorUsed = v
+	}
+	if v, ok := data["rows_found"].(float64); ok {
+		cr.RowsFound = int(v)
+	}
+	if v, ok := data["extraction_error"].(string); ok {
+		cr.ExtractionError = v
+	}
+	if lr, ok := data["login_required"].(bool); ok && lr {
+		cr.LoginRequired = true
+		metrics.IncBrowserLoginRequired(engine)
+	}
 }
 
 // buildSearchEngineURL builds a search engine result URL for bridge capture.
@@ -372,115 +395,23 @@ func urlBase64(s string) string {
 	return url.QueryEscape(base64.StdEncoding.EncodeToString([]byte(s)))
 }
 
-// parseStructuredCollectedData extracts assets, total count, and has_more from
-// the extension's structured collect payload. Anti-corruption: gracefully handles
-// missing or malformed fields.
-func parseStructuredCollectedData(data map[string]interface{}, engine string) ([]model.UnifiedAsset, int, bool) {
-	assets := []model.UnifiedAsset{}
-	total := 0
-	hasMore := false
-
-	if t, ok := data["total"].(float64); ok {
-		total = int(t)
+// extractExtraFields collects unrecognized fields into an Extra map.
+func extractExtraFields(item map[string]interface{}) map[string]interface{} {
+	known := map[string]bool{
+		"url": true, "title": true, "ip": true, "port": true,
+		"protocol": true, "host": true, "body_snippet": true,
+		"banner": true, "server": true, "status_code": true,
+		"country_code": true, "region": true, "city": true,
+		"asn": true, "org": true, "isp": true, "os": true,
 	}
-	if hm, ok := data["has_more"].(bool); ok {
-		hasMore = hm
+	extra := make(map[string]interface{})
+	for k, v := range item {
+		if !known[k] {
+			extra[k] = v
+		}
 	}
-
-	rawItems, ok := data["items"]
-	if !ok {
-		return assets, total, hasMore
+	if len(extra) == 0 {
+		return nil
 	}
-
-	items, ok := rawItems.([]interface{})
-	if !ok {
-		return assets, total, hasMore
-	}
-
-	for _, raw := range items {
-		item, ok := raw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		asset := model.UnifiedAsset{
-			Source: engine,
-		}
-		if v, ok := item["url"].(string); ok {
-			asset.URL = v
-		}
-		if v, ok := item["title"].(string); ok {
-			asset.Title = v
-		}
-		if v, ok := item["ip"].(string); ok {
-			asset.IP = v
-		}
-		if v, ok := item["port"].(float64); ok {
-			asset.Port = int(v)
-		} else if v, ok := item["port"].(int); ok {
-			asset.Port = v
-		} else if v, ok := item["port"].(string); ok {
-			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-				asset.Port = n
-			}
-		}
-		if v, ok := item["protocol"].(string); ok {
-			asset.Protocol = v
-		}
-		if v, ok := item["host"].(string); ok {
-			asset.Host = v
-		}
-		if v, ok := item["body_snippet"].(string); ok && v != "" {
-			asset.BodySnippet = v
-		} else if v, ok := item["banner"].(string); ok && v != "" {
-			asset.BodySnippet = v
-		}
-		if v, ok := item["server"].(string); ok {
-			asset.Server = v
-		}
-		if v, ok := item["status_code"].(float64); ok {
-			asset.StatusCode = int(v)
-		} else if v, ok := item["status_code"].(string); ok {
-			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-				asset.StatusCode = n
-			}
-		}
-		if v, ok := item["country_code"].(string); ok {
-			asset.CountryCode = v
-		}
-		if v, ok := item["region"].(string); ok {
-			asset.Region = v
-		}
-		if v, ok := item["city"].(string); ok {
-			asset.City = v
-		}
-		if v, ok := item["asn"].(string); ok {
-			asset.ASN = v
-		}
-		if v, ok := item["org"].(string); ok {
-			asset.Org = v
-		}
-		if v, ok := item["isp"].(string); ok {
-			asset.ISP = v
-		}
-		// Store unrecognized engine-specific fields in Extra
-		extra := make(map[string]interface{})
-		known := map[string]bool{
-			"url": true, "title": true, "ip": true, "port": true,
-			"protocol": true, "host": true, "body_snippet": true,
-			"banner": true, "server": true, "status_code": true,
-			"country_code": true, "region": true, "city": true,
-			"asn": true, "org": true, "isp": true, "os": true,
-		}
-		for k, v := range item {
-			if !known[k] {
-				extra[k] = v
-			}
-		}
-		if len(extra) > 0 {
-			asset.Extra = extra
-		}
-		assets = append(assets, asset)
-	}
-
-	return assets, total, hasMore
+	return extra
 }

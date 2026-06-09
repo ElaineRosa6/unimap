@@ -176,256 +176,190 @@ func (f *FofaAdapter) searchWithFields(url, encodedQuery string, page, pageSize 
 // Search 执行FOFA搜索
 func (f *FofaAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if f.apiKey == "" || f.email == "" {
-		return &model.EngineResult{
-			EngineName: f.Name(),
-			Error:      "FOFA API key or email not configured",
-		}, nil
+		return &model.EngineResult{EngineName: f.Name(), Error: "FOFA API key or email not configured"}, nil
 	}
-
 	var engineResult *model.EngineResult
+	err := utils.Retry(fofaSearchRetryConfig(), func() error {
+		return f.executeFofaSearch(query, page, pageSize, &engineResult)
+	})
+	if err != nil {
+		return &model.EngineResult{EngineName: f.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
+	}
+	return engineResult, nil
+}
 
-	retryConfig := utils.RetryConfig{
-		MaxRetries:  3,
-		BaseDelay:   100 * time.Millisecond,
-		MaxDelay:    2 * time.Second,
-		Exponential: true,
-		Jitter:      true,
+func fofaSearchRetryConfig() utils.RetryConfig {
+	return utils.RetryConfig{
+		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
+		Exponential: true, Jitter: true,
 		RetryableFunc: func(err error) bool {
 			errStr := err.Error()
-			// 非临时性错误不重试：认证失败、余额不足
-			if strings.Contains(errStr, "HTTP 401") ||
-				strings.Contains(errStr, "HTTP 403") ||
-				strings.Contains(errStr, "820031") {
-				return false
-			}
-			// 其他错误（网络、5xx、429限流等）可重试
-			return true
+			return !strings.Contains(errStr, "HTTP 401") && !strings.Contains(errStr, "HTTP 403") && !strings.Contains(errStr, "820031")
 		},
 	}
+}
 
-	err := utils.Retry(retryConfig, func() error {
-		// FOFA要求query进行base64编码
-		encodedQuery := base64.StdEncoding.EncodeToString([]byte(query))
+// executeFofaSearch 执行单次 FOFA API 调用（含字段权限降级）
+func (f *FofaAdapter) executeFofaSearch(query string, page, pageSize int, result **model.EngineResult) error {
+	encodedQuery := base64.StdEncoding.EncodeToString([]byte(query))
+	url := fmt.Sprintf("%s/api/v1/search/all", f.baseURL)
+	allFields := "ip,port,protocol,domain,title,server,header,country,region,city,asn,org,isp,status_code"
+	activeFields := allFields
 
-		url := fmt.Sprintf("%s/api/v1/search/all", f.baseURL)
-
-		// 基础字段（免费账户可用），高级字段（header,region,city,asn,org,isp,status_code）需付费
-		// 先尝试完整字段，遇到权限错误时降级到基础字段重试
-		allFields := "ip,port,protocol,domain,title,server,header,country,region,city,asn,org,isp,status_code"
-		activeFields := allFields
-		resp, err := f.searchWithFields(url, encodedQuery, page, pageSize, allFields)
-
-		// 检查是否为字段权限错误，降级重试
-		if err == nil && resp.StatusCode() == 200 {
-			var errCheck struct {
-				Err    interface{} `json:"error"`
-				ErrMsg string      `json:"errmsg"`
-			}
-			if json.Unmarshal(resp.Body(), &errCheck) == nil {
-				errMsg := errCheck.ErrMsg
-				if errMsg == "" {
-					if s, ok := errCheck.Err.(string); ok {
-						errMsg = s
-					}
-				}
-				if strings.Contains(errMsg, "没有权限") || strings.Contains(errMsg, "820001") {
-					logger.Warnf("fofa: 字段权限不足，降级到基础字段重试: %s", errMsg)
-					activeFields = "ip,port,protocol,domain,title,server,country"
-					resp, err = f.searchWithFields(url, encodedQuery, page, pageSize, activeFields)
-				}
-			}
+	resp, err := f.searchWithFields(url, encodedQuery, page, pageSize, allFields)
+	if err == nil && resp.StatusCode() == 200 {
+		if degraded := f.degradeFieldsOnPermissionError(resp.Body()); degraded != "" {
+			activeFields = degraded
+			resp, err = f.searchWithFields(url, encodedQuery, page, pageSize, activeFields)
 		}
+	}
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode() != 200 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
+	}
+	return parseFofaSearchResponse(resp.Body(), activeFields, page, pageSize, f.Name(), result)
+}
 
-		if err != nil {
-			return err
-		}
-
-		if resp.StatusCode() != 200 {
-			return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
-		}
-
-		var result struct {
-			Mode    string          `json:"mode"`
-			Results [][]interface{} `json:"results"`
-			Total   int             `json:"total"`
-			Err     interface{}     `json:"error"`
-			ErrMsg  string          `json:"errmsg"` // Some versions use this
-		}
-
-		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return err
-		}
-
-		// Check if Error is true (bool) or non-empty string
-		hasError := false
-		errMsg := ""
-		if b, ok := result.Err.(bool); ok {
-			hasError = b
-		} else if s, ok := result.Err.(string); ok && s != "" && s != "false" {
-			hasError = true
+// degradeFieldsOnPermissionError 检查是否为字段权限错误，返回降级字段或空串
+func (f *FofaAdapter) degradeFieldsOnPermissionError(body []byte) string {
+	var errCheck struct {
+		Err    interface{} `json:"error"`
+		ErrMsg string      `json:"errmsg"`
+	}
+	if json.Unmarshal(body, &errCheck) != nil {
+		return ""
+	}
+	errMsg := errCheck.ErrMsg
+	if errMsg == "" {
+		if s, ok := errCheck.Err.(string); ok {
 			errMsg = s
 		}
-
-		if hasError {
-			if errMsg == "" {
-				errMsg = result.ErrMsg
-			}
-			if errMsg == "" {
-				errMsg = "FOFA API reported an error (unknown cause)"
-			}
-			return fmt.Errorf("FOFA API error: %s", errMsg)
-		}
-
-		// 根据实际返回的字段动态映射结果
-		fieldNames := strings.Split(activeFields, ",")
-		rawData := []interface{}{}
-		for _, row := range result.Results {
-			data := map[string]interface{}{}
-			for i, name := range fieldNames {
-				data[name] = safeRowField(row, i)
-			}
-			rawData = append(rawData, data)
-		}
-
-		engineResult = &model.EngineResult{
-			EngineName: f.Name(),
-			RawData:    rawData,
-			Total:      result.Total,
-			Page:       page,
-			HasMore:    (page * pageSize) < result.Total,
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return &model.EngineResult{
-			EngineName: f.Name(),
-			Error:      fmt.Sprintf("search error: %v", err),
-		}, nil
 	}
+	if strings.Contains(errMsg, "没有权限") || strings.Contains(errMsg, "820001") {
+		logger.Warnf("fofa: 字段权限不足，降级到基础字段重试: %s", errMsg)
+		return "ip,port,protocol,domain,title,server,country"
+	}
+	return ""
+}
 
-	return engineResult, nil
+// parseFofaSearchResponse 解析 FOFA 搜索响应
+func parseFofaSearchResponse(body []byte, activeFields string, page, pageSize int, engineName string, result **model.EngineResult) error {
+	var resp struct {
+		Mode    string          `json:"mode"`
+		Results [][]interface{} `json:"results"`
+		Total   int             `json:"total"`
+		Err     interface{}     `json:"error"`
+		ErrMsg  string          `json:"errmsg"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return err
+	}
+	hasError := false
+	errMsg := ""
+	if b, ok := resp.Err.(bool); ok {
+		hasError = b
+	} else if s, ok := resp.Err.(string); ok && s != "" && s != "false" {
+		hasError = true
+		errMsg = s
+	}
+	if hasError {
+		if errMsg == "" {
+			errMsg = resp.ErrMsg
+		}
+		if errMsg == "" {
+			errMsg = "FOFA API reported an error (unknown cause)"
+		}
+		return fmt.Errorf("FOFA API error: %s", errMsg)
+	}
+	fieldNames := strings.Split(activeFields, ",")
+	rawData := make([]interface{}, len(resp.Results))
+	for i, row := range resp.Results {
+		data := make(map[string]interface{}, len(fieldNames))
+		for j, name := range fieldNames {
+			data[name] = safeRowField(row, j)
+		}
+		rawData[i] = data
+	}
+	*result = &model.EngineResult{
+		EngineName: engineName, RawData: rawData, Total: resp.Total,
+		Page: page, HasMore: (page * pageSize) < resp.Total,
+	}
+	return nil
 }
 
 // Normalize 标准化FOFA结果
 func (f *FofaAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
 	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
-
 	if raw == nil || len(raw.RawData) == 0 {
 		return assets, nil
 	}
-
 	for _, item := range raw.RawData {
 		data, ok := item.(map[string]interface{})
 		if !ok {
 			continue
 		}
-
-		// 创建新的资产对象
-		asset := &model.UnifiedAsset{
-			Source: f.Name(),
-		}
-
-		// 提取字段
-		if ip, ok := data["ip"].(string); ok {
-			asset.IP = ip
-		}
-		if port, ok := data["port"].(float64); ok {
-			asset.Port = int(port)
-		} else if port, ok := data["port"].(int); ok {
-			asset.Port = port
-		}
-		if proto, ok := data["protocol"].(string); ok {
-			asset.Protocol = proto
-		}
-		if domain, ok := data["domain"].(string); ok {
-			asset.Host = domain
-		}
-		if title, ok := data["title"].(string); ok {
-			asset.Title = title
-		}
-		if server, ok := data["server"].(string); ok {
-			asset.Server = server
-		}
-		if body, ok := data["body"].(string); ok {
-			if len(body) > 200 {
-				asset.BodySnippet = body[:200]
-			} else {
-				asset.BodySnippet = body
-			}
-		}
-		if status, ok := data["status_code"].(float64); ok {
-			asset.StatusCode = int(status)
-		} else if status, ok := data["status_code"].(int); ok {
-			asset.StatusCode = status
-		}
-
-		// 地理信息
-		if country, ok := data["country"].(string); ok {
-			asset.CountryCode = country
-		}
-		if region, ok := data["region"].(string); ok {
-			asset.Region = region
-		}
-		if city, ok := data["city"].(string); ok {
-			asset.City = city
-		}
-		if asn, ok := data["asn"].(string); ok {
-			asset.ASN = asn
-		}
-		if org, ok := data["org"].(string); ok {
-			asset.Org = org
-		}
-		if isp, ok := data["isp"].(string); ok {
-			asset.ISP = isp
-		}
-
-		// 构建URL
-		added := false
-
-		// 优先处理有IP和端口的情况
-		if asset.IP != "" && asset.Port > 0 {
-			if asset.Protocol == "" {
-				if asset.Port == 443 {
-					asset.Protocol = "https"
-				} else {
-					asset.Protocol = "http"
-				}
-			}
-
-			// 使用 url.URL 结构体安全构建 URL
-			u := &url.URL{
-				Scheme: asset.Protocol,
-			}
-			if asset.Host != "" {
-				u.Host = fmt.Sprintf("%s:%d", asset.Host, asset.Port)
-			} else {
-				u.Host = fmt.Sprintf("%s:%d", asset.IP, asset.Port)
-			}
-			asset.URL = u.String()
-
-			asset.Extra = data
+		if asset := f.normalizeFofaItem(data); asset != nil {
 			assets = append(assets, *asset)
-			added = true
-		}
-
-		// 处理只有Host的情况
-		if !added && asset.Host != "" {
-			asset.Extra = data
-			assets = append(assets, *asset)
-			added = true
-		}
-
-		// 处理只有IP没有端口的情况
-		if !added && asset.IP != "" {
-			asset.Extra = data
-			assets = append(assets, *asset)
-			added = true
 		}
 	}
-
 	return assets, nil
+}
+
+// normalizeFofaItem 解析单条 FOFA 数据
+func (f *FofaAdapter) normalizeFofaItem(data map[string]interface{}) *model.UnifiedAsset {
+	asset := &model.UnifiedAsset{Source: f.Name()}
+	getStr := func(k string) string { v, _ := data[k].(string); return v }
+	getInt := func(k string) int {
+		if v, ok := data[k].(float64); ok { return int(v) }
+		if v, ok := data[k].(int); ok { return v }
+		return 0
+	}
+
+	asset.IP = getStr("ip")
+	asset.Port = getInt("port")
+	asset.Protocol = getStr("protocol")
+	asset.Host = getStr("domain")
+	asset.Title = getStr("title")
+	asset.Server = getStr("server")
+	if body := getStr("body"); len(body) > 200 {
+		asset.BodySnippet = body[:200]
+	} else {
+		asset.BodySnippet = body
+	}
+	asset.StatusCode = getInt("status_code")
+	asset.CountryCode = getStr("country")
+	asset.Region = getStr("region")
+	asset.City = getStr("city")
+	asset.ASN = getStr("asn")
+	asset.Org = getStr("org")
+	asset.ISP = getStr("isp")
+
+	if asset.IP != "" && asset.Port > 0 {
+		buildFofaURL(asset)
+		asset.Extra = data
+		return asset
+	}
+	if asset.Host != "" || asset.IP != "" {
+		asset.Extra = data
+		return asset
+	}
+	return nil
+}
+
+// buildFofaURL 从 IP/Port/Protocol 构建 URL
+func buildFofaURL(asset *model.UnifiedAsset) {
+	if asset.Protocol == "" {
+		if asset.Port == 443 { asset.Protocol = "https" } else { asset.Protocol = "http" }
+	}
+	u := &url.URL{Scheme: asset.Protocol}
+	if asset.Host != "" {
+		u.Host = fmt.Sprintf("%s:%d", asset.Host, asset.Port)
+	} else {
+		u.Host = fmt.Sprintf("%s:%d", asset.IP, asset.Port)
+	}
+	asset.URL = u.String()
 }
 
 // GetQuota 获取FOFA配额信息

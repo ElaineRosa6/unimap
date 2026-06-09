@@ -593,7 +593,7 @@ func TestHunterAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80"},
 				},
 			}},
-			want: `port>"80"`,
+			want: `port>"80"`, // Hunter 支持比较运算符，值加引号
 		},
 		{
 			name: "field mapping server dot notation",
@@ -1624,7 +1624,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80"},
 				},
 			}},
-			want: `port>"80"`,
+			want: `port="80"`, // ZoomEye 不支持比较运算符，降级为等值查询
 		},
 		{
 			name: "nested OR and AND",

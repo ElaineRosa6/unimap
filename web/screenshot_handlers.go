@@ -444,7 +444,6 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-
 	if s.screenshotApp == nil || !s.screenshotApp.IsCaptureAvailable(s.screenshotMgr) {
 		writeAPIError(w, http.StatusServiceUnavailable, "screenshot_manager_unavailable", "screenshot manager not initialized", nil)
 		return
@@ -458,85 +457,21 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 		BatchID     string   `json:"batch_id"`
 		Concurrency int      `json:"concurrency"`
 	}
-
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-
-	for _, u := range req.URLs {
-		parsed, err := url.Parse(u)
-		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "invalid_url", "invalid url", nil)
-			return
-		}
-		if parsed.Scheme != "http" && parsed.Scheme != "https" {
-			writeAPIError(w, http.StatusBadRequest, "invalid_url_scheme", "only http/https schemes allowed", nil)
-			return
-		}
-		if isPrivateOrInternalIP(parsed.Hostname()) {
-			writeAPIError(w, http.StatusForbidden, "blocked_url", "url resolves to private/internal address", nil)
-			return
-		}
+	if !validateBatchURLsResponse(w, req.URLs) {
+		return
 	}
 
 	metrics.IncBatchOperation("screenshot")
 	metrics.ObserveBatchOperationSize("screenshot", len(req.URLs))
 
-	var results *service.BatchURLsResponse
-	var err error
-
-	if s.screenshotRouter != nil {
-		routerResults, err := s.screenshotRouter.CaptureBatchURLs(r.Context(), req.URLs, req.BatchID, req.Concurrency)
-		if err != nil {
-			errText := strings.ToLower(err.Error())
-			switch {
-			case strings.Contains(errText, "no urls"):
-				writeAPIError(w, http.StatusBadRequest, "no_urls_provided", "no URLs provided", nil)
-			case strings.Contains(errText, "too many"):
-				writeAPIError(w, http.StatusBadRequest, "too_many_urls", "too many URLs", map[string]int{"max": 100})
-			default:
-				writeAPIError(w, http.StatusInternalServerError, "batch_screenshot_failed", "batch screenshot failed", sanitizeError(err.Error()))
-			}
-			return
-		}
-		successCount := 0
-		failCount := 0
-		for _, item := range routerResults {
-			if item.Success {
-				successCount++
-			} else {
-				failCount++
-			}
-		}
-		results = &service.BatchURLsResponse{
-			BatchID:       req.BatchID,
-			Total:         len(req.URLs),
-			Success:       successCount,
-			Failed:        failCount,
-			Results:       routerResults,
-			ScreenshotDir: s.screenshotRouter.GetScreenshotDirectory(),
-		}
-	} else {
-		results, err = s.screenshotApp.CaptureBatchURLs(r.Context(), s.screenshotMgr, service.BatchURLsRequest{
-			URLs:        req.URLs,
-			BatchID:     req.BatchID,
-			Concurrency: req.Concurrency,
-		})
-		if err != nil {
-			errText := strings.ToLower(err.Error())
-			switch {
-			case strings.Contains(errText, "no urls"):
-				writeAPIError(w, http.StatusBadRequest, "no_urls_provided", "no URLs provided", nil)
-			case strings.Contains(errText, "too many"):
-				writeAPIError(w, http.StatusBadRequest, "too_many_urls", "too many URLs", map[string]int{"max": 100})
-			default:
-				writeAPIError(w, http.StatusInternalServerError, "batch_screenshot_failed", "batch screenshot failed", sanitizeError(err.Error()))
-			}
-			return
-		}
+	results, err := s.executeBatchURLScreenshot(w, r.Context(), &req)
+	if err != nil {
+		return
 	}
 
-	// 记录批量截图成功/失败统计
 	if results != nil {
 		metrics.IncScreenshotRequest("batch", "success")
 		metrics.ObserveScreenshotBatchSize(results.Success)
@@ -547,6 +482,93 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
+}
+
+// validateBatchURLsResponse checks all URLs in the batch for validity and SSRF safety.
+func validateBatchURLsResponse(w http.ResponseWriter, urls []string) bool {
+	for _, u := range urls {
+		parsed, err := url.Parse(u)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_url", "invalid url", nil)
+			return false
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			writeAPIError(w, http.StatusBadRequest, "invalid_url_scheme", "only http/https schemes allowed", nil)
+			return false
+		}
+		if isPrivateOrInternalIP(parsed.Hostname()) {
+			writeAPIError(w, http.StatusForbidden, "blocked_url", "url resolves to private/internal address", nil)
+			return false
+		}
+	}
+	return true
+}
+
+// executeBatchURLScreenshot runs the batch screenshot via router or app service.
+func (s *Server) executeBatchURLScreenshot(w http.ResponseWriter, ctx context.Context, req *struct {
+	URLs        []string `json:"urls"`
+	BatchID     string   `json:"batch_id"`
+	Concurrency int      `json:"concurrency"`
+}) (*service.BatchURLsResponse, error) {
+	if s.screenshotRouter != nil {
+		return s.executeBatchURLScreenshotViaRouter(w, ctx, req)
+	}
+	return s.executeBatchURLScreenshotViaApp(w, ctx, req)
+}
+
+// executeBatchURLScreenshotViaRouter executes batch screenshot using the router.
+func (s *Server) executeBatchURLScreenshotViaRouter(w http.ResponseWriter, ctx context.Context, req *struct {
+	URLs        []string `json:"urls"`
+	BatchID     string   `json:"batch_id"`
+	Concurrency int      `json:"concurrency"`
+}) (*service.BatchURLsResponse, error) {
+	routerResults, err := s.screenshotRouter.CaptureBatchURLs(ctx, req.URLs, req.BatchID, req.Concurrency)
+	if err != nil {
+		writeBatchScreenshotError(w, err)
+		return nil, err
+	}
+	successCount, failCount := 0, 0
+	for _, item := range routerResults {
+		if item.Success {
+			successCount++
+		} else {
+			failCount++
+		}
+	}
+	return &service.BatchURLsResponse{
+		BatchID: req.BatchID, Total: len(req.URLs),
+		Success: successCount, Failed: failCount,
+		Results: routerResults, ScreenshotDir: s.screenshotRouter.GetScreenshotDirectory(),
+	}, nil
+}
+
+// executeBatchURLScreenshotViaApp executes batch screenshot using the app service.
+func (s *Server) executeBatchURLScreenshotViaApp(w http.ResponseWriter, ctx context.Context, req *struct {
+	URLs        []string `json:"urls"`
+	BatchID     string   `json:"batch_id"`
+	Concurrency int      `json:"concurrency"`
+}) (*service.BatchURLsResponse, error) {
+	results, err := s.screenshotApp.CaptureBatchURLs(ctx, s.screenshotMgr, service.BatchURLsRequest{
+		URLs: req.URLs, BatchID: req.BatchID, Concurrency: req.Concurrency,
+	})
+	if err != nil {
+		writeBatchScreenshotError(w, err)
+		return nil, err
+	}
+	return results, nil
+}
+
+// writeBatchScreenshotError writes the appropriate error response for batch screenshot failures.
+func writeBatchScreenshotError(w http.ResponseWriter, err error) {
+	errText := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(errText, "no urls"):
+		writeAPIError(w, http.StatusBadRequest, "no_urls_provided", "no URLs provided", nil)
+	case strings.Contains(errText, "too many"):
+		writeAPIError(w, http.StatusBadRequest, "too_many_urls", "too many URLs", map[string]int{"max": 100})
+	default:
+		writeAPIError(w, http.StatusInternalServerError, "batch_screenshot_failed", "batch screenshot failed", sanitizeError(err.Error()))
+	}
 }
 
 func normalizeScreenshotPathToken(raw string) (string, bool) {

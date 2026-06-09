@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -250,102 +249,57 @@ func (b *BinaryEdgeAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedA
 	if raw == nil || len(raw.RawData) == 0 {
 		return []model.UnifiedAsset{}, nil
 	}
-
 	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
-
 	for _, item := range raw.RawData {
 		data, ok := item.(map[string]interface{})
 		if !ok {
 			continue
 		}
-
-		asset := &model.UnifiedAsset{
-			Source: b.Name(),
-		}
-
-		// 提取字段
-		if ip, ok := data["ip"].(string); ok {
-			asset.IP = ip
-		}
-		if port, ok := data["port"].(float64); ok {
-			asset.Port = int(port)
-		} else if port, ok := data["port"].(int); ok {
-			asset.Port = port
-		}
-		if proto, ok := data["protocol"].(string); ok {
-			asset.Protocol = proto
-		}
-		if domain, ok := data["domain"].(string); ok {
-			asset.Host = domain
-		}
-		if title, ok := data["title"].(string); ok {
-			asset.Title = title
-		}
-		if server, ok := data["server"].(string); ok {
-			asset.Server = server
-		}
-		if body, ok := data["body"].(string); ok {
-			if len(body) > 200 {
-				asset.BodySnippet = body[:200]
-			} else {
-				asset.BodySnippet = body
-			}
-		}
-		if status, ok := data["status_code"].(float64); ok {
-			asset.StatusCode = int(status)
-		} else if status, ok := data["status_code"].(int); ok {
-			asset.StatusCode = status
-		}
-
-		// 地理信息
-		if country, ok := data["country"].(string); ok {
-			asset.CountryCode = country
-		}
-		if city, ok := data["city"].(string); ok {
-			asset.City = city
-		}
-		if asn, ok := data["asn"].(string); ok {
-			asset.ASN = asn
-		}
-		if org, ok := data["org"].(string); ok {
-			asset.Org = org
-		}
-		if isp, ok := data["isp"].(string); ok {
-			asset.ISP = isp
-		}
-
-		// 构建URL
-		if asset.IP != "" && asset.Port > 0 {
-			if asset.Protocol == "" {
-				if asset.Port == 443 {
-					asset.Protocol = "https"
-				} else {
-					asset.Protocol = "http"
-				}
-			}
-
-			u := &url.URL{
-				Scheme: asset.Protocol,
-			}
-			if asset.Host != "" {
-				u.Host = fmt.Sprintf("%s:%d", asset.Host, asset.Port)
-			} else {
-				u.Host = fmt.Sprintf("%s:%d", asset.IP, asset.Port)
-			}
-			asset.URL = u.String()
-
-			asset.Extra = data
-			assets = append(assets, *asset)
-		} else if asset.Host != "" {
-			asset.Extra = data
-			assets = append(assets, *asset)
-		} else if asset.IP != "" {
-			asset.Extra = data
+		if asset := b.normalizeBinaryEdgeItem(data); asset != nil {
 			assets = append(assets, *asset)
 		}
 	}
-
 	return assets, nil
+}
+
+// normalizeBinaryEdgeItem 解析单条 BinaryEdge 数据
+func (b *BinaryEdgeAdapter) normalizeBinaryEdgeItem(data map[string]interface{}) *model.UnifiedAsset {
+	asset := &model.UnifiedAsset{Source: b.Name()}
+	getStr := func(k string) string { v, _ := data[k].(string); return v }
+	getInt := func(k string) int {
+		if v, ok := data[k].(float64); ok { return int(v) }
+		if v, ok := data[k].(int); ok { return v }
+		return 0
+	}
+
+	asset.IP = getStr("ip")
+	asset.Port = getInt("port")
+	asset.Protocol = getStr("protocol")
+	asset.Host = getStr("domain")
+	asset.Title = getStr("title")
+	asset.Server = getStr("server")
+	if body := getStr("body"); len(body) > 200 {
+		asset.BodySnippet = body[:200]
+	} else {
+		asset.BodySnippet = body
+	}
+	asset.StatusCode = getInt("status_code")
+	asset.CountryCode = getStr("country")
+	asset.City = getStr("city")
+	asset.ASN = getStr("asn")
+	asset.Org = getStr("org")
+	asset.ISP = getStr("isp")
+
+	if asset.IP != "" && asset.Port > 0 {
+		buildAssetURL(asset)
+		asset.Extra = data
+		return asset
+	}
+	if asset.Host != "" || asset.IP != "" {
+		asset.Extra = data
+		return asset
+	}
+	return nil
 }
 
 // GetQuota 获取BinaryEdge配额信息

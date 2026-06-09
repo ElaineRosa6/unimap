@@ -65,108 +65,107 @@ type portScanTask struct {
 func (t *portScanTask) Execute() error {
 	defer t.wg.Done()
 
+	normalizedURL, host, ok := t.validateAndResolveHost()
+	if !ok {
+		return nil
+	}
+
+	ips, ok := t.resolveHostIPs(normalizedURL, host)
+	if !ok {
+		return nil
+	}
+
+	if ok := t.checkCDNExclusion(normalizedURL, host, ips); !ok {
+		return nil
+	}
+
+	t.scanAndReport(normalizedURL, host, ips)
+	return nil
+}
+
+// validateAndResolveHost normalizes the URL and resolves the hostname.
+func (t *portScanTask) validateAndResolveHost() (normalizedURL, host string, ok bool) {
 	normalizedURL, normalizeErr := normalizeMonitorURLForService(t.input)
 	if normalizeErr != nil {
-		t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
-			Input:       t.input,
-			Status:      "invalid_format",
-			CDNDetected: false,
-			Reason:      normalizeErr.Error(),
-		}}
-		return nil
+		t.sendSimpleResult(t.input, "", "invalid_format", normalizeErr.Error())
+		return "", "", false
 	}
-
 	parsed, err := url.Parse(normalizedURL)
 	if err != nil || strings.TrimSpace(parsed.Hostname()) == "" {
-		t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
-			Input:       t.input,
-			URL:         normalizedURL,
-			Status:      "invalid_format",
-			CDNDetected: false,
-			Reason:      "missing host",
-		}}
-		return nil
+		t.sendSimpleResult(t.input, normalizedURL, "invalid_format", "missing host")
+		return "", "", false
 	}
-
-	host := strings.TrimSpace(parsed.Hostname())
-
-	// SSRF protection: reject internal/private addresses
+	host = strings.TrimSpace(parsed.Hostname())
 	if urlguard.IsInternalHost(t.ctx, host) {
-		t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
-			Input:       t.input,
-			URL:         normalizedURL,
-			Host:        host,
-			Status:      "blocked",
-			CDNDetected: false,
-			Reason:      "target resolves to private/internal address (SSRF protection)",
-		}}
-		return nil
+		t.sendHostResult(t.input, normalizedURL, host, "blocked", "target resolves to private/internal address (SSRF protection)")
+		return "", "", false
 	}
+	return normalizedURL, host, true
+}
+
+// resolveHostIPs resolves IPv4 addresses for the host.
+func (t *portScanTask) resolveHostIPs(normalizedURL, host string) ([]string, bool) {
 	resolveCtx, resolveCancel := context.WithTimeout(t.ctx, 6*time.Second)
 	defer resolveCancel()
-
 	ips, resolveErr := resolveIPv4Addresses(resolveCtx, host)
 	if resolveErr != nil {
-		t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
-			Input:       t.input,
-			URL:         normalizedURL,
-			Host:        host,
-			Status:      "resolve_failed",
-			CDNDetected: false,
-			Reason:      resolveErr.Error(),
-		}}
-		return nil
+		t.sendHostResult(t.input, normalizedURL, host, "resolve_failed", resolveErr.Error())
+		return nil, false
 	}
+	return ips, true
+}
 
+// checkCDNExclusion checks if the target is behind a CDN.
+func (t *portScanTask) checkCDNExclusion(normalizedURL, host string, ips []string) bool {
 	cdnDetected, cdnReasons := detectCDNForTarget(t.ctx, normalizedURL, host, ips, t.proxyPool)
 	if cdnDetected {
 		t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
-			Input:       t.input,
-			URL:         normalizedURL,
-			Host:        host,
-			Status:      "cdn_excluded",
-			Reason:      "cdn detected, port scan excluded",
-			CDNDetected: true,
-			CDNReasons:  cdnReasons,
-			ResolvedIPs: ips,
+			Input: t.input, URL: normalizedURL, Host: host,
+			Status: "cdn_excluded", Reason: "cdn detected, port scan excluded",
+			CDNDetected: true, CDNReasons: cdnReasons, ResolvedIPs: ips,
 		}}
-		return nil
+		return false
 	}
+	return true
+}
 
+// scanAndReport performs the port scan and sends the result.
+func (t *portScanTask) scanAndReport(normalizedURL, host string, ips []string) {
 	scanCtx, scanCancel := context.WithTimeout(t.ctx, 20*time.Second)
 	defer scanCancel()
-
 	openPorts, scanErr := scanHostPorts(scanCtx, ips, t.ports)
 	if scanErr != nil {
 		t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
-			Input:       t.input,
-			URL:         normalizedURL,
-			Host:        host,
-			Status:      "scan_failed",
-			Reason:      scanErr.Error(),
-			CDNDetected: false,
-			ResolvedIPs: ips,
+			Input: t.input, URL: normalizedURL, Host: host,
+			Status: "scan_failed", Reason: scanErr.Error(),
+			CDNDetected: false, ResolvedIPs: ips,
 		}}
-		return nil
+		return
 	}
-
 	scannedIPs := make([]string, 0, len(openPorts))
 	for ip := range openPorts {
 		scannedIPs = append(scannedIPs, ip)
 	}
 	sort.Strings(scannedIPs)
-
 	t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
-		Input:       t.input,
-		URL:         normalizedURL,
-		Host:        host,
-		Status:      "scanned",
-		CDNDetected: false,
-		ResolvedIPs: ips,
-		ScannedIPs:  scannedIPs,
-		OpenPorts:   openPorts,
+		Input: t.input, URL: normalizedURL, Host: host,
+		Status: "scanned", CDNDetected: false,
+		ResolvedIPs: ips, ScannedIPs: scannedIPs, OpenPorts: openPorts,
 	}}
-	return nil
+}
+
+// sendSimpleResult sends a result with only input, URL, status, and reason.
+func (t *portScanTask) sendSimpleResult(input, normalizedURL, status, reason string) {
+	t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
+		Input: input, URL: normalizedURL, Status: status, CDNDetected: false, Reason: reason,
+	}}
+}
+
+// sendHostResult sends a result that includes the host field.
+func (t *portScanTask) sendHostResult(input, normalizedURL, host, status, reason string) {
+	t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
+		Input: input, URL: normalizedURL, Host: host, Status: status, CDNDetected: false, Reason: reason,
+	}}
 }
 
 // ScanURLPorts executes URL->IP resolution, CDN exclusion and port scanning for non-CDN targets.

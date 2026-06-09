@@ -184,246 +184,173 @@ func (h *HunterAdapter) buildCondition(field, op, value string) string {
 // Search 执行Hunter搜索
 func (h *HunterAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if h.apiKey == "" {
-		return &model.EngineResult{
-			EngineName: h.Name(),
-			Error:      "Hunter API key not configured",
-		}, nil
+		return &model.EngineResult{EngineName: h.Name(), Error: "Hunter API key not configured"}, nil
 	}
-
 	var engineResult *model.EngineResult
-
-	retryConfig := utils.RetryConfig{
-		MaxRetries:  3,
-		BaseDelay:   100 * time.Millisecond,
-		MaxDelay:    2 * time.Second,
-		Exponential: true,
-		Jitter:      true,
-		ErrorHandler: func(err error, attempt int) {
-			// 可以在这里添加错误日志记录
-			// log.Printf("Hunter search error (attempt %d): %v", attempt, err)
-		},
-	}
-
-	err := utils.Retry(retryConfig, func() error {
-		// 请求前节流，避免突发流量触发 Hunter 限流
+	err := utils.Retry(h.searchRetryConfig(), func() error {
 		if rateErr := h.waitForRate(ctx); rateErr != nil {
 			return fmt.Errorf("hunter rate wait cancelled: %w", rateErr)
 		}
-
-		// Hunter API endpoint: /openApi/search
-		// 修正API URL格式
-		baseURL := strings.TrimRight(h.baseURL, "/")
-		url := fmt.Sprintf("%s/openApi/search", baseURL)
-
-		// Base64 encode query
-		encodedQuery := base64.URLEncoding.EncodeToString([]byte(query))
-
-		// Hunter的API参数
-		// 修正is_web参数，0表示全部，1表示web资产，2表示非web资产
-		resp, err := h.client.R().
-			SetQueryParams(map[string]string{
-				"api-key":   h.apiKey,
-				"search":    encodedQuery,
-				"page":      fmt.Sprintf("%d", page),
-				"page_size": fmt.Sprintf("%d", pageSize),
-				"is_web":    "0", // 0表示全部资产
-			}).
-			Get(url)
-
-		if err != nil {
-			return fmt.Errorf("hunter request error: %w", err)
-		}
-
-		if resp.StatusCode() != 200 {
-			return fmt.Errorf("hunter HTTP error %d: %s", resp.StatusCode(), resp.String())
-		}
-
-		// Hunter返回格式解析
-		var result struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-			Data    struct {
-				Total int                      `json:"total"`
-				Items []map[string]interface{} `json:"arr"`
-			} `json:"data"`
-		}
-
-		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return fmt.Errorf("hunter response parse error: %w", err)
-		}
-
-		if result.Code != 200 {
-			// 特殊处理常见错误
-			switch result.Code {
-			case 401:
-				return fmt.Errorf("hunter authentication error: %s", result.Message)
-			case 429:
-				return fmt.Errorf("hunter rate limit exceeded: %s", result.Message)
-			case 402:
-				return fmt.Errorf("hunter payment required: %s", result.Message)
-			default:
-				return fmt.Errorf("hunter API error: %s", result.Message)
-			}
-		}
-
-		// 转换为通用格式
-		rawData := []interface{}{}
-		for _, item := range result.Data.Items {
-			rawData = append(rawData, item)
-		}
-
-		engineResult = &model.EngineResult{
-			EngineName: h.Name(),
-			RawData:    rawData,
-			Total:      result.Data.Total,
-			Page:       page,
-			HasMore:    (page * pageSize) < result.Data.Total,
-		}
-
-		return nil
+		return h.executeHunterSearch(query, page, pageSize, &engineResult)
 	})
-
 	if err != nil {
-		return &model.EngineResult{
-			EngineName: h.Name(),
-			Error:      fmt.Sprintf("search error: %v", err),
-		}, nil
+		return &model.EngineResult{EngineName: h.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
 	}
-
 	return engineResult, nil
+}
+
+func (h *HunterAdapter) searchRetryConfig() utils.RetryConfig {
+	return utils.RetryConfig{
+		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
+		Exponential: true, Jitter: true,
+	}
+}
+
+// executeHunterSearch 执行单次 Hunter API 调用
+func (h *HunterAdapter) executeHunterSearch(query string, page, pageSize int, result **model.EngineResult) error {
+	baseURL := strings.TrimRight(h.baseURL, "/")
+	encodedQuery := base64.URLEncoding.EncodeToString([]byte(query))
+	resp, err := h.client.R().SetQueryParams(map[string]string{
+		"api-key": h.apiKey, "search": encodedQuery,
+		"page": fmt.Sprintf("%d", page), "page_size": fmt.Sprintf("%d", pageSize), "is_web": "0",
+	}).Get(fmt.Sprintf("%s/openApi/search", baseURL))
+	if err != nil {
+		return fmt.Errorf("hunter request error: %w", err)
+	}
+	if resp.StatusCode() != 200 {
+		return fmt.Errorf("hunter HTTP error %d: %s", resp.StatusCode(), resp.String())
+	}
+	return parseHunterSearchResponse(resp.Body(), page, pageSize, h.Name(), result)
+}
+
+// parseHunterSearchResponse 解析 Hunter 搜索响应
+func parseHunterSearchResponse(body []byte, page, pageSize int, engineName string, result **model.EngineResult) error {
+	var resp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			Total int                      `json:"total"`
+			Items []map[string]interface{} `json:"arr"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return fmt.Errorf("hunter response parse error: %w", err)
+	}
+	if resp.Code != 200 {
+		switch resp.Code {
+		case 401:
+			return fmt.Errorf("hunter authentication error: %s", resp.Message)
+		case 429:
+			return fmt.Errorf("hunter rate limit exceeded: %s", resp.Message)
+		case 402:
+			return fmt.Errorf("hunter payment required: %s", resp.Message)
+		default:
+			return fmt.Errorf("hunter API error: %s", resp.Message)
+		}
+	}
+	rawData := make([]interface{}, len(resp.Data.Items))
+	for i, item := range resp.Data.Items {
+		rawData[i] = item
+	}
+	*result = &model.EngineResult{
+		EngineName: engineName, RawData: rawData, Total: resp.Data.Total,
+		Page: page, HasMore: (page * pageSize) < resp.Data.Total,
+	}
+	return nil
 }
 
 // Normalize 标准化Hunter结果
 func (h *HunterAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
 	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
-
 	if raw == nil || len(raw.RawData) == 0 {
 		return assets, nil
 	}
-
 	for _, item := range raw.RawData {
 		data, ok := item.(map[string]interface{})
 		if !ok {
 			continue
 		}
-
-		// 创建新的资产对象
-		asset := &model.UnifiedAsset{
-			Source: h.Name(),
-			Extra:  data,
-		}
-
-		// Helper to safely get string from map
-		getString := func(k string) string {
-			if v, ok := data[k].(string); ok {
-				return v
-			}
-			return ""
-		}
-
-		// Helper to safely get int from map
-		getInt := func(k string) int {
-			if v, ok := data[k].(float64); ok {
-				return int(v)
-			}
-			if v, ok := data[k].(int); ok {
-				return v
-			}
-			return 0
-		}
-
-		// Attempt to read from flat structure (New API)
-		asset.IP = getString("ip")
-		asset.Port = getInt("port")
-		asset.Protocol = getString("protocol")
-		asset.Host = getString("domain")
-		asset.Title = getString("web_title")
-		asset.Server = getString("header_server")
-		asset.StatusCode = getInt("status_code")
-		asset.CountryCode = getString("country")
-		asset.Region = getString("province")
-		asset.City = getString("city")
-		asset.ISP = getString("isp")
-		asset.Org = getString("as_org")
-		asset.URL = getString("url")
-
-		// If essential fields are missing, try legacy nested structure
-		if asset.IP == "" {
-			if web, ok := data["web"].(map[string]interface{}); ok {
-				if v, ok := web["ip"].(string); ok {
-					asset.IP = v
-				}
-				if v, ok := web["port"].(float64); ok {
-					asset.Port = int(v)
-				}
-				if v, ok := web["protocol"].(string); ok {
-					asset.Protocol = v
-				}
-				if v, ok := web["domain"].(string); ok {
-					asset.Host = v
-				}
-				if v, ok := web["title"].(string); ok {
-					asset.Title = v
-				}
-				if v, ok := web["server"].(string); ok {
-					asset.Server = v
-				}
-				if v, ok := web["status_code"].(float64); ok {
-					asset.StatusCode = int(v)
-				}
-			}
-			if loc, ok := data["location"].(map[string]interface{}); ok {
-				if v, ok := loc["country_cn"].(string); ok {
-					asset.CountryCode = v
-				}
-				if v, ok := loc["province_cn"].(string); ok {
-					asset.Region = v
-				}
-				if v, ok := loc["city_cn"].(string); ok {
-					asset.City = v
-				}
-			}
-			// Fallback: direct IP/Port in root if not found in web
-			if asset.IP == "" {
-				asset.IP = getString("ip")
-			}
-			if asset.Port == 0 {
-				asset.Port = getInt("port")
-			}
-		}
-
-		// Ensure URL
-		if asset.URL == "" && asset.IP != "" && asset.Port > 0 {
-			proto := asset.Protocol
-			if proto == "" {
-				if asset.Port == 443 {
-					proto = "https"
-				} else {
-					proto = "http"
-				}
-			}
-			host := asset.IP
-			if asset.Host != "" {
-				host = asset.Host
-			}
-			// 使用 url.URL 结构体安全构建 URL
-			urlScheme := "http"
-			if strings.HasPrefix(proto, "https") || asset.Port == 443 {
-				urlScheme = "https"
-			}
-			u := &url.URL{
-				Scheme: urlScheme,
-				Host:   fmt.Sprintf("%s:%d", host, asset.Port),
-			}
-			asset.URL = u.String()
-		}
-
-		if asset.IP != "" || asset.Host != "" {
+		if asset := h.normalizeHunterItem(data); asset != nil {
 			assets = append(assets, *asset)
 		}
 	}
-
 	return assets, nil
+}
+
+// normalizeHunterItem 解析单条 Hunter 数据
+func (h *HunterAdapter) normalizeHunterItem(data map[string]interface{}) *model.UnifiedAsset {
+	asset := &model.UnifiedAsset{Source: h.Name(), Extra: data}
+	getStr := func(k string) string { v, _ := data[k].(string); return v }
+	getInt := func(k string) int {
+		if v, ok := data[k].(float64); ok { return int(v) }
+		if v, ok := data[k].(int); ok { return v }
+		return 0
+	}
+
+	// 扁平结构（新版 API）
+	asset.IP = getStr("ip")
+	asset.Port = getInt("port")
+	asset.Protocol = getStr("protocol")
+	asset.Host = getStr("domain")
+	asset.Title = getStr("web_title")
+	asset.Server = getStr("header_server")
+	asset.StatusCode = getInt("status_code")
+	asset.CountryCode = getStr("country")
+	asset.Region = getStr("province")
+	asset.City = getStr("city")
+	asset.ISP = getStr("isp")
+	asset.Org = getStr("as_org")
+	asset.URL = getStr("url")
+
+	if asset.IP == "" {
+		h.parseHunterLegacyFields(data, asset)
+		if asset.IP == "" { asset.IP = getStr("ip") }
+		if asset.Port == 0 { asset.Port = getInt("port") }
+	}
+
+	ensureHunterURL(asset)
+	if asset.IP != "" || asset.Host != "" {
+		return asset
+	}
+	return nil
+}
+
+// parseHunterLegacyFields 解析旧版嵌套结构（web/location 子对象）
+func (h *HunterAdapter) parseHunterLegacyFields(data map[string]interface{}, asset *model.UnifiedAsset) {
+	if web, ok := data["web"].(map[string]interface{}); ok {
+		setStr := func(key string, target *string) {
+			if v, ok := web[key].(string); ok { *target = v }
+		}
+		setStr("ip", &asset.IP)
+		setStr("protocol", &asset.Protocol)
+		setStr("domain", &asset.Host)
+		setStr("title", &asset.Title)
+		setStr("server", &asset.Server)
+		if v, ok := web["port"].(float64); ok { asset.Port = int(v) }
+		if v, ok := web["status_code"].(float64); ok { asset.StatusCode = int(v) }
+	}
+	if loc, ok := data["location"].(map[string]interface{}); ok {
+		if v, ok := loc["country_cn"].(string); ok { asset.CountryCode = v }
+		if v, ok := loc["province_cn"].(string); ok { asset.Region = v }
+		if v, ok := loc["city_cn"].(string); ok { asset.City = v }
+	}
+}
+
+// ensureHunterURL 确保资产有 URL（从 IP/Port/Protocol 构建）
+func ensureHunterURL(asset *model.UnifiedAsset) {
+	if asset.URL != "" || asset.IP == "" || asset.Port == 0 {
+		return
+	}
+	proto := asset.Protocol
+	if proto == "" {
+		if asset.Port == 443 { proto = "https" } else { proto = "http" }
+	}
+	host := asset.IP
+	if asset.Host != "" { host = asset.Host }
+	scheme := "http"
+	if strings.HasPrefix(proto, "https") || asset.Port == 443 { scheme = "https" }
+	u := &url.URL{Scheme: scheme, Host: fmt.Sprintf("%s:%d", host, asset.Port)}
+	asset.URL = u.String()
 }
 
 // GetQuota 获取Hunter配额信息

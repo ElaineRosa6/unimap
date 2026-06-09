@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -265,112 +264,98 @@ func (g *GreyNoiseAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAs
 	if raw == nil || len(raw.RawData) == 0 {
 		return []model.UnifiedAsset{}, nil
 	}
-
 	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
-
 	for _, item := range raw.RawData {
 		data, ok := item.(map[string]interface{})
 		if !ok {
 			continue
 		}
-
-		ip, _ := data["ip"].(string)
-		if ip == "" {
-			continue
+		if asset := g.normalizeGreyNoiseItem(data); asset != nil {
+			assets = append(assets, *asset)
 		}
+	}
+	return assets, nil
+}
 
-		asset := &model.UnifiedAsset{
-			IP:     ip,
-			Source: g.Name(),
-		}
-
-		// 分类 (classification)
-		if classification, ok := data["classification"].(string); ok {
-			asset.Title = classification
-		}
-
-		// 标签 (tags)
-		if tags, ok := data["tags"].([]interface{}); ok && len(tags) > 0 {
-			tagStrs := make([]string, 0, len(tags))
-			for _, t := range tags {
-				if s, ok := t.(string); ok {
-					tagStrs = append(tagStrs, s)
-				}
-			}
-			if len(tagStrs) > 0 {
-				if asset.Title != "" {
-					asset.Title = asset.Title + " | " + strings.Join(tagStrs, ", ")
-				} else {
-					asset.Title = strings.Join(tagStrs, ", ")
-				}
-			}
-		}
-
-		// 元数据
-		if metadata, ok := data["metadata"].(map[string]interface{}); ok {
-			if org, ok := metadata["organization"].(string); ok {
-				asset.Org = org
-				asset.ISP = org
-			}
-			if country, ok := metadata["country"].(string); ok {
-				asset.CountryCode = country
-			}
-			if city, ok := metadata["city"].(string); ok {
-				asset.City = city
-			}
-			if asn, ok := metadata["asn"].(string); ok {
-				asset.ASN = asn
-			} else if asn, ok := metadata["asn"].(float64); ok {
-				asset.ASN = fmt.Sprintf("AS%d", int(asn))
-			}
-			if os, ok := metadata["os"].(string); ok {
-				asset.Server = os
-			}
-		}
-
-		// 端口
-		if rawData, ok := data["raw_data"].(map[string]interface{}); ok {
-			if scan, ok := rawData["scan"].(map[string]interface{}); ok {
-				if port, ok := scan["port"].(float64); ok {
-					asset.Port = int(port)
-				} else if port, ok := scan["port"].(int); ok {
-					asset.Port = port
-				}
-				if proto, ok := scan["protocol"].(string); ok {
-					asset.Protocol = proto
-				}
-			}
-		}
-
-		// 构建URL
-		if asset.IP != "" && asset.Port > 0 {
-			if asset.Protocol == "" {
-				if asset.Port == 443 {
-					asset.Protocol = "https"
-				} else {
-					asset.Protocol = "http"
-				}
-			}
-
-			u := &url.URL{
-				Scheme: asset.Protocol,
-			}
-			u.Host = fmt.Sprintf("%s:%d", asset.IP, asset.Port)
-			asset.URL = u.String()
-		}
-
-		// Body snippet: noise/riot 状态
-		snippet := fmt.Sprintf("noise=%v riot=%v", data["noise"], data["riot"])
-		if spoofable, ok := data["spoofable"].(bool); ok && spoofable {
-			snippet += " spoofable=true"
-		}
-		asset.BodySnippet = snippet
-
-		asset.Extra = data
-		assets = append(assets, *asset)
+// normalizeGreyNoiseItem 解析单条 GreyNoise 数据
+func (g *GreyNoiseAdapter) normalizeGreyNoiseItem(data map[string]interface{}) *model.UnifiedAsset {
+	ip, _ := data["ip"].(string)
+	if ip == "" {
+		return nil
+	}
+	asset := &model.UnifiedAsset{IP: ip, Source: g.Name()}
+	getInt := func(k string, parent map[string]interface{}) int {
+		if v, ok := parent[k].(float64); ok { return int(v) }
+		if v, ok := parent[k].(int); ok { return v }
+		return 0
 	}
 
-	return assets, nil
+	// 分类 + 标签
+	if classification, ok := data["classification"].(string); ok {
+		asset.Title = classification
+	}
+	if tags, ok := data["tags"].([]interface{}); ok && len(tags) > 0 {
+		tagStrs := make([]string, 0, len(tags))
+		for _, t := range tags {
+			if s, ok := t.(string); ok {
+				tagStrs = append(tagStrs, s)
+			}
+		}
+		if len(tagStrs) > 0 {
+			if asset.Title != "" {
+				asset.Title += " | " + strings.Join(tagStrs, ", ")
+			} else {
+				asset.Title = strings.Join(tagStrs, ", ")
+			}
+		}
+	}
+
+	// 元数据
+	if metadata, ok := data["metadata"].(map[string]interface{}); ok {
+		if org, ok := metadata["organization"].(string); ok {
+			asset.Org = org
+			asset.ISP = org
+		}
+		if country, ok := metadata["country"].(string); ok {
+			asset.CountryCode = country
+		}
+		if city, ok := metadata["city"].(string); ok {
+			asset.City = city
+		}
+		if asn, ok := metadata["asn"].(string); ok {
+			asset.ASN = asn
+		} else if asnF, ok := metadata["asn"].(float64); ok {
+			asset.ASN = fmt.Sprintf("AS%d", int(asnF))
+		}
+		if os, ok := metadata["os"].(string); ok {
+			asset.Server = os
+		}
+	}
+
+	// 端口/协议
+	if rawData, ok := data["raw_data"].(map[string]interface{}); ok {
+		if scan, ok := rawData["scan"].(map[string]interface{}); ok {
+			asset.Port = getInt("port", scan)
+			if proto, ok := scan["protocol"].(string); ok {
+				asset.Protocol = proto
+			}
+		}
+	}
+
+	// URL
+	if asset.IP != "" && asset.Port > 0 {
+		buildAssetURL(asset)
+	}
+
+	// Body snippet: noise/riot 状态
+	snippet := fmt.Sprintf("noise=%v riot=%v", data["noise"], data["riot"])
+	if spoofable, ok := data["spoofable"].(bool); ok && spoofable {
+		snippet += " spoofable=true"
+	}
+	asset.BodySnippet = snippet
+
+	asset.Extra = data
+	return asset
 }
 
 // GetQuota 获取GreyNoise配额信息

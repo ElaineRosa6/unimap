@@ -18,15 +18,39 @@ import (
 
 // sendNotification sends notifications based on task configuration and execution result.
 func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord) {
+	if !s.shouldSendNotification(task, record) {
+		return
+	}
+
+	channelIDs := migrateChannelIDs(task.Notifications)
+	if len(channelIDs) == 0 {
+		return
+	}
+
+	msg := s.buildNotificationMessage(task, record)
+	timeout := s.notifyTimeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
+
+	for _, chID := range channelIDs {
+		if chID == "__task_inline_webhook__" && task.Notifications.WebhookURL != "" {
+			s.sendInlineWebhookNotification(task.Notifications.WebhookURL, msg, timeout)
+			continue
+		}
+		s.sendRegistryChannelNotification(chID, msg, timeout)
+	}
+}
+
+func (s *Scheduler) shouldSendNotification(task *ScheduledTask, record ExecutionRecord) bool {
 	if s.notifyCfgProvider != nil {
 		globalCfg := s.notifyCfgProvider()
 		if globalCfg == nil || !globalCfg.Enabled {
-			return
+			return false
 		}
 	}
-
 	if task.Notifications == nil || !task.Notifications.Enabled {
-		return
+		return false
 	}
 
 	shouldNotify := false
@@ -38,15 +62,10 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 	case "timeout":
 		shouldNotify = task.Notifications.OnTimeout
 	}
-	if !shouldNotify {
-		return
-	}
+	return shouldNotify
+}
 
-	channelIDs := migrateChannelIDs(task.Notifications)
-	if len(channelIDs) == 0 {
-		return
-	}
-
+func (s *Scheduler) buildNotificationMessage(task *ScheduledTask, record ExecutionRecord) notify.TaskNotification {
 	msg := notify.TaskNotification{
 		TaskID:    task.ID,
 		TaskName:  sanitizeUTF8(task.Name),
@@ -58,80 +77,74 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 		Timestamp: time.Now(),
 		Payload:   sanitizePayload(task.Payload),
 	}
-
 	msg.ImagePaths = extractImagePaths(record.Result)
 	msg.Result = redactImagePaths(msg.Result, msg.ImagePaths)
+	return msg
+}
 
-	timeout := s.notifyTimeout
-	if timeout == 0 {
-		timeout = 10 * time.Second
+func (s *Scheduler) sendInlineWebhookNotification(webhookURL string, msg notify.TaskNotification, timeout time.Duration) {
+	s.mu.RLock()
+	stopping := s.stopped || s.stopping
+	s.mu.RUnlock()
+	if stopping {
+		return
+	}
+	s.notifyWg.Add(1)
+	go func(url string) {
+		defer func() {
+			s.notifyWg.Done()
+			if r := recover(); r != nil {
+				logger.Errorf("scheduler panic in inline webhook notification: %v", r)
+			}
+		}()
+		ch, err := notify.NewGenericWebhookChannel("__inline__", url, nil, true, false)
+		if err != nil {
+			logger.Errorf("[scheduler] inline webhook URL blocked: %v", err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if err := ch.Send(ctx, msg); err != nil {
+			logger.Errorf("[scheduler] notify inline webhook failed: %v", err)
+			metrics.IncSchedulerNotifyFail("webhook")
+		} else {
+			metrics.IncSchedulerNotifySuccess("webhook")
+		}
+	}(webhookURL)
+}
+
+func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.TaskNotification, timeout time.Duration) {
+	if s.notifyRegistry == nil {
+		return
+	}
+	ch := s.notifyRegistry.Get(chID)
+	if ch == nil || !ch.IsEnabled() {
+		return
 	}
 
-	for _, chID := range channelIDs {
-		if chID == "__task_inline_webhook__" && task.Notifications.WebhookURL != "" {
-			s.mu.RLock()
-			stopping := s.stopped || s.stopping
-			s.mu.RUnlock()
-			if stopping {
-				continue
-			}
-			s.notifyWg.Add(1)
-			go func(url string) {
-				defer func() {
-					s.notifyWg.Done()
-					if r := recover(); r != nil {
-						logger.Errorf("scheduler panic in inline webhook notification: %v", r)
-					}
-				}()
-				ch, err := notify.NewGenericWebhookChannel("__inline__", url, nil, true, false)
-				if err != nil {
-					logger.Errorf("[scheduler] inline webhook URL blocked: %v", err)
-					return
-				}
-				ctx, cancel := context.WithTimeout(context.Background(), timeout)
-				defer cancel()
-				if err := ch.Send(ctx, msg); err != nil {
-					logger.Errorf("[scheduler] notify inline webhook failed: %v", err)
-					metrics.IncSchedulerNotifyFail("webhook")
-				} else {
-					metrics.IncSchedulerNotifySuccess("webhook")
-				}
-			}(task.Notifications.WebhookURL)
-			continue
-		}
-
-		if s.notifyRegistry == nil {
-			continue
-		}
-		ch := s.notifyRegistry.Get(chID)
-		if ch == nil || !ch.IsEnabled() {
-			continue
-		}
-
-		s.mu.RLock()
-		stopping := s.stopped || s.stopping
-		s.mu.RUnlock()
-		if stopping {
-			continue
-		}
-		s.notifyWg.Add(1)
-		go func(ch notify.NotifyChannel) {
-			defer func() {
-				s.notifyWg.Done()
-				if r := recover(); r != nil {
-					logger.Errorf("scheduler panic in notify channel %s: %v", ch.ID(), r)
-				}
-			}()
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
-			if err := ch.Send(ctx, msg); err != nil {
-				logger.Errorf("[scheduler] notify %s (%s) failed: %v", ch.ID(), ch.Type(), err)
-				metrics.IncSchedulerNotifyFail(ch.Type())
-			} else {
-				metrics.IncSchedulerNotifySuccess(ch.Type())
-			}
-		}(ch)
+	s.mu.RLock()
+	stopping := s.stopped || s.stopping
+	s.mu.RUnlock()
+	if stopping {
+		return
 	}
+	s.notifyWg.Add(1)
+	go func(ch notify.NotifyChannel) {
+		defer func() {
+			s.notifyWg.Done()
+			if r := recover(); r != nil {
+				logger.Errorf("scheduler panic in notify channel %s: %v", ch.ID(), r)
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if err := ch.Send(ctx, msg); err != nil {
+			logger.Errorf("[scheduler] notify %s (%s) failed: %v", ch.ID(), ch.Type(), err)
+			metrics.IncSchedulerNotifyFail(ch.Type())
+		} else {
+			metrics.IncSchedulerNotifySuccess(ch.Type())
+		}
+	}(ch)
 }
 
 // extractImagePaths extracts screenshot file paths from task result text.

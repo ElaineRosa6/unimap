@@ -7,6 +7,13 @@ import (
 	"github.com/unimap/project/internal/logger"
 )
 
+// engineDefaults holds default values for a search engine.
+type engineDefaults struct {
+	baseURL string
+	qps     int
+	timeout int
+}
+
 // applyEngineDefaults 应用搜索引擎默认配置
 func (m *Manager) applyEngineDefaults(config *Config) {
 	config.Engines.Quake.Enabled = true
@@ -21,40 +28,41 @@ func (m *Manager) applyEngineDefaults(config *Config) {
 	config.Engines.Greynoise.Enabled = true
 	config.Engines.Fofa.UseWebAPI = true
 
-	// Quake
-	if config.Engines.Quake.BaseURL == "" {
-		config.Engines.Quake.BaseURL = "https://quake.360.net/api"
-	}
-	if config.Engines.Quake.QPS == 0 {
-		config.Engines.Quake.QPS = 5
-	}
-	if config.Engines.Quake.Timeout == 0 {
-		config.Engines.Quake.Timeout = 30
-	}
+	applyEngineDefaultsSimple(&config.Engines.Quake.BaseURL, &config.Engines.Quake.QPS, &config.Engines.Quake.Timeout,
+		engineDefaults{"https://quake.360.net/api", 5, 30})
+	applyEngineDefaultsSimple(&config.Engines.Zoomeye.BaseURL, &config.Engines.Zoomeye.QPS, &config.Engines.Zoomeye.Timeout,
+		engineDefaults{"https://api.zoomeye.org", 3, 30})
+	applyEngineDefaultsSimple(&config.Engines.Hunter.BaseURL, &config.Engines.Hunter.QPS, &config.Engines.Hunter.Timeout,
+		engineDefaults{"https://hunter.qianxin.com", 5, 30})
+	applyEngineDefaultsSimple(&config.Engines.Shodan.BaseURL, &config.Engines.Shodan.QPS, &config.Engines.Shodan.Timeout,
+		engineDefaults{"https://api.shodan.io", 1, 30})
+	applyEngineDefaultsSimple(&config.Engines.Censys.BaseURL, &config.Engines.Censys.QPS, &config.Engines.Censys.Timeout,
+		engineDefaults{"https://search.censys.io", 2, 30})
+	applyEngineDefaultsSimple(&config.Engines.Daydaymap.BaseURL, &config.Engines.Daydaymap.QPS, &config.Engines.Daydaymap.Timeout,
+		engineDefaults{"https://www.daydaymap.com", 3, 30})
+	applyEngineDefaultsSimple(&config.Engines.Binaryedge.BaseURL, &config.Engines.Binaryedge.QPS, &config.Engines.Binaryedge.Timeout,
+		engineDefaults{"https://api.binaryedge.io", 2, 30})
+	applyEngineDefaultsSimple(&config.Engines.Onyphe.BaseURL, &config.Engines.Onyphe.QPS, &config.Engines.Onyphe.Timeout,
+		engineDefaults{"https://www.onyphe.io", 1, 30})
+	applyEngineDefaultsSimple(&config.Engines.Greynoise.BaseURL, &config.Engines.Greynoise.QPS, &config.Engines.Greynoise.Timeout,
+		engineDefaults{"https://api.greynoise.io", 1, 30})
 
-	// ZoomEye
-	if config.Engines.Zoomeye.BaseURL == "" {
-		config.Engines.Zoomeye.BaseURL = "https://api.zoomeye.org"
-	}
-	if config.Engines.Zoomeye.QPS == 0 {
-		config.Engines.Zoomeye.QPS = 3
-	}
-	if config.Engines.Zoomeye.Timeout == 0 {
-		config.Engines.Zoomeye.Timeout = 30
-	}
+	applyFofaDefaults(config)
+}
 
-	// Hunter
-	if config.Engines.Hunter.BaseURL == "" {
-		config.Engines.Hunter.BaseURL = "https://hunter.qianxin.com"
+func applyEngineDefaultsSimple(baseURL *string, qps *int, timeout *int, defaults engineDefaults) {
+	if *baseURL == "" {
+		*baseURL = defaults.baseURL
 	}
-	if config.Engines.Hunter.QPS == 0 {
-		config.Engines.Hunter.QPS = 5
+	if *qps == 0 {
+		*qps = defaults.qps
 	}
-	if config.Engines.Hunter.Timeout == 0 {
-		config.Engines.Hunter.Timeout = 30
+	if *timeout == 0 {
+		*timeout = defaults.timeout
 	}
+}
 
-	// FOFA
+func applyFofaDefaults(config *Config) {
 	if config.Engines.Fofa.APIBaseURL == "" && config.Engines.Fofa.BaseURL != "" {
 		config.Engines.Fofa.APIBaseURL = config.Engines.Fofa.BaseURL
 		logger.Warnf("fofa.base_url 已迁移到 fofa.api_base_url，请更新 config.yaml")
@@ -71,72 +79,6 @@ func (m *Manager) applyEngineDefaults(config *Config) {
 	}
 	if config.Engines.Fofa.Timeout == 0 {
 		config.Engines.Fofa.Timeout = 30
-	}
-
-	// Shodan
-	if config.Engines.Shodan.BaseURL == "" {
-		config.Engines.Shodan.BaseURL = "https://api.shodan.io"
-	}
-	if config.Engines.Shodan.QPS == 0 {
-		config.Engines.Shodan.QPS = 1
-	}
-	if config.Engines.Shodan.Timeout == 0 {
-		config.Engines.Shodan.Timeout = 30
-	}
-
-	// Censys
-	if config.Engines.Censys.BaseURL == "" {
-		config.Engines.Censys.BaseURL = "https://search.censys.io"
-	}
-	if config.Engines.Censys.QPS == 0 {
-		config.Engines.Censys.QPS = 2
-	}
-	if config.Engines.Censys.Timeout == 0 {
-		config.Engines.Censys.Timeout = 30
-	}
-
-	// DayDayMap
-	if config.Engines.Daydaymap.BaseURL == "" {
-		config.Engines.Daydaymap.BaseURL = "https://www.daydaymap.com"
-	}
-	if config.Engines.Daydaymap.QPS == 0 {
-		config.Engines.Daydaymap.QPS = 3
-	}
-	if config.Engines.Daydaymap.Timeout == 0 {
-		config.Engines.Daydaymap.Timeout = 30
-	}
-
-	// BinaryEdge
-	if config.Engines.Binaryedge.BaseURL == "" {
-		config.Engines.Binaryedge.BaseURL = "https://api.binaryedge.io"
-	}
-	if config.Engines.Binaryedge.QPS == 0 {
-		config.Engines.Binaryedge.QPS = 2
-	}
-	if config.Engines.Binaryedge.Timeout == 0 {
-		config.Engines.Binaryedge.Timeout = 30
-	}
-
-	// Onyphe
-	if config.Engines.Onyphe.BaseURL == "" {
-		config.Engines.Onyphe.BaseURL = "https://www.onyphe.io"
-	}
-	if config.Engines.Onyphe.QPS == 0 {
-		config.Engines.Onyphe.QPS = 1
-	}
-	if config.Engines.Onyphe.Timeout == 0 {
-		config.Engines.Onyphe.Timeout = 30
-	}
-
-	// GreyNoise
-	if config.Engines.Greynoise.BaseURL == "" {
-		config.Engines.Greynoise.BaseURL = "https://api.greynoise.io"
-	}
-	if config.Engines.Greynoise.QPS == 0 {
-		config.Engines.Greynoise.QPS = 1
-	}
-	if config.Engines.Greynoise.Timeout == 0 {
-		config.Engines.Greynoise.Timeout = 30
 	}
 }
 

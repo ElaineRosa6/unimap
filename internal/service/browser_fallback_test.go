@@ -6,9 +6,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/core/unimap"
 	"github.com/unimap/project/internal/model"
-	"github.com/unimap/project/internal/screenshot"
 )
 
 // fakeBrowserBackend records calls and returns canned results / errors.
@@ -16,11 +16,11 @@ type fakeBrowserBackend struct {
 	calls     int32
 	gotEngine string
 	gotQuery  string
-	results   []screenshot.CollectResult
+	results   []collection.CollectResult
 	err       error
 }
 
-func (f *fakeBrowserBackend) CollectSearchEngineResult(_ context.Context, engine, query, _ string) ([]screenshot.CollectResult, error) {
+func (f *fakeBrowserBackend) CollectSearchEngineResult(_ context.Context, engine, query, _ string) ([]collection.CollectResult, error) {
 	atomic.AddInt32(&f.calls, 1)
 	f.gotEngine = engine
 	f.gotQuery = query
@@ -108,7 +108,7 @@ func TestTryBrowserFallback_NotInWhitelist(t *testing.T) {
 // assets and tags them with collection_method=browser_fallback.
 func TestTryBrowserFallback_OnAPIError_Triggers(t *testing.T) {
 	backend := &fakeBrowserBackend{
-		results: []screenshot.CollectResult{{
+		results: []collection.CollectResult{{
 			Engine: "fofa",
 			Assets: []model.UnifiedAsset{{IP: "1.2.3.4", Port: 80}},
 		}},
@@ -168,7 +168,7 @@ func TestTryBrowserFallback_OnAPIError_Disabled(t *testing.T) {
 // is true.
 func TestTryBrowserFallback_OnEmptyResult_Triggers(t *testing.T) {
 	backend := &fakeBrowserBackend{
-		results: []screenshot.CollectResult{{
+		results: []collection.CollectResult{{
 			Assets: []model.UnifiedAsset{{IP: "9.9.9.9"}},
 		}},
 	}
@@ -235,7 +235,7 @@ func TestTryBrowserFallback_APISuccess_NoFallback(t *testing.T) {
 // appended.
 func TestTryBrowserFallback_MultipleEngines(t *testing.T) {
 	backend := &fakeBrowserBackend{
-		results: []screenshot.CollectResult{{
+		results: []collection.CollectResult{{
 			Engine: "hunter",
 			Assets: []model.UnifiedAsset{{IP: "10.0.0.1", Port: 443}},
 		}},

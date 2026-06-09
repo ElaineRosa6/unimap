@@ -37,7 +37,7 @@
 | # | 问题 | 来源 | 行动 |
 |---|------|------|------|
 | TD-1 | ~~10 个文件超 800 行~~ ✅ 已全部拆分完成（2026-06-09，最大 `metrics.go` 795 行） | CLAUDE.md Medium | 15 个 commit 拆分 10 个文件，全部 ≤ 795 行 |
-| TD-2 | 34 个函数超 50 行（最大 `createMonitorTab` 390 行） | CLAUDE.md Medium | 提取子函数，遵循 <50 行规范 |
+| TD-2 | ~~34 个函数超 50 行~~ ✅ 已全部拆分完成（2026-06-09，191→144，最大 `plugin_demo.go:main` 183 行为示例文件） | CLAUDE.md Medium | 47 个函数拆分，39 文件，净减 1159 行 |
 | TD-3 | 错误消息大写 23 处（多数为缩写词可接受） | CLAUDE.md Low | 逐条审查，非缩写词改为小写 |
 | TD-4 | `map[string]interface{}` 强类型（插件接口广泛使用） | CLAUDE.md Low | 渐进重构，定义 `PluginResult` 等结构体 |
 
@@ -47,9 +47,9 @@
 |---|------|------|------|------|
 | CR-1 | Quake `>` 和 `>=` 输出相同 `[N TO *]`（无排他下界） | MEDIUM | code review M-3 | 文档已记录为已知限制，Quake 语法本身不支持排他区间 |
 | CR-2 | Shodan OR 降级为 AND（结果集更小） | MEDIUM | code review M-2 | 已加 `logger.Warnf`；长期考虑在 UI 层提示用户"Shodan 不支持跨字段 OR" |
-| CR-3 | ZoomEye/Hunter 比较操作符值加引号（`port>"80"` 而非 `port>80`） | MEDIUM | code review M-5/M-6 | 需对照 ZoomEye v2 / Hunter 官方文档确认数值比较是否需引号 |
+| CR-3 | ZoomEye/Hunter 比较操作符值加引号（`port>"80"` 而非 `port>80`） | MEDIUM | code review M-5/M-6 | ✅ 已确认：Hunter 支持比较运算符且值需引号；ZoomEye 不支持比较运算符，已降级为等值查询（2026-06-09） |
 | CR-4 | Shodan `header` 和 `body` 都映射到 `http.html` | LOW | code review L-2 | Shodan 无独立 header filter，已接受折中；文档记录 |
-| CR-5 | ZoomEye `url` 映射到 `site`（旧映射未更新） | LOW | code review L-3 | 需确认 ZoomEye v2 是否有 `url` 独立字段 |
+| CR-5 | ZoomEye `url` 映射到 `site`（旧映射未更新） | LOW | code review L-3 | ✅ 已确认：ZoomEye 无 `url` 字段，`site` 是正确映射（2026-06-09） |
 
 ### 0.4 采集架构 — 三层采集设计评审遗留（2026-06-06）
 
@@ -62,9 +62,9 @@
 | ARC-3 | L1 与 L2 同源冗余非正交 | 🟠 H-1 | 都拦同一份 API 响应，改端点/加密同时失效 | 建议先做 L1，L2 暂缓 |
 | ARC-4 | API 端点为猜测需抓包验证 | 🟠 H-2 | Shodan 列的是官方 API 非网页端点 | Phase -1：抓包 spike 验证各引擎网页端点 |
 | ARC-5 | 加密响应体无应对 | 🟠 H-3 | 强反爬引擎 L1/L2 归零退回 DOM | 2026-06-07 更新：5 引擎 Extension 采集已全部打通，H-3 风险评估不变 |
-| ARC-6 | collection 代码塞进 `internal/screenshot/` 包 | 🟡 M-1 | 职责膨胀 | Phase 0：迁移到 `internal/collection/` |
-| ARC-7 | `<all_urls>` 全网注入 | 🟡 M-2 | 与"降低检测"矛盾 | 收窄至 5 引擎域名（+ 新增引擎域名） |
-| ARC-8 | L1/L3 独立 context 请求翻倍 | 🟡 M-3 | 同 context 先 L1 后 L3 更省 | 实施时合并 context |
+| ARC-6 | collection 代码塞进 `internal/screenshot/` 包 | 🟡 M-1 | 职责膨胀 | ✅ 已完成：`CollectResult`+解析函数迁移到 `internal/collection/` (2026-06-09) |
+| ARC-7 | `<all_urls>` 全网注入 | 🟡 M-2 | 与"降低检测"矛盾 | ✅ 已完成：收窄至 10 引擎域名 + localhost (2026-06-09) |
+| ARC-8 | L1/L3 独立 context 请求翻倍 | 🟡 M-3 | 同 context 先 L1 后 L3 更省 | ✅ 已完成：`CollectAndCaptureSearchEngineResult` 单次导航 (2026-06-09) |
 | ARC-9 | `async_validate` 后台校验放大限流 | 🟡 M-4 | 与 M-3 叠加 | 校验主比较改 API vs DOM（非再访问引擎页） |
 
 **实施路径**: Phase -1 抓包 spike → Phase 0 迁独立包(M-1) → Phase 1 只做 L1(M-3) → L2 暂缓(M-2/ARC-1/ARC-2) → 校验改 API vs DOM(H-1)
@@ -100,10 +100,10 @@
 中优先（技术债务/架构改进）:
   SEC-2  API 旧路径 shim 移除 ✅ 已完成 (2026-06-09)
   TD-1   文件拆分（800 行上限）✅ 已完成 (2026-06-09)
-  TD-2   函数拆分（50 行上限）
-  ARC-6  collection 包迁移
-  ARC-7  Extension 域名收窄
-  ARC-8  context 合并
+  TD-2   函数拆分（50 行上限）✅ 已完成 (2026-06-09，191→144，-1159 行)
+  ARC-6  collection 包迁移 ✅ 已完成 (2026-06-09，新建 internal/collection/，迁移 CollectResult+解析函数)
+  ARC-7  Extension 域名收窄 ✅ 已完成 (2026-06-09，<all_urls> → 10引擎域名+localhost)
+  ARC-8  context 合并 ✅ 已完成 (2026-06-09，CollectAndCapture 单次导航)
 
 低优先（渐进改进）:
   TD-3   错误消息大写
@@ -599,7 +599,8 @@ Phase 4: 浏览器探针 + Network 健康检测（1-2 天）
 
 2026-06-09
   ├── SEC-2: API 旧路径 shim 移除 ✅ 已提前完成 (commit 24a37f7)
-  └── TD-1: 5个大文件拆分 ✅ 已完成 (detector/executor/scheduler x2/config)
+  ├── TD-1: 10个大文件拆分 ✅ 已完成 (全部 ≤ 795 行)
+  └── TD-2: 47个函数拆分 ✅ 已完成 (191→144，净减 1159 行)
 
 2026-08
   ├── TD-3/TD-4: 渐进代码质量改进（剩余4文件拆分）
