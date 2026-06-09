@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/logger"
@@ -101,6 +104,80 @@ func (m *Manager) collectViaDOM(ctx context.Context, engine, query, queryID stri
 	return []collection.CollectResult{result}, nil
 }
 
+func collectViaNetworkOnContext(browserCtx context.Context, engine, query string) (*collection.CollectResult, chan struct{}) {
+	engineKey := strings.ToLower(engine)
+	apiConfig, ok := l1SearchAPIs[engineKey]
+	if !ok {
+		return nil, nil
+	}
+
+	var mu sync.Mutex
+	captured := &networkResponse{}
+	result := &collection.CollectResult{}
+	respCh := make(chan struct{}, 1)
+
+	chromedp.ListenTarget(browserCtx, func(ev interface{}) {
+		switch e := ev.(type) {
+		case *network.EventResponseReceived:
+			if strings.Contains(e.Response.URL, apiConfig.URLPattern) {
+				mu.Lock()
+				if captured.URL == "" {
+					captured.URL = e.Response.URL
+					captured.RequestID = e.RequestID
+					captured.StatusCode = int(e.Response.Status)
+				}
+				mu.Unlock()
+			}
+		case *network.EventLoadingFinished:
+			mu.Lock()
+			needFetch := captured.URL != "" && captured.Body == nil && e.RequestID == captured.RequestID
+			reqID := captured.RequestID
+			mu.Unlock()
+			if needFetch {
+				go func() {
+					var body []byte
+					if err := chromedp.Run(browserCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+						b, err := network.GetResponseBody(reqID).Do(ctx)
+						if err != nil {
+							return err
+						}
+						body = b
+						return nil
+					})); err != nil {
+						logger.Warnf("L1: failed to get response body: %v", err)
+						return
+					}
+
+					mu.Lock()
+					captured.Body = body
+					resp := *captured
+					mu.Unlock()
+
+					if resp.StatusCode != http.StatusOK {
+						logger.Warnf("L1: API returned status %d", resp.StatusCode)
+						return
+					}
+					assets, total, err := apiConfig.ParseResponse(resp.Body)
+					if err != nil {
+						logger.Warnf("L1: failed to parse response: %v", err)
+						return
+					}
+					*result = collection.CollectResult{
+						Engine: engine, Query: query, RawURL: resp.URL,
+						Title: fmt.Sprintf("L1 Network: %s", engine), Timestamp: time.Now().Unix(),
+						Assets: assets, Total: total, HasMore: len(assets) < total,
+					}
+					select {
+					case respCh <- struct{}{}:
+					default:
+					}
+				}()
+			}
+		}
+	})
+	return result, respCh
+}
+
 // CollectAndCaptureSearchEngineResult 在单次导航中同时完成数据采集和截图。
 // 共享同一个 Chrome context，避免重复导航到同一 URL。
 func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, string, error) {
@@ -124,6 +201,13 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	defer browserCancel()
+
+	l1Result, l1Ch := collectViaNetworkOnContext(browserCtx, engine, query)
+	if l1Ch != nil {
+		if err := chromedp.Run(browserCtx, network.Enable()); err != nil {
+			logger.Warnf("enable network failed on %s: %v", engine, err)
+		}
+	}
 
 	// 单次导航
 	if err := chromedp.Run(browserCtx, chromedp.Navigate(searchURL)); err != nil {
@@ -153,7 +237,19 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 		Engine: engine, Query: query, RawURL: searchURL,
 		Title: title, Timestamp: time.Now().Unix(),
 	}
-	if extracted != "" {
+	l1Succeeded := false
+	if l1Ch != nil {
+		select {
+		case <-l1Ch:
+		case <-time.After(2 * time.Second):
+		case <-ctx.Done():
+		}
+		if l1Result != nil && len(l1Result.Assets) > 0 {
+			collectResult = *l1Result
+			l1Succeeded = true
+		}
+	}
+	if !l1Succeeded && extracted != "" {
 		var jsResult struct {
 			Assets  []map[string]interface{} `json:"assets"`
 			Total   int                      `json:"total"`
@@ -211,4 +307,3 @@ func (m *Manager) RemoteDebugURL() string {
 func (m *Manager) SetProxyServer(proxy string) {
 	m.proxyServer = strings.TrimSpace(proxy)
 }
-

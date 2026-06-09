@@ -20,6 +20,7 @@ import (
 // networkResponse 捕获的网络响应
 type networkResponse struct {
 	URL        string
+	RequestID  network.RequestID
 	StatusCode int
 	Body       []byte
 }
@@ -75,12 +76,14 @@ func (m *Manager) CollectViaNetwork(ctx context.Context, engine, query, queryID 
 	ctx, cancel := context.WithTimeout(ctx, collectTimeout)
 	defer cancel()
 
-	allocCtx, _, err := m.newAllocator(ctx)
+	allocCtx, allocCancel, err := m.newAllocator(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer allocCancel()
 
-	browserCtx, _ := chromedp.NewContext(allocCtx)
+	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+	defer browserCancel()
 
 	var mu sync.Mutex
 	captured := &networkResponse{}
@@ -93,14 +96,15 @@ func (m *Manager) CollectViaNetwork(ctx context.Context, engine, query, queryID 
 				mu.Lock()
 				if captured.URL == "" {
 					captured.URL = e.Response.URL
+					captured.RequestID = e.RequestID
 					captured.StatusCode = int(e.Response.Status)
 				}
 				mu.Unlock()
 			}
 		case *network.EventLoadingFinished:
 			mu.Lock()
-			needFetch := captured.URL != "" && captured.Body == nil
-			reqID := e.RequestID
+			needFetch := captured.URL != "" && captured.Body == nil && e.RequestID == captured.RequestID
+			reqID := captured.RequestID
 			mu.Unlock()
 			if needFetch {
 				go func() {
@@ -192,6 +196,9 @@ func parseZoomEyeNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error)
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return parseZoomEyeNetworkResponseAlt(body)
 	}
+	if len(resp.Matches) == 0 {
+		return parseZoomEyeNetworkResponseAlt(body)
+	}
 	assets := make([]model.UnifiedAsset, 0, len(resp.Matches))
 	for _, m := range resp.Matches {
 		a := model.UnifiedAsset{
@@ -199,11 +206,21 @@ func parseZoomEyeNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error)
 			Title: m.Title, CountryCode: m.Country, City: m.City,
 			Region: m.Subdivisions, Org: m.Org, ISP: m.ISP, Source: "zoomeye",
 		}
-		if m.Hostname != "" && a.Host == "" { a.Host = m.Hostname }
-		if m.ASN > 0 { a.ASN = fmt.Sprintf("%d", m.ASN) }
-		if m.Server != "" { a.Server = m.Server }
+		if m.Hostname != "" && a.Host == "" {
+			a.Host = m.Hostname
+		}
+		if m.ASN > 0 {
+			a.ASN = fmt.Sprintf("%d", m.ASN)
+		}
+		if m.Server != "" {
+			a.Server = m.Server
+		}
 		if m.Banner != "" {
-			if len(m.Banner) > 200 { a.BodySnippet = m.Banner[:200] } else { a.BodySnippet = m.Banner }
+			if len(m.Banner) > 200 {
+				a.BodySnippet = m.Banner[:200]
+			} else {
+				a.BodySnippet = m.Banner
+			}
 		}
 		assets = append(assets, a)
 	}
@@ -221,11 +238,21 @@ func parseZoomEyeNetworkResponseAlt(body []byte) ([]model.UnifiedAsset, int, err
 	assets := make([]model.UnifiedAsset, 0, len(resp.Results))
 	for _, item := range resp.Results {
 		a := model.UnifiedAsset{Source: "zoomeye"}
-		if v, ok := item["ip"].(string); ok { a.IP = v }
-		if v, ok := item["port"].(float64); ok { a.Port = int(v) }
-		if v, ok := item["service"].(string); ok { a.Protocol = v }
-		if v, ok := item["domain"].(string); ok { a.Host = v }
-		if v, ok := item["title"].(string); ok { a.Title = v }
+		if v, ok := item["ip"].(string); ok {
+			a.IP = v
+		}
+		if v, ok := item["port"].(float64); ok {
+			a.Port = int(v)
+		}
+		if v, ok := item["service"].(string); ok {
+			a.Protocol = v
+		}
+		if v, ok := item["domain"].(string); ok {
+			a.Host = v
+		}
+		if v, ok := item["title"].(string); ok {
+			a.Title = v
+		}
 		assets = append(assets, a)
 	}
 	return assets, resp.Total, nil
@@ -285,9 +312,13 @@ func parseQuakeNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) {
 				IP       string `json:"ip"`
 				Port     int    `json:"port"`
 				Hostname string `json:"hostname"`
-				Service  struct{ Name string `json:"name"` } `json:"service"`
+				Service  struct {
+					Name string `json:"name"`
+				} `json:"service"`
 				Transport string `json:"transport"`
-				Title    struct{ Title string `json:"title"` } `json:"title"`
+				Title     struct {
+					Title string `json:"title"`
+				} `json:"title"`
 				Location struct {
 					CountryCode string `json:"country_code"`
 					City        string `json:"city_cn"`
@@ -310,7 +341,9 @@ func parseQuakeNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) {
 	assets := make([]model.UnifiedAsset, 0, len(resp.Data.Hits))
 	for _, hit := range resp.Data.Hits {
 		proto := hit.Transport
-		if proto == "" { proto = hit.Service.Name }
+		if proto == "" {
+			proto = hit.Service.Name
+		}
 		assets = append(assets, model.UnifiedAsset{
 			IP: hit.IP, Port: hit.Port, Protocol: proto, Host: hit.Hostname,
 			Title: hit.Title.Title, CountryCode: hit.Location.CountryCode, City: hit.Location.City,
@@ -334,14 +367,22 @@ func FetchSearchResultDirect(engine, query string, page, pageSize int, apiKey st
 func fetchZoomEyeDirect(query string, page, pageSize int, apiKey string) ([]model.UnifiedAsset, int, error) {
 	url := fmt.Sprintf("https://api.zoomeye.org/api/search?q=%s&page=%d&t=v4+v6+web", query, page)
 	req, err := http.NewRequest("GET", url, nil)
-	if err != nil { return nil, 0, err }
+	if err != nil {
+		return nil, 0, err
+	}
 	req.Header.Set("API-KEY", apiKey)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-	if err != nil { return nil, 0, err }
+	if err != nil {
+		return nil, 0, err
+	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
-	if err != nil { return nil, 0, err }
-	if resp.StatusCode != 200 { return nil, 0, fmt.Errorf("ZoomEye API returned status %d", resp.StatusCode) }
+	if err != nil {
+		return nil, 0, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, 0, fmt.Errorf("ZoomEye API returned status %d", resp.StatusCode)
+	}
 	return parseZoomEyeNetworkResponse(body)
 }
