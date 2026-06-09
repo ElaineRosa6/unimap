@@ -167,82 +167,52 @@ func (s *Server) applyCookiesFromRequest(r *http.Request) {
 	s.configMutex.Lock()
 	defer s.configMutex.Unlock()
 
-	engineMode := s.currentScreenshotEngine()
-
-	if engineMode == "extension" {
-		changed := false
-		if _, present := r.Form["proxy_server"]; present {
-			proxy := strings.TrimSpace(r.FormValue("proxy_server"))
-			if s.config.Screenshot.ProxyServer != proxy {
-				s.config.Screenshot.ProxyServer = proxy
-				changed = true
-				if s.screenshotMgr != nil {
-					s.screenshotMgr.SetProxyServer(proxy)
-				}
-			}
-		}
-
-		if changed && s.configManager != nil {
-			if err := s.configManager.Save(); err != nil {
-				logger.Warnf("Failed to persist extension proxy config: %v", err)
-			}
-		}
-		logger.Infof("Cookie apply mode=extension_session: skipped cookie injection, proxy update only")
+	if s.currentScreenshotEngine() == "extension" {
+		s.applyCookiesExtensionMode(r)
 		return
 	}
 
+	s.applyCDPCookiesFromForm(r)
+}
+
+// applyCookiesExtensionMode handles cookie/proxy updates when using extension engine.
+// Must be called with configMutex held.
+func (s *Server) applyCookiesExtensionMode(r *http.Request) {
+	changed := false
+	if _, present := r.Form["proxy_server"]; present {
+		proxy := strings.TrimSpace(r.FormValue("proxy_server"))
+		if s.config.Screenshot.ProxyServer != proxy {
+			s.config.Screenshot.ProxyServer = proxy
+			changed = true
+			if s.screenshotMgr != nil {
+				s.screenshotMgr.SetProxyServer(proxy)
+			}
+		}
+	}
+
+	if changed && s.configManager != nil {
+		if err := s.configManager.Save(); err != nil {
+			logger.Warnf("Failed to persist extension proxy config: %v", err)
+		}
+	}
+	logger.Infof("Cookie apply mode=extension_session: skipped cookie injection, proxy update only")
+}
+
+// applyCDPCookiesFromForm applies cookies and proxy from form values for CDP engine mode.
+// Must be called with configMutex held.
+func (s *Server) applyCDPCookiesFromForm(r *http.Request) {
 	changed := false
 	clear := strings.EqualFold(strings.TrimSpace(r.FormValue("clear_cookies")), "true")
 	if clear {
-		s.config.Engines.Fofa.Cookies = nil
-		s.config.Engines.Hunter.Cookies = nil
-		s.config.Engines.Quake.Cookies = nil
-		s.config.Engines.Zoomeye.Cookies = nil
+		s.clearAllEngineCookies()
 		changed = true
-		if s.screenshotMgr != nil {
-			s.screenshotMgr.SetCookies("fofa", nil)
-			s.screenshotMgr.SetCookies("hunter", nil)
-			s.screenshotMgr.SetCookies("quake", nil)
-			s.screenshotMgr.SetCookies("zoomeye", nil)
-		}
 	}
 
-	apply := func(engine, value string) {
-		if clear {
-			return
-		}
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return
-		}
-		cookies := config.ParseCookieHeader(value, config.DefaultCookieDomain(engine))
-		if len(cookies) == 0 {
-			return
-		}
-
-		switch strings.ToLower(engine) {
-		case "fofa":
-			s.config.Engines.Fofa.Cookies = cookies
-		case "hunter":
-			s.config.Engines.Hunter.Cookies = cookies
-		case "quake":
-			s.config.Engines.Quake.Cookies = cookies
-		case "zoomeye":
-			s.config.Engines.Zoomeye.Cookies = cookies
-		default:
-			return
-		}
-		changed = true
-
-		if s.screenshotMgr != nil {
-			s.screenshotMgr.SetCookies(engine, convertConfigCookies(cookies))
+	for _, engine := range []string{"fofa", "hunter", "zoomeye", "quake"} {
+		if !clear {
+			changed = s.applySingleEngineCookie(engine, r.FormValue("cookie_"+engine)) || changed
 		}
 	}
-
-	apply("fofa", r.FormValue("cookie_fofa"))
-	apply("hunter", r.FormValue("cookie_hunter"))
-	apply("zoomeye", r.FormValue("cookie_zoomeye"))
-	apply("quake", r.FormValue("cookie_quake"))
 
 	if _, present := r.Form["proxy_server"]; present {
 		proxy := strings.TrimSpace(r.FormValue("proxy_server"))
@@ -261,6 +231,51 @@ func (s *Server) applyCookiesFromRequest(r *http.Request) {
 		}
 	}
 	logger.Infof("Cookie apply mode=cdp_cookie_injection: cookie/proxy updates applied")
+}
+
+// clearAllEngineCookies resets all engine cookies and the screenshot manager.
+func (s *Server) clearAllEngineCookies() {
+	s.config.Engines.Fofa.Cookies = nil
+	s.config.Engines.Hunter.Cookies = nil
+	s.config.Engines.Quake.Cookies = nil
+	s.config.Engines.Zoomeye.Cookies = nil
+	if s.screenshotMgr != nil {
+		s.screenshotMgr.SetCookies("fofa", nil)
+		s.screenshotMgr.SetCookies("hunter", nil)
+		s.screenshotMgr.SetCookies("quake", nil)
+		s.screenshotMgr.SetCookies("zoomeye", nil)
+	}
+}
+
+// applySingleEngineCookie parses and applies a cookie header string for one engine.
+// Returns true if the config was changed.
+func (s *Server) applySingleEngineCookie(engine, value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	cookies := config.ParseCookieHeader(value, config.DefaultCookieDomain(engine))
+	if len(cookies) == 0 {
+		return false
+	}
+
+	switch strings.ToLower(engine) {
+	case "fofa":
+		s.config.Engines.Fofa.Cookies = cookies
+	case "hunter":
+		s.config.Engines.Hunter.Cookies = cookies
+	case "quake":
+		s.config.Engines.Quake.Cookies = cookies
+	case "zoomeye":
+		s.config.Engines.Zoomeye.Cookies = cookies
+	default:
+		return false
+	}
+
+	if s.screenshotMgr != nil {
+		s.screenshotMgr.SetCookies(engine, convertConfigCookies(cookies))
+	}
+	return true
 }
 
 func (s *Server) currentScreenshotEngine() string {
@@ -532,119 +547,9 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	query := strings.TrimSpace(r.URL.Query().Get("query"))
-	if query == "" {
-		query = `protocol="http"`
-	}
-
-	// Detect CDP connection status — actual HTTP probe to /json/version
-	cdpConnected := false
-	if s.screenshotMgr != nil && s.screenshotMgr.RemoteDebugURL() != "" {
-		baseURL := s.resolveCDPURL()
-		if online, _, _ := s.checkCDPStatus(r.Context(), baseURL); online {
-			cdpConnected = true
-		}
-	}
-
-	// Detect Extension pairing status — check for live clients (seen in last 15s)
-	extPaired := false
-	if s.bridge != nil && s.bridge.Service != nil {
-		extPaired = s.activeBridgeLiveTokens() > 0
-	}
-
-	// Check per-engine login status
+	cdpConnected, extPaired := s.detectSessionChannels(r.Context())
 	engines := []string{"fofa", "hunter", "zoomeye", "quake"}
-	results := make([]map[string]interface{}, 0, len(engines))
-
-	if cdpConnected || extPaired {
-		// Browser session available (CDP or Extension) → read cookies to detect login.
-		// CDP reads directly via protocol; Extension reads via chrome.cookies API.
-		// Same judgment logic applies to both channels.
-		for _, engine := range engines {
-			loginURL := ""
-			if s.screenshotMgr != nil {
-				loginURL = s.screenshotMgr.EngineLoginURL(engine)
-			}
-
-			// Config-level fallback
-			var cookieSet bool
-			if s.config != nil {
-				s.configMutex.Lock()
-				switch engine {
-				case "fofa":
-					cookieSet = hasCookies(s.config.Engines.Fofa.Cookies)
-				case "hunter":
-					cookieSet = hasCookies(s.config.Engines.Hunter.Cookies)
-				case "quake":
-					cookieSet = hasCookies(s.config.Engines.Quake.Cookies)
-				case "zoomeye":
-					cookieSet = hasCookies(s.config.Engines.Zoomeye.Cookies)
-				}
-				s.configMutex.Unlock()
-			}
-
-			// Read cookies via available channel and judge login state.
-			reason := "no_session"
-			loggedIn := false
-
-			if cdpConnected && s.screenshotMgr != nil {
-				// Channel 1: CDP protocol — direct cookie read, no page opening.
-				cdpCtx, cdpCancel := context.WithTimeout(r.Context(), 8*time.Second)
-				loggedIn, reason = s.detectLoginViaCDP(cdpCtx, engine, cookieSet)
-				cdpCancel()
-			} else if extPaired {
-				// Channel 2: Extension — read via chrome.cookies API, no page opening.
-				extCtx, extCancel := context.WithTimeout(r.Context(), 8*time.Second)
-				loggedIn, reason = s.detectLoginViaExtension(extCtx, engine, cookieSet)
-				extCancel()
-			}
-
-			results = append(results, map[string]interface{}{
-				"engine":        engine,
-				"logged_in":     loggedIn,
-				"reason":        reason,
-				"title":         "",
-				"login_url":     loginURL,
-				"cdp_connected": cdpConnected,
-				"ext_paired":    extPaired,
-			})
-		}
-	} else {
-		// No browser session → just check if cookies are configured
-		if s.config != nil {
-			s.configMutex.Lock()
-			for _, engine := range engines {
-				var cookieSet bool
-				loginURL := ""
-				if s.screenshotMgr != nil {
-					loginURL = s.screenshotMgr.EngineLoginURL(engine)
-				}
-				switch engine {
-				case "fofa":
-					cookieSet = hasCookies(s.config.Engines.Fofa.Cookies)
-				case "hunter":
-					cookieSet = hasCookies(s.config.Engines.Hunter.Cookies)
-				case "quake":
-					cookieSet = hasCookies(s.config.Engines.Quake.Cookies)
-				case "zoomeye":
-					cookieSet = hasCookies(s.config.Engines.Zoomeye.Cookies)
-				}
-				reason := "no_session"
-				if cookieSet {
-					reason = "cookie_configured"
-				}
-				results = append(results, map[string]interface{}{
-					"engine":        engine,
-					"logged_in":     false,
-					"reason":        reason,
-					"login_url":     loginURL,
-					"cdp_connected": cdpConnected,
-					"ext_paired":    extPaired,
-				})
-			}
-			s.configMutex.Unlock()
-		}
-	}
+	results := s.checkEngineLoginStatuses(r.Context(), engines, cdpConnected, extPaired)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -653,4 +558,83 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 		"ext_paired":    extPaired,
 		"engines":       results,
 	})
+}
+
+// detectSessionChannels detects CDP and Extension session availability.
+func (s *Server) detectSessionChannels(ctx context.Context) (cdpConnected, extPaired bool) {
+	if s.screenshotMgr != nil && s.screenshotMgr.RemoteDebugURL() != "" {
+		baseURL := s.resolveCDPURL()
+		if online, _, _ := s.checkCDPStatus(ctx, baseURL); online {
+			cdpConnected = true
+		}
+	}
+	if s.bridge != nil && s.bridge.Service != nil {
+		extPaired = s.activeBridgeLiveTokens() > 0
+	}
+	return
+}
+
+// checkEngineLoginStatuses checks login status for each engine.
+func (s *Server) checkEngineLoginStatuses(ctx context.Context, engines []string, cdpConnected, extPaired bool) []map[string]interface{} {
+	results := make([]map[string]interface{}, 0, len(engines))
+	for _, engine := range engines {
+		results = append(results, s.checkSingleEngineLogin(ctx, engine, cdpConnected, extPaired))
+	}
+	return results
+}
+
+// checkSingleEngineLogin checks login status for a single engine.
+func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpConnected, extPaired bool) map[string]interface{} {
+	loginURL := ""
+	if s.screenshotMgr != nil {
+		loginURL = s.screenshotMgr.EngineLoginURL(engine)
+	}
+	cookieSet := s.engineCookieConfigured(engine)
+
+	if !cdpConnected && !extPaired {
+		reason := "no_session"
+		if cookieSet {
+			reason = "cookie_configured"
+		}
+		return map[string]interface{}{
+			"engine": engine, "logged_in": false, "reason": reason,
+			"login_url": loginURL, "cdp_connected": cdpConnected, "ext_paired": extPaired,
+		}
+	}
+
+	loggedIn, reason := false, "no_session"
+	if cdpConnected && s.screenshotMgr != nil {
+		cdpCtx, cdpCancel := context.WithTimeout(ctx, 8*time.Second)
+		loggedIn, reason = s.detectLoginViaCDP(cdpCtx, engine, cookieSet)
+		cdpCancel()
+	} else if extPaired {
+		extCtx, extCancel := context.WithTimeout(ctx, 8*time.Second)
+		loggedIn, reason = s.detectLoginViaExtension(extCtx, engine, cookieSet)
+		extCancel()
+	}
+
+	return map[string]interface{}{
+		"engine": engine, "logged_in": loggedIn, "reason": reason, "title": "",
+		"login_url": loginURL, "cdp_connected": cdpConnected, "ext_paired": extPaired,
+	}
+}
+
+// engineCookieConfigured checks if cookies are configured for the given engine.
+func (s *Server) engineCookieConfigured(engine string) bool {
+	if s.config == nil {
+		return false
+	}
+	s.configMutex.Lock()
+	defer s.configMutex.Unlock()
+	switch engine {
+	case "fofa":
+		return hasCookies(s.config.Engines.Fofa.Cookies)
+	case "hunter":
+		return hasCookies(s.config.Engines.Hunter.Cookies)
+	case "quake":
+		return hasCookies(s.config.Engines.Quake.Cookies)
+	case "zoomeye":
+		return hasCookies(s.config.Engines.Zoomeye.Cookies)
+	}
+	return false
 }

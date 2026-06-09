@@ -230,105 +230,125 @@ func applyEngineSections(c *config.Config, data map[string]interface{}) {
 	if c == nil {
 		return
 	}
-	engines := map[string]interface{}{
-		"fofa":    data["fofa"],
-		"hunter":  data["hunter"],
-		"zoomeye": data["zoomeye"],
-		"quake":   data["quake"],
-		"shodan":  data["shodan"],
-	}
-	for name, raw := range engines {
-		if raw == nil {
+	engineNames := []string{"fofa", "hunter", "zoomeye", "quake", "shodan"}
+	for _, name := range engineNames {
+		raw, ok := data[name]
+		if !ok || raw == nil {
 			continue
 		}
 		eng, ok := raw.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		switch name {
-		case "fofa":
-			if v, ok := boolField(eng, "enabled"); ok {
-				c.Engines.Fofa.Enabled = v
-			}
-			if v, _ := stringField(eng, "api_base_url"); v != "" {
-				c.Engines.Fofa.APIBaseURL = v
-			}
-			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
-				c.Engines.Fofa.APIKey = v
-			}
-			if v, _ := stringField(eng, "email"); v != "" {
-				c.Engines.Fofa.Email = v
-			}
-			if v, _ := intField(eng, "qps"); v > 0 {
-				c.Engines.Fofa.QPS = v
-			}
-			if v, _ := intField(eng, "timeout"); v > 0 {
-				c.Engines.Fofa.Timeout = v
-			}
-		case "hunter":
-			if v, ok := boolField(eng, "enabled"); ok {
-				c.Engines.Hunter.Enabled = v
-			}
-			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
-				c.Engines.Hunter.APIKey = v
-			}
-			if v, _ := stringField(eng, "base_url"); v != "" {
-				c.Engines.Hunter.BaseURL = v
-			}
-			if v, _ := intField(eng, "qps"); v > 0 {
-				c.Engines.Hunter.QPS = v
-			}
-			if v, _ := intField(eng, "timeout"); v > 0 {
-				c.Engines.Hunter.Timeout = v
-			}
-		case "zoomeye":
-			if v, ok := boolField(eng, "enabled"); ok {
-				c.Engines.Zoomeye.Enabled = v
-			}
-			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
-				c.Engines.Zoomeye.APIKey = v
-			}
-			if v, _ := stringField(eng, "base_url"); v != "" {
-				c.Engines.Zoomeye.BaseURL = v
-			}
-			if v, _ := intField(eng, "qps"); v > 0 {
-				c.Engines.Zoomeye.QPS = v
-			}
-			if v, _ := intField(eng, "timeout"); v > 0 {
-				c.Engines.Zoomeye.Timeout = v
-			}
-		case "quake":
-			if v, ok := boolField(eng, "enabled"); ok {
-				c.Engines.Quake.Enabled = v
-			}
-			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
-				c.Engines.Quake.APIKey = v
-			}
-			if v, _ := stringField(eng, "base_url"); v != "" {
-				c.Engines.Quake.BaseURL = v
-			}
-			if v, _ := intField(eng, "qps"); v > 0 {
-				c.Engines.Quake.QPS = v
-			}
-			if v, _ := intField(eng, "timeout"); v > 0 {
-				c.Engines.Quake.Timeout = v
-			}
-		case "shodan":
-			if v, ok := boolField(eng, "enabled"); ok {
-				c.Engines.Shodan.Enabled = v
-			}
-			if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
-				c.Engines.Shodan.APIKey = v
-			}
-			if v, _ := stringField(eng, "base_url"); v != "" {
-				c.Engines.Shodan.BaseURL = v
-			}
-			if v, _ := intField(eng, "qps"); v > 0 {
-				c.Engines.Shodan.QPS = v
-			}
-			// Shodan doesn't have timeout field
-		}
+		applySingleEngineSection(c, name, eng)
 	}
+}
+
+// applySingleEngineSection applies config fields from a map to one engine.
+func applySingleEngineSection(c *config.Config, name string, eng map[string]interface{}) {
+	switch name {
+	case "fofa":
+		applyFofaFields(c, eng)
+	case "hunter":
+		applyHunterFields(c, eng)
+	case "zoomeye":
+		applyZoomeyeFields(c, eng)
+	case "quake":
+		applyQuakeFields(c, eng)
+	case "shodan":
+		applyShodanFields(c, eng)
+	}
+}
+
+func applyFofaFields(c *config.Config, eng map[string]interface{}) {
+	if v, ok := boolField(eng, "enabled"); ok {
+		c.Engines.Fofa.Enabled = v
+	}
+	if v, _ := stringField(eng, "api_base_url"); v != "" {
+		c.Engines.Fofa.APIBaseURL = v
+	}
+	if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Fofa.APIKey = v
+	}
+	if v, _ := stringField(eng, "email"); v != "" {
+		c.Engines.Fofa.Email = v
+	}
+	if v, _ := intField(eng, "qps"); v > 0 {
+		c.Engines.Fofa.QPS = v
+	}
+	if v, _ := intField(eng, "timeout"); v > 0 {
+		c.Engines.Fofa.Timeout = v
+	}
+}
+
+func applyHunterFields(c *config.Config, eng map[string]interface{}) {
+	if v, ok := boolField(eng, "enabled"); ok {
+		c.Engines.Hunter.Enabled = v
+	}
+	if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Hunter.APIKey = v
+	}
+	if v, _ := stringField(eng, "base_url"); v != "" {
+		c.Engines.Hunter.BaseURL = v
+	}
+	if v, _ := intField(eng, "qps"); v > 0 {
+		c.Engines.Hunter.QPS = v
+	}
+	if v, _ := intField(eng, "timeout"); v > 0 {
+		c.Engines.Hunter.Timeout = v
+	}
+}
+
+func applyZoomeyeFields(c *config.Config, eng map[string]interface{}) {
+	if v, ok := boolField(eng, "enabled"); ok {
+		c.Engines.Zoomeye.Enabled = v
+	}
+	if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Zoomeye.APIKey = v
+	}
+	if v, _ := stringField(eng, "base_url"); v != "" {
+		c.Engines.Zoomeye.BaseURL = v
+	}
+	if v, _ := intField(eng, "qps"); v > 0 {
+		c.Engines.Zoomeye.QPS = v
+	}
+	if v, _ := intField(eng, "timeout"); v > 0 {
+		c.Engines.Zoomeye.Timeout = v
+	}
+}
+
+func applyQuakeFields(c *config.Config, eng map[string]interface{}) {
+	if v, ok := boolField(eng, "enabled"); ok {
+		c.Engines.Quake.Enabled = v
+	}
+	if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Quake.APIKey = v
+	}
+	if v, _ := stringField(eng, "base_url"); v != "" {
+		c.Engines.Quake.BaseURL = v
+	}
+	if v, _ := intField(eng, "qps"); v > 0 {
+		c.Engines.Quake.QPS = v
+	}
+	if v, _ := intField(eng, "timeout"); v > 0 {
+		c.Engines.Quake.Timeout = v
+	}
+}
+
+func applyShodanFields(c *config.Config, eng map[string]interface{}) {
+	if v, ok := boolField(eng, "enabled"); ok {
+		c.Engines.Shodan.Enabled = v
+	}
+	if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Shodan.APIKey = v
+	}
+	if v, _ := stringField(eng, "base_url"); v != "" {
+		c.Engines.Shodan.BaseURL = v
+	}
+	if v, _ := intField(eng, "qps"); v > 0 {
+		c.Engines.Shodan.QPS = v
+	}
+	// Shodan doesn't have timeout field
 }
 
 // boolField, stringField, intField extract typed values from a map[string]interface{}

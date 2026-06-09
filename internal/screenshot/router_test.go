@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/unimap/project/internal/collection"
 )
 
 func TestNewScreenshotRouter_Defaults(t *testing.T) {
@@ -374,7 +376,7 @@ func (m *mockProvider) GetScreenshotDirectory() string {
 func (m *mockProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
 	return "/mock/open", nil
 }
-func (m *mockProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
+func (m *mockProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error) {
 	return nil, nil
 }
 
@@ -390,7 +392,7 @@ func TestParseStructuredCollectedData_EmptyItems(t *testing.T) {
 		"total":    float64(100),
 		"has_more": true,
 	}
-	assets, total, hasMore := parseStructuredCollectedData(data, "fofa")
+	assets, total, hasMore := collection.ParseStructuredCollectedData(data, "fofa")
 	if len(assets) != 0 {
 		t.Fatalf("expected 0 assets, got %d", len(assets))
 	}
@@ -419,7 +421,7 @@ func TestParseStructuredCollectedData_ParsesItems(t *testing.T) {
 			},
 		},
 	}
-	assets, total, hasMore := parseStructuredCollectedData(data, "fofa")
+	assets, total, hasMore := collection.ParseStructuredCollectedData(data, "fofa")
 	if len(assets) != 1 {
 		t.Fatalf("expected 1 asset, got %d", len(assets))
 	}
@@ -471,7 +473,7 @@ func TestParseStructuredCollectedData_MalformedItems(t *testing.T) {
 			42,
 		},
 	}
-	assets, _, _ := parseStructuredCollectedData(data, "hunter")
+	assets, _, _ := collection.ParseStructuredCollectedData(data, "hunter")
 	if len(assets) != 1 {
 		t.Fatalf("expected 1 valid asset (2 malformed skipped), got %d", len(assets))
 	}
@@ -482,7 +484,7 @@ func TestParseStructuredCollectedData_MalformedItems(t *testing.T) {
 
 func TestParseStructuredCollectedData_MissingItemsKey(t *testing.T) {
 	data := map[string]interface{}{}
-	assets, total, hasMore := parseStructuredCollectedData(data, "zoomeye")
+	assets, total, hasMore := collection.ParseStructuredCollectedData(data, "zoomeye")
 	if len(assets) != 0 {
 		t.Fatalf("expected 0 assets, got %d", len(assets))
 	}
@@ -501,7 +503,7 @@ func TestParseStructuredCollectedData_PortAsString(t *testing.T) {
 			},
 		},
 	}
-	assets, _, _ := parseStructuredCollectedData(data, "shodan")
+	assets, _, _ := collection.ParseStructuredCollectedData(data, "shodan")
 	if len(assets) != 1 {
 		t.Fatalf("expected 1 asset, got %d", len(assets))
 	}
@@ -519,7 +521,7 @@ func TestParseStructuredCollectedData_PortAsInvalidString(t *testing.T) {
 			},
 		},
 	}
-	assets, _, _ := parseStructuredCollectedData(data, "shodan")
+	assets, _, _ := collection.ParseStructuredCollectedData(data, "shodan")
 	if len(assets) != 1 {
 		t.Fatalf("expected 1 asset, got %d", len(assets))
 	}
@@ -538,7 +540,7 @@ func TestParseStructuredCollectedData_StatusCodeAsString(t *testing.T) {
 			},
 		},
 	}
-	assets, _, _ := parseStructuredCollectedData(data, "hunter")
+	assets, _, _ := collection.ParseStructuredCollectedData(data, "hunter")
 	if len(assets) != 1 {
 		t.Fatalf("expected 1 asset, got %d", len(assets))
 	}
@@ -557,7 +559,7 @@ func TestParseStructuredCollectedData_BannerToBodySnippet(t *testing.T) {
 			},
 		},
 	}
-	assets, _, _ := parseStructuredCollectedData(data, "shodan")
+	assets, _, _ := collection.ParseStructuredCollectedData(data, "shodan")
 	if len(assets) != 1 {
 		t.Fatalf("expected 1 asset, got %d", len(assets))
 	}
@@ -583,7 +585,7 @@ func TestParseStructuredCollectedData_BodySnippetPreferredOverBanner(t *testing.
 			},
 		},
 	}
-	assets, _, _ := parseStructuredCollectedData(data, "fofa")
+	assets, _, _ := collection.ParseStructuredCollectedData(data, "fofa")
 	if len(assets) != 1 {
 		t.Fatalf("expected 1 asset, got %d", len(assets))
 	}

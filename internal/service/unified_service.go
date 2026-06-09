@@ -205,162 +205,137 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 		logger.CtxInfof(ctx, "query finish: status=%s duration=%s", queryStatus, time.Since(queryStart))
 	}()
 
-	// 验证请求
-	if req.Query == "" {
+	if err := s.validateQueryRequest(&req); err != nil {
 		queryStatus = "error"
-		return nil, fmt.Errorf("query cannot be empty")
+		return nil, err
 	}
-	if len(req.Engines) == 0 {
-		queryStatus = "error"
-		return nil, fmt.Errorf("at least one engine must be specified")
-	}
-	if req.PageSize <= 0 {
-		req.PageSize = 100
-	}
-
-	// 检查资源限制
 	if err := s.checkResourceLimits(ctx); err != nil {
 		queryStatus = "error"
 		return nil, err
 	}
-
-	// 获取查询并发锁
 	if !s.acquireQueryLock() {
 		queryStatus = "error"
 		return nil, fmt.Errorf("too many concurrent queries, please try again later")
 	}
 	defer s.releaseQueryLock()
 
-	// 尝试从缓存获取结果
-	sortedEngines := make([]string, len(req.Engines))
-	copy(sortedEngines, req.Engines)
-	sort.Strings(sortedEngines)
-
-	// 使用SHA256生成缓存键，避免特殊字符导致的键冲突
-	keyData := fmt.Sprintf("%s|%s|%d|%t", strings.Join(sortedEngines, ","), req.Query, req.PageSize, req.ProcessData)
-	hash := sha256.Sum256([]byte(keyData))
-	cacheKey := hex.EncodeToString(hash[:])
-
-	if cachedAssets, found := s.cache.Get(cacheKey); found {
-		metrics.ObserveCacheLookup(s.cacheBackend, "hit")
-		logger.CtxDebugf(ctx, "query cache hit: backend=%s", s.cacheBackend)
-		// 触发查询前钩子
-		if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookBeforeQuery, "query", map[string]interface{}{
-			"query":   req.Query,
-			"engines": req.Engines,
-			"cached":  true,
-		}); err != nil {
-			queryStatus = "error"
-			return nil, fmt.Errorf("pre-query hook failed: %w", err)
-		}
-
-		// 构建缓存响应
-		engineStats := make(map[string]int)
-		for _, engine := range req.Engines {
-			engineStats[engine] = 0
-		}
-
-		// 触发查询后钩子
-		if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", map[string]interface{}{
-			"result_count": len(cachedAssets),
-			"engines":      req.Engines,
-			"cached":       true,
-		}); err != nil {
-			logger.CtxWarnf(ctx, "post-query hook failed: %v", err)
-		}
-
-		return &QueryResponse{
-			Assets:      cachedAssets,
-			TotalCount:  len(cachedAssets),
-			EngineStats: engineStats,
-			Errors:      []string{},
-		}, nil
+	cacheKey := s.buildQueryCacheKey(req)
+	if resp, ok := s.handleCachedQueryResult(ctx, req, cacheKey); ok {
+		return resp, nil
 	}
 	metrics.ObserveCacheLookup(s.cacheBackend, "miss")
 	logger.CtxDebugf(ctx, "query cache miss: backend=%s", s.cacheBackend)
 
-	// 触发查询前钩子
 	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookBeforeQuery, "query", map[string]interface{}{
-		"query":   req.Query,
-		"engines": req.Engines,
-		"cached":  false,
+		"query": req.Query, "engines": req.Engines, "cached": false,
 	}); err != nil {
 		queryStatus = "error"
 		return nil, fmt.Errorf("pre-query hook failed: %w", err)
 	}
 
-	// 解析 UQL
+	allAssets, engineStats, queryErrors, err := s.executeAndNormalizeQuery(ctx, req)
+	if err != nil {
+		queryStatus = "error"
+		return nil, err
+	}
+
+	if len(allAssets) > 0 {
+		cacheTTL := s.resolveCacheTTL(req)
+		s.cache.Set(cacheKey, allAssets, cacheTTL)
+	}
+
+	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", map[string]interface{}{
+		"result_count": len(allAssets), "engines": req.Engines, "cached": false,
+	}); err != nil {
+		logger.CtxWarnf(ctx, "post-query hook failed: %v", err)
+	}
+
+	return &QueryResponse{
+		Assets: allAssets, TotalCount: len(allAssets),
+		EngineStats: engineStats, Errors: queryErrors,
+	}, nil
+}
+
+// validateQueryRequest 验证查询请求参数
+func (s *UnifiedService) validateQueryRequest(req *QueryRequest) error {
+	if req.Query == "" {
+		return fmt.Errorf("query cannot be empty")
+	}
+	if len(req.Engines) == 0 {
+		return fmt.Errorf("at least one engine must be specified")
+	}
+	if req.PageSize <= 0 {
+		req.PageSize = 100
+	}
+	return nil
+}
+
+// buildQueryCacheKey 构建查询缓存键（SHA256 避免特殊字符冲突）
+func (s *UnifiedService) buildQueryCacheKey(req QueryRequest) string {
+	sortedEngines := make([]string, len(req.Engines))
+	copy(sortedEngines, req.Engines)
+	sort.Strings(sortedEngines)
+	keyData := fmt.Sprintf("%s|%s|%d|%t", strings.Join(sortedEngines, ","), req.Query, req.PageSize, req.ProcessData)
+	hash := sha256.Sum256([]byte(keyData))
+	return hex.EncodeToString(hash[:])
+}
+
+// handleCachedQueryResult 处理缓存命中逻辑，返回 (响应, true) 表示命中
+func (s *UnifiedService) handleCachedQueryResult(ctx context.Context, req QueryRequest, cacheKey string) (*QueryResponse, bool) {
+	cachedAssets, found := s.cache.Get(cacheKey)
+	if !found {
+		return nil, false
+	}
+	metrics.ObserveCacheLookup(s.cacheBackend, "hit")
+	logger.CtxDebugf(ctx, "query cache hit: backend=%s", s.cacheBackend)
+
+	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookBeforeQuery, "query", map[string]interface{}{
+		"query": req.Query, "engines": req.Engines, "cached": true,
+	}); err != nil {
+		logger.CtxWarnf(ctx, "pre-query hook failed: %v", err)
+		return nil, false
+	}
+
+	engineStats := make(map[string]int)
+	for _, engine := range req.Engines {
+		engineStats[engine] = 0
+	}
+	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", map[string]interface{}{
+		"result_count": len(cachedAssets), "engines": req.Engines, "cached": true,
+	}); err != nil {
+		logger.CtxWarnf(ctx, "post-query hook failed: %v", err)
+	}
+	return &QueryResponse{
+		Assets: cachedAssets, TotalCount: len(cachedAssets),
+		EngineStats: engineStats, Errors: []string{},
+	}, true
+}
+
+// executeAndNormalizeQuery 执行引擎搜索、规范化、合并结果
+func (s *UnifiedService) executeAndNormalizeQuery(ctx context.Context, req QueryRequest) ([]model.UnifiedAsset, map[string]int, []string, error) {
+	var queryErrors []string
+
 	ast, err := s.parser.Parse(req.Query)
 	if err != nil {
-		queryStatus = "error"
-		return nil, fmt.Errorf("failed to parse query: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to parse query: %w", err)
 	}
-
-	// 转换为各引擎查询
 	queries, err := s.orchestrator.TranslateQuery(ast, req.Engines)
 	if err != nil {
-		queryStatus = "error"
-		return nil, fmt.Errorf("failed to translate query: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to translate query: %w", err)
 	}
 
-	// 并行搜索
-	var errors []string
 	engineResults, err := s.orchestrator.SearchEnginesWithContext(ctx, queries, req.PageSize)
 	if err != nil {
-		// 记录错误但继续处理
-		errors = append(errors, err.Error())
-		if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookQueryError, "query", map[string]interface{}{
+		queryErrors = append(queryErrors, err.Error())
+		if hookErr := s.pluginManager.GetHooks().TriggerHook(plugin.HookQueryError, "query", map[string]interface{}{
 			"error": err.Error(),
-		}); err != nil {
-			logger.CtxWarnf(ctx, "query error hook failed: %v", err)
+		}); hookErr != nil {
+			logger.CtxWarnf(ctx, "query error hook failed: %v", hookErr)
 		}
 	}
 
-	// Attempt browser fallback for failed engines
 	engineResults = s.tryBrowserFallback(ctx, engineResults, queries)
-
-	// 规范化和合并结果
-	var allAssets []model.UnifiedAsset
-	engineStats := make(map[string]int)
-
-	for _, result := range engineResults {
-		if result == nil {
-			continue
-		}
-
-		// 处理引擎返回的错误
-		if result.Error != "" {
-			errors = append(errors, fmt.Sprintf("engine %s error: %s", result.EngineName, result.Error))
-			metrics.IncEngineError()
-			continue
-		}
-
-		// 如果是缓存命中的结果，直接使用已标准化的数据
-		if result.Cached && result.NormalizedData != nil {
-			allAssets = append(allAssets, result.NormalizedData...)
-			engineStats[result.EngineName] = len(result.NormalizedData)
-			continue
-		}
-
-		// 获取对应的适配器
-		adapterInstance, exists := s.orchestrator.GetAdapter(result.EngineName)
-		if !exists {
-			errors = append(errors, fmt.Sprintf("adapter for engine %s not found", result.EngineName))
-			metrics.IncEngineError()
-			continue
-		}
-
-		// 规范化结果
-		assets, err := adapterInstance.Normalize(result)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("failed to normalize results from %s: %v", result.EngineName, err))
-			metrics.IncEngineError()
-			continue
-		}
-
-		allAssets = append(allAssets, assets...)
-		engineStats[result.EngineName] = len(assets)
-	}
+	allAssets, engineStats := s.normalizeEngineResults(ctx, engineResults, &queryErrors)
 
 	if len(allAssets) > 0 && s.merger != nil {
 		mergeResult := s.merger.Merge(allAssets)
@@ -372,36 +347,52 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 		}
 	}
 
-	// 如果需要处理数据
 	if req.ProcessData {
 		allAssets, err = s.processAssets(ctx, allAssets)
 		if err != nil {
-			errors = append(errors, fmt.Sprintf("data processing failed: %v", err))
+			queryErrors = append(queryErrors, fmt.Sprintf("data processing failed: %v", err))
 			metrics.IncEngineError()
 		}
 	}
 
-	// 将结果存入缓存 — 使用策略管理器动态计算TTL
-	if len(allAssets) > 0 {
-		cacheTTL := s.resolveCacheTTL(req)
-		s.cache.Set(cacheKey, allAssets, cacheTTL)
-	}
+	return allAssets, engineStats, queryErrors, nil
+}
 
-	// 触发查询后钩子
-	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", map[string]interface{}{
-		"result_count": len(allAssets),
-		"engines":      req.Engines,
-		"cached":       false,
-	}); err != nil {
-		logger.CtxWarnf(ctx, "post-query hook failed: %v", err)
-	}
+// normalizeEngineResults 规范化各引擎返回结果
+func (s *UnifiedService) normalizeEngineResults(ctx context.Context, engineResults []*model.EngineResult, queryErrors *[]string) ([]model.UnifiedAsset, map[string]int) {
+	var allAssets []model.UnifiedAsset
+	engineStats := make(map[string]int)
 
-	return &QueryResponse{
-		Assets:      allAssets,
-		TotalCount:  len(allAssets),
-		EngineStats: engineStats,
-		Errors:      errors,
-	}, nil
+	for _, result := range engineResults {
+		if result == nil {
+			continue
+		}
+		if result.Error != "" {
+			*queryErrors = append(*queryErrors, fmt.Sprintf("engine %s error: %s", result.EngineName, result.Error))
+			metrics.IncEngineError()
+			continue
+		}
+		if result.Cached && result.NormalizedData != nil {
+			allAssets = append(allAssets, result.NormalizedData...)
+			engineStats[result.EngineName] = len(result.NormalizedData)
+			continue
+		}
+		adapterInstance, exists := s.orchestrator.GetAdapter(result.EngineName)
+		if !exists {
+			*queryErrors = append(*queryErrors, fmt.Sprintf("adapter for engine %s not found", result.EngineName))
+			metrics.IncEngineError()
+			continue
+		}
+		assets, err := adapterInstance.Normalize(result)
+		if err != nil {
+			*queryErrors = append(*queryErrors, fmt.Sprintf("failed to normalize results from %s: %v", result.EngineName, err))
+			metrics.IncEngineError()
+			continue
+		}
+		allAssets = append(allAssets, assets...)
+		engineStats[result.EngineName] = len(assets)
+	}
+	return allAssets, engineStats
 }
 
 // tryBrowserFallback attempts browser collection for engines that failed API queries.

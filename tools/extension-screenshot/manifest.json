@@ -28,7 +28,18 @@
     "cookies"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "*://*.fofa.info/*",
+    "*://*.hunter.qianxin.com/*",
+    "*://*.zoomeye.org/*",
+    "*://*.zoomeye.com/*",
+    "*://*.quake.360.cn/*",
+    "*://*.shodan.io/*",
+    "*://*.censys.io/*",
+    "*://*.daydaymap.com/*",
+    "*://*.onyphe.io/*",
+    "*://*.greynoise.io/*",
+    "http://127.0.0.1:*/*",
+    "http://localhost:*/*"
   ],
   "icons": {
     "16": "icons/icon16.png",

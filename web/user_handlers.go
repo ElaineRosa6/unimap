@@ -204,109 +204,54 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if !s.userRepoGuard(w) {
-		return
-	}
-
+	if !s.userRepoGuard(w) { return }
 	currentUser := s.getCurrentUser(r)
-	if currentUser == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
+	if currentUser == nil { writeError(w, http.StatusUnauthorized, "unauthorized"); return }
 	idStr := r.PathValue("id")
 	targetID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid user ID")
-		return
-	}
-
-	if currentUser.Role != "admin" && currentUser.ID != targetID {
-		writeError(w, http.StatusForbidden, "forbidden")
-		return
-	}
-
+	if err != nil { writeError(w, http.StatusBadRequest, "invalid user ID"); return }
+	if currentUser.Role != "admin" && currentUser.ID != targetID { writeError(w, http.StatusForbidden, "forbidden"); return }
 	user, err := s.userRepo.GetByID(targetID)
-	if err != nil {
-		logger.Errorf("update user: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if user == nil {
-		writeError(w, http.StatusNotFound, "user not found")
-		return
-	}
+	if err != nil { logger.Errorf("update user: %v", err); writeError(w, http.StatusInternalServerError, "internal error"); return }
+	if user == nil { writeError(w, http.StatusNotFound, "user not found"); return }
+	var req struct { Username *string `json:"username"`; Role *string `json:"role"`; Status *string `json:"status"` }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { writeError(w, http.StatusBadRequest, "invalid request body"); return }
+	if applyUserUpdateFields(w, user, req, currentUser, targetID, s) { return }
+	if err := s.userRepo.Update(user); err != nil { logger.Errorf("update user: %v", err); writeError(w, http.StatusInternalServerError, "failed to update user"); return }
+	logger.Infof("user updated: %s (id=%d)", user.Username, user.ID)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"user": map[string]interface{}{
+		"id": user.ID, "username": user.Username, "role": user.Role, "status": user.Status,
+		"created_at": user.CreatedAt, "updated_at": user.UpdatedAt,
+	}})
+}
 
-	var req struct {
-		Username *string `json:"username"`
-		Role     *string `json:"role"`
-		Status   *string `json:"status"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
+// applyUserUpdateFields 应用用户更新字段，有错误时写入 HTTP 响应并返回 true
+func applyUserUpdateFields(w http.ResponseWriter, user *auth.User, req struct {
+	Username *string `json:"username"`; Role *string `json:"role"`; Status *string `json:"status"`
+}, currentUser *auth.User, targetID int64, s *Server) (hasError bool) {
 	if req.Role != nil {
-		if currentUser.Role != "admin" {
-			writeError(w, http.StatusForbidden, "only admin can change roles")
-			return
-		}
-		validRoles := map[string]bool{"admin": true, "operator": true, "readonly": true}
-		if !validRoles[*req.Role] {
-			writeError(w, http.StatusBadRequest, "invalid role: must be admin, operator, or readonly")
-			return
+		if currentUser.Role != "admin" { writeError(w, http.StatusForbidden, "only admin can change roles"); return true }
+		if !map[string]bool{"admin": true, "operator": true, "readonly": true}[*req.Role] {
+			writeError(w, http.StatusBadRequest, "invalid role: must be admin, operator, or readonly"); return true
 		}
 		user.Role = *req.Role
 	}
-
 	if req.Status != nil {
-		if currentUser.Role != "admin" {
-			writeError(w, http.StatusForbidden, "only admin can change status")
-			return
-		}
+		if currentUser.Role != "admin" { writeError(w, http.StatusForbidden, "only admin can change status"); return true }
 		if *req.Status != "active" && *req.Status != "disabled" {
-			writeError(w, http.StatusBadRequest, "invalid status: must be active or disabled")
-			return
+			writeError(w, http.StatusBadRequest, "invalid status: must be active or disabled"); return true
 		}
 		user.Status = *req.Status
 	}
-
 	if req.Username != nil {
 		newName := strings.TrimSpace(*req.Username)
-		if newName == "" {
-			writeError(w, http.StatusBadRequest, "username cannot be empty")
-			return
-		}
-		if len(newName) < 3 || len(newName) > 32 {
-			writeError(w, http.StatusBadRequest, "username must be 3-32 characters")
-			return
-		}
+		if newName == "" { writeError(w, http.StatusBadRequest, "username cannot be empty"); return true }
+		if len(newName) < 3 || len(newName) > 32 { writeError(w, http.StatusBadRequest, "username must be 3-32 characters"); return true }
 		existing, _ := s.userRepo.GetByUsername(newName)
-		if existing != nil && existing.ID != targetID {
-			writeError(w, http.StatusConflict, "username already taken")
-			return
-		}
+		if existing != nil && existing.ID != targetID { writeError(w, http.StatusConflict, "username already taken"); return true }
 		user.Username = newName
 	}
-
-	if err := s.userRepo.Update(user); err != nil {
-		logger.Errorf("update user: %v", err)
-		writeError(w, http.StatusInternalServerError, "failed to update user")
-		return
-	}
-
-	logger.Infof("user updated: %s (id=%d)", user.Username, user.ID)
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"user": map[string]interface{}{
-			"id":         user.ID,
-			"username":   user.Username,
-			"role":       user.Role,
-			"status":     user.Status,
-			"created_at": user.CreatedAt,
-			"updated_at": user.UpdatedAt,
-		},
-	})
+	return false
 }
 
 // handleDeleteUser handles deleting a user (DELETE /api/v1/users/{id}).

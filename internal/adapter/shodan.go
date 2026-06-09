@@ -153,237 +153,164 @@ func (s *ShodanAdapter) mapField(field string) string {
 // Search 执行Shodan搜索
 func (s *ShodanAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if s.apiKey == "" {
-		return &model.EngineResult{
-			EngineName: s.Name(),
-			Error:      "Shodan API key not configured",
-		}, nil
+		return &model.EngineResult{EngineName: s.Name(), Error: "Shodan API key not configured"}, nil
 	}
-
 	var engineResult *model.EngineResult
-
-	retryConfig := utils.RetryConfig{
-		MaxRetries:  3,
-		BaseDelay:   100 * time.Millisecond,
-		MaxDelay:    2 * time.Second,
-		Exponential: true,
-		Jitter:      true,
-		RetryableFunc: func(err error) bool {
-			// 网络错误可重试
-			return true
-		},
-	}
-
-	err := utils.Retry(retryConfig, func() error {
-		// Shodan API endpoint for search
-		url := fmt.Sprintf("%s/shodan/host/search", s.baseURL)
-
-		resp, err := s.client.R().
-			SetQueryParams(map[string]string{
-				"key":   s.apiKey,
-				"query": query,
-				"page":  fmt.Sprintf("%d", page),
-				"limit": fmt.Sprintf("%d", pageSize),
-			}).
-			Get(url)
-
-		if err != nil {
-			return err
-		}
-
-		if resp.StatusCode() != 200 {
-			return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
-		}
-
-		var result struct {
-			Matches []struct {
-				IP        string            `json:"ip_str"`
-				Port      int               `json:"port"`
-				Transport string            `json:"transport"`
-				Hostnames []string          `json:"hostnames"`
-				Domain    string            `json:"domain"`
-				Title     string            `json:"title"`
-				Server    string            `json:"server"`
-				HTTP      map[string]string `json:"http"`
-				Status    int               `json:"status"`
-				Country   string            `json:"country_code"`
-				Region    string            `json:"region_code"`
-				City      string            `json:"city"`
-				ASN       string            `json:"asn"`
-				Org       string            `json:"org"`
-				ISP       string            `json:"isp"`
-				OS        string            `json:"os"`
-				Product   string            `json:"product"`
-				Version   string            `json:"version"`
-				Data      string            `json:"data"`
-			} `json:"matches"`
-			Total int    `json:"total"`
-			Error string `json:"error,omitempty"`
-		}
-
-		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return err
-		}
-
-		if result.Error != "" {
-			return fmt.Errorf("%s", result.Error)
-		}
-
-		// 转换为通用格式
-		rawData := []interface{}{}
-		for _, match := range result.Matches {
-			data := map[string]interface{}{
-				"ip":          match.IP,
-				"port":        match.Port,
-				"protocol":    match.Transport,
-				"domain":      match.Domain,
-				"hostnames":   match.Hostnames,
-				"title":       match.Title,
-				"server":      match.Server,
-				"http":        match.HTTP,
-				"status_code": match.Status,
-				"country":     match.Country,
-				"region":      match.Region,
-				"city":        match.City,
-				"asn":         match.ASN,
-				"org":         match.Org,
-				"isp":         match.ISP,
-				"os":          match.OS,
-				"product":     match.Product,
-				"version":     match.Version,
-				"data":        match.Data,
-			}
-			rawData = append(rawData, data)
-		}
-
-		engineResult = &model.EngineResult{
-			EngineName: s.Name(),
-			RawData:    rawData,
-			Total:      result.Total,
-			Page:       page,
-			HasMore:    (page * pageSize) < result.Total,
-		}
-
-		return nil
+	err := utils.Retry(s.searchRetryConfig(), func() error {
+		return s.executeShodanSearch(query, page, pageSize, &engineResult)
 	})
-
 	if err != nil {
-		return &model.EngineResult{
-			EngineName: s.Name(),
-			Error:      fmt.Sprintf("search error: %v", err),
-		}, nil
+		return &model.EngineResult{EngineName: s.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
 	}
-
 	return engineResult, nil
+}
+
+func (s *ShodanAdapter) searchRetryConfig() utils.RetryConfig {
+	return utils.RetryConfig{
+		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
+		Exponential: true, Jitter: true, RetryableFunc: func(err error) bool { return true },
+	}
+}
+
+// executeShodanSearch 执行单次 Shodan API 调用
+func (s *ShodanAdapter) executeShodanSearch(query string, page, pageSize int, result **model.EngineResult) error {
+	resp, err := s.client.R().SetQueryParams(map[string]string{
+		"key": s.apiKey, "query": query, "page": fmt.Sprintf("%d", page), "limit": fmt.Sprintf("%d", pageSize),
+	}).Get(fmt.Sprintf("%s/shodan/host/search", s.baseURL))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode() != 200 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
+	}
+	return parseShodanSearchResponse(resp.Body(), page, pageSize, s.Name(), result)
+}
+
+// parseShodanSearchResponse 解析 Shodan 搜索响应
+func parseShodanSearchResponse(body []byte, page, pageSize int, engineName string, result **model.EngineResult) error {
+	var resp struct {
+		Matches []struct {
+			IP        string            `json:"ip_str"`
+			Port      int               `json:"port"`
+			Transport string            `json:"transport"`
+			Hostnames []string          `json:"hostnames"`
+			Domain    string            `json:"domain"`
+			Title     string            `json:"title"`
+			Server    string            `json:"server"`
+			HTTP      map[string]string `json:"http"`
+			Status    int               `json:"status"`
+			Country   string            `json:"country_code"`
+			Region    string            `json:"region_code"`
+			City      string            `json:"city"`
+			ASN       string            `json:"asn"`
+			Org       string            `json:"org"`
+			ISP       string            `json:"isp"`
+			OS        string            `json:"os"`
+			Product   string            `json:"product"`
+			Version   string            `json:"version"`
+			Data      string            `json:"data"`
+		} `json:"matches"`
+		Total int    `json:"total"`
+		Error string `json:"error,omitempty"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return err
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("%s", resp.Error)
+	}
+	rawData := make([]interface{}, len(resp.Matches))
+	for i, m := range resp.Matches {
+		rawData[i] = map[string]interface{}{
+			"ip": m.IP, "port": m.Port, "protocol": m.Transport, "domain": m.Domain,
+			"hostnames": m.Hostnames, "title": m.Title, "server": m.Server, "http": m.HTTP,
+			"status_code": m.Status, "country": m.Country, "region": m.Region, "city": m.City,
+			"asn": m.ASN, "org": m.Org, "isp": m.ISP, "os": m.OS, "product": m.Product,
+			"version": m.Version, "data": m.Data,
+		}
+	}
+	*result = &model.EngineResult{
+		EngineName: engineName, RawData: rawData, Total: resp.Total,
+		Page: page, HasMore: (page * pageSize) < resp.Total,
+	}
+	return nil
 }
 
 // Normalize 标准化Shodan结果
 func (s *ShodanAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
 	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
-
 	if raw == nil || len(raw.RawData) == 0 {
 		return assets, nil
 	}
-
 	for _, item := range raw.RawData {
 		data, ok := item.(map[string]interface{})
 		if !ok {
 			continue
 		}
-
-		// 创建新的资产对象
-		asset := &model.UnifiedAsset{
-			Source: s.Name(),
-		}
-
-		// 提取字段
-		if ip, ok := data["ip"].(string); ok {
-			asset.IP = ip
-		}
-		if port, ok := data["port"].(float64); ok {
-			asset.Port = int(port)
-		} else if port, ok := data["port"].(int); ok {
-			asset.Port = port
-		}
-		if proto, ok := data["protocol"].(string); ok {
-			asset.Protocol = proto
-		}
-		if domain, ok := data["domain"].(string); ok {
-			asset.Host = domain
-		} else if hostnames, ok := data["hostnames"].([]interface{}); ok && len(hostnames) > 0 {
-			if hostname, ok := hostnames[0].(string); ok {
-				asset.Host = hostname
-			}
-		}
-		if title, ok := data["title"].(string); ok {
-			asset.Title = title
-		}
-		if server, ok := data["server"].(string); ok {
-			asset.Server = server
-		}
-		if body, ok := data["data"].(string); ok {
-			if len(body) > 200 {
-				asset.BodySnippet = body[:200]
-			} else {
-				asset.BodySnippet = body
-			}
-		}
-		if status, ok := data["status_code"].(float64); ok {
-			asset.StatusCode = int(status)
-		} else if status, ok := data["status_code"].(int); ok {
-			asset.StatusCode = status
-		}
-
-		// 地理信息
-		if country, ok := data["country"].(string); ok {
-			asset.CountryCode = country
-		}
-		if region, ok := data["region"].(string); ok {
-			asset.Region = region
-		}
-		if city, ok := data["city"].(string); ok {
-			asset.City = city
-		}
-		if asn, ok := data["asn"].(string); ok {
-			asset.ASN = asn
-		}
-		if org, ok := data["org"].(string); ok {
-			asset.Org = org
-		}
-		if isp, ok := data["isp"].(string); ok {
-			asset.ISP = isp
-		}
-
-		// 构建URL
-		if asset.IP != "" && asset.Port > 0 {
-			if asset.Protocol == "" {
-				if asset.Port == 443 {
-					asset.Protocol = "https"
-				} else {
-					asset.Protocol = "http"
-				}
-			}
-
-			// 使用 url.URL 结构体安全构建 URL
-			u := &url.URL{
-				Scheme: asset.Protocol,
-			}
-			if asset.Host != "" {
-				u.Host = fmt.Sprintf("%s:%d", asset.Host, asset.Port)
-			} else {
-				u.Host = fmt.Sprintf("%s:%d", asset.IP, asset.Port)
-			}
-			asset.URL = u.String()
-
-			asset.Extra = data
-			assets = append(assets, *asset)
-		} else if asset.Host != "" {
-			// Keep hostname-only assets (e.g. CDN-backed sites)
-			asset.Extra = data
+		if asset := s.normalizeShodanItem(data); asset != nil {
 			assets = append(assets, *asset)
 		}
 	}
-
 	return assets, nil
+}
+
+// normalizeShodanItem 解析单条 Shodan 数据
+func (s *ShodanAdapter) normalizeShodanItem(data map[string]interface{}) *model.UnifiedAsset {
+	asset := &model.UnifiedAsset{Source: s.Name()}
+	getStr := func(k string) string { v, _ := data[k].(string); return v }
+	getInt := func(k string) int {
+		if v, ok := data[k].(float64); ok { return int(v) }
+		if v, ok := data[k].(int); ok { return v }
+		return 0
+	}
+
+	asset.IP = getStr("ip")
+	asset.Port = getInt("port")
+	asset.Protocol = getStr("protocol")
+	if domain := getStr("domain"); domain != "" {
+		asset.Host = domain
+	} else if hostnames, ok := data["hostnames"].([]interface{}); ok && len(hostnames) > 0 {
+		if h, ok := hostnames[0].(string); ok { asset.Host = h }
+	}
+	asset.Title = getStr("title")
+	asset.Server = getStr("server")
+	if body := getStr("data"); len(body) > 200 {
+		asset.BodySnippet = body[:200]
+	} else {
+		asset.BodySnippet = body
+	}
+	asset.StatusCode = getInt("status_code")
+	asset.CountryCode = getStr("country")
+	asset.Region = getStr("region")
+	asset.City = getStr("city")
+	asset.ASN = getStr("asn")
+	asset.Org = getStr("org")
+	asset.ISP = getStr("isp")
+
+	if asset.IP != "" && asset.Port > 0 {
+		buildShodanURL(asset)
+		asset.Extra = data
+		return asset
+	}
+	if asset.Host != "" {
+		asset.Extra = data
+		return asset
+	}
+	return nil
+}
+
+// buildShodanURL 从 IP/Port/Protocol 构建 URL
+func buildShodanURL(asset *model.UnifiedAsset) {
+	if asset.Protocol == "" {
+		if asset.Port == 443 { asset.Protocol = "https" } else { asset.Protocol = "http" }
+	}
+	u := &url.URL{Scheme: asset.Protocol}
+	if asset.Host != "" {
+		u.Host = fmt.Sprintf("%s:%d", asset.Host, asset.Port)
+	} else {
+		u.Host = fmt.Sprintf("%s:%d", asset.IP, asset.Port)
+	}
+	asset.URL = u.String()
 }
 
 // GetQuota 获取Shodan配额信息

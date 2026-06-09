@@ -9,43 +9,68 @@ import (
 
 // validate 验证配置有效性
 func (m *Manager) validate(config *Config) error {
-	// 验证引擎配置
-	if config.Engines.Quake.Enabled {
-		if config.Engines.Quake.BaseURL == "" {
-			return fmt.Errorf("quake engine enabled but base_url not set")
+	if err := validateEngines(config); err != nil {
+		return err
+	}
+	if err := validateSystemConfig(config); err != nil {
+		return err
+	}
+	if err := validateWebConfig(config); err != nil {
+		return err
+	}
+	if err := validateScreenshotConfig(config); err != nil {
+		return err
+	}
+	if err := validateNetworkConfig(config); err != nil {
+		return err
+	}
+	if err := validateDistributedConfig(config); err != nil {
+		return err
+	}
+	if err := validateCacheConfig(config); err != nil {
+		return err
+	}
+	if err := validateBrowserFallbackConfig(config); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateEngines 验证所有引擎配置
+func validateEngines(config *Config) error {
+	type engineCheck struct {
+		enabled bool
+		baseURL string
+		qps     int
+		timeout int
+		name    string
+		extra   func() error
+	}
+	checks := []engineCheck{
+		{config.Engines.Quake.Enabled, config.Engines.Quake.BaseURL, config.Engines.Quake.QPS, config.Engines.Quake.Timeout, "quake", nil},
+		{config.Engines.Zoomeye.Enabled, config.Engines.Zoomeye.BaseURL, config.Engines.Zoomeye.QPS, config.Engines.Zoomeye.Timeout, "zoomeye", nil},
+		{config.Engines.Hunter.Enabled, config.Engines.Hunter.BaseURL, config.Engines.Hunter.QPS, config.Engines.Hunter.Timeout, "hunter", nil},
+		{config.Engines.Daydaymap.Enabled, config.Engines.Daydaymap.BaseURL, config.Engines.Daydaymap.QPS, config.Engines.Daydaymap.Timeout, "daydaymap", nil},
+		{config.Engines.Binaryedge.Enabled, config.Engines.Binaryedge.BaseURL, config.Engines.Binaryedge.QPS, config.Engines.Binaryedge.Timeout, "binaryedge", nil},
+		{config.Engines.Onyphe.Enabled, config.Engines.Onyphe.BaseURL, config.Engines.Onyphe.QPS, config.Engines.Onyphe.Timeout, "onyphe", nil},
+		{config.Engines.Shodan.Enabled, config.Engines.Shodan.BaseURL, config.Engines.Shodan.QPS, config.Engines.Shodan.Timeout, "shodan", nil},
+		{config.Engines.Censys.Enabled, config.Engines.Censys.BaseURL, config.Engines.Censys.QPS, config.Engines.Censys.Timeout, "censys", nil},
+		{config.Engines.Greynoise.Enabled, config.Engines.Greynoise.BaseURL, config.Engines.Greynoise.QPS, config.Engines.Greynoise.Timeout, "greynoise", nil},
+	}
+	for _, c := range checks {
+		if !c.enabled {
+			continue
 		}
-		if config.Engines.Quake.QPS <= 0 {
-			return fmt.Errorf("quake engine qps must be greater than 0")
+		if err := validateEngineBasics(c.name, c.baseURL, c.qps, c.timeout); err != nil {
+			return err
 		}
-		if config.Engines.Quake.Timeout <= 0 {
-			return fmt.Errorf("quake engine timeout must be greater than 0")
+		if c.extra != nil {
+			if err := c.extra(); err != nil {
+				return err
+			}
 		}
 	}
-
-	if config.Engines.Zoomeye.Enabled {
-		if config.Engines.Zoomeye.BaseURL == "" {
-			return fmt.Errorf("zoomeye engine enabled but base_url not set")
-		}
-		if config.Engines.Zoomeye.QPS <= 0 {
-			return fmt.Errorf("zoomeye engine qps must be greater than 0")
-		}
-		if config.Engines.Zoomeye.Timeout <= 0 {
-			return fmt.Errorf("zoomeye engine timeout must be greater than 0")
-		}
-	}
-
-	if config.Engines.Hunter.Enabled {
-		if config.Engines.Hunter.BaseURL == "" {
-			return fmt.Errorf("hunter engine enabled but base_url not set")
-		}
-		if config.Engines.Hunter.QPS <= 0 {
-			return fmt.Errorf("hunter engine qps must be greater than 0")
-		}
-		if config.Engines.Hunter.Timeout <= 0 {
-			return fmt.Errorf("hunter engine timeout must be greater than 0")
-		}
-	}
-
+	// FOFA 特殊处理（有 APIKey/Email 和 URL 校验）
 	if config.Engines.Fofa.Enabled {
 		if !config.Engines.Fofa.UseWebAPI {
 			if config.Engines.Fofa.APIKey == "" || config.Engines.Fofa.Email == "" {
@@ -60,51 +85,29 @@ func (m *Manager) validate(config *Config) error {
 		}); err != nil {
 			return fmt.Errorf("fofa api_base_url validation failed: %w", err)
 		}
-		if config.Engines.Fofa.QPS <= 0 {
-			return fmt.Errorf("fofa engine qps must be greater than 0")
-		}
-		if config.Engines.Fofa.Timeout <= 0 {
-			return fmt.Errorf("fofa engine timeout must be greater than 0")
+		if err := validateEngineBasics("fofa", config.Engines.Fofa.APIBaseURL, config.Engines.Fofa.QPS, config.Engines.Fofa.Timeout); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
-	if config.Engines.Daydaymap.Enabled {
-		if config.Engines.Daydaymap.BaseURL == "" {
-			return fmt.Errorf("daydaymap engine enabled but base_url not set")
-		}
-		if config.Engines.Daydaymap.QPS <= 0 {
-			return fmt.Errorf("daydaymap engine qps must be greater than 0")
-		}
-		if config.Engines.Daydaymap.Timeout <= 0 {
-			return fmt.Errorf("daydaymap engine timeout must be greater than 0")
-		}
+// validateEngineBasics 验证引擎基础配置（baseURL、QPS、Timeout）
+func validateEngineBasics(name, baseURL string, qps, timeout int) error {
+	if baseURL == "" {
+		return fmt.Errorf("%s engine enabled but base_url not set", name)
 	}
-
-	if config.Engines.Binaryedge.Enabled {
-		if config.Engines.Binaryedge.BaseURL == "" {
-			return fmt.Errorf("binaryedge engine enabled but base_url not set")
-		}
-		if config.Engines.Binaryedge.QPS <= 0 {
-			return fmt.Errorf("binaryedge engine qps must be greater than 0")
-		}
-		if config.Engines.Binaryedge.Timeout <= 0 {
-			return fmt.Errorf("binaryedge engine timeout must be greater than 0")
-		}
+	if qps <= 0 {
+		return fmt.Errorf("%s engine qps must be greater than 0", name)
 	}
-
-	if config.Engines.Onyphe.Enabled {
-		if config.Engines.Onyphe.BaseURL == "" {
-			return fmt.Errorf("onyphe engine enabled but base_url not set")
-		}
-		if config.Engines.Onyphe.QPS <= 0 {
-			return fmt.Errorf("onyphe engine qps must be greater than 0")
-		}
-		if config.Engines.Onyphe.Timeout <= 0 {
-			return fmt.Errorf("onyphe engine timeout must be greater than 0")
-		}
+	if timeout <= 0 {
+		return fmt.Errorf("%s engine timeout must be greater than 0", name)
 	}
+	return nil
+}
 
-	// 验证系统配置
+// validateSystemConfig 验证系统配置
+func validateSystemConfig(config *Config) error {
 	if config.System.MaxConcurrent <= 0 {
 		return fmt.Errorf("system max_concurrent must be greater than 0")
 	}
@@ -123,8 +126,11 @@ func (m *Manager) validate(config *Config) error {
 	if config.System.UserAgent == "" {
 		return fmt.Errorf("system user_agent must be set")
 	}
+	return nil
+}
 
-	// 验证 Web 配置
+// validateWebConfig 验证 Web 配置
+func validateWebConfig(config *Config) error {
 	if config.Web.CORS.MaxAge < 0 {
 		return fmt.Errorf("web cors max_age must be greater than or equal to 0")
 	}
@@ -140,56 +146,68 @@ func (m *Manager) validate(config *Config) error {
 	if config.Web.RequestLimits.MaxMultipartMemory <= 0 {
 		return fmt.Errorf("web request_limits max_multipart_memory_bytes must be greater than 0")
 	}
+	return nil
+}
 
+// validateScreenshotConfig 验证截图配置
+func validateScreenshotConfig(config *Config) error {
 	engine := strings.ToLower(strings.TrimSpace(config.Screenshot.Engine))
 	if engine != "" && engine != "cdp" && engine != "extension" {
 		return fmt.Errorf("screenshot engine must be one of: cdp, extension")
 	}
-
 	mode := strings.ToLower(strings.TrimSpace(config.Screenshot.Mode))
 	if mode != "auto" && mode != "cdp" && mode != "extension" {
 		return fmt.Errorf("screenshot mode must be one of: auto, cdp, extension")
 	}
-
 	priority := strings.ToLower(strings.TrimSpace(config.Screenshot.Priority))
 	if priority != "" && priority != "cdp" && priority != "extension" {
 		return fmt.Errorf("screenshot priority must be one of: cdp, extension")
 	}
-	if config.Screenshot.Extension.TokenTTLSeconds <= 0 {
+	ext := config.Screenshot.Extension
+	if ext.TokenTTLSeconds <= 0 {
 		return fmt.Errorf("screenshot extension token_ttl_seconds must be greater than 0")
 	}
-	if config.Screenshot.Extension.TaskTimeoutSeconds <= 0 {
+	if ext.TaskTimeoutSeconds <= 0 {
 		return fmt.Errorf("screenshot extension task_timeout_seconds must be greater than 0")
 	}
-	if config.Screenshot.Extension.MaxConcurrency <= 0 {
+	if ext.MaxConcurrency <= 0 {
 		return fmt.Errorf("screenshot extension max_concurrency must be greater than 0")
 	}
-	if config.Screenshot.Extension.CallbackSignatureSkewSeconds <= 0 {
+	if ext.CallbackSignatureSkewSeconds <= 0 {
 		return fmt.Errorf("screenshot extension callback_signature_skew_seconds must be greater than 0")
 	}
-	if config.Screenshot.Extension.CallbackNonceTTLSeconds <= 0 {
+	if ext.CallbackNonceTTLSeconds <= 0 {
 		return fmt.Errorf("screenshot extension callback_nonce_ttl_seconds must be greater than 0")
 	}
-	if config.Screenshot.Extension.CallbackNonceTTLSeconds < config.Screenshot.Extension.CallbackSignatureSkewSeconds {
+	if ext.CallbackNonceTTLSeconds < ext.CallbackSignatureSkewSeconds {
 		return fmt.Errorf("screenshot extension callback_nonce_ttl_seconds must be greater than or equal to callback_signature_skew_seconds")
 	}
+	return nil
+}
 
-	if config.Network.ProxyPool.Enabled {
-		strategy := strings.ToLower(strings.TrimSpace(config.Network.ProxyPool.Strategy))
-		if strategy != "round_robin" {
-			return fmt.Errorf("network proxy_pool strategy must be: round_robin")
-		}
-		if len(config.Network.ProxyPool.Proxies) == 0 {
-			return fmt.Errorf("network proxy_pool enabled but proxies are not set")
-		}
-		if config.Network.ProxyPool.FailureThreshold <= 0 {
-			return fmt.Errorf("network proxy_pool failure_threshold must be greater than 0")
-		}
-		if config.Network.ProxyPool.CooldownSeconds <= 0 {
-			return fmt.Errorf("network proxy_pool cooldown_seconds must be greater than 0")
-		}
+// validateNetworkConfig 验证网络配置
+func validateNetworkConfig(config *Config) error {
+	if !config.Network.ProxyPool.Enabled {
+		return nil
 	}
+	strategy := strings.ToLower(strings.TrimSpace(config.Network.ProxyPool.Strategy))
+	if strategy != "round_robin" {
+		return fmt.Errorf("network proxy_pool strategy must be: round_robin")
+	}
+	if len(config.Network.ProxyPool.Proxies) == 0 {
+		return fmt.Errorf("network proxy_pool enabled but proxies are not set")
+	}
+	if config.Network.ProxyPool.FailureThreshold <= 0 {
+		return fmt.Errorf("network proxy_pool failure_threshold must be greater than 0")
+	}
+	if config.Network.ProxyPool.CooldownSeconds <= 0 {
+		return fmt.Errorf("network proxy_pool cooldown_seconds must be greater than 0")
+	}
+	return nil
+}
 
+// validateDistributedConfig 验证分布式配置
+func validateDistributedConfig(config *Config) error {
 	if config.Distributed.HeartbeatTimeoutSeconds <= 0 {
 		return fmt.Errorf("distributed heartbeat_timeout_seconds must be greater than 0")
 	}
@@ -203,7 +221,11 @@ func (m *Manager) validate(config *Config) error {
 	if strategy != "health_load" {
 		return fmt.Errorf("distributed scheduler strategy must be: health_load")
 	}
+	return nil
+}
 
+// validateCacheConfig 验证缓存配置
+func validateCacheConfig(config *Config) error {
 	backend := strings.ToLower(strings.TrimSpace(config.Cache.Backend))
 	if backend != "memory" && backend != "redis" {
 		return fmt.Errorf("cache backend must be one of: memory, redis")
@@ -211,26 +233,19 @@ func (m *Manager) validate(config *Config) error {
 	if backend == "redis" && strings.TrimSpace(config.Cache.Redis.Addr) == "" {
 		return fmt.Errorf("cache redis addr must be set when backend is redis")
 	}
-
-	// 分布式安全校验：启用但未配置 token 时告警
-	if config.Distributed.Enabled {
-		if strings.TrimSpace(config.Distributed.AdminToken) == "" {
-			// 不阻塞启动，但记录严重警告
-			// 实际运行时 requireDistributedAdminToken 会返回 503
-		}
-		if len(config.Distributed.NodeAuthTokens) == 0 {
-			// 同上：节点 token 为空时运行时拒绝注册
-		}
-	}
-
-	// 验证浏览器降级引擎白名单
-	validBFEngines := map[string]bool{"fofa": true, "zoomeye": true, "shodan": true, "hunter": true, "quake": true, "censys": true, "daydaymap": true, "binaryedge": true, "onyphe": true}
-	for _, e := range config.Query.BrowserFallback.Engines {
-		if !validBFEngines[strings.ToLower(e)] {
-			return fmt.Errorf("query.browser_fallback.engines: unknown engine %q, must be one of: fofa, zoomeye, shodan, hunter, quake", e)
-		}
-	}
-
 	return nil
 }
 
+// validateBrowserFallbackConfig 验证浏览器降级配置
+func validateBrowserFallbackConfig(config *Config) error {
+	validEngines := map[string]bool{
+		"fofa": true, "zoomeye": true, "shodan": true, "hunter": true,
+		"quake": true, "censys": true, "daydaymap": true, "binaryedge": true, "onyphe": true,
+	}
+	for _, e := range config.Query.BrowserFallback.Engines {
+		if !validEngines[strings.ToLower(e)] {
+			return fmt.Errorf("query.browser_fallback.engines: unknown engine %q, must be one of: fofa, zoomeye, shodan, hunter, quake", e)
+		}
+	}
+	return nil
+}

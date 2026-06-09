@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/logger"
 )
 
@@ -328,12 +329,27 @@ func (r *ScreenshotRouter) OpenSearchEngineResult(ctx context.Context, engine, q
 }
 
 // CollectSearchEngineResult collects structured data from a search engine result using the active mode.
-func (r *ScreenshotRouter) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
+func (r *ScreenshotRouter) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error) {
 	provider, err := r.resolveProvider(r.loadMode())
 	if err != nil {
 		return nil, err
 	}
 	return provider.CollectSearchEngineResult(ctx, engine, query, queryID)
+}
+
+// CollectAndCaptureSearchEngineResult 在单次导航中同时完成数据采集和截图。
+// 仅在 CDP 模式下可用（需要 Manager）；Extension 模式降级为分步调用。
+func (r *ScreenshotRouter) CollectAndCaptureSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, string, error) {
+	if r.mgr != nil {
+		return r.mgr.CollectAndCaptureSearchEngineResult(ctx, engine, query, queryID)
+	}
+	// Extension fallback: 分步调用
+	collected, err := r.CollectSearchEngineResult(ctx, engine, query, queryID)
+	if err != nil {
+		return nil, "", err
+	}
+	path, err := r.CaptureSearchEngineResult(ctx, engine, query, queryID)
+	return collected, path, err
 }
 
 // resolveProvider returns the best available Provider based on current health and fallback config.

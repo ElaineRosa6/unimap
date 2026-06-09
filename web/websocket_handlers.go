@@ -47,40 +47,30 @@ func generateConnectionID() string {
 
 // handleWebSocket 处理WebSocket连接
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// 验证WebSocket连接请求
 	if !s.validateWebSocketRequest(r) {
 		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
 		return
 	}
-
 	conn, err := s.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		logger.Errorf("WebSocket upgrade failed: %v", err)
-		return
-	}
+	if err != nil { logger.Errorf("WebSocket upgrade failed: %v", err); return }
 	defer conn.Close()
 
-	// 为连接生成唯一ID
 	connID := generateConnectionID()
 	managed := &managedConn{conn: conn}
 	connCtx, cancelConn := context.WithCancel(r.Context())
-
 	writeJSON := func(v interface{}) error {
 		managed.writeMu.Lock()
 		defer managed.writeMu.Unlock()
 		setWriteDeadline(conn)
 		return conn.WriteJSON(v)
 	}
-
 	done := make(chan struct{})
 
-	// 添加到连接管理器
 	s.connManager.mutex.Lock()
 	s.connManager.connections[connID] = managed
 	s.connManager.mutex.Unlock()
 	metrics.IncWebSocketConnection()
 
-	// 连接关闭时从管理器中移除
 	defer func() {
 		cancelConn()
 		close(done)
@@ -91,21 +81,20 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		logger.Infof("WebSocket connection closed: %s", connID)
 	}()
 
-	// 设置连接读取超时和pong处理器
-	// 当收到WebSocket协议级别的pong帧时，重置读取超时
+	wsSetupPingPong(conn, managed, done)
+	wsMessageLoop(s, conn, connCtx, connID, writeJSON)
+}
+
+// wsSetupPingPong 设置 WebSocket ping/pong 心跳
+func wsSetupPingPong(conn *websocket.Conn, managed *managedConn, done chan struct{}) {
 	conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
-
-	// 启动ping协程，使用WebSocket协议级别ping帧
-	// 协议级别ping会自动触发对端的协议级别pong，
-	// 从而触发上面的PongHandler重置读取超时
 	go func() {
 		ticker := time.NewTicker(pingInterval)
 		defer ticker.Stop()
-
 		for {
 			select {
 			case <-done:
@@ -115,44 +104,37 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				setWriteDeadline(conn)
 				err := conn.WriteMessage(websocket.PingMessage, nil)
 				managed.writeMu.Unlock()
-				if err != nil {
-					logger.Errorf("WebSocket ping error: %v", err)
-					return
-				}
+				if err != nil { logger.Errorf("WebSocket ping error: %v", err); return }
 			}
 		}
 	}()
+}
 
-	// 处理WebSocket消息
+// wsMessageLoop WebSocket 消息处理循环
+func wsMessageLoop(s *Server, conn *websocket.Conn, connCtx context.Context, connID string, writeJSON func(interface{}) error) {
 	for {
 		var message map[string]interface{}
-		err := conn.ReadJSON(&message)
-		if err != nil {
+		if err := conn.ReadJSON(&message); err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				logger.Errorf("WebSocket read error: %v", err)
 			}
-			break
+			return
 		}
-
 		metrics.IncWebSocketMessage("inbound")
-
-		// 处理不同类型的消息
-		if messageType, ok := message["type"].(string); ok {
-			switch messageType {
-			case "ping":
-				// 回复ping消息
-				metrics.IncWebSocketMessage("outbound")
-				if err := writeJSON(map[string]interface{}{"type": "pong"}); err != nil {
-					logger.Errorf("WebSocket write error: %v", err)
-					break
-				}
-			case "pong":
-				// 收到pong消息，重置读取超时
-				conn.SetReadDeadline(time.Now().Add(pongWait))
-			case "query":
-				// 处理查询请求
-				s.handleWebSocketQuery(connCtx, connID, message, writeJSON)
+		msgType, ok := message["type"].(string)
+		if !ok {
+			continue
+		}
+		switch msgType {
+		case "ping":
+			metrics.IncWebSocketMessage("outbound")
+			if err := writeJSON(map[string]interface{}{"type": "pong"}); err != nil {
+				logger.Errorf("WebSocket write error: %v", err)
 			}
+		case "pong":
+			conn.SetReadDeadline(time.Now().Add(pongWait))
+		case "query":
+			s.handleWebSocketQuery(connCtx, connID, message, writeJSON)
 		}
 	}
 }
@@ -188,214 +170,183 @@ func (s *Server) validateWebSocketRequest(r *http.Request) bool {
 
 // handleWebSocketQuery 处理WebSocket查询请求
 func (s *Server) handleWebSocketQuery(ctx context.Context, connID string, message map[string]interface{}, writeJSON func(interface{}) error) {
-	// 解析查询参数
-	query, _ := message["query"].(string)
-	query = strings.TrimSpace(query)
-
-	if err := validateQueryInput(query); err != nil {
-		if err := writeJSON(map[string]interface{}{
-			"type":  "query_error",
-			"error": err.Error(),
-		}); err != nil {
-			logger.Errorf("WebSocket write error: %v", err)
+	query, engines, pageSize, browserQuery, browserAction, err := parseWSQueryParams(message, s.orchestrator)
+	if err != nil {
+		if wErr := writeJSON(map[string]interface{}{"type": "query_error", "error": err.Error()}); wErr != nil {
+			logger.Errorf("WebSocket write error: %v", wErr)
 		}
 		return
 	}
 
-	pageSize := parseWSInt(message["page_size"], 50)
-	browserQuery := parseWSBool(message["browser_query"])
-	browserAction := ""
-	if ba, ok := message["browser_action"].(string); ok {
-		browserAction = strings.TrimSpace(ba)
-	}
-
-	engines := parseWSStringList(message["engines"])
-	if len(engines) == 0 {
-		// 如果没有选择引擎，使用默认引擎
-		defaultEngines := s.orchestrator.ListAdapters()
-		if len(defaultEngines) > 0 {
-			engines = []string{defaultEngines[0]}
-		}
-	}
-
-	if len(engines) == 0 {
-		// 发送查询错误消息
-		if err := writeJSON(map[string]interface{}{
-			"type":  "query_error",
-			"error": "no engines configured/registered. Please set API keys in configs/config.yaml and enable at least one engine.",
-		}); err != nil {
-			logger.Errorf("WebSocket write error: %v", err)
-		}
-		return
-	}
-
-	// 生成查询ID
 	queryID := fmt.Sprintf("%d", time.Now().UnixNano())
-
-	// 创建查询状态
 	status := &QueryStatus{
-		ID:         queryID,
-		Query:      query,
-		Engines:    engines,
-		Status:     "running",
-		Progress:   0,
-		Results:    []model.UnifiedAsset{},
-		TotalCount: 0,
-		Errors:     []string{},
-		StartTime:  time.Now(),
+		ID: queryID, Query: query, Engines: engines, Status: "running",
+		Results: []model.UnifiedAsset{}, Errors: []string{}, StartTime: time.Now(),
 	}
-
-	// 保存查询状态
 	s.queryMutex.Lock()
 	s.queryStatus[queryID] = status
 	s.queryMutex.Unlock()
 
-	// 发送查询开始消息
-	if err := writeJSON(map[string]interface{}{
-		"type":     "query_start",
-		"query_id": queryID,
-		"status":   status,
-	}); err != nil {
-		logger.Errorf("WebSocket write error: %v", err)
+	if wErr := writeJSON(map[string]interface{}{
+		"type": "query_start", "query_id": queryID, "status": status,
+	}); wErr != nil {
+		logger.Errorf("WebSocket write error: %v", wErr)
 	}
 
-	// 异步执行查询，带有独立的超时上下文
+	go s.executeWSQueryAsync(ctx, connID, queryID, query, engines, pageSize, browserQuery, browserAction, writeJSON)
+}
+
+// parseWSQueryParams 解析并验证 WebSocket 查询参数
+func parseWSQueryParams(message map[string]interface{}, orch interface{ ListAdapters() []string }) (
+	query string, engines []string, pageSize int, browserQuery bool, browserAction string, err error,
+) {
+	query, _ = message["query"].(string)
+	query = strings.TrimSpace(query)
+	if err = validateQueryInput(query); err != nil {
+		return
+	}
+	pageSize = parseWSInt(message["page_size"], 50)
+	browserQuery = parseWSBool(message["browser_query"])
+	if ba, ok := message["browser_action"].(string); ok {
+		browserAction = strings.TrimSpace(ba)
+	}
+	engines = parseWSStringList(message["engines"])
+	if len(engines) == 0 {
+		defaultEngines := orch.ListAdapters()
+		if len(defaultEngines) > 0 {
+			engines = []string{defaultEngines[0]}
+		}
+	}
+	if len(engines) == 0 {
+		err = fmt.Errorf("no engines configured/registered. Please set API keys in configs/config.yaml and enable at least one engine.")
+	}
+	return
+}
+
+// executeWSQueryAsync 异步执行 WebSocket 查询
+func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query string, engines []string, pageSize int, browserQuery bool, browserAction string, writeJSON func(interface{}) error) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf("WebSocket query panic for %s: %v", queryID, r)
+			s.sendToConn(connID, map[string]interface{}{
+				"type": "query_error", "error": fmt.Sprintf("internal error: query %s failed", queryID),
+			})
+		}
+	}()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	queryCtx, queryCancel := context.WithTimeout(ctx, 60*time.Second)
+	defer queryCancel()
+
+	if browserQuery {
+		s.updateQueryProgress(connID, queryID, 5)
+	}
+	browserQueryCh := s.runBrowserQueryAsync(queryCtx, query, engines, browserQuery, browserAction, queryID, func(done, total int, engine string, err error) {
+		if total <= 0 {
+			return
+		}
+		progress := 5 + (float64(done)/float64(total))*45
+		if progress > 50 {
+			progress = 50
+		}
+		s.updateQueryProgress(connID, queryID, progress)
+	})
+
+	resp, queryErr := s.service.Query(queryCtx, service.QueryRequest{
+		Query: query, Engines: engines, PageSize: pageSize, ProcessData: true,
+	})
+	var browserOutcome browserQueryOutcome
+	if browserQueryCh != nil {
+		select {
+		case browserOutcome = <-browserQueryCh:
+		case <-queryCtx.Done():
+		}
+	}
+	if queryErr == nil && queryCtx.Err() != nil {
+		queryErr = fmt.Errorf("query timeout after 60s: %v", queryCtx.Err())
+	}
+
+	statusCopy := s.finalizeWSQueryStatus(queryID, query, engines, queryErr, resp, browserOutcome, browserAction)
+	s.scheduleWSQueryCleanup(queryID)
+
+	var errMsg string
+	if queryErr != nil {
+		errMsg = fmt.Sprintf("Query failed: %v", queryErr)
+	}
+	resultsPayload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, errMsg)
+	if errMsg != "" {
+		resultsPayload["error"] = errMsg
+	}
+	if wErr := writeJSON(map[string]interface{}{
+		"type": "query_complete", "query_id": queryID, "status": statusCopy, "results": resultsPayload,
+	}); wErr != nil {
+		logger.Errorf("WebSocket write error: %v", wErr)
+	}
+}
+
+// finalizeWSQueryStatus 在锁内更新查询状态并返回副本
+func (s *Server) finalizeWSQueryStatus(queryID, query string, engines []string, queryErr error, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string) QueryStatus {
+	s.queryMutex.Lock()
+	defer s.queryMutex.Unlock()
+	st := s.queryStatus[queryID]
+	if st == nil {
+		return QueryStatus{}
+	}
+	if queryErr != nil {
+		st.Errors = append(st.Errors, fmt.Sprintf("Query failed: %v", queryErr))
+		st.Errors = appendUniqueStrings(st.Errors, browserOutcome.Errors)
+		st.Errors = appendUniqueStrings(st.Errors, browserOutcome.AutoCaptureErrors)
+		st.Status = "error"
+	} else {
+		payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction)
+		if assets, ok := payload["assets"].([]model.UnifiedAsset); ok {
+			st.Results = assets
+		} else {
+			st.Results = resp.Assets
+		}
+		if totalCount, ok := payload["totalCount"].(int); ok {
+			st.TotalCount = totalCount
+		} else {
+			st.TotalCount = resp.TotalCount
+		}
+		if errs, ok := payload["errors"].([]string); ok {
+			st.Errors = errs
+		} else {
+			st.Errors = resp.Errors
+		}
+		st.Status = "completed"
+	}
+	st.Progress = 100
+	st.EndTime = time.Now()
+
+	statusCopy := *st
+	if st.Results != nil {
+		statusCopy.Results = append([]model.UnifiedAsset(nil), st.Results...)
+	}
+	if st.Errors != nil {
+		statusCopy.Errors = append([]string(nil), st.Errors...)
+	}
+	return statusCopy
+}
+
+// scheduleWSQueryCleanup 延迟清理查询状态
+func (s *Server) scheduleWSQueryCleanup(queryID string) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Errorf("WebSocket query panic for %s: %v", queryID, r)
-				s.sendToConn(connID, map[string]interface{}{
-					"type":  "query_error",
-					"error": fmt.Sprintf("internal error: query %s failed", queryID),
-				})
+				logger.Errorf("WebSocket query cleanup panic for %s: %v", queryID, r)
 			}
 		}()
-		// 为查询创建带超时的上下文（默认 60 秒查询超时）
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		queryCtx, queryCancel := context.WithTimeout(ctx, 60*time.Second)
-		defer queryCancel()
-
-		if browserQuery {
-			s.updateQueryProgress(connID, queryID, 5)
-		}
-		browserQueryCh := s.runBrowserQueryAsync(queryCtx, query, engines, browserQuery, browserAction, queryID, func(done, total int, engine string, err error) {
-			if total <= 0 {
-				return
-			}
-			progress := 5 + (float64(done)/float64(total))*45
-			if progress > 50 {
-				progress = 50
-			}
-			s.updateQueryProgress(connID, queryID, progress)
-		})
-
-		// 执行查询
-		req := service.QueryRequest{
-			Query:       query,
-			Engines:     engines,
-			PageSize:    pageSize,
-			ProcessData: true,
-		}
-
-		resp, queryErr := s.service.Query(queryCtx, req)
-		var browserOutcome browserQueryOutcome
-		if browserQueryCh != nil {
-			select {
-			case browserOutcome = <-browserQueryCh:
-			case <-queryCtx.Done():
-				// Timeout while waiting for browser query
-			}
-		}
-
-		// Check if query timed out
-		if queryErr == nil && queryCtx.Err() != nil {
-			queryErr = fmt.Errorf("query timeout after 60s: %v", queryCtx.Err())
-		}
-
-		endTime := time.Now()
-
-		// 更新查询状态（在锁内修改，避免并发读写竞态）
-		s.queryMutex.Lock()
-		st := s.queryStatus[queryID]
-		if st != nil {
-			if queryErr != nil {
-				st.Errors = append(st.Errors, fmt.Sprintf("Query failed: %v", queryErr))
-				st.Errors = appendUniqueStrings(st.Errors, browserOutcome.Errors)
-				st.Errors = appendUniqueStrings(st.Errors, browserOutcome.AutoCaptureErrors)
-				st.Status = "error"
-			} else {
-				payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction)
-				if assets, ok := payload["assets"].([]model.UnifiedAsset); ok {
-					st.Results = assets
-				} else {
-					st.Results = resp.Assets
-				}
-				if totalCount, ok := payload["totalCount"].(int); ok {
-					st.TotalCount = totalCount
-				} else {
-					st.TotalCount = resp.TotalCount
-				}
-				if errors, ok := payload["errors"].([]string); ok {
-					st.Errors = errors
-				} else {
-					st.Errors = resp.Errors
-				}
-				st.Status = "completed"
-			}
-			st.Progress = 100
-			st.EndTime = endTime
-		}
-		var statusCopy QueryStatus
-		if st != nil {
-			statusCopy = *st
-			if st.Results != nil {
-				statusCopy.Results = append([]model.UnifiedAsset(nil), st.Results...)
-			}
-			if st.Errors != nil {
-				statusCopy.Errors = append([]string(nil), st.Errors...)
-			}
-		}
-		s.queryMutex.Unlock()
-
-		// 延迟清理查询状态，允许客户端在一段时间内查询已完成任务的状态
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Errorf("WebSocket query cleanup panic for %s: %v", queryID, r)
-				}
-			}()
-			select {
-			case <-time.After(5 * time.Minute):
-				s.queryMutex.Lock()
-				delete(s.queryStatus, queryID)
-				s.queryMutex.Unlock()
-			case <-s.shutdownCtx.Done():
-				// Server is shutting down, cleanup immediately
-				s.queryMutex.Lock()
-				delete(s.queryStatus, queryID)
-				s.queryMutex.Unlock()
-			}
-		}()
-
-		// 发送查询完成消息（发副本，避免边编码边被修改）
-		var errMsg string
-		if queryErr != nil {
-			errMsg = fmt.Sprintf("Query failed: %v", queryErr)
-		}
-		resultsPayload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, errMsg)
-		if errMsg != "" {
-			resultsPayload["error"] = errMsg
-		}
-
-		if err := writeJSON(map[string]interface{}{
-			"type":     "query_complete",
-			"query_id": queryID,
-			"status":   statusCopy,
-			"results":  resultsPayload,
-		}); err != nil {
-			logger.Errorf("WebSocket write error: %v", err)
+		select {
+		case <-time.After(5 * time.Minute):
+			s.queryMutex.Lock()
+			delete(s.queryStatus, queryID)
+			s.queryMutex.Unlock()
+		case <-s.shutdownCtx.Done():
+			s.queryMutex.Lock()
+			delete(s.queryStatus, queryID)
+			s.queryMutex.Unlock()
 		}
 	}()
 }

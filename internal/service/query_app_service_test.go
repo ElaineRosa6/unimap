@@ -5,13 +5,13 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/model"
-	"github.com/unimap/project/internal/screenshot"
 )
 
 type stubBrowserRouter struct {
 	openErrByEngine map[string]error
-	collectResults  map[string][]screenshot.CollectResult
+	collectResults  map[string][]collection.CollectResult
 }
 
 func (r *stubBrowserRouter) OpenSearchEngineResult(_ context.Context, engine, _ string) (string, error) {
@@ -21,11 +21,11 @@ func (r *stubBrowserRouter) OpenSearchEngineResult(_ context.Context, engine, _ 
 	return "https://example.test/search", nil
 }
 
-func (r *stubBrowserRouter) CollectSearchEngineResult(_ context.Context, engine, query, _ string) ([]screenshot.CollectResult, error) {
+func (r *stubBrowserRouter) CollectSearchEngineResult(_ context.Context, engine, query, _ string) ([]collection.CollectResult, error) {
 	if results, ok := r.collectResults[engine]; ok {
 		return results, nil
 	}
-	return []screenshot.CollectResult{{Engine: engine, Query: query}}, nil
+	return []collection.CollectResult{{Engine: engine, Query: query}}, nil
 }
 
 func TestRunBrowserQueryAsync_ReportsProgressForEachEngine(t *testing.T) {
@@ -83,7 +83,7 @@ func TestRunBrowserQueryAsync_ReportsProgressForEachEngine(t *testing.T) {
 func TestRunBrowserQueryAsync_CollectsStructuredAssets(t *testing.T) {
 	svc := NewQueryAppService(nil, nil)
 	router := &stubBrowserRouter{
-		collectResults: map[string][]screenshot.CollectResult{
+		collectResults: map[string][]collection.CollectResult{
 			"fofa": {{
 				Engine: "fofa",
 				Query:  "test",

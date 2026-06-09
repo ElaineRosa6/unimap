@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -254,123 +253,61 @@ func (d *DayDayMapAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAs
 	if raw == nil || len(raw.RawData) == 0 {
 		return []model.UnifiedAsset{}, nil
 	}
-
 	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
-
 	for _, item := range raw.RawData {
 		data, ok := item.(map[string]interface{})
 		if !ok {
 			continue
 		}
-
-		// 跳过没有IP的记录
-		ip, _ := data["ip"].(string)
-		if ip == "" {
-			continue
-		}
-
-		// 创建新的资产对象
-		asset := &model.UnifiedAsset{
-			IP:     ip,
-			Source: d.Name(),
-		}
-
-		// 提取字段
-		if port, ok := data["port"].(float64); ok {
-			asset.Port = int(port)
-		} else if port, ok := data["port"].(int); ok {
-			asset.Port = port
-		}
-		if proto, ok := data["protocol"].(string); ok {
-			asset.Protocol = proto
-		}
-		if domain, ok := data["domain"].(string); ok {
-			asset.Host = domain
-		}
-		if title, ok := data["title"].(string); ok {
-			asset.Title = title
-		}
-		if server, ok := data["server"].(string); ok {
-			asset.Server = server
-		}
-		if body, ok := data["body"].(string); ok {
-			if len(body) > 200 {
-				asset.BodySnippet = body[:200]
-			} else {
-				asset.BodySnippet = body
-			}
-		}
-		if status, ok := data["status_code"].(float64); ok {
-			asset.StatusCode = int(status)
-		} else if status, ok := data["status_code"].(int); ok {
-			asset.StatusCode = status
-		}
-
-		// 地理信息
-		if country, ok := data["country"].(string); ok {
-			asset.CountryCode = country
-		}
-		if region, ok := data["province"].(string); ok {
-			asset.Region = region
-		}
-		if city, ok := data["city"].(string); ok {
-			asset.City = city
-		}
-		if asn, ok := data["asn"].(string); ok {
-			asset.ASN = asn
-		}
-		if org, ok := data["org"].(string); ok {
-			asset.Org = org
-		}
-		if isp, ok := data["isp"].(string); ok {
-			asset.ISP = isp
-		}
-
-		// 构建URL
-		added := false
-
-		// 优先处理有IP和端口的情况
-		if asset.IP != "" && asset.Port > 0 {
-			if asset.Protocol == "" {
-				if asset.Port == 443 {
-					asset.Protocol = "https"
-				} else {
-					asset.Protocol = "http"
-				}
-			}
-
-			// 使用 url.URL 结构体安全构建 URL
-			u := &url.URL{
-				Scheme: asset.Protocol,
-			}
-			if asset.Host != "" {
-				u.Host = fmt.Sprintf("%s:%d", asset.Host, asset.Port)
-			} else {
-				u.Host = fmt.Sprintf("%s:%d", asset.IP, asset.Port)
-			}
-			asset.URL = u.String()
-
-			asset.Extra = data
+		if asset := d.normalizeDayDayMapItem(data); asset != nil {
 			assets = append(assets, *asset)
-			added = true
-		}
-
-		// 处理只有Host的情况
-		if !added && asset.Host != "" {
-			asset.Extra = data
-			assets = append(assets, *asset)
-			added = true
-		}
-
-		// 处理只有IP没有端口的情况
-		if !added && asset.IP != "" {
-			asset.Extra = data
-			assets = append(assets, *asset)
-			added = true
 		}
 	}
-
 	return assets, nil
+}
+
+// normalizeDayDayMapItem 解析单条 DayDayMap 数据
+func (d *DayDayMapAdapter) normalizeDayDayMapItem(data map[string]interface{}) *model.UnifiedAsset {
+	ip, _ := data["ip"].(string)
+	if ip == "" {
+		return nil
+	}
+	asset := &model.UnifiedAsset{IP: ip, Source: d.Name()}
+	getStr := func(k string) string { v, _ := data[k].(string); return v }
+	getInt := func(k string) int {
+		if v, ok := data[k].(float64); ok { return int(v) }
+		if v, ok := data[k].(int); ok { return v }
+		return 0
+	}
+
+	asset.Port = getInt("port")
+	asset.Protocol = getStr("protocol")
+	asset.Host = getStr("domain")
+	asset.Title = getStr("title")
+	asset.Server = getStr("server")
+	if body := getStr("body"); len(body) > 200 {
+		asset.BodySnippet = body[:200]
+	} else {
+		asset.BodySnippet = body
+	}
+	asset.StatusCode = getInt("status_code")
+	asset.CountryCode = getStr("country")
+	asset.Region = getStr("province")
+	asset.City = getStr("city")
+	asset.ASN = getStr("asn")
+	asset.Org = getStr("org")
+	asset.ISP = getStr("isp")
+
+	if asset.IP != "" && asset.Port > 0 {
+		buildAssetURL(asset)
+		asset.Extra = data
+		return asset
+	}
+	if asset.Host != "" || asset.IP != "" {
+		asset.Extra = data
+		return asset
+	}
+	return nil
 }
 
 // GetQuota 获取DayDayMap配额信息

@@ -299,140 +299,158 @@ func runAPIScheduler(args []string) {
 
 	switch strings.ToLower(subcmd) {
 	case "list":
-		var resp struct {
-			Success bool                     `json:"success"`
-			Tasks   []map[string]interface{} `json:"tasks"`
-		}
-		if err := doFormRequest(base, prefix+"/tasks", *timeoutSec, nil, &resp); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Scheduled tasks (%d):\n", len(resp.Tasks))
-		for _, t := range resp.Tasks {
-			fmt.Printf("  %-8s %-30s %-20s enabled=%v  cron=%s\n",
-				t["id"], t["name"], t["type"], t["enabled"], t["cron_expr"])
-		}
-
+		schedulerList(base, prefix, *timeoutSec)
 	case "run":
-		taskID := fs.Lookup("id")
-		if taskID == nil || taskID.Value.String() == "" {
-			fmt.Fprintln(os.Stderr, "Error: -id is required for run")
-			os.Exit(1)
-		}
-		payload := map[string]string{"id": taskID.Value.String()}
-		var resp struct {
-			Success bool `json:"success"`
-		}
-		if err := doJSONRequest(base, prefix+"/tasks/run", *timeoutSec, payload, &resp); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Task %s triggered successfully\n", taskID.Value.String())
-
+		schedulerRun(fs, base, prefix, *timeoutSec)
 	case "create":
-		name := fs.String("name", "", "Task name")
-		taskType := fs.String("type", "", "Task type (e.g. icp_query, query)")
-		cron := fs.String("cron", "", "Cron expression")
-		payloadStr := fs.String("payload", "{}", "JSON payload")
-		timeout := fs.Int("timeout", 300, "Timeout in seconds")
-		maxRetries := fs.Int("retries", 1, "Max retries")
-		_ = fs.Parse(args[1:])
-
-		if *name == "" || *taskType == "" || *cron == "" {
-			fmt.Fprintln(os.Stderr, "Error: -name, -type, and -cron are required for create")
-			os.Exit(1)
-		}
-
-		var p map[string]interface{}
-		if err := json.Unmarshal([]byte(*payloadStr), &p); err != nil {
-			fmt.Fprintf(os.Stderr, "Invalid JSON payload: %v\n", err)
-			os.Exit(1)
-		}
-
-		task := map[string]interface{}{
-			"name":            *name,
-			"type":            *taskType,
-			"cron_expr":       *cron,
-			"payload":         p,
-			"timeout_seconds": *timeout,
-			"max_retries":     *maxRetries,
-		}
-		var resp struct {
-			Success bool                   `json:"success"`
-			Task    map[string]interface{} `json:"task"`
-		}
-		if err := doJSONRequest(base, prefix+"/tasks", *timeoutSec, task, &resp); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Task created: id=%s name=%s type=%s\n", resp.Task["id"], resp.Task["name"], resp.Task["type"])
-
+		schedulerCreate(fs, args, base, prefix, *timeoutSec)
 	case "enable", "disable":
-		taskID := fs.String("id", "", "Task ID")
-		_ = fs.Parse(args[1:])
-		if *taskID == "" {
-			fmt.Fprintln(os.Stderr, "Error: -id is required")
-			os.Exit(1)
-		}
-		action := strings.ToLower(subcmd)
-		payload := map[string]string{"id": *taskID}
-		var resp struct {
-			Success bool `json:"success"`
-		}
-		if err := doJSONRequest(base, prefix+"/tasks/"+action, *timeoutSec, payload, &resp); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Task %s %sd\n", *taskID, action)
-
+		schedulerToggle(fs, args, subcmd, base, prefix, *timeoutSec)
 	case "delete":
-		taskID := fs.String("id", "", "Task ID")
-		_ = fs.Parse(args[1:])
-		if *taskID == "" {
-			fmt.Fprintln(os.Stderr, "Error: -id is required")
-			os.Exit(1)
-		}
-		payload := map[string]string{"id": *taskID}
-		var resp struct {
-			Success bool `json:"success"`
-		}
-		if err := doJSONRequest(base, prefix+"/tasks/delete", *timeoutSec, payload, &resp); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Task %s deleted\n", *taskID)
-
+		schedulerDelete(fs, args, base, prefix, *timeoutSec)
 	case "history":
-		taskID := fs.String("task-id", "", "Filter by task ID")
-		limit := fs.Int("limit", 20, "Max history entries")
-		_ = fs.Parse(args[1:])
-
-		url := prefix + "/history?"
-		if *taskID != "" {
-			url += "task_id=" + neturl.QueryEscape(*taskID) + "&"
-		}
-		url += fmt.Sprintf("limit=%d", *limit)
-
-		var resp struct {
-			Success bool                     `json:"success"`
-			History []map[string]interface{} `json:"history"`
-		}
-		if err := doFormRequest(base, url, *timeoutSec, nil, &resp); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Execution history (%d records):\n", len(resp.History))
-		for _, h := range resp.History {
-			status := h["status"]
-			result := h["result"]
-			if errStr, ok := h["error"].(string); ok && errStr != "" {
-				result = errStr
-			}
-			fmt.Printf("  %-20s %-10s %-15s %s\n", h["started_at"], status, h["task_type"], result)
-		}
-
+		schedulerHistory(fs, args, base, prefix, *timeoutSec)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown scheduler command: %s\n", subcmd)
 		os.Exit(1)
+	}
+}
+
+func schedulerList(base, prefix string, timeoutSec int) {
+	var resp struct {
+		Success bool                     `json:"success"`
+		Tasks   []map[string]interface{} `json:"tasks"`
+	}
+	if err := doFormRequest(base, prefix+"/tasks", timeoutSec, nil, &resp); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Scheduled tasks (%d):\n", len(resp.Tasks))
+	for _, t := range resp.Tasks {
+		fmt.Printf("  %-8s %-30s %-20s enabled=%v  cron=%s\n",
+			t["id"], t["name"], t["type"], t["enabled"], t["cron_expr"])
+	}
+}
+
+func schedulerRun(fs *flag.FlagSet, base, prefix string, timeoutSec int) {
+	taskID := fs.Lookup("id")
+	if taskID == nil || taskID.Value.String() == "" {
+		fmt.Fprintln(os.Stderr, "Error: -id is required for run")
+		os.Exit(1)
+	}
+	payload := map[string]string{"id": taskID.Value.String()}
+	var resp struct {
+		Success bool `json:"success"`
+	}
+	if err := doJSONRequest(base, prefix+"/tasks/run", timeoutSec, payload, &resp); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Task %s triggered successfully\n", taskID.Value.String())
+}
+
+func schedulerCreate(fs *flag.FlagSet, args []string, base, prefix string, timeoutSec int) {
+	name := fs.String("name", "", "Task name")
+	taskType := fs.String("type", "", "Task type (e.g. icp_query, query)")
+	cron := fs.String("cron", "", "Cron expression")
+	payloadStr := fs.String("payload", "{}", "JSON payload")
+	timeout := fs.Int("timeout", 300, "Timeout in seconds")
+	maxRetries := fs.Int("retries", 1, "Max retries")
+	_ = fs.Parse(args[1:])
+
+	if *name == "" || *taskType == "" || *cron == "" {
+		fmt.Fprintln(os.Stderr, "Error: -name, -type, and -cron are required for create")
+		os.Exit(1)
+	}
+
+	var p map[string]interface{}
+	if err := json.Unmarshal([]byte(*payloadStr), &p); err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid JSON payload: %v\n", err)
+		os.Exit(1)
+	}
+
+	task := map[string]interface{}{
+		"name":            *name,
+		"type":            *taskType,
+		"cron_expr":       *cron,
+		"payload":         p,
+		"timeout_seconds": *timeout,
+		"max_retries":     *maxRetries,
+	}
+	var resp struct {
+		Success bool                   `json:"success"`
+		Task    map[string]interface{} `json:"task"`
+	}
+	if err := doJSONRequest(base, prefix+"/tasks", timeoutSec, task, &resp); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Task created: id=%s name=%s type=%s\n", resp.Task["id"], resp.Task["name"], resp.Task["type"])
+}
+
+func schedulerToggle(fs *flag.FlagSet, args []string, subcmd, base, prefix string, timeoutSec int) {
+	taskID := fs.String("id", "", "Task ID")
+	_ = fs.Parse(args[1:])
+	if *taskID == "" {
+		fmt.Fprintln(os.Stderr, "Error: -id is required")
+		os.Exit(1)
+	}
+	action := strings.ToLower(subcmd)
+	payload := map[string]string{"id": *taskID}
+	var resp struct {
+		Success bool `json:"success"`
+	}
+	if err := doJSONRequest(base, prefix+"/tasks/"+action, timeoutSec, payload, &resp); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Task %s %sd\n", *taskID, action)
+}
+
+func schedulerDelete(fs *flag.FlagSet, args []string, base, prefix string, timeoutSec int) {
+	taskID := fs.String("id", "", "Task ID")
+	_ = fs.Parse(args[1:])
+	if *taskID == "" {
+		fmt.Fprintln(os.Stderr, "Error: -id is required")
+		os.Exit(1)
+	}
+	payload := map[string]string{"id": *taskID}
+	var resp struct {
+		Success bool `json:"success"`
+	}
+	if err := doJSONRequest(base, prefix+"/tasks/delete", timeoutSec, payload, &resp); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Task %s deleted\n", *taskID)
+}
+
+func schedulerHistory(fs *flag.FlagSet, args []string, base, prefix string, timeoutSec int) {
+	taskID := fs.String("task-id", "", "Filter by task ID")
+	limit := fs.Int("limit", 20, "Max history entries")
+	_ = fs.Parse(args[1:])
+
+	url := prefix + "/history?"
+	if *taskID != "" {
+		url += "task_id=" + neturl.QueryEscape(*taskID) + "&"
+	}
+	url += fmt.Sprintf("limit=%d", *limit)
+
+	var resp struct {
+		Success bool                     `json:"success"`
+		History []map[string]interface{} `json:"history"`
+	}
+	if err := doFormRequest(base, url, timeoutSec, nil, &resp); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Execution history (%d records):\n", len(resp.History))
+	for _, h := range resp.History {
+		status := h["status"]
+		result := h["result"]
+		if errStr, ok := h["error"].(string); ok && errStr != "" {
+			result = errStr
+		}
+		fmt.Printf("  %-20s %-10s %-15s %s\n", h["started_at"], status, h["task_type"], result)
 	}
 }

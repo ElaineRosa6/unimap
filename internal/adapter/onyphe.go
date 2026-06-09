@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -252,120 +251,76 @@ func (o *OnypheAdapter) Search(ctx context.Context, query string, page, pageSize
 // Normalize 标准化Onyphe结果
 func (o *OnypheAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
 	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
-
 	if raw == nil || len(raw.RawData) == 0 {
 		return assets, nil
 	}
-
 	for _, item := range raw.RawData {
 		data, ok := item.(map[string]interface{})
 		if !ok {
 			continue
 		}
-
-		ip, _ := data["ip"].(string)
-		if ip == "" {
-			continue
-		}
-
-		asset := &model.UnifiedAsset{
-			IP:     ip,
-			Source: o.Name(),
-		}
-
-		// 端口
-		if port, ok := data["port"].(float64); ok {
-			asset.Port = int(port)
-		} else if port, ok := data["port"].(int); ok {
-			asset.Port = port
-		}
-
-		// 协议
-		if proto, ok := data["transport"].(string); ok {
-			asset.Protocol = proto
-		} else if proto, ok := data["protocol"].(string); ok {
-			asset.Protocol = proto
-		}
-
-		// 域名 / 主机名
-		if domain, ok := data["domain"].(string); ok {
-			asset.Host = domain
-		} else if hostname, ok := data["hostname"].(string); ok {
-			asset.Host = hostname
-		}
-
-		// 产品 (app)
-		if product, ok := data["product"].(string); ok {
-			asset.Title = product
-		}
-
-		// 服务器
-		if server, ok := data["server"].(string); ok {
-			asset.Server = server
-		}
-
-		// Body snippet
-		if body, ok := data["content"].(string); ok {
-			if len(body) > 200 {
-				asset.BodySnippet = body[:200]
-			} else {
-				asset.BodySnippet = body
-			}
-		}
-
-		// 状态码
-		if status, ok := data["status"].(float64); ok {
-			asset.StatusCode = int(status)
-		} else if status, ok := data["status"].(int); ok {
-			asset.StatusCode = status
-		}
-
-		// 地理信息
-		if country, ok := data["country"].(string); ok {
-			asset.CountryCode = country
-		}
-		if city, ok := data["city"].(string); ok {
-			asset.City = city
-		}
-		if asn, ok := data["asn"].(string); ok {
-			asset.ASN = asn
-		} else if asn, ok := data["asn"].(float64); ok {
-			asset.ASN = fmt.Sprintf("AS%d", int(asn))
-		}
-		if org, ok := data["organization"].(string); ok {
-			asset.Org = org
-			asset.ISP = org
-		}
-
-		// 构建URL
-		if asset.IP != "" && asset.Port > 0 {
-			if asset.Protocol == "" {
-				if asset.Port == 443 {
-					asset.Protocol = "https"
-				} else {
-					asset.Protocol = "http"
-				}
-			}
-
-			u := &url.URL{
-				Scheme: asset.Protocol,
-			}
-			if asset.Host != "" {
-				u.Host = fmt.Sprintf("%s:%d", asset.Host, asset.Port)
-			} else {
-				u.Host = fmt.Sprintf("%s:%d", asset.IP, asset.Port)
-			}
-			asset.URL = u.String()
-
-			asset.Extra = data
-			assets = append(assets, *asset)
-		} else if asset.Host != "" {
-			asset.Extra = data
+		if asset := o.normalizeOnypheItem(data); asset != nil {
 			assets = append(assets, *asset)
 		}
 	}
-
 	return assets, nil
+}
+
+// normalizeOnypheItem 解析单条 Onyphe 数据
+func (o *OnypheAdapter) normalizeOnypheItem(data map[string]interface{}) *model.UnifiedAsset {
+	ip, _ := data["ip"].(string)
+	if ip == "" {
+		return nil
+	}
+	asset := &model.UnifiedAsset{IP: ip, Source: o.Name()}
+	getStr := func(k string) string { v, _ := data[k].(string); return v }
+	getInt := func(k string) int {
+		if v, ok := data[k].(float64); ok { return int(v) }
+		if v, ok := data[k].(int); ok { return v }
+		return 0
+	}
+
+	asset.Port = getInt("port")
+	if proto := getStr("transport"); proto != "" {
+		asset.Protocol = proto
+	} else {
+		asset.Protocol = getStr("protocol")
+	}
+	if domain := getStr("domain"); domain != "" {
+		asset.Host = domain
+	} else {
+		asset.Host = getStr("hostname")
+	}
+	asset.Title = getStr("product")
+	asset.Server = getStr("server")
+	if body := getStr("content"); len(body) > 200 {
+		asset.BodySnippet = body[:200]
+	} else {
+		asset.BodySnippet = body
+	}
+	asset.StatusCode = getInt("status")
+	asset.CountryCode = getStr("country")
+	asset.City = getStr("city")
+	if asn := getStr("asn"); asn != "" {
+		asset.ASN = asn
+	} else if asnF, ok := data["asn"].(float64); ok {
+		asset.ASN = fmt.Sprintf("AS%d", int(asnF))
+	}
+	if org := getStr("organization"); org != "" {
+		asset.Org = org
+		asset.ISP = org
+	}
+
+	if asset.IP != "" && asset.Port > 0 {
+		buildAssetURL(asset)
+		asset.Extra = data
+		return asset
+	}
+	if asset.Host != "" {
+		asset.Extra = data
+		return asset
+	}
+	return nil
 }
 
 // GetQuota 获取Onyphe配额信息

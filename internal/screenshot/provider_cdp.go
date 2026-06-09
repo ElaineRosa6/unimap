@@ -3,6 +3,8 @@ package screenshot
 import (
 	"context"
 	"fmt"
+
+	"github.com/unimap/project/internal/collection"
 )
 
 // CDPProvider adapts Manager to the Provider interface.
@@ -63,7 +65,7 @@ func (p *CDPProvider) OpenSearchEngineResult(ctx context.Context, engine, query 
 	return p.mgr.OpenSearchEngineResult(ctx, engine, query)
 }
 
-func (p *CDPProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
+func (p *CDPProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error) {
 	if p == nil || p.mgr == nil {
 		return nil, fmt.Errorf("screenshot manager not initialized")
 	}

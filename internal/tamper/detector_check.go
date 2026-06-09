@@ -68,180 +68,132 @@ func (d *Detector) CheckTampering(ctx context.Context, url string) (*TamperCheck
 
 	baseline, err := d.storage.LoadBaseline(url)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			result := &TamperCheckResult{
-				URL:          url,
-				CurrentHash:  currentHash,
-				Tampered:     false,
-				Status:       "failed",
-				ErrorType:    "baseline",
-				ErrorMessage: fmt.Sprintf("failed to load baseline: %v", err),
-				Timestamp:    time.Now().Unix(),
-			}
-
-			record := &CheckRecord{
-				ID:            fmt.Sprintf("%d", time.Now().UnixNano()),
-				URL:           url,
-				Tampered:      false,
-				CurrentHash:   currentHash,
-				Timestamp:     result.Timestamp,
-				CheckType:     "baseline_error",
-				DetectionMode: d.detectionMode,
-			}
-			if saveErr := d.storage.SaveCheckRecord(url, record); saveErr != nil {
-				logger.Warnf("Failed to save check record: %v", saveErr)
-			}
-
-			return result, nil
-		}
-
-		// No baseline — first check
-		result := &TamperCheckResult{
-			URL:         url,
-			CurrentHash: currentHash,
-			Tampered:    false,
-			Status:      "no_baseline",
-			Timestamp:   time.Now().Unix(),
-		}
-
-		record := &CheckRecord{
-			ID:            fmt.Sprintf("%d", time.Now().UnixNano()),
-			URL:           url,
-			Tampered:      false,
-			CurrentHash:   currentHash,
-			Timestamp:     result.Timestamp,
-			CheckType:     "first_check",
-			DetectionMode: d.detectionMode,
-		}
-		if saveErr := d.storage.SaveCheckRecord(url, record); saveErr != nil {
-			logger.Warnf("Failed to save check record: %v", saveErr)
-		}
-
-		return result, nil
+		return d.handleBaselineLoadError(url, currentHash, err)
 	}
 
 	result := &TamperCheckResult{
-		URL:          url,
-		CurrentHash:  currentHash,
-		BaselineHash: baseline,
-		Tampered:     false,
-		Status:       "normal",
-		Timestamp:    time.Now().Unix(),
+		URL: url, CurrentHash: currentHash, BaselineHash: baseline,
+		Tampered: false, Status: "normal", Timestamp: time.Now().Unix(),
 	}
-
 	checkType := "normal"
 
 	suspiciousFlags := detectMaliciousContent(currentHash.RawHTML)
 	result.SuspiciousFlags = suspiciousFlags
 
 	if len(suspiciousFlags) > 0 {
-		shouldMarkAsTampered := false
-
-		switch d.detectionMode {
-		case DetectionModeStrict:
-			shouldMarkAsTampered = true
-		case DetectionModeSecurity:
-			strongSignals := 0
-			for _, flag := range suspiciousFlags {
-				if flag == "hidden_iframe_detected" || flag == "dangerous_event_handler" {
-					strongSignals++
-				}
-			}
-			shouldMarkAsTampered = strongSignals > 0 || len(suspiciousFlags) >= 2
-		case DetectionModePrecise:
-			for _, flag := range suspiciousFlags {
-				if flag == "hidden_iframe_detected" || flag == "dangerous_event_handler" {
-					shouldMarkAsTampered = true
-					break
-				}
-			}
-		case DetectionModeBalanced:
-			shouldMarkAsTampered = len(suspiciousFlags) >= 2
-		default: // DetectionModeRelaxed
-			for _, flag := range suspiciousFlags {
-				if flag == "hidden_iframe_detected" || flag == "dangerous_event_handler" {
-					shouldMarkAsTampered = true
-					break
-				}
-			}
-		}
-
-		if shouldMarkAsTampered {
-			result.Tampered = true
-			result.Status = "suspicious"
-			result.TamperedSegments = []string{"malicious_content"}
-			checkType = "suspicious"
-
-			if d.alertManager != nil {
-				details := map[string]interface{}{
-					"flags":          suspiciousFlags,
-					"detection_mode": d.detectionMode,
-				}
-				d.alertManager.SendCritical(alerting.AlertTypeTamper,
-					"检测到恶意内容",
-					fmt.Sprintf("URL %s 检测到恶意内容", url),
-					details,
-					"tamper_detector",
-					url)
-			}
-		}
+		checkType = d.evaluateSuspiciousFlags(url, result, suspiciousFlags)
 	} else {
-		simpleMD5Changed := false
-		if baseline.SimpleMD5Hash != "" && currentHash.SimpleMD5Hash != "" {
-			simpleMD5Changed = baseline.SimpleMD5Hash != currentHash.SimpleMD5Hash
+		checkType = d.evaluateTamperChanges(url, currentHash, baseline, result)
+	}
+
+	d.saveCheckRecord(url, result, currentHash, baseline, checkType)
+	return result, nil
+}
+
+// handleBaselineLoadError 处理基线加载错误和首次检查（无基线）两种情况
+func (d *Detector) handleBaselineLoadError(url string, currentHash *PageHashResult, loadErr error) (*TamperCheckResult, error) {
+	now := time.Now().Unix()
+	if !errors.Is(loadErr, os.ErrNotExist) {
+		result := &TamperCheckResult{
+			URL: url, CurrentHash: currentHash, Tampered: false,
+			Status: "failed", ErrorType: "baseline",
+			ErrorMessage: fmt.Sprintf("failed to load baseline: %v", loadErr), Timestamp: now,
 		}
+		d.saveCheckRecord(url, result, currentHash, nil, "baseline_error")
+		return result, nil
+	}
+	// 无基线 — 首次检查
+	result := &TamperCheckResult{
+		URL: url, CurrentHash: currentHash,
+		Tampered: false, Status: "no_baseline", Timestamp: now,
+	}
+	d.saveCheckRecord(url, result, currentHash, nil, "first_check")
+	return result, nil
+}
 
-		tamperedSegments, changes := d.findChangedSegments(currentHash, baseline)
-		result.TamperedSegments = tamperedSegments
-		result.Changes = changes
-
-		if simpleMD5Changed || len(changes) > 0 {
-			if simpleMD5Changed || d.isMeaningfulTamper(changes) {
-				result.Tampered = true
-				result.Status = "tampered"
-				checkType = "tampered"
-
-				if d.alertManager != nil {
-					details := map[string]interface{}{
-						"segments":           tamperedSegments,
-						"changes":            len(changes),
-						"detection_mode":     d.detectionMode,
-						"simple_md5_changed": simpleMD5Changed,
-					}
-					d.alertManager.SendWarning(alerting.AlertTypeTamper,
-						"检测到网页篡改",
-						fmt.Sprintf("URL %s 检测到 %d 个分段被修改", url, len(tamperedSegments)),
-						details,
-						"tamper_detector",
-						url)
-				}
-			} else {
-				checkType = "normal_dynamic"
-				if len(changes) > 0 {
-					result.Status = "changed"
-					result.Tampered = true
-				}
+// evaluateSuspiciousFlags 根据检测模式评估可疑标记，返回 checkType
+func (d *Detector) evaluateSuspiciousFlags(url string, result *TamperCheckResult, suspiciousFlags []string) string {
+	shouldMark := false
+	switch d.detectionMode {
+	case DetectionModeStrict:
+		shouldMark = true
+	case DetectionModeSecurity:
+		strong := 0
+		for _, flag := range suspiciousFlags {
+			if flag == "hidden_iframe_detected" || flag == "dangerous_event_handler" {
+				strong++
 			}
 		}
+		shouldMark = strong > 0 || len(suspiciousFlags) >= 2
+	case DetectionModePrecise, DetectionModeRelaxed:
+		for _, flag := range suspiciousFlags {
+			if flag == "hidden_iframe_detected" || flag == "dangerous_event_handler" {
+				shouldMark = true
+				break
+			}
+		}
+	case DetectionModeBalanced:
+		shouldMark = len(suspiciousFlags) >= 2
 	}
 
+	if !shouldMark {
+		return "normal"
+	}
+	result.Tampered = true
+	result.Status = "suspicious"
+	result.TamperedSegments = []string{"malicious_content"}
+	if d.alertManager != nil {
+		d.alertManager.SendCritical(alerting.AlertTypeTamper,
+			"检测到恶意内容", fmt.Sprintf("URL %s 检测到恶意内容", url),
+			map[string]interface{}{"flags": suspiciousFlags, "detection_mode": d.detectionMode},
+			"tamper_detector", url)
+	}
+	return "suspicious"
+}
+
+// evaluateTamperChanges 评估内容变更是否构成篡改，返回 checkType
+func (d *Detector) evaluateTamperChanges(url string, currentHash, baseline *PageHashResult, result *TamperCheckResult) string {
+	simpleMD5Changed := baseline.SimpleMD5Hash != "" && currentHash.SimpleMD5Hash != "" &&
+		baseline.SimpleMD5Hash != currentHash.SimpleMD5Hash
+
+	tamperedSegments, changes := d.findChangedSegments(currentHash, baseline)
+	result.TamperedSegments = tamperedSegments
+	result.Changes = changes
+
+	if !simpleMD5Changed && len(changes) == 0 {
+		return "normal"
+	}
+	if simpleMD5Changed || d.isMeaningfulTamper(changes) {
+		result.Tampered = true
+		result.Status = "tampered"
+		if d.alertManager != nil {
+			d.alertManager.SendWarning(alerting.AlertTypeTamper,
+				"检测到网页篡改", fmt.Sprintf("URL %s 检测到 %d 个分段被修改", url, len(tamperedSegments)),
+				map[string]interface{}{
+					"segments": tamperedSegments, "changes": len(changes),
+					"detection_mode": d.detectionMode, "simple_md5_changed": simpleMD5Changed,
+				}, "tamper_detector", url)
+		}
+		return "tampered"
+	}
+	if len(changes) > 0 {
+		result.Status = "changed"
+		result.Tampered = true
+	}
+	return "normal_dynamic"
+}
+
+// saveCheckRecord 保存检查记录到存储
+func (d *Detector) saveCheckRecord(url string, result *TamperCheckResult, currentHash, baseline *PageHashResult, checkType string) {
 	record := &CheckRecord{
-		ID:               fmt.Sprintf("%d", time.Now().UnixNano()),
-		URL:              url,
-		Tampered:         result.Tampered,
-		TamperedSegments: result.TamperedSegments,
-		Changes:          result.Changes,
-		CurrentHash:      currentHash,
-		BaselineHash:     baseline,
-		Timestamp:        result.Timestamp,
-		CheckType:        checkType,
-		DetectionMode:    d.detectionMode,
+		ID: fmt.Sprintf("%d", time.Now().UnixNano()), URL: url,
+		Tampered: result.Tampered, TamperedSegments: result.TamperedSegments,
+		Changes: result.Changes, CurrentHash: currentHash, BaselineHash: baseline,
+		Timestamp: result.Timestamp, CheckType: checkType, DetectionMode: d.detectionMode,
 	}
-	if saveErr := d.storage.SaveCheckRecord(url, record); saveErr != nil {
-		logger.Warnf("Failed to save check record: %v", saveErr)
+	if err := d.storage.SaveCheckRecord(url, record); err != nil {
+		logger.Warnf("Failed to save check record: %v", err)
 	}
-
-	return result, nil
 }
 
 func (d *Detector) findChangedSegments(current, baseline *PageHashResult) ([]string, []SegmentChange) {

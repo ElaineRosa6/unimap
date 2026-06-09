@@ -9,6 +9,7 @@ import (
 
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/screenshot"
 )
 
@@ -383,7 +384,7 @@ func (m *mockScreenshotProvider) OpenSearchEngineResult(ctx context.Context, eng
 	m.openedQueries = append(m.openedQueries, query)
 	return "/mock/open", nil
 }
-func (m *mockScreenshotProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]screenshot.CollectResult, error) {
+func (m *mockScreenshotProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error) {
 	m.collectedQueries = append(m.collectedQueries, query)
-	return []screenshot.CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query}}, nil
+	return []collection.CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query}}, nil
 }

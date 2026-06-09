@@ -14,9 +14,13 @@ function detectEngine(url) {
   const lower = url.toLowerCase();
   if (lower.includes("fofa.info")) return "fofa";
   if (lower.includes("hunter.qianxin.com")) return "hunter";
-  if (lower.includes("zoomeye.org")) return "zoomeye";
-  if (lower.includes("quake.360.cn")) return "quake";
+  if (lower.includes("zoomeye.org") || lower.includes("zoomeye.com")) return "zoomeye";
+  if (lower.includes("quake.360.cn") || lower.includes("quake.360.net")) return "quake";
   if (lower.includes("shodan.io")) return "shodan";
+  if (lower.includes("censys.io")) return "censys";
+  if (lower.includes("daydaymap.com")) return "daydaymap";
+  if (lower.includes("onyphe.io")) return "onyphe";
+  if (lower.includes("greynoise.io")) return "greynoise";
   return "unknown";
 }
 
@@ -378,6 +382,74 @@ const ENGINE_SELECTORS = {
     },
     total: [".total", "[class*='total']", ".result-count", "[class*='result-count']"],
     nextPage: [".next", ".pagination-next", "[class*='next']", "a[rel='next']"]
+  },
+  censys: {
+    // Censys uses a modern SPA layout with result cards.
+    row: [
+      "[class*='result-card']", "[class*='search-result']",
+      "[class*='result-list'] > div", "[class*='result'] > div",
+      "table tbody tr"
+    ],
+    cells: {
+      ip: { selector: "[class*='ip'], [data-ip]" },
+      port: { selector: "[class*='port'], [data-port]" },
+      host: { selector: "[class*='hostname'], [class*='domain']" },
+      title: { selector: "[class*='title'], h2, h3" },
+      country_code: { selector: "[class*='country'], [class*='location']" },
+      org: { selector: "[class*='org'], [class*='organization']" }
+    },
+    total: ["[class*='total']", "[class*='count']"],
+    nextPage: ["[class*='next']", "button[aria-label='next']"]
+  },
+  daydaymap: {
+    // DayDayMap uses a layout similar to FOFA.
+    row: [
+      "[class*='result-item']", "[class*='result-card']",
+      "[class*='result-list'] > div", "[class*='result'] > div",
+      "table tbody tr"
+    ],
+    cells: {
+      ip: { selector: "[class*='ip'], [data-ip]" },
+      port: { selector: "[class*='port'], [data-port]" },
+      host: { selector: "[class*='domain'], [class*='host']" },
+      title: { selector: "[class*='title'], [class*='name']" },
+      country_code: { selector: "[class*='country'], [class*='location']" },
+      org: { selector: "[class*='org'], [class*='company']" }
+    },
+    total: ["[class*='total']", "[class*='count']"],
+    nextPage: ["[class*='next']", ".el-pagination__next"]
+  },
+  onyphe: {
+    // Onyphe uses a table-based layout.
+    row: [
+      "table tbody tr", "[class*='result-row']",
+      "[class*='result-list'] > div", "[class*='result'] > div"
+    ],
+    cells: {
+      ip: { selector: "[class*='ip'], [data-ip]" },
+      port: { selector: "[class*='port'], [data-port]" },
+      host: { selector: "[class*='hostname'], [class*='domain']" },
+      title: { selector: "[class*='title']" },
+      country_code: { selector: "[class*='country'], [class*='location']" },
+      org: { selector: "[class*='org'], [class*='organization']" }
+    },
+    total: ["[class*='total']", "[class*='count']"],
+    nextPage: ["[class*='next']", "a[rel='next']"]
+  },
+  greynoise: {
+    // GreyNoise uses a table-based layout for IP intelligence.
+    row: [
+      "table tbody tr", "[class*='result-row']",
+      "[class*='result-list'] > div", "[class*='result'] > div"
+    ],
+    cells: {
+      ip: { selector: "[class*='ip'], [data-ip]" },
+      classification: { selector: "[class*='classification'], [class*='status']" },
+      org: { selector: "[class*='org'], [class*='organization']" },
+      country_code: { selector: "[class*='country'], [class*='location']" }
+    },
+    total: ["[class*='total']", "[class*='count']"],
+    nextPage: ["[class*='next']", "a[rel='next']"]
   }
 };
 

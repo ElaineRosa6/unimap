@@ -20,6 +20,7 @@ import (
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/alerting"
 	"github.com/unimap/project/internal/auth"
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/distributed"
 	icpdb "github.com/unimap/project/internal/icp/database"
@@ -60,7 +61,7 @@ type browserBackendAdapter struct {
 	provider screenshot.Provider
 }
 
-func (a *browserBackendAdapter) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]screenshot.CollectResult, error) {
+func (a *browserBackendAdapter) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error) {
 	if a.provider == nil {
 		return nil, fmt.Errorf("browser backend not initialized")
 	}
@@ -114,10 +115,58 @@ type Server struct {
 
 // NewServer 创建Web服务器
 func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapter.EngineOrchestrator, cfg *config.Config, cfgManager *config.Manager) (*Server, error) {
-	// 创建模板函数映射
-	funcMap := template.FuncMap{
-		"mul": func(a, b float64) float64 {
+	webRoot, err := resolveWebRoot()
+	if err != nil {
+		return nil, err
+	}
 
+	templates, err := loadTemplates(webRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	upgrader := newWebSocketUpgrader(cfg)
+	screenshotMgr := initScreenshotManager(cfg)
+	screenshotApp := initScreenshotAppService(cfg, screenshotMgr)
+	proxyPool := initProxyPool(cfg)
+	nodeRegistry, nodeTaskQueue := initDistributedNodes(cfg)
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+	alertManager := initAlertManager(cfg)
+
+	srv := newServerStruct(port, webRoot, templates, upgrader, unifiedSvc, orchestrator,
+		cfg, cfgManager, screenshotMgr, screenshotApp, proxyPool,
+		nodeRegistry, nodeTaskQueue, alertManager, shutdownCtx, shutdownCancel)
+
+	initICPDatabase(srv, cfg)
+	initUserDatabase(srv)
+
+	sched := initScheduler(srv, cfg, screenshotApp, screenshotMgr, alertManager, orchestrator, unifiedSvc, nodeTaskQueue)
+	srv.notifyRegistry = initNotifySystem(cfg, cfgManager, sched)
+
+	// 所有 handler 注册完毕且数据加载完成后再启动 cron
+	sched.Start()
+	srv.scheduler = sched
+
+	initScreenshotMode(srv, cfg, screenshotCDPProvider(screenshotMgr), screenshotMgr, screenshotApp, shutdownCtx)
+	wireBrowserBackend(srv, cfg, unifiedSvc)
+
+	return srv, nil
+}
+
+// loadTemplates parses all HTML templates with custom template functions.
+func loadTemplates(webRoot string) (*template.Template, error) {
+	tmpl := template.New("").Funcs(newTemplateFuncMap())
+	templates, err := tmpl.ParseGlob(filepath.Join(webRoot, "templates", "*.html"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse templates from %s: %w", webRoot, err)
+	}
+	return templates, nil
+}
+
+// newTemplateFuncMap returns the custom template function map for HTML rendering.
+func newTemplateFuncMap() template.FuncMap {
+	return template.FuncMap{
+		"mul": func(a, b float64) float64 {
 			return a * b
 		},
 		"div": func(a, b float64) float64 {
@@ -147,149 +196,26 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 			return dict, nil
 		},
 	}
+}
 
-	webRoot, err := resolveWebRoot()
-	if err != nil {
-		return nil, err
+// screenshotCDPProvider returns a CDP provider if the manager is non-nil, nil otherwise.
+func screenshotCDPProvider(mgr *screenshot.Manager) screenshot.Provider {
+	if mgr != nil {
+		return screenshot.NewCDPProvider(mgr)
 	}
+	return nil
+}
 
-	// 创建模板并添加自定义函数
-	tmpl := template.New("").Funcs(funcMap)
-	templates, err := tmpl.ParseGlob(filepath.Join(webRoot, "templates", "*.html"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse templates from %s: %w", webRoot, err)
-	}
+// newServerStruct constructs the Server struct with all initialized components.
+func newServerStruct(port int, webRoot string, templates *template.Template,
+	upgrader websocket.Upgrader, unifiedSvc *service.UnifiedService,
+	orchestrator *adapter.EngineOrchestrator, cfg *config.Config, cfgManager *config.Manager,
+	screenshotMgr *screenshot.Manager, screenshotApp *service.ScreenshotAppService,
+	proxyPool *proxypool.Pool, nodeRegistry *distributed.Registry,
+	nodeTaskQueue *distributed.TaskQueue, alertManager *alerting.Manager,
+	shutdownCtx context.Context, shutdownCancel context.CancelFunc) *Server {
 
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return isOriginAllowed(r.Header.Get("Origin"), r.Host, allowedOriginsFromConfig(cfg))
-		},
-	}
-
-	// 初始化截图管理器
-	var screenshotMgr *screenshot.Manager
-	if cfg != nil && cfg.Screenshot.Enabled {
-		headless := true
-		if cfg.Screenshot.Headless != nil {
-			headless = *cfg.Screenshot.Headless
-		}
-
-		// 检查配置的远程调试URL是否可用，不可用则清空
-		remoteDebugURL := cfg.Screenshot.ChromeRemoteDebugURL
-		if remoteDebugURL != "" && !isRemoteDebuggerAvailable(remoteDebugURL) {
-			logger.Warnf("Configured remote debugger not available at %s, will use local Chrome", remoteDebugURL)
-			remoteDebugURL = ""
-		}
-
-		screenshotCfg := screenshot.Config{
-			BaseDir:        cfg.Screenshot.BaseDir,
-			ChromePath:     cfg.Screenshot.ChromePath,
-			ProxyServer:    cfg.Screenshot.ProxyServer,
-			UserDataDir:    cfg.Screenshot.ChromeUserDataDir,
-			ProfileDir:     cfg.Screenshot.ChromeProfileDir,
-			RemoteDebugURL: remoteDebugURL,
-			Headless:       headless,
-			Timeout:        time.Duration(cfg.Screenshot.Timeout) * time.Second,
-			WindowWidth:    cfg.Screenshot.WindowWidth,
-			WindowHeight:   cfg.Screenshot.WindowHeight,
-			WaitTime:       time.Duration(cfg.Screenshot.WaitTime) * time.Millisecond,
-		}
-		screenshotMgr = screenshot.NewManager(screenshotCfg)
-
-		// 加载各引擎的Cookie
-		if cfg.Engines.Fofa.Enabled && len(cfg.Engines.Fofa.Cookies) > 0 {
-			fofaCookies := convertConfigCookies(cfg.Engines.Fofa.Cookies)
-			screenshotMgr.SetCookies("fofa", fofaCookies)
-		}
-		if cfg.Engines.Hunter.Enabled && len(cfg.Engines.Hunter.Cookies) > 0 {
-			hunterCookies := convertConfigCookies(cfg.Engines.Hunter.Cookies)
-			screenshotMgr.SetCookies("hunter", hunterCookies)
-		}
-		if cfg.Engines.Quake.Enabled && len(cfg.Engines.Quake.Cookies) > 0 {
-			quakeCookies := convertConfigCookies(cfg.Engines.Quake.Cookies)
-			screenshotMgr.SetCookies("quake", quakeCookies)
-		}
-		if cfg.Engines.Zoomeye.Enabled && len(cfg.Engines.Zoomeye.Cookies) > 0 {
-			zoomeyeCookies := convertConfigCookies(cfg.Engines.Zoomeye.Cookies)
-			screenshotMgr.SetCookies("zoomeye", zoomeyeCookies)
-		}
-
-		logger.Infof("Screenshot manager initialized with base dir: %s", cfg.Screenshot.BaseDir)
-	}
-
-	// 解析截图基础目录
-	screenshotBaseDir := "./screenshots"
-	if cfg != nil && strings.TrimSpace(cfg.Screenshot.BaseDir) != "" {
-		screenshotBaseDir = strings.TrimSpace(cfg.Screenshot.BaseDir)
-	}
-
-	var screenshotProvider screenshot.Provider
-	if screenshotMgr != nil {
-		screenshotProvider = screenshot.NewCDPProvider(screenshotMgr)
-	}
-
-	screenshotApp := service.NewScreenshotAppServiceWithProvider(screenshotBaseDir, screenshotProvider)
-	if cfg != nil {
-		screenshotApp.SetEngine(cfg.Screenshot.Engine)
-		screenshotApp.SetFallbackToCDP(cfg.Screenshot.Extension.FallbackToCDP)
-	}
-
-	var proxyPool *proxypool.Pool
-	if cfg != nil {
-		proxyPool = proxypool.NewPool(proxypool.Config{
-			Enabled:             cfg.Network.ProxyPool.Enabled,
-			Proxies:             cfg.Network.ProxyPool.Proxies,
-			FailureThreshold:    cfg.Network.ProxyPool.FailureThreshold,
-			Cooldown:            time.Duration(cfg.Network.ProxyPool.CooldownSeconds) * time.Second,
-			AllowDirectFallback: cfg.Network.ProxyPool.AllowDirectFallback,
-		})
-		if proxyPool.Enabled() {
-			logger.Infof("Proxy pool enabled: %d proxies, strategy=%s", len(proxyPool.Proxies()), cfg.Network.ProxyPool.Strategy)
-		}
-	}
-
-	heartbeatTimeout := 30 * time.Second
-	maxReassign := 1
-	if cfg != nil {
-		heartbeatTimeout = time.Duration(cfg.Distributed.HeartbeatTimeoutSeconds) * time.Second
-		if heartbeatTimeout <= 0 {
-			heartbeatTimeout = 30 * time.Second
-		}
-		maxReassign = cfg.Distributed.MaxReassignAttempts
-	}
-
-	nodeRegistry := distributed.NewRegistry(heartbeatTimeout)
-	nodeTaskQueue := distributed.NewTaskQueueWithPath("./data/distributed_tasks.json")
-	nodeRegistry.SetTaskQueue(nodeTaskQueue)
-	nodeTaskQueue.SetDefaultMaxReassign(maxReassign)
-
-	// 初始化分布式调度器
-	if cfg != nil && cfg.Distributed.Scheduler.Strategy != "" {
-		strategy := distributed.SchedulerStrategy(cfg.Distributed.Scheduler.Strategy)
-		scheduler := distributed.NewSchedulerFromStrategy(strategy)
-		nodeTaskQueue.SetScheduler(scheduler)
-	}
-
-	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
-
-	// 初始化告警管理器（仅用于 tamperApp 构造参数）
-	alertManager := alerting.NewManager()
-
-	// 注册日志告警渠道
-	logChannel := alerting.NewLogChannel(true)
-	alertManager.RegisterChannel(logChannel)
-
-	// 注册 Webhook 告警渠道（从配置读取）
-	if cfg != nil && cfg.Alerting.Webhook.Enabled && cfg.Alerting.Webhook.URL != "" {
-		headers := make(map[string]string)
-		if cfg.Alerting.Webhook.AuthToken != "" {
-			headers["Authorization"] = "Bearer " + cfg.Alerting.Webhook.AuthToken
-		}
-		webhookChannel := alerting.NewWebhookChannel(cfg.Alerting.Webhook.URL, headers, true)
-		alertManager.RegisterChannel(webhookChannel)
-	}
-
-	srv := &Server{
+	return &Server{
 		port:          port,
 		templates:     templates,
 		service:       unifiedSvc,
@@ -321,48 +247,214 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		shutdownCancel:  shutdownCancel,
 		revocationStore: newSessionRevocationStore(),
 	}
+}
 
-	// 初始化 ICP 结果数据库（持久化 + 变更告警依赖此 DB）
-	if cfg != nil && strings.TrimSpace(cfg.ICP.DatabasePath) != "" {
-		dbPath := cfg.ICP.DatabasePath
-		if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-			logger.Warnf("ICP result DB dir create failed (%s): %v", dbPath, err)
-		} else if db, err := icpdb.NewDatabase(dbPath); err != nil {
-			logger.Warnf("ICP result DB unavailable at %s: %v", dbPath, err)
-		} else if err := db.InitSchema(); err != nil {
-			logger.Warnf("ICP result DB schema init failed: %v", err)
-			_ = db.Close()
-		} else {
-			srv.icpDB = db
-			srv.icpRepo = icpdb.NewICPResultRepository(db.DB())
-		}
+// newWebSocketUpgrader creates a WebSocket upgrader with origin checking from config.
+func newWebSocketUpgrader(cfg *config.Config) websocket.Upgrader {
+	return websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return isOriginAllowed(r.Header.Get("Origin"), r.Host, allowedOriginsFromConfig(cfg))
+		},
+	}
+}
+
+// initScreenshotManager creates and configures the screenshot manager from config.
+func initScreenshotManager(cfg *config.Config) *screenshot.Manager {
+	if cfg == nil || !cfg.Screenshot.Enabled {
+		return nil
 	}
 
-	// 初始化用户数据库
+	headless := true
+	if cfg.Screenshot.Headless != nil {
+		headless = *cfg.Screenshot.Headless
+	}
+
+	remoteDebugURL := cfg.Screenshot.ChromeRemoteDebugURL
+	if remoteDebugURL != "" && !isRemoteDebuggerAvailable(remoteDebugURL) {
+		logger.Warnf("Configured remote debugger not available at %s, will use local Chrome", remoteDebugURL)
+		remoteDebugURL = ""
+	}
+
+	screenshotCfg := screenshot.Config{
+		BaseDir:        cfg.Screenshot.BaseDir,
+		ChromePath:     cfg.Screenshot.ChromePath,
+		ProxyServer:    cfg.Screenshot.ProxyServer,
+		UserDataDir:    cfg.Screenshot.ChromeUserDataDir,
+		ProfileDir:     cfg.Screenshot.ChromeProfileDir,
+		RemoteDebugURL: remoteDebugURL,
+		Headless:       headless,
+		Timeout:        time.Duration(cfg.Screenshot.Timeout) * time.Second,
+		WindowWidth:    cfg.Screenshot.WindowWidth,
+		WindowHeight:   cfg.Screenshot.WindowHeight,
+		WaitTime:       time.Duration(cfg.Screenshot.WaitTime) * time.Millisecond,
+	}
+	mgr := screenshot.NewManager(screenshotCfg)
+
+	loadEngineCookies(mgr, cfg)
+
+	logger.Infof("Screenshot manager initialized with base dir: %s", cfg.Screenshot.BaseDir)
+	return mgr
+}
+
+// loadEngineCookies loads per-engine cookies from config into the screenshot manager.
+func loadEngineCookies(mgr *screenshot.Manager, cfg *config.Config) {
+	if cfg.Engines.Fofa.Enabled && len(cfg.Engines.Fofa.Cookies) > 0 {
+		mgr.SetCookies("fofa", convertConfigCookies(cfg.Engines.Fofa.Cookies))
+	}
+	if cfg.Engines.Hunter.Enabled && len(cfg.Engines.Hunter.Cookies) > 0 {
+		mgr.SetCookies("hunter", convertConfigCookies(cfg.Engines.Hunter.Cookies))
+	}
+	if cfg.Engines.Quake.Enabled && len(cfg.Engines.Quake.Cookies) > 0 {
+		mgr.SetCookies("quake", convertConfigCookies(cfg.Engines.Quake.Cookies))
+	}
+	if cfg.Engines.Zoomeye.Enabled && len(cfg.Engines.Zoomeye.Cookies) > 0 {
+		mgr.SetCookies("zoomeye", convertConfigCookies(cfg.Engines.Zoomeye.Cookies))
+	}
+}
+
+// initScreenshotAppService creates the screenshot app service from config and manager.
+func initScreenshotAppService(cfg *config.Config, screenshotMgr *screenshot.Manager) *service.ScreenshotAppService {
+	screenshotBaseDir := "./screenshots"
+	if cfg != nil && strings.TrimSpace(cfg.Screenshot.BaseDir) != "" {
+		screenshotBaseDir = strings.TrimSpace(cfg.Screenshot.BaseDir)
+	}
+
+	var provider screenshot.Provider
+	if screenshotMgr != nil {
+		provider = screenshot.NewCDPProvider(screenshotMgr)
+	}
+
+	app := service.NewScreenshotAppServiceWithProvider(screenshotBaseDir, provider)
+	if cfg != nil {
+		app.SetEngine(cfg.Screenshot.Engine)
+		app.SetFallbackToCDP(cfg.Screenshot.Extension.FallbackToCDP)
+	}
+	return app
+}
+
+// initProxyPool creates the proxy pool from config.
+func initProxyPool(cfg *config.Config) *proxypool.Pool {
+	if cfg == nil {
+		return nil
+	}
+	pool := proxypool.NewPool(proxypool.Config{
+		Enabled:             cfg.Network.ProxyPool.Enabled,
+		Proxies:             cfg.Network.ProxyPool.Proxies,
+		FailureThreshold:    cfg.Network.ProxyPool.FailureThreshold,
+		Cooldown:            time.Duration(cfg.Network.ProxyPool.CooldownSeconds) * time.Second,
+		AllowDirectFallback: cfg.Network.ProxyPool.AllowDirectFallback,
+	})
+	if pool.Enabled() {
+		logger.Infof("Proxy pool enabled: %d proxies, strategy=%s", len(pool.Proxies()), cfg.Network.ProxyPool.Strategy)
+	}
+	return pool
+}
+
+// initDistributedNodes creates the distributed node registry and task queue.
+func initDistributedNodes(cfg *config.Config) (*distributed.Registry, *distributed.TaskQueue) {
+	heartbeatTimeout := 30 * time.Second
+	maxReassign := 1
+	if cfg != nil {
+		heartbeatTimeout = time.Duration(cfg.Distributed.HeartbeatTimeoutSeconds) * time.Second
+		if heartbeatTimeout <= 0 {
+			heartbeatTimeout = 30 * time.Second
+		}
+		maxReassign = cfg.Distributed.MaxReassignAttempts
+	}
+
+	registry := distributed.NewRegistry(heartbeatTimeout)
+	taskQueue := distributed.NewTaskQueueWithPath("./data/distributed_tasks.json")
+	registry.SetTaskQueue(taskQueue)
+	taskQueue.SetDefaultMaxReassign(maxReassign)
+
+	if cfg != nil && cfg.Distributed.Scheduler.Strategy != "" {
+		strategy := distributed.SchedulerStrategy(cfg.Distributed.Scheduler.Strategy)
+		sched := distributed.NewSchedulerFromStrategy(strategy)
+		taskQueue.SetScheduler(sched)
+	}
+
+	return registry, taskQueue
+}
+
+// initAlertManager creates the alert manager and registers configured channels.
+func initAlertManager(cfg *config.Config) *alerting.Manager {
+	mgr := alerting.NewManager()
+
+	logChannel := alerting.NewLogChannel(true)
+	mgr.RegisterChannel(logChannel)
+
+	if cfg != nil && cfg.Alerting.Webhook.Enabled && cfg.Alerting.Webhook.URL != "" {
+		headers := make(map[string]string)
+		if cfg.Alerting.Webhook.AuthToken != "" {
+			headers["Authorization"] = "Bearer " + cfg.Alerting.Webhook.AuthToken
+		}
+		webhookChannel := alerting.NewWebhookChannel(cfg.Alerting.Webhook.URL, headers, true)
+		mgr.RegisterChannel(webhookChannel)
+	}
+
+	return mgr
+}
+
+// initICPDatabase initializes the ICP result database on the server.
+func initICPDatabase(srv *Server, cfg *config.Config) {
+	if cfg == nil || strings.TrimSpace(cfg.ICP.DatabasePath) == "" {
+		return
+	}
+	dbPath := cfg.ICP.DatabasePath
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		logger.Warnf("ICP result DB dir create failed (%s): %v", dbPath, err)
+		return
+	}
+	db, err := icpdb.NewDatabase(dbPath)
+	if err != nil {
+		logger.Warnf("ICP result DB unavailable at %s: %v", dbPath, err)
+		return
+	}
+	if err := db.InitSchema(); err != nil {
+		logger.Warnf("ICP result DB schema init failed: %v", err)
+		_ = db.Close()
+		return
+	}
+	srv.icpDB = db
+	srv.icpRepo = icpdb.NewICPResultRepository(db.DB())
+}
+
+// initUserDatabase initializes the user database on the server.
+func initUserDatabase(srv *Server) {
 	userDBPath := "./data/users.db"
 	if err := os.MkdirAll(filepath.Dir(userDBPath), 0o755); err != nil {
 		logger.Warnf("user DB dir create failed (%s): %v", userDBPath, err)
-	} else if udb, err := auth.NewUserDB(userDBPath); err != nil {
+		return
+	}
+	udb, err := auth.NewUserDB(userDBPath)
+	if err != nil {
 		logger.Warnf("user DB unavailable at %s: %v", userDBPath, err)
-	} else if err := udb.InitSchema(); err != nil {
+		return
+	}
+	if err := udb.InitSchema(); err != nil {
 		logger.Warnf("user DB schema init failed: %v", err)
 		_ = udb.Close()
-	} else {
-		srv.userDB = udb
-		srv.userRepo = auth.NewUserRepository(udb.DB())
-		logger.Infof("user database initialized at %s", userDBPath)
+		return
 	}
+	srv.userDB = udb
+	srv.userRepo = auth.NewUserRepository(udb.DB())
+	logger.Infof("user database initialized at %s", userDBPath)
+}
 
-	// 初始化定时任务调度器
+// initScheduler creates the task scheduler and registers all runner handlers.
+func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.ScreenshotAppService,
+	screenshotMgr *screenshot.Manager, alertManager *alerting.Manager,
+	orchestrator *adapter.EngineOrchestrator, unifiedSvc *service.UnifiedService,
+	nodeTaskQueue *distributed.TaskQueue) *scheduler.Scheduler {
+
 	maxHistory := 500
 	if cfg != nil && cfg.Scheduler.MaxHistory > 0 {
 		maxHistory = cfg.Scheduler.MaxHistory
 	}
-	storePath := "./data/scheduler_tasks.json"
-	historyPath := "./data/scheduler_history.json"
-	sched := scheduler.NewScheduler(storePath, historyPath, maxHistory)
 
-	// 注册8种任务处理器
+	sched := scheduler.NewScheduler("./data/scheduler_tasks.json", "./data/scheduler_history.json", maxHistory)
+
+	// 高优先级 Runner (ST-01 ~ ST-08)
 	sched.RegisterHandler(scheduler.NewQueryRunner(srv.queryApp))
 	sched.RegisterHandler(scheduler.NewSearchScreenshotRunner(screenshotApp, screenshotMgr))
 	sched.RegisterHandler(scheduler.NewBatchScreenshotRunner(screenshotApp, screenshotMgr))
@@ -372,7 +464,7 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 	sched.RegisterHandler(scheduler.NewLoginStatusCheckRunner(screenshotMgr))
 	sched.RegisterHandler(scheduler.NewDistributedSubmitRunner(nodeTaskQueue))
 
-	// 注册中优先级 Runner (ST-09 ~ ST-16)
+	// 中优先级 Runner (ST-09 ~ ST-16)
 	sched.RegisterHandler(scheduler.NewExportRunner(srv.queryApp, orchestrator, "./data/exports"))
 	sched.RegisterHandler(scheduler.NewPortScanRunner(srv.monitorApp))
 	sched.RegisterHandler(scheduler.NewScreenshotCleanupRunner(screenshotApp, 30))
@@ -382,47 +474,33 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 	sched.RegisterHandler(scheduler.NewBaselineRefreshRunner(srv.tamperApp))
 	sched.RegisterHandler(scheduler.NewURLImportRunner("./data/imports"))
 
-	// 注册低优先级 Runner (ST-17 ~ ST-20)
+	// 低优先级 Runner (ST-17 ~ ST-20)
 	sched.RegisterHandler(scheduler.NewPluginHealthRunner(unifiedSvc))
 	sched.RegisterHandler(scheduler.NewBridgeTokenRotateRunner(nil)) // bridge service may be nil
 	sched.RegisterHandler(scheduler.NewAlertSilenceRunner(alertManager))
 	sched.RegisterHandler(scheduler.NewCacheWarmupRunner())
 
-	// 注册 ICP 备案查询 Runner (ST-21)
+	// ICP Runner (ST-21 ~ ST-22)
 	sched.RegisterHandler(scheduler.NewICPQueryRunner(srv.icpConfigProvider, srv.icpRepo, alertManager))
-
-	// 注册 ICP 关键词 CSV 导入 Runner (ST-22)
 	sched.RegisterHandler(scheduler.NewICPImportRunner("./data/icp_imports", sched))
 
-	// 加载持久化的任务
 	if err := sched.Load(); err != nil {
 		logger.Warnf("Failed to load scheduled tasks: %v", err)
 	}
 
-	// 初始化通知系统
-	notifyReg := notify.NewRegistry()
-	notifyReg.Register(notify.NewLogChannel("builtin-log", true))
+	return sched
+}
 
-	// 注册飞书应用渠道（支持图片上传）
-	if cfg != nil && cfg.Notifications.FeishuApp != nil {
-		feishuApp := cfg.Notifications.FeishuApp
-		if feishuApp.AppID != "" && feishuApp.AppSecret != "" && feishuApp.ChatID != "" {
-			feishuAppCh := notify.NewFeishuAppChannel(
-				feishuApp.AppID,
-				feishuApp.AppSecret,
-				feishuApp.ChatID,
-				cfg.Notifications.Enabled,
-			)
-			if err := notifyReg.Register(feishuAppCh); err != nil {
-				logger.Warnf("Failed to register feishu app channel: %v", err)
-			} else {
-				notifyReg.Pin("feishu_app") // 不受 Reload 影响
-				logger.Infof("Feishu app channel registered (chat_id=%s)", feishuApp.ChatID)
-			}
-		}
-	}
+// initNotifySystem initializes the notification registry and configures channels.
+func initNotifySystem(cfg *config.Config, cfgManager *config.Manager,
+	sched *scheduler.Scheduler) *notify.Registry {
 
-	sched.SetNotifyRegistry(notifyReg)
+	reg := notify.NewRegistry()
+	reg.Register(notify.NewLogChannel("builtin-log", true))
+
+	registerFeishuAppChannel(reg, cfg)
+
+	sched.SetNotifyRegistry(reg)
 
 	if cfg != nil {
 		sched.SetNotifyCfgProvider(func() *notify.NotifyGlobalCfg {
@@ -432,30 +510,57 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 				SendTimeoutSec: c.Notifications.SendTimeoutSec,
 			}
 		})
-		// 初始加载渠道配置
-		var chanCfgs []notify.ChannelConfig
-		for _, cc := range cfg.Notifications.Channels {
-			chanCfgs = append(chanCfgs, notify.ChannelConfig{
-				ID:             cc.ID,
-				Type:           cc.Type,
-				Enabled:        cc.Enabled,
-				WebhookURL:     cc.WebhookURL,
-				Secret:         cc.Secret,
-				Headers:        cc.Headers,
-				AllowPrivateIP: cc.AllowPrivateIP,
-			})
-		}
-		notifyReg.Reload(chanCfgs)
+		reloadNotifyChannelConfigs(reg, cfg)
 	}
 
-	srv.notifyRegistry = notifyReg
+	return reg
+}
 
-	// 所有 handler 注册完毕且数据加载完成后再启动 cron
-	sched.Start()
+// registerFeishuAppChannel registers the Feishu app notification channel if configured.
+func registerFeishuAppChannel(reg *notify.Registry, cfg *config.Config) {
+	if cfg == nil || cfg.Notifications.FeishuApp == nil {
+		return
+	}
+	feishuApp := cfg.Notifications.FeishuApp
+	if feishuApp.AppID == "" || feishuApp.AppSecret == "" || feishuApp.ChatID == "" {
+		return
+	}
+	ch := notify.NewFeishuAppChannel(
+		feishuApp.AppID,
+		feishuApp.AppSecret,
+		feishuApp.ChatID,
+		cfg.Notifications.Enabled,
+	)
+	if err := reg.Register(ch); err != nil {
+		logger.Warnf("Failed to register feishu app channel: %v", err)
+		return
+	}
+	reg.Pin("feishu_app") // 不受 Reload 影响
+	logger.Infof("Feishu app channel registered (chat_id=%s)", feishuApp.ChatID)
+}
 
-	srv.scheduler = sched
+// reloadNotifyChannelConfigs reloads channel configurations from config into the registry.
+func reloadNotifyChannelConfigs(reg *notify.Registry, cfg *config.Config) {
+	var chanCfgs []notify.ChannelConfig
+	for _, cc := range cfg.Notifications.Channels {
+		chanCfgs = append(chanCfgs, notify.ChannelConfig{
+			ID:             cc.ID,
+			Type:           cc.Type,
+			Enabled:        cc.Enabled,
+			WebhookURL:     cc.WebhookURL,
+			Secret:         cc.Secret,
+			Headers:        cc.Headers,
+			AllowPrivateIP: cc.AllowPrivateIP,
+		})
+	}
+	reg.Reload(chanCfgs)
+}
 
-	// 截图模式初始化
+// initScreenshotMode initializes the screenshot router or extension bridge based on config mode.
+func initScreenshotMode(srv *Server, cfg *config.Config, screenshotProvider screenshot.Provider,
+	screenshotMgr *screenshot.Manager, screenshotApp *service.ScreenshotAppService,
+	shutdownCtx context.Context) {
+
 	screenshotMode := "cdp"
 	if cfg != nil {
 		screenshotMode = strings.ToLower(strings.TrimSpace(cfg.Screenshot.Mode))
@@ -465,123 +570,141 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 	}
 
 	if screenshotMode == "auto" {
-		// 双模式高可用：确保 CDP provider 存在
-		cdpProvider := screenshotProvider
-		if cdpProvider == nil && screenshotMgr != nil {
-			cdpProvider = screenshot.NewCDPProvider(screenshotMgr)
-		}
-
-		// 始终创建 BridgeService
-		extMaxConcurrency := 5
-		extTaskTimeout := 30
-		if cfg != nil {
-			extMaxConcurrency = cfg.Screenshot.Extension.MaxConcurrency
-			extTaskTimeout = cfg.Screenshot.Extension.TaskTimeoutSeconds
-		}
-		mockClient := newBridgeMockClient()
-		bridgeSvc := screenshot.NewBridgeService(mockClient, extMaxConcurrency, time.Duration(extTaskTimeout)*time.Second)
-		bridgeSvc.Start(shutdownCtx)
-		srv.bridge.Mock = mockClient
-		srv.bridge.Service = bridgeSvc
-		screenshotApp.SetBridgeService(bridgeSvc)
-
-		// 创建 ScreenshotRouter
-		fallback := true
-		priority := screenshot.ScreenshotMode("cdp")
-		if cfg != nil {
-			if cfg.Screenshot.Fallback != nil {
-				fallback = *cfg.Screenshot.Fallback
-			}
-			priority = screenshot.ScreenshotMode(strings.ToLower(strings.TrimSpace(cfg.Screenshot.Priority)))
-			if priority == "" {
-				priority = screenshot.ModeCDP
-			}
-		}
-
-		routerCfg := screenshot.RouterConfig{
-			Priority:      priority,
-			Fallback:      fallback,
-			ProbeInterval: 30 * time.Second,
-			ProbeTimeout:  5 * time.Second,
-		}
-
-		router := screenshot.NewScreenshotRouter(routerCfg, cdpProvider, bridgeSvc, screenshotMgr)
-		router.SetMetricsHooks(
-			func(from, to screenshot.ScreenshotMode) {
-				metrics.IncScreenshotModeSwitch(string(from), string(to))
-			},
-			func(mode string, healthy bool) {
-				metrics.IncScreenshotHealthCheck(mode, healthy)
-			},
-		)
-
-		// Inject extension health signals from bridge state.
-		// LiveClient: any extension client seen within the last 5 minutes.
-		// LastActivity: most recent task pull or callback timestamp.
-		const recentActivityCutoff = 5 * time.Minute
-		router.SetExtensionHealthSignals(
-			func() bool {
-				srv.bridge.mu.Lock()
-				defer srv.bridge.mu.Unlock()
-				cutoff := time.Now().Unix() - int64(recentActivityCutoff.Seconds())
-				for _, ts := range srv.bridge.LastSeen {
-					if ts >= cutoff {
-						return true
-					}
-				}
-				return false
-			},
-			func() int64 {
-				srv.bridge.mu.Lock()
-				defer srv.bridge.mu.Unlock()
-				pull := srv.bridge.LastTaskPullAt
-				cb := srv.bridge.LastCallbackAt
-				if pull > cb {
-					return pull
-				}
-				return cb
-			},
-			recentActivityCutoff,
-		)
-
-		router.Start(shutdownCtx)
-		srv.screenshotRouter = router
-
-		logger.Infof("Screenshot router initialized: mode=auto, priority=%s, fallback=%v", priority, fallback)
+		initScreenshotRouter(srv, cfg, screenshotProvider, screenshotMgr, screenshotApp, shutdownCtx)
 	} else if cfg != nil && (screenshotMode == "extension" || strings.EqualFold(strings.TrimSpace(cfg.Screenshot.Engine), "extension")) {
-		// 传统 extension 单模式
-		mockClient := newBridgeMockClient()
-		bridgeSvc := screenshot.NewBridgeService(mockClient, cfg.Screenshot.Extension.MaxConcurrency, time.Duration(cfg.Screenshot.Extension.TaskTimeoutSeconds)*time.Second)
-		bridgeSvc.Start(shutdownCtx)
-		srv.bridge.Mock = mockClient
-		srv.bridge.Service = bridgeSvc
-		screenshotApp.SetBridgeService(bridgeSvc)
+		initExtensionBridge(srv, cfg, screenshotApp, shutdownCtx)
+	}
+}
+
+// bridgeServiceResult holds the mock client and bridge service pair.
+type bridgeServiceResult struct {
+	mock    *bridgeMockClient
+	service *screenshot.BridgeService
+}
+
+// createBridgeService creates a bridge service with mock client from config.
+func createBridgeService(cfg *config.Config, shutdownCtx context.Context) bridgeServiceResult {
+	extMaxConcurrency := 5
+	extTaskTimeout := 30
+	if cfg != nil {
+		extMaxConcurrency = cfg.Screenshot.Extension.MaxConcurrency
+		extTaskTimeout = cfg.Screenshot.Extension.TaskTimeoutSeconds
+	}
+	mockClient := newBridgeMockClient()
+	bridgeSvc := screenshot.NewBridgeService(mockClient, extMaxConcurrency, time.Duration(extTaskTimeout)*time.Second)
+	bridgeSvc.Start(shutdownCtx)
+	return bridgeServiceResult{mock: mockClient, service: bridgeSvc}
+}
+
+// initScreenshotRouter sets up the dual-mode (auto) screenshot router with CDP and extension.
+func initScreenshotRouter(srv *Server, cfg *config.Config, screenshotProvider screenshot.Provider,
+	screenshotMgr *screenshot.Manager, screenshotApp *service.ScreenshotAppService,
+	shutdownCtx context.Context) {
+
+	cdpProvider := screenshotProvider
+	if cdpProvider == nil && screenshotMgr != nil {
+		cdpProvider = screenshot.NewCDPProvider(screenshotMgr)
 	}
 
-	// Wire browser backend to WebOnly adapters so engines without API keys can
-	// collect structured results through the active browser runtime. This must
-	// work in CDP, extension, and auto modes.
-	if unifiedSvc != nil {
-		if provider := srv.browserQueryProvider(); provider != nil {
-			unifiedSvc.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: provider})
-		}
+	bsr := createBridgeService(cfg, shutdownCtx)
+	srv.bridge.Mock = bsr.mock
+	srv.bridge.Service = bsr.service
+	screenshotApp.SetBridgeService(bsr.service)
 
-		// Wire browser fallback config
-		if cfg != nil && cfg.Query.BrowserFallback.Enabled {
-			bfEngines := make(map[string]bool)
-			for _, e := range cfg.Query.BrowserFallback.Engines {
-				bfEngines[strings.ToLower(e)] = true
+	fallback := true
+	priority := screenshot.ScreenshotMode("cdp")
+	if cfg != nil {
+		if cfg.Screenshot.Fallback != nil {
+			fallback = *cfg.Screenshot.Fallback
+		}
+		priority = screenshot.ScreenshotMode(strings.ToLower(strings.TrimSpace(cfg.Screenshot.Priority)))
+		if priority == "" {
+			priority = screenshot.ModeCDP
+		}
+	}
+
+	routerCfg := screenshot.RouterConfig{
+		Priority:      priority,
+		Fallback:      fallback,
+		ProbeInterval: 30 * time.Second,
+		ProbeTimeout:  5 * time.Second,
+	}
+
+	router := screenshot.NewScreenshotRouter(routerCfg, cdpProvider, bsr.service, screenshotMgr)
+	router.SetMetricsHooks(func(from, to screenshot.ScreenshotMode) {
+		metrics.IncScreenshotModeSwitch(string(from), string(to))
+	}, func(mode string, healthy bool) {
+		metrics.IncScreenshotHealthCheck(mode, healthy)
+	})
+	setExtensionHealthSignals(router, srv.bridge)
+
+	router.Start(shutdownCtx)
+	srv.screenshotRouter = router
+
+	logger.Infof("Screenshot router initialized: mode=auto, priority=%s, fallback=%v", priority, fallback)
+}
+
+// initExtensionBridge sets up the extension-only bridge mode.
+func initExtensionBridge(srv *Server, cfg *config.Config,
+	screenshotApp *service.ScreenshotAppService, shutdownCtx context.Context) {
+
+	mockClient := newBridgeMockClient()
+	bridgeSvc := screenshot.NewBridgeService(mockClient, cfg.Screenshot.Extension.MaxConcurrency, time.Duration(cfg.Screenshot.Extension.TaskTimeoutSeconds)*time.Second)
+	bridgeSvc.Start(shutdownCtx)
+	srv.bridge.Mock = mockClient
+	srv.bridge.Service = bridgeSvc
+	screenshotApp.SetBridgeService(bridgeSvc)
+}
+
+// setExtensionHealthSignals injects extension health signal callbacks into the router.
+func setExtensionHealthSignals(router *screenshot.ScreenshotRouter, bridge *BridgeState) {
+	const recentActivityCutoff = 5 * time.Minute
+	router.SetExtensionHealthSignals(
+		func() bool {
+			bridge.mu.Lock()
+			defer bridge.mu.Unlock()
+			cutoff := time.Now().Unix() - int64(recentActivityCutoff.Seconds())
+			for _, ts := range bridge.LastSeen {
+				if ts >= cutoff {
+					return true
+				}
 			}
-			unifiedSvc.SetBrowserFallbackConfig(service.BrowserFallbackConfig{
-				Enabled:       true,
-				OnAPIError:    cfg.Query.BrowserFallback.OnAPIError,
-				OnEmptyResult: cfg.Query.BrowserFallback.OnEmptyResult,
-				Engines:       bfEngines,
-			})
-		}
-	}
+			return false
+		},
+		func() int64 {
+			bridge.mu.Lock()
+			defer bridge.mu.Unlock()
+			pull := bridge.LastTaskPullAt
+			cb := bridge.LastCallbackAt
+			if pull > cb {
+				return pull
+			}
+			return cb
+		},
+		recentActivityCutoff,
+	)
+}
 
-	return srv, nil
+// wireBrowserBackend connects the browser query backend and fallback config to the unified service.
+func wireBrowserBackend(srv *Server, cfg *config.Config, unifiedSvc *service.UnifiedService) {
+	if unifiedSvc == nil {
+		return
+	}
+	if provider := srv.browserQueryProvider(); provider != nil {
+		unifiedSvc.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: provider})
+	}
+	if cfg != nil && cfg.Query.BrowserFallback.Enabled {
+		bfEngines := make(map[string]bool)
+		for _, e := range cfg.Query.BrowserFallback.Engines {
+			bfEngines[strings.ToLower(e)] = true
+		}
+		unifiedSvc.SetBrowserFallbackConfig(service.BrowserFallbackConfig{
+			Enabled:       true,
+			OnAPIError:    cfg.Query.BrowserFallback.OnAPIError,
+			OnEmptyResult: cfg.Query.BrowserFallback.OnEmptyResult,
+			Engines:       bfEngines,
+		})
+	}
 }
 
 // convertConfigCookies 转换配置Cookie到截图管理器Cookie
@@ -705,128 +828,94 @@ func (s *Server) icpConfigProvider() adapter.ICPConfig {
 
 // Start 启动Web服务器
 func (s *Server) Start() error {
-	// 使用统一路由注册
 	router := NewRouter(s)
 	mux := router.RegisterRoutes()
+	rateLimitEnabled, maxBodyBytes := s.configureServerLimits()
+	allowedOrigins := allowedOriginsFromConfig(s.config)
+	s.initExtensionIDs()
+	handler := s.buildServerMiddlewareChain(mux, rateLimitEnabled, maxBodyBytes, allowedOrigins)
+	rootHandler := s.buildServerRootHandler(handler)
 
-	rateLimitEnabled := true
-	if s.config != nil {
-		rateLimitEnabled = s.config.Web.RateLimit.Enabled
-	}
+	addr := fmt.Sprintf("%s:%d", s.bindAddr(), s.port)
+	s.httpServer = &http.Server{Addr: addr, Handler: rootHandler, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second}
+	go s.cleanupStaleQueries()
+	go s.cleanupStaleBridgeTokens()
+	logger.Infof("Web server started at http://%s:%d", s.bindAddr(), s.port)
+	logger.Infof("Registered %d routes", len(router.GetRoutes()))
+	logger.Infof("Web security config loaded: cors_origins=%d rate_limit_enabled=%t max_body_bytes=%d", len(allowedOrigins), rateLimitEnabled, maxBodyBytes)
+	return s.httpServer.ListenAndServe()
+}
+
+func (s *Server) configureServerLimits() (rateLimitEnabled bool, maxBodyBytes int64) {
+	rateLimitEnabled = true
+	if s.config != nil { rateLimitEnabled = s.config.Web.RateLimit.Enabled }
 	SetRateLimitEnabled(rateLimitEnabled)
 	if rateLimitEnabled && s.config != nil {
 		SetRateLimitConfig(s.config.Web.RateLimit.RequestsPerWindow, time.Duration(s.config.Web.RateLimit.WindowSeconds)*time.Second)
 	}
+	maxBodyBytes = int64(10 * 1024 * 1024)
+	if s.config != nil && s.config.Web.RequestLimits.MaxBodyBytes > 0 { maxBodyBytes = s.config.Web.RequestLimits.MaxBodyBytes }
+	return
+}
 
-	maxBodyBytes := int64(10 * 1024 * 1024)
-	if s.config != nil && s.config.Web.RequestLimits.MaxBodyBytes > 0 {
-		maxBodyBytes = s.config.Web.RequestLimits.MaxBodyBytes
-	}
-
-	allowedOrigins := allowedOriginsFromConfig(s.config)
-
-	// Initialize Chrome extension ID restriction from config or env var
+func (s *Server) initExtensionIDs() {
 	extIDs := allowedExtensionIDsFromConfig(s.config)
 	if len(extIDs) == 0 {
 		if envVal := os.Getenv("UNIMAP_ALLOWED_EXTENSION_IDS"); envVal != "" {
 			for _, part := range strings.Split(envVal, ",") {
-				part = strings.TrimSpace(part)
-				if part != "" {
-					extIDs = append(extIDs, part)
-				}
+				if part = strings.TrimSpace(part); part != "" { extIDs = append(extIDs, part) }
 			}
 		}
 	}
 	SetAllowedExtensionIDs(extIDs)
-	allowedMethods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
-	allowedHeaders := []string{"Content-Type", "Authorization", "X-Admin-Token", "X-Requested-With", "X-WebSocket-Token", "X-Bridge-Timestamp", "X-Bridge-Nonce", "X-Bridge-Signature", requestid.HeaderName}
-	exposedHeaders := []string{requestid.HeaderName}
-	allowCredentials := true
-	maxAge := 600
-	if s.config != nil {
-		if len(s.config.Web.CORS.AllowedMethods) > 0 {
-			allowedMethods = s.config.Web.CORS.AllowedMethods
-		}
-		if len(s.config.Web.CORS.AllowedHeaders) > 0 {
-			allowedHeaders = s.config.Web.CORS.AllowedHeaders
-		}
-		if len(s.config.Web.CORS.ExposedHeaders) > 0 {
-			exposedHeaders = s.config.Web.CORS.ExposedHeaders
-		}
-		allowCredentials = s.config.Web.CORS.AllowCredentials
-		if s.config.Web.CORS.MaxAge > 0 {
-			maxAge = s.config.Web.CORS.MaxAge
-		}
-	}
+}
 
+func (s *Server) buildServerMiddlewareChain(mux http.Handler, rateLimitEnabled bool, maxBodyBytes int64, allowedOrigins []string) http.Handler {
+	methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+	headers := []string{"Content-Type", "Authorization", "X-Admin-Token", "X-Requested-With", "X-WebSocket-Token", "X-Bridge-Timestamp", "X-Bridge-Nonce", "X-Bridge-Signature", requestid.HeaderName}
+	exposed := []string{requestid.HeaderName}
+	creds, maxAge := true, 600
+	if s.config != nil {
+		if len(s.config.Web.CORS.AllowedMethods) > 0 { methods = s.config.Web.CORS.AllowedMethods }
+		if len(s.config.Web.CORS.AllowedHeaders) > 0 { headers = s.config.Web.CORS.AllowedHeaders }
+		if len(s.config.Web.CORS.ExposedHeaders) > 0 { exposed = s.config.Web.CORS.ExposedHeaders }
+		creds = s.config.Web.CORS.AllowCredentials
+		if s.config.Web.CORS.MaxAge > 0 { maxAge = s.config.Web.CORS.MaxAge }
+	}
 	handler := securityMiddleware(mux)
 	handler = requestIDMiddleware(handler)
 	handler = requestSizeLimitMiddleware(maxBodyBytes)(handler)
-	handler = corsMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeaders, allowCredentials, maxAge)(handler)
-
-	// Auth middleware — always enabled when auth.enabled is true (auto-generates token if needed)
+	handler = corsMiddleware(allowedOrigins, methods, headers, exposed, creds, maxAge)(handler)
 	if s.config != nil && s.config.Web.Auth.Enabled {
 		handler = s.adminAuthMiddleware()(handler)
 		logger.Infof("Web auth enabled: admin token authentication active")
-	} else {
-		bindAddr := s.bindAddr()
-		if bindAddr != "127.0.0.1" && bindAddr != "localhost" {
-			logger.Warnf("⚠️  WARNING: Admin auth is DISABLED and server is bound to %s (non-loopback). All API endpoints are publicly accessible!", bindAddr)
-		}
+	} else if bindAddr := s.bindAddr(); bindAddr != "127.0.0.1" && bindAddr != "localhost" {
+		logger.Warnf("⚠️  WARNING: Admin auth is DISABLED and server is bound to %s (non-loopback). All API endpoints are publicly accessible!", bindAddr)
 	}
-
 	handler = metricsMiddleware(handler)
 	handler = auditMiddleware(handler)
+	return handler
+}
 
-	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		isWebSocket := strings.Contains(r.Header.Get("Connection"), "Upgrade") &&
-			strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-
-		if isWebSocket && r.URL.Path == "/api/v1/ws" {
-			// WebSocket auth: cookie → query param → header
+func (s *Server) buildServerRootHandler(handler http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		isWS := strings.Contains(r.Header.Get("Connection"), "Upgrade") && strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+		if isWS && r.URL.Path == "/api/v1/ws" {
 			if s.adminToken() != "" && !s.isPublicPath(r.URL.Path) {
 				token := s.getSessionToken(r)
-				if token == "" {
-					token = r.URL.Query().Get("token")
-				}
-				if token == "" {
-					token = r.Header.Get("X-Admin-Token")
-				}
-				if token == "" {
-					token = extractBearerToken(r.Header.Get("Authorization"))
-				}
+				if token == "" { token = r.URL.Query().Get("token") }
+				if token == "" { token = r.Header.Get("X-Admin-Token") }
+				if token == "" { token = extractBearerToken(r.Header.Get("Authorization")) }
 				if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.adminToken())) != 1 {
-					writeJSON(w, http.StatusUnauthorized, map[string]string{
-						"error": "unauthorized: valid admin token required",
-					})
+					writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized: valid admin token required"})
 					return
 				}
 			}
 			s.handleWebSocket(w, r)
 			return
 		}
-
-		// Bridge API goes through the full middleware chain (auth, ratelimit, audit, metrics)
 		handler.ServeHTTP(w, r)
-	})
-
-	addr := fmt.Sprintf("%s:%d", s.bindAddr(), s.port)
-	s.httpServer = &http.Server{
-		Addr:         addr,
-		Handler:      rootHandler,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
 	}
-
-	go s.cleanupStaleQueries()
-	go s.cleanupStaleBridgeTokens()
-
-	logger.Infof("Web server started at http://%s:%d", s.bindAddr(), s.port)
-	logger.Infof("Registered %d routes", len(router.GetRoutes()))
-	logger.Infof("Web security config loaded: cors_origins=%d rate_limit_enabled=%t max_body_bytes=%d",
-		len(allowedOrigins), rateLimitEnabled, maxBodyBytes)
-	return s.httpServer.ListenAndServe()
 }
 
 func allowedOriginsFromConfig(cfg *config.Config) []string {
@@ -877,81 +966,82 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	logger.Info("Shutting down web server...")
 
-	// 取消所有后台goroutine
 	if s.shutdownCancel != nil {
 		s.shutdownCancel()
 	}
 
-	// 先关闭HTTP服务器，排空活跃请求，确保不再有新请求访问DB等资源
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		return fmt.Errorf("web server shutdown error: %w", err)
 	}
 
-	// 停止分布式组件
+	s.shutdownBackgroundServices()
+	s.shutdownDatabases()
+	s.shutdownChromeProcess()
+	s.shutdownWebSocketConnections()
+
+	logger.Info("Web server shutdown completed")
+	return nil
+}
+
+// shutdownBackgroundServices stops distributed components, scheduler, router, and revocation store.
+func (s *Server) shutdownBackgroundServices() {
 	if s.distributed != nil && s.distributed.NodeRegistry != nil {
 		s.distributed.NodeRegistry.Stop()
 	}
 	if s.distributed != nil && s.distributed.NodeTaskQueue != nil {
 		s.distributed.NodeTaskQueue.Stop()
 	}
-
-	// 停止定时任务调度器
 	if s.scheduler != nil {
 		s.scheduler.Stop()
 	}
+	if s.screenshotRouter != nil {
+		s.screenshotRouter.Stop()
+	}
+	if s.revocationStore != nil {
+		s.revocationStore.Stop()
+	}
+}
 
-	// 关闭 ICP 结果数据库（HTTP已排空，无并发访问）
+// shutdownDatabases closes ICP and user databases.
+func (s *Server) shutdownDatabases() {
 	if s.icpDB != nil {
 		if err := s.icpDB.Close(); err != nil {
 			logger.Warnf("ICP result DB close error: %v", err)
 		}
 	}
-
-	// 关闭用户数据库
 	if s.userDB != nil {
 		if err := s.userDB.Close(); err != nil {
 			logger.Warnf("user DB close error: %v", err)
 		}
 	}
+}
 
-	// 停止截图Router（停止健康探测goroutine）
-	if s.screenshotRouter != nil {
-		s.screenshotRouter.Stop()
-	}
-
-	// 停止会话撤销表清理 goroutine
-	if s.revocationStore != nil {
-		s.revocationStore.Stop()
-	}
-
-	// 关闭Chrome进程
+// shutdownChromeProcess kills the Chrome process if running.
+func (s *Server) shutdownChromeProcess() {
 	s.chromeCmdMu.Lock()
-	if s.chromeCmd != nil {
-		logger.Info("Shutting down Chrome process...")
-		if err := s.chromeCmd.Kill(); err != nil {
-			logger.Warnf("Failed to kill Chrome process: %v", err)
-		} else {
-			_, err := s.chromeCmd.Wait()
-			if err != nil {
-				logger.Warnf("Failed to wait for Chrome process: %v", err)
-			}
-		}
-		s.chromeCmd = nil
+	defer s.chromeCmdMu.Unlock()
+	if s.chromeCmd == nil {
+		return
 	}
-	s.chromeCmdMu.Unlock()
+	logger.Info("Shutting down Chrome process...")
+	if err := s.chromeCmd.Kill(); err != nil {
+		logger.Warnf("Failed to kill Chrome process: %v", err)
+	} else if _, err := s.chromeCmd.Wait(); err != nil {
+		logger.Warnf("Failed to wait for Chrome process: %v", err)
+	}
+	s.chromeCmd = nil
+}
 
-	// 关闭所有WebSocket连接
+// shutdownWebSocketConnections closes all active WebSocket connections.
+func (s *Server) shutdownWebSocketConnections() {
 	s.connManager.mutex.Lock()
+	defer s.connManager.mutex.Unlock()
 	for id, managed := range s.connManager.connections {
 		if err := managed.conn.Close(); err != nil {
 			logger.Warnf("Failed to close WebSocket connection %s: %v", id, err)
 		}
 	}
 	s.connManager.connections = make(map[string]*managedConn)
-	s.connManager.mutex.Unlock()
-
-	logger.Info("Web server shutdown completed")
-	return nil
 }
 
 // bindAddr returns the configured bind address, defaulting to "127.0.0.1".
