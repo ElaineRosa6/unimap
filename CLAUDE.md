@@ -191,7 +191,7 @@ go run -tags gui ./cmd/unimap-gui
 无
 
 ### Medium (后续迭代修复)
-1. 5 个文件超 800 行 (最大 `screenshot/manager.go` 1189 行；原 10 个已拆分 5 个)
+1. 1 个文件超 800 行 (`config/config.go` 1074 行，Config 结构体定义 280+ 行无法再拆)
 2. 34 个函数超 50 行 (最大 `createMonitorTab` 390 行)
 
 ### Low (后续迭代修复)
