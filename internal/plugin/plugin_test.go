@@ -24,7 +24,7 @@ func TestExampleEnginePlugin_Lifecycle(t *testing.T) {
 	}
 
 	// Initialize
-	if err := plugin.Initialize(map[string]interface{}{"key": "value"}); err != nil {
+	if err := plugin.Initialize(&model.PluginConfig{Extra: map[string]any{"key": "value"}}); err != nil {
 		t.Fatalf("Initialize failed: %v", err)
 	}
 
@@ -142,7 +142,7 @@ func TestPluginManager_LoadAndStartPlugin(t *testing.T) {
 	defer manager.Shutdown()
 
 	plugin := NewExampleEnginePlugin()
-	if err := manager.LoadPlugin(plugin, map[string]interface{}{}); err != nil {
+	if err := manager.LoadPlugin(plugin, &model.PluginConfig{}); err != nil {
 		t.Fatalf("LoadPlugin failed: %v", err)
 	}
 
@@ -177,7 +177,7 @@ func (t *testProcessor) Version() string                         { return "0.1.0
 func (t *testProcessor) Description() string                     { return "test" }
 func (t *testProcessor) Author() string                          { return "test" }
 func (t *testProcessor) Type() PluginType                        { return PluginTypeProcessor }
-func (t *testProcessor) Initialize(map[string]interface{}) error { return nil }
+func (t *testProcessor) Initialize(*model.PluginConfig) error { return nil }
 func (t *testProcessor) Start(context.Context) error             { return nil }
 func (t *testProcessor) Stop() error                             { return nil }
 func (t *testProcessor) Health() HealthStatus {

@@ -214,8 +214,10 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 	metrics.ObserveCacheLookup(s.cacheBackend, "miss")
 	logger.CtxDebugf(ctx, "query cache miss: backend=%s", s.cacheBackend)
 
-	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookBeforeQuery, "query", map[string]interface{}{
-		"query": req.Query, "engines": req.Engines, "cached": false,
+	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookBeforeQuery, "query", &model.HookData{
+		Query:   req.Query,
+		Engines: req.Engines,
+		Extra:   map[string]any{"cached": false},
 	}); err != nil {
 		queryStatus = "error"
 		return nil, fmt.Errorf("pre-query hook failed: %w", err)
@@ -232,8 +234,8 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 		s.cache.Set(cacheKey, allAssets, cacheTTL)
 	}
 
-	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", map[string]interface{}{
-		"result_count": len(allAssets), "engines": req.Engines, "cached": false,
+	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", &model.HookData{
+		Extra: map[string]any{"result_count": len(allAssets), "cached": false},
 	}); err != nil {
 		logger.CtxWarnf(ctx, "post-query hook failed: %v", err)
 	}
@@ -277,8 +279,10 @@ func (s *UnifiedService) handleCachedQueryResult(ctx context.Context, req QueryR
 	metrics.ObserveCacheLookup(s.cacheBackend, "hit")
 	logger.CtxDebugf(ctx, "query cache hit: backend=%s", s.cacheBackend)
 
-	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookBeforeQuery, "query", map[string]interface{}{
-		"query": req.Query, "engines": req.Engines, "cached": true,
+	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookBeforeQuery, "query", &model.HookData{
+		Query:   req.Query,
+		Engines: req.Engines,
+		Extra:   map[string]any{"cached": true},
 	}); err != nil {
 		logger.CtxWarnf(ctx, "pre-query hook failed: %v", err)
 		return nil, false
@@ -288,8 +292,8 @@ func (s *UnifiedService) handleCachedQueryResult(ctx context.Context, req QueryR
 	for _, engine := range req.Engines {
 		engineStats[engine] = 0
 	}
-	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", map[string]interface{}{
-		"result_count": len(cachedAssets), "engines": req.Engines, "cached": true,
+	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", &model.HookData{
+		Extra: map[string]any{"result_count": len(cachedAssets), "cached": true},
 	}); err != nil {
 		logger.CtxWarnf(ctx, "post-query hook failed: %v", err)
 	}
@@ -315,8 +319,8 @@ func (s *UnifiedService) executeAndNormalizeQuery(ctx context.Context, req Query
 	engineResults, err := s.orchestrator.SearchEnginesWithContext(ctx, queries, req.PageSize)
 	if err != nil {
 		queryErrors = append(queryErrors, err.Error())
-		if hookErr := s.pluginManager.GetHooks().TriggerHook(plugin.HookQueryError, "query", map[string]interface{}{
-			"error": err.Error(),
+		if hookErr := s.pluginManager.GetHooks().TriggerHook(plugin.HookQueryError, "query", &model.HookData{
+			Error: err.Error(),
 		}); hookErr != nil {
 			logger.CtxWarnf(ctx, "query error hook failed: %v", hookErr)
 		}
@@ -502,9 +506,11 @@ func (s *UnifiedService) processAssets(ctx context.Context, assets []model.Unifi
 	}
 
 	// 触发处理后钩子
-	s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterProcess, "process", map[string]interface{}{
-		"original_count":  len(assets),
-		"processed_count": len(result),
+	s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterProcess, "process", &model.HookData{
+		Extra: map[string]any{
+			"original_count":  len(assets),
+			"processed_count": len(result),
+		},
 	})
 
 	return result, nil
@@ -555,7 +561,7 @@ func (s *UnifiedService) Export(ctx context.Context, req ExportRequest) error {
 }
 
 // RegisterEngine 注册引擎插件
-func (s *UnifiedService) RegisterEngine(engine plugin.EnginePlugin, config map[string]interface{}) error {
+func (s *UnifiedService) RegisterEngine(engine plugin.EnginePlugin, config *model.PluginConfig) error {
 	// 加载插件
 	if err := s.pluginManager.LoadPlugin(engine, config); err != nil {
 		return err
@@ -575,7 +581,7 @@ func (s *UnifiedService) RegisterEngine(engine plugin.EnginePlugin, config map[s
 }
 
 // RegisterProcessor 注册处理器插件
-func (s *UnifiedService) RegisterProcessor(processor plugin.ProcessorPlugin, config map[string]interface{}) error {
+func (s *UnifiedService) RegisterProcessor(processor plugin.ProcessorPlugin, config *model.PluginConfig) error {
 	// 加载插件
 	if err := s.pluginManager.LoadPlugin(processor, config); err != nil {
 		return err
@@ -586,7 +592,7 @@ func (s *UnifiedService) RegisterProcessor(processor plugin.ProcessorPlugin, con
 }
 
 // RegisterExporter 注册导出器插件
-func (s *UnifiedService) RegisterExporter(exporter plugin.ExporterPlugin, config map[string]interface{}) error {
+func (s *UnifiedService) RegisterExporter(exporter plugin.ExporterPlugin, config *model.PluginConfig) error {
 	// 加载插件
 	if err := s.pluginManager.LoadPlugin(exporter, config); err != nil {
 		return err
