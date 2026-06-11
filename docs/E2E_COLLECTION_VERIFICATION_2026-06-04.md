@@ -31,7 +31,7 @@
 | Profile | Main profile (junction): `chrome-cdp-profile` |
 | Extension | 开发者模式，`tools/extension-screenshot/` |
 | Server | `unimap-web` :8448，screenshot engine=extension |
-| Auth token | `1AggpIRXaHIQnH73SawdMLDfB8RnIy3X` |
+| Auth token | `<ADMIN_TOKEN_REDACTED>` |
 
 ---
 
@@ -238,7 +238,7 @@ curl -s -X POST "http://127.0.0.1:8448/api/v1/query" \
 go run ./cmd/unimap-web
 
 # 测试 Shodan 采集
-ADMIN="1AggpIRXaHIQnH73SawdMLDfB8RnIy3X"
+ADMIN="<ADMIN_TOKEN_REDACTED>"
 curl -s -X POST "http://127.0.0.1:8448/api/v1/query" \
   -H "Authorization: Bearer $ADMIN" \
   -H "Content-Type: application/x-www-form-urlencoded" \

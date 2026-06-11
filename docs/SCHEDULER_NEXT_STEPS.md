@@ -39,7 +39,7 @@
 |------|--------|----------|
 | FOFA | `fofa.info/result?qbase64=...` | 结果列表选择器、IP/端口/标题字段 |
 | Hunter | `hunter.qianxin.com/list?searchValue=...` | 结果卡片、资产信息 |
-| Quake | `quake.360.cn/quake/#/searchResult?searchVal=...` | 结果表格、字段映射 |
+| Quake | `quake.360.net/quake/#/searchResult?searchVal=...` | 结果表格、字段映射 |
 | ZoomEye | `zoomeye.org/searchResult?q=...` | 结果列表、资产字段 |
 | Shodan | `shodan.io/search?query=...` | 结果表格、banner 信息 |
 

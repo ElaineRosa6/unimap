@@ -41,6 +41,8 @@
 
 `web/router.go:205-210` — `addAPIRoute()` 为每个 API 自动注册 `/api/v1/<path>`（规范）和 `/api/<path>`（旧版，带 `Deprecation: true` + `Sunset: 2026-09-01` 头）。设计合理。
 
+> **2026-06-09 更新**: 旧路径 shim 已提前移除 (commit `24a37f7`)。`addAPIRoute()` 现仅注册 `/api/v1/` 路径。
+
 ### 1.3 🔴 P1 — Scheduler 任务 context 不响应 Stop 信号
 
 - **位置**：`internal/scheduler/scheduler.go:852`、`internal/scheduler/scheduler.go:1238-1255`
@@ -425,7 +427,7 @@ RetryableFunc: func(err error) bool {
 - 22 种定时任务（含依赖链和执行窗口）
 - 分布式节点管理（注册/心跳/故障转移）
 - 告警系统（多渠道/去重/静默/频率控制）
-- API 版本化（v1 规范 + 旧路径 shim + Sunset 头）
+- API 版本化（v1 规范，旧路径 shim 已于 2026-06-09 移除）
 - SSRF 防护、安全 Headers、CSP nonce
 - Prometheus 指标 + Grafana 仪表板
 - CI/CD 全流程（test/lint/security/Docker push）

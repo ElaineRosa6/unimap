@@ -238,8 +238,10 @@ func TestIsMaskedSecret(t *testing.T) {
 	}{
 		{"", false},
 		{"abc1234567890def", false},
-		{"abc****def", true},
-		{"****", true}, // pure asterisks still counted as masked
+		{"abc1****0def", true},  // matches maskAPIKey output (4+****+4)
+		{"****", true},          // pure asterisks still counted as masked
+		{"abc****def", false},   // 3-char prefix doesn't match maskAPIKey format
+		{"mykey****real", false}, // real key containing **** should not be rejected
 	}
 	for _, tc := range tests {
 		got := isMaskedSecret(tc.in)

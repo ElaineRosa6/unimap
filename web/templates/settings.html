@@ -1,7 +1,7 @@
 {{template "head" .}}
 {{template "header" (dict "ActiveNav" "settings" "staticVersion" .staticVersion)}}
 
-<style>
+<style nonce="{{.CSPNonce}}">
 	.ctrl {
 		display: grid;
 		grid-template-columns: 180px 1fr;
@@ -242,6 +242,11 @@
 		.cfg-row { grid-template-columns: 1fr; gap: 6px; }
 		.cfg-val input, .cfg-val select { max-width: 100%; }
 	}
+	/* P2-8: API Key 显示/隐藏切换按钮 */
+	.key-toggle-wrap { position: relative; display: inline-flex; align-items: center; width: 100%; }
+	.key-toggle-wrap input { padding-right: 36px; width: 100%; }
+	.key-toggle-btn { position: absolute; right: 6px; background: none; border: none; cursor: pointer; font-size: 16px; color: #888; padding: 4px; line-height: 1; }
+	.key-toggle-btn:hover { color: #333; }
 </style>
 
 	<div class="ctrl">
@@ -286,14 +291,14 @@
 					<div class="cfg-row"><span class="cfg-key">api_base_url</span><div class="cfg-val"><input type="text" id="fofa-api-base-url" placeholder="https://fofa.info"><small class="cfg-hint">仅 API 模式生效，可填自建镜像/代理</small></div></div>
 					<div class="cfg-row"><span class="cfg-key">web_base_url</span><div class="cfg-val"><input type="text" id="fofa-web-base-url" value="https://fofa.info" disabled readonly class="cfg-input-disabled"><small class="cfg-hint">固定官方，Web/截图/扩展模式始终使用</small></div></div>
 					<div class="cfg-row"><span class="cfg-key">email</span><div class="cfg-val"><input type="email" id="fofa-email" placeholder="your@email.com"></div></div>
-					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="fofa-api-key" placeholder="输入 API Key" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="fofa-api-key" placeholder="邮箱:APIKey 格式，如 user@example.com:xxxxxxxx" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="fofa-qps" min="1" max="100" value="10"></div></div>
 				</div>
 
 				<div class="cfg-group" data-engine="hunter">
 					<div class="cfg-group-title"><span class="dot" id="hunter-dot"></span> Hunter</div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="hunter-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
-					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="hunter-api-key" placeholder="输入 API Key" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="hunter-api-key" placeholder="Hunter API Key，从 qianxin.com 获取" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
 					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="hunter-base-url" placeholder="https://hunter.qianxin.com/api"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="hunter-qps" min="1" max="100" value="10"></div></div>
 					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="hunter-timeout" min="5" max="300" value="30"></div></div>
@@ -302,7 +307,7 @@
 				<div class="cfg-group" data-engine="zoomeye">
 					<div class="cfg-group-title"><span class="dot" id="zoomeye-dot"></span> ZoomEye</div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="zoomeye-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
-					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="zoomeye-api-key" placeholder="输入 API Key" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="zoomeye-api-key" placeholder="ZoomEye API Key，从 zoomeye.org 获取" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
 					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="zoomeye-base-url" placeholder="https://api.zoomeye.org"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="zoomeye-qps" min="1" max="100" value="10"></div></div>
 					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="zoomeye-timeout" min="5" max="300" value="30"></div></div>
@@ -311,7 +316,7 @@
 				<div class="cfg-group" data-engine="quake">
 					<div class="cfg-group-title"><span class="dot" id="quake-dot"></span> Quake</div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="quake-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
-					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="quake-api-key" placeholder="输入 API Key" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="quake-api-key" placeholder="Quake API Key，从 quake.360.net 获取" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
 					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="quake-base-url" placeholder="https://quake.360.net/api/v1"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="quake-qps" min="1" max="100" value="10"></div></div>
 					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="quake-timeout" min="5" max="300" value="30"></div></div>
@@ -320,7 +325,7 @@
 				<div class="cfg-group" data-engine="shodan">
 					<div class="cfg-group-title"><span class="dot" id="shodan-dot"></span> Shodan</div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="shodan-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
-					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="shodan-api-key" placeholder="输入 API Key" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="shodan-api-key" placeholder="Shodan API Key，从 shodan.io 获取" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
 					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="shodan-base-url" placeholder="https://api.shodan.io"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="shodan-qps" min="1" max="100" value="10"></div></div>
 				</div>
@@ -355,7 +360,7 @@
 
 				<div class="cfg-actions">
 					<button class="cfg-btn cfg-btn-save" id="btn-icp-save">保存配置</button>
-					<button class="cfg-btn cfg-btn-test" id="btn-icp-test" style="margin-left:8px;">测试连接</button>
+					<button class="cfg-btn cfg-btn-test ml-8" id="btn-icp-test">测试连接</button>
 					<span class="cfg-result" id="icp-result"></span>
 				</div>
 			</div>
@@ -454,7 +459,7 @@
 					</div></div>
 					<div class="cfg-row"><span class="cfg-key">CDP 状态</span><div class="cfg-val">
 						<span id="sess-cdp-status" class="hint">检测中…</span>
-						<button class="cfg-btn cfg-btn-test" id="btn-sess-cdp-connect" style="margin-left:12px;">连接 CDP</button>
+						<button class="cfg-btn cfg-btn-test ml-12" id="btn-sess-cdp-connect">连接 CDP</button>
 					</div></div>
 				</div>
 
@@ -474,7 +479,7 @@
 					<div class="cfg-group-title">Extension Bridge</div>
 					<div class="cfg-row"><span class="cfg-key">Bridge 状态</span><div class="cfg-val">
 						<span id="sess-bridge-status" class="hint">检测中…</span>
-						<button class="cfg-btn cfg-btn-test" id="btn-sess-bridge-refresh" style="margin-left:12px;">刷新</button>
+						<button class="cfg-btn cfg-btn-test ml-12" id="btn-sess-bridge-refresh">刷新</button>
 					</div></div>
 				</div>
 
@@ -491,7 +496,7 @@
 
 				<div id="notify-channel-list"></div>
 
-				<div class="cfg-group" id="notify-form-panel" style="display:none">
+				<div class="cfg-group hidden-init" id="notify-form-panel">
 					<div class="cfg-group-title" id="notify-form-title">新增渠道</div>
 					<div class="cfg-row"><span class="cfg-key">渠道 ID</span><div class="cfg-val"><input type="text" id="nch-id" placeholder="如 team-dingtalk"><div class="hint">唯一标识，创建后不可修改</div></div></div>
 					<div class="cfg-row"><span class="cfg-key">类型</span><div class="cfg-val">
@@ -506,14 +511,14 @@
 					</div></div>
 					<div class="cfg-row nch-webhook-row"><span class="cfg-key">Webhook URL</span><div class="cfg-val"><input type="text" id="nch-url" placeholder="https://..."><div class="hint">飞书应用/日志类型无需填写</div></div></div>
 					<div class="cfg-row nch-webhook-row"><span class="cfg-key">签名密钥</span><div class="cfg-val"><input type="password" id="nch-secret" placeholder="可空" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">钉钉/飞书加签密钥，留空不签名</div></div></div>
-						<div class="cfg-row nch-app-row" style="display:none"><span class="cfg-key">App ID</span><div class="cfg-val"><input type="text" id="nch-app-id" placeholder="cli_xxxxxxxx"><div class="hint">飞书应用 App ID</div></div></div>
-						<div class="cfg-row nch-app-row" style="display:none"><span class="cfg-key">App Secret</span><div class="cfg-val"><input type="password" id="nch-app-secret" placeholder="输入 App Secret" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">加密存储，编辑时留空保留原值</div></div></div>
-						<div class="cfg-row nch-app-row" style="display:none"><span class="cfg-key">Chat ID</span><div class="cfg-val"><input type="text" id="nch-chat-id" placeholder="oc_xxxxxxxx"><div class="hint">飞书群聊 Chat ID</div></div></div>
+						<div class="cfg-row nch-app-row hidden-init"><span class="cfg-key">App ID</span><div class="cfg-val"><input type="text" id="nch-app-id" placeholder="cli_xxxxxxxx"><div class="hint">飞书应用 App ID</div></div></div>
+						<div class="cfg-row nch-app-row hidden-init"><span class="cfg-key">App Secret</span><div class="cfg-val"><input type="password" id="nch-app-secret" placeholder="输入 App Secret" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">加密存储，编辑时留空保留原值</div></div></div>
+						<div class="cfg-row nch-app-row hidden-init"><span class="cfg-key">Chat ID</span><div class="cfg-val"><input type="text" id="nch-chat-id" placeholder="oc_xxxxxxxx"><div class="hint">飞书群聊 Chat ID</div></div></div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="nch-enabled" checked><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此渠道</span></label></div></div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">allow_private_ip</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="nch-private-ip"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">允许内网地址（测试用）</span></label></div></div>
 					<div class="cfg-actions">
 						<button class="cfg-btn cfg-btn-save" id="btn-nch-save">保存</button>
-						<button class="cfg-btn cfg-btn-test" id="btn-nch-test" style="display:none">测试发送</button>
+						<button class="cfg-btn cfg-btn-test hidden-init" id="btn-nch-test">测试发送</button>
 						<button class="cfg-btn cfg-btn-test" id="btn-nch-cancel">取消</button>
 						<span class="cfg-result" id="notify-form-result"></span>
 					</div>
@@ -882,8 +887,10 @@
 			var el = document.getElementById('sess-bridge-status');
 			if (!el) return;
 			var routerMode = data.router_mode || data.mode || '';
-			var ext = !!(data.router_ext_healthy || data.bridge_connected);
-			el.textContent = (ext ? '在线' : '离线') + (routerMode ? ' (' + routerMode + ')' : '');
+			var ext = !!(data.extension_online || data.router_ext_healthy || data.live_clients > 0);
+			var serviceStarted = !!data.bridge_connected;
+			var label = ext ? '在线' : (serviceStarted ? '等待扩展连接' : '离线');
+			el.textContent = label + (routerMode ? ' (' + routerMode + ')' : '');
 		} catch (e) {
 			var el2 = document.getElementById('sess-bridge-status');
 			if (el2) el2.textContent = '检测失败';
@@ -913,6 +920,10 @@
 	if (sessMode) sessMode.addEventListener('change', changeSessionMode);
 	refreshCDPStatusPanel();
 	refreshBridgeStatusPanel();
+
+	// P1-8: 自动刷新 CDP/Bridge 状态
+	setInterval(refreshCDPStatusPanel, 15000);
+	setInterval(refreshBridgeStatusPanel, 10000);
 
 	// --- Notification channel panel ---
 	var notifyChannels = [];
@@ -945,20 +956,22 @@
 		for (var i = 0; i < notifyChannels.length; i++) {
 			var ch = notifyChannels[i];
 			var color = typeBadge[ch.type] || '#666';
-			html += '<div class="cfg-row" style="grid-template-columns:1fr auto">' +
-				'<div style="display:flex;align-items:center;gap:12px">' +
-				'<span style="display:inline-block;padding:2px 10px;border-radius:3px;font-size:11px;font-weight:600;color:#fff;background:' + color + ';min-width:48px;text-align:center">' + (typeNames[ch.type] || ch.type) + '</span>' +
-				'<span style="font-weight:600;color:var(--text-primary)">' + escHtml(ch.id) + '</span>' +
-				(ch.enabled ? '<span class="dot on" style="margin-left:4px"></span>' : '<span class="dot off" style="margin-left:4px"></span>') +
+			html += '<div class="cfg-row nch-row">' +
+				'<div class="nch-flex">' +
+				'<span class="nch-badge" data-badge-color="' + color + '">' + (typeNames[ch.type] || ch.type) + '</span>' +
+				'<span class="nch-id">' + escHtml(ch.id) + '</span>' +
+				(ch.enabled ? '<span class="dot on ml-4"></span>' : '<span class="dot off ml-4"></span>') +
 				'</div>' +
-				'<div style="display:flex;gap:8px;align-items:center">' +
-				'<button class="cfg-btn cfg-btn-test nch-edit-btn" data-ch-id="' + escAttr(ch.id) + '" style="font-size:11px;padding:4px 10px">编辑</button>' +
-				'<button class="cfg-btn cfg-btn-test nch-test-btn" data-ch-id="' + escAttr(ch.id) + '" style="font-size:11px;padding:4px 10px">测试</button>' +
-				'<button class="cfg-btn cfg-btn-test nch-delete-btn" data-ch-id="' + escAttr(ch.id) + '" style="font-size:11px;padding:4px 10px;color:var(--danger);border-color:var(--danger)">删除</button>' +
+				'<div class="nch-actions">' +
+				'<button class="cfg-btn cfg-btn-test nch-edit-btn nch-btn" data-ch-id="' + escAttr(ch.id) + '">编辑</button>' +
+				'<button class="cfg-btn cfg-btn-test nch-test-btn nch-btn" data-ch-id="' + escAttr(ch.id) + '">测试</button>' +
+				'<button class="cfg-btn cfg-btn-test nch-delete-btn nch-btn-danger" data-ch-id="' + escAttr(ch.id) + '">删除</button>' +
 				'</div></div>';
 		}
-		html += '</div>';
 		container.innerHTML = html;
+		container.querySelectorAll('.nch-badge[data-badge-color]').forEach(function(el) {
+			el.style.setProperty('--badge-bg', el.getAttribute('data-badge-color'));
+		});
 	}
 
 	function updateNotifyFormVisibility() {
@@ -1150,7 +1163,26 @@
 	// Event wiring (runs after all functions are defined)
 	// ============================================================
 
-	document.addEventListener('DOMContentLoaded', function() { loadConfig(); });
+	document.addEventListener('DOMContentLoaded', function() {
+		loadConfig();
+		// P2-8: 为所有 API Key 密码输入框添加显示/隐藏切换按钮
+		document.querySelectorAll('input[type="password"][id$="-api-key"]').forEach(function(input) {
+			var wrap = document.createElement('span');
+			wrap.className = 'key-toggle-wrap';
+			input.parentNode.insertBefore(wrap, input);
+			wrap.appendChild(input);
+			var btn = document.createElement('button');
+			btn.type = 'button';
+			btn.className = 'key-toggle-btn';
+			btn.textContent = '👁';
+			btn.title = '显示/隐藏';
+			btn.addEventListener('click', function() {
+				input.type = input.type === 'password' ? 'text' : 'password';
+				btn.textContent = input.type === 'password' ? '👁' : '🙈';
+			});
+			wrap.appendChild(btn);
+		});
+	});
 
 	// Save buttons (was inline onclick, blocked by CSP)
 	var btnEnginesSave = document.getElementById('btn-engines-save');

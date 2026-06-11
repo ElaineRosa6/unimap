@@ -281,114 +281,108 @@ func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, e
 
 	for _, list := range allRecords {
 		for _, rec := range list {
-			if rec == nil {
+			if rec == nil || strings.TrimSpace(rec.URL) == "" {
 				continue
 			}
 			recordURL := strings.TrimSpace(rec.URL)
-			if recordURL == "" {
+			status := computeTamperStatus(rec)
+			recordMode := resolveDetectionMode(rec.DetectionMode)
+
+			if !matchesHistoryFilter(filter, recordURL, rec.CheckType, status, recordMode) {
 				continue
 			}
 
-			// 计算状态
-			status := "normal"
-			switch {
-			case rec.CheckType == "first_check":
-				status = "first_check"
-			case rec.Tampered:
-				status = "tampered"
-			case rec.BaselineHash == nil:
-				status = "no_baseline"
-			default:
-				status = "normal"
-			}
-
-			// URL 过滤
-			urlLower := strings.ToLower(recordURL)
-			if filter.URLFilter != "" && urlLower != strings.ToLower(filter.URLFilter) {
-				continue
-			}
-
-			// 类型过滤
-			if filter.TypeFilter != "" {
-				if strings.ToLower(rec.CheckType) != strings.ToLower(filter.TypeFilter) &&
-					strings.ToLower(status) != strings.ToLower(filter.TypeFilter) {
-					continue
-				}
-			}
-
-			// 模式过滤
-			recordMode := strings.ToLower(strings.TrimSpace(rec.DetectionMode))
-			if recordMode == "" {
-				recordMode = tamper.DetectionModeRelaxed
-			}
-			if filter.ModeFilter != "" && strings.ToLower(filter.ModeFilter) != recordMode {
-				continue
-			}
-
-			// 查询过滤
-			if filter.QueryFilter != "" {
-				queryLower := strings.ToLower(filter.QueryFilter)
-				if !strings.Contains(urlLower, queryLower) &&
-					!strings.Contains(strings.ToLower(rec.CheckType), queryLower) &&
-					!strings.Contains(status, queryLower) &&
-					!strings.Contains(recordMode, queryLower) {
-					continue
-				}
-			}
-
-			item := HistoryRecord{
-				ID:               rec.ID,
-				URL:              recordURL,
-				CheckType:        rec.CheckType,
-				DetectionMode:    recordMode,
-				Status:           status,
-				Tampered:         rec.Tampered,
-				TamperedSegments: rec.TamperedSegments,
-				ChangesCount:     len(rec.Changes),
-				Timestamp:        rec.Timestamp,
-			}
-			if rec.CurrentHash != nil {
-				item.CurrentFullHash = rec.CurrentHash.FullHash
-			}
-			if rec.BaselineHash != nil {
-				item.BaselineFullHash = rec.BaselineHash.FullHash
-				item.BaselineTimestamp = rec.BaselineHash.Timestamp
-			}
-
+			item := buildHistoryRecord(rec, recordURL, status, recordMode)
 			records = append(records, item)
 			urlSet[recordURL] = struct{}{}
 		}
 	}
 
-	// 按时间戳降序排序
-	sort.Slice(records, func(i, j int) bool {
-		return records[i].Timestamp > records[j].Timestamp
-	})
+	sort.Slice(records, func(i, j int) bool { return records[i].Timestamp > records[j].Timestamp })
+	records = limitHistoryRecords(records, filter.Limit)
 
-	// 限制数量
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = 200
-	}
-	if limit > 1000 {
-		limit = 1000
-	}
-	if len(records) > limit {
-		records = records[:limit]
-	}
-
-	// URL 选项列表
 	urlOptions := make([]string, 0, len(urlSet))
 	for u := range urlSet {
 		urlOptions = append(urlOptions, u)
 	}
 	sort.Strings(urlOptions)
 
-	return &HistoryResult{
-		Records:    records,
-		URLOptions: urlOptions,
-		Count:      len(records),
-	}, nil
+	return &HistoryResult{Records: records, URLOptions: urlOptions, Count: len(records)}, nil
+}
+
+// computeTamperStatus 计算检查记录的状态
+func computeTamperStatus(rec *tamper.CheckRecord) string {
+	switch {
+	case rec.CheckType == "first_check":
+		return "first_check"
+	case rec.Tampered:
+		return "tampered"
+	case rec.BaselineHash == nil:
+		return "no_baseline"
+	default:
+		return "normal"
+	}
+}
+
+// resolveDetectionMode 解析检测模式，默认 relaxed
+func resolveDetectionMode(mode string) string {
+	m := strings.ToLower(strings.TrimSpace(mode))
+	if m == "" {
+		return tamper.DetectionModeRelaxed
+	}
+	return m
+}
+
+// matchesHistoryFilter 检查记录是否匹配过滤条件
+func matchesHistoryFilter(filter HistoryFilter, recordURL, checkType, status, mode string) bool {
+	urlLower := strings.ToLower(recordURL)
+	if filter.URLFilter != "" && urlLower != strings.ToLower(filter.URLFilter) {
+		return false
+	}
+	if filter.TypeFilter != "" {
+		tf := strings.ToLower(filter.TypeFilter)
+		if strings.ToLower(checkType) != tf && strings.ToLower(status) != tf {
+			return false
+		}
+	}
+	if filter.ModeFilter != "" && strings.ToLower(filter.ModeFilter) != mode {
+		return false
+	}
+	if filter.QueryFilter != "" {
+		ql := strings.ToLower(filter.QueryFilter)
+		if !strings.Contains(urlLower, ql) &&
+			!strings.Contains(strings.ToLower(checkType), ql) &&
+			!strings.Contains(status, ql) &&
+			!strings.Contains(mode, ql) {
+			return false
+		}
+	}
+	return true
+}
+
+// buildHistoryRecord 从 CheckRecord 构建 HistoryRecord
+func buildHistoryRecord(rec *tamper.CheckRecord, recordURL, status, mode string) HistoryRecord {
+	item := HistoryRecord{
+		ID: rec.ID, URL: recordURL, CheckType: rec.CheckType, DetectionMode: mode,
+		Status: status, Tampered: rec.Tampered, TamperedSegments: rec.TamperedSegments,
+		ChangesCount: len(rec.Changes), Timestamp: rec.Timestamp,
+	}
+	if rec.CurrentHash != nil {
+		item.CurrentFullHash = rec.CurrentHash.FullHash
+	}
+	if rec.BaselineHash != nil {
+		item.BaselineFullHash = rec.BaselineHash.FullHash
+		item.BaselineTimestamp = rec.BaselineHash.Timestamp
+	}
+	return item
+}
+
+// limitHistoryRecords 限制历史记录数量
+func limitHistoryRecords(records []HistoryRecord, limit int) []HistoryRecord {
+	if limit <= 0 { limit = 200 }
+	if limit > 1000 { limit = 1000 }
+	if len(records) > limit { return records[:limit] }
+	return records
 }
 
 func (s *TamperAppService) newDetector(ctx context.Context, mode string, allocatorFactory TamperAllocatorFactory) (*tamper.Detector, context.CancelFunc, error) {

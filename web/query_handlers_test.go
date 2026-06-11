@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
@@ -228,7 +229,7 @@ func TestBuildQueryAPIPayload(t *testing.T) {
 		nil,
 		browserQueryOutcome{
 			Enabled: true,
-			CollectedResults: []screenshot.CollectResult{{
+			CollectedResults: []collection.CollectResult{{
 				Engine: "quake",
 				Query:  "test",
 			}},
@@ -242,9 +243,9 @@ func TestBuildQueryAPIPayload(t *testing.T) {
 	if payload["browserQuery"] != true {
 		t.Fatalf("expected browserQuery true, got %v", payload["browserQuery"])
 	}
-	collected, ok := payload["browserCollectedData"].([]screenshot.CollectResult)
+	collected, ok := payload["browserCollectedData"].([]collection.CollectResult)
 	if !ok {
-		t.Fatal("expected browserCollectedData to be []screenshot.CollectResult")
+		t.Fatal("expected browserCollectedData to be []collection.CollectResult")
 	}
 	if len(collected) != 1 || collected[0].Engine != "quake" {
 		t.Fatalf("unexpected browserCollectedData: %#v", collected)
@@ -280,7 +281,7 @@ func TestBuildQueryAPIPayload_MergesCollectedAssets(t *testing.T) {
 	}
 	browserOutcome := browserQueryOutcome{
 		Enabled: true,
-		CollectedResults: []screenshot.CollectResult{
+		CollectedResults: []collection.CollectResult{
 			{
 				Engine: "hunter",
 				Assets: []model.UnifiedAsset{{IP: "2.2.2.2"}, {IP: "3.3.3.3"}},
@@ -326,7 +327,7 @@ func TestBuildQueryAPIPayload_MergesBrowserCollectedAssets(t *testing.T) {
 		},
 		browserQueryOutcome{
 			Enabled: true,
-			CollectedResults: []screenshot.CollectResult{{
+			CollectedResults: []collection.CollectResult{{
 				Engine: "fofa",
 				Assets: []model.UnifiedAsset{{URL: "https://browser.example.test", Source: "browser"}},
 				Total:  1,
@@ -822,7 +823,7 @@ func TestHandleGetAdminToken_ReturnsToken(t *testing.T) {
 		t.Fatalf("expected success=true, got %v", resp)
 	}
 	if tok, _ := resp["token"].(string); tok != "test-admin-token-123" {
-		t.Fatalf("expected token 'test-admin-token-123', got %q", tok)
+		t.Fatalf("expected real token 'test-admin-token-123', got %q", tok)
 	}
 }
 

@@ -64,6 +64,9 @@ hash_store/records/**/*.json
 # Claude memory
 memory/
 
+# Claude Code local settings (contains permission tokens — never commit)
+.claude/settings.local.json
+
 # Runtime data
 data/
 

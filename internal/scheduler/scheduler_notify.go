@@ -1,0 +1,304 @@
+package scheduler
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/metrics"
+	"github.com/unimap/project/internal/notify"
+	"github.com/unimap/project/internal/utils/urlguard"
+)
+
+// sendNotification sends notifications based on task configuration and execution result.
+func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord) {
+	if !s.shouldSendNotification(task, record) {
+		return
+	}
+
+	channelIDs := migrateChannelIDs(task.Notifications)
+	if len(channelIDs) == 0 {
+		return
+	}
+
+	msg := s.buildNotificationMessage(task, record)
+	timeout := s.notifyTimeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
+
+	for _, chID := range channelIDs {
+		if chID == "__task_inline_webhook__" && task.Notifications.WebhookURL != "" {
+			s.sendInlineWebhookNotification(task.Notifications.WebhookURL, msg, timeout)
+			continue
+		}
+		s.sendRegistryChannelNotification(chID, msg, timeout)
+	}
+}
+
+func (s *Scheduler) shouldSendNotification(task *ScheduledTask, record ExecutionRecord) bool {
+	if s.notifyCfgProvider != nil {
+		globalCfg := s.notifyCfgProvider()
+		if globalCfg == nil || !globalCfg.Enabled {
+			return false
+		}
+	}
+	if task.Notifications == nil || !task.Notifications.Enabled {
+		return false
+	}
+
+	shouldNotify := false
+	switch record.Status {
+	case "success":
+		shouldNotify = task.Notifications.OnSuccess
+	case "failed":
+		shouldNotify = task.Notifications.OnFailure
+	case "timeout":
+		shouldNotify = task.Notifications.OnTimeout
+	}
+	return shouldNotify
+}
+
+func (s *Scheduler) buildNotificationMessage(task *ScheduledTask, record ExecutionRecord) notify.TaskNotification {
+	msg := notify.TaskNotification{
+		TaskID:    task.ID,
+		TaskName:  sanitizeUTF8(task.Name),
+		TaskType:  string(task.Type),
+		Status:    record.Status,
+		Result:    sanitizeUTF8(record.Result),
+		Error:     sanitizeUTF8(record.Error),
+		Duration:  float64(record.DurationMs),
+		Timestamp: time.Now(),
+		Payload:   sanitizePayload(task.Payload),
+	}
+	msg.ImagePaths = extractImagePaths(record.Result)
+	msg.Result = redactImagePaths(msg.Result, msg.ImagePaths)
+	return msg
+}
+
+func (s *Scheduler) sendInlineWebhookNotification(webhookURL string, msg notify.TaskNotification, timeout time.Duration) {
+	s.mu.RLock()
+	stopping := s.stopped || s.stopping
+	s.mu.RUnlock()
+	if stopping {
+		return
+	}
+	s.notifyWg.Add(1)
+	go func(url string) {
+		defer func() {
+			s.notifyWg.Done()
+			if r := recover(); r != nil {
+				logger.Errorf("scheduler panic in inline webhook notification: %v", r)
+			}
+		}()
+		ch, err := notify.NewGenericWebhookChannel("__inline__", url, nil, true, false)
+		if err != nil {
+			logger.Errorf("[scheduler] inline webhook URL blocked: %v", err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if err := ch.Send(ctx, msg); err != nil {
+			logger.Errorf("[scheduler] notify inline webhook failed: %v", err)
+			metrics.IncSchedulerNotifyFail("webhook")
+		} else {
+			metrics.IncSchedulerNotifySuccess("webhook")
+		}
+	}(webhookURL)
+}
+
+func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.TaskNotification, timeout time.Duration) {
+	if s.notifyRegistry == nil {
+		return
+	}
+	ch := s.notifyRegistry.Get(chID)
+	if ch == nil || !ch.IsEnabled() {
+		return
+	}
+
+	s.mu.RLock()
+	stopping := s.stopped || s.stopping
+	s.mu.RUnlock()
+	if stopping {
+		return
+	}
+	s.notifyWg.Add(1)
+	go func(ch notify.NotifyChannel) {
+		defer func() {
+			s.notifyWg.Done()
+			if r := recover(); r != nil {
+				logger.Errorf("scheduler panic in notify channel %s: %v", ch.ID(), r)
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if err := ch.Send(ctx, msg); err != nil {
+			logger.Errorf("[scheduler] notify %s (%s) failed: %v", ch.ID(), ch.Type(), err)
+			metrics.IncSchedulerNotifyFail(ch.Type())
+		} else {
+			metrics.IncSchedulerNotifySuccess(ch.Type())
+		}
+	}(ch)
+}
+
+// extractImagePaths extracts screenshot file paths from task result text.
+func extractImagePaths(result string) []string {
+	if result == "" {
+		return nil
+	}
+
+	var paths []string
+	lines := strings.Split(result, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		if strings.Contains(line, "→") {
+			parts := strings.SplitN(line, "→", 2)
+			if len(parts) == 2 {
+				path := strings.TrimSpace(parts[1])
+				if isImageFile(path) {
+					paths = append(paths, path)
+					continue
+				}
+			}
+		}
+
+		if strings.Contains(line, "截图保存:") || strings.Contains(line, "截图目录:") {
+			continue
+		}
+
+		if isImageFile(line) {
+			paths = append(paths, line)
+		}
+	}
+
+	return paths
+}
+
+func isImageFile(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".png") ||
+		strings.HasSuffix(lower, ".jpg") ||
+		strings.HasSuffix(lower, ".jpeg") ||
+		strings.HasSuffix(lower, ".gif") ||
+		strings.HasSuffix(lower, ".webp")
+}
+
+// redactImagePaths strips full server paths from notification text, keeping only filenames.
+func redactImagePaths(result string, paths []string) string {
+	if result == "" || len(paths) == 0 {
+		return result
+	}
+	for _, p := range paths {
+		result = strings.ReplaceAll(result, p, filepath.Base(p))
+	}
+	return result
+}
+
+// sanitizePayload creates a copy of payload with all string values passed through sanitizeUTF8.
+func sanitizePayload(payload map[string]interface{}) map[string]interface{} {
+	if payload == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(payload))
+	for k, v := range payload {
+		if s, ok := v.(string); ok {
+			out[k] = sanitizeUTF8(s)
+		} else {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// migrateChannelIDs migrates legacy Channels[] to ChannelIDs[].
+func migrateChannelIDs(nc *NotificationConfig) []string {
+	if len(nc.ChannelIDs) > 0 {
+		return nc.ChannelIDs
+	}
+
+	var ids []string
+	for _, name := range nc.Channels {
+		switch name {
+		case "log":
+			ids = append(ids, "builtin-log")
+		case "webhook":
+			if nc.WebhookURL != "" {
+				ids = append(ids, "__task_inline_webhook__")
+			} else {
+				logger.Warnf("[scheduler] task webhook channel without URL skipped")
+			}
+		case "email":
+			logger.Warnf("[scheduler] email channel not supported, skipped")
+		}
+	}
+	return ids
+}
+
+// validateWebhookURL validates a webhook URL for safety.
+func validateWebhookURL(webhookURL string) error {
+	if webhookURL == "" {
+		return nil
+	}
+	if !strings.HasPrefix(webhookURL, "http://") && !strings.HasPrefix(webhookURL, "https://") {
+		return fmt.Errorf("webhook URL must start with http:// or https://")
+	}
+	return nil
+}
+
+// ValidateWebhookURLPublic is the exported version of validateWebhookURL.
+func ValidateWebhookURLPublic(webhookURL string) error {
+	return validateWebhookURL(webhookURL)
+}
+
+func safeWebhookClient() *http.Client {
+	return urlguard.SafeHTTPClient(urlguard.CheckOptions{}, 30*time.Second)
+}
+
+func (s *Scheduler) sendWebhookNotification(webhookURL string, payload map[string]interface{}) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf("scheduler panic in sendWebhookNotification: %v", r)
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		jsonData, err := json.Marshal(payload)
+		if err != nil {
+			logger.Errorf("[scheduler] failed to marshal webhook payload: %v", err)
+			return
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", webhookURL, bytes.NewBuffer(jsonData))
+		if err != nil {
+			logger.Errorf("[scheduler] failed to create webhook request: %v", err)
+			return
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", "UniMap-Scheduler/1.0")
+
+		client := safeWebhookClient()
+		resp, err := client.Do(req)
+		if err != nil {
+			logger.Errorf("[scheduler] failed to send webhook to %s: %v", webhookURL, err)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			logger.Warnf("[scheduler] webhook to %s returned non-success status: %d", webhookURL, resp.StatusCode)
+		}
+	}()
+}

@@ -137,10 +137,8 @@ func (s *DynamicCacheStrategy) GetCacheDuration(engineName, query string, page, 
 	s.lock()
 	defer s.unlock()
 
-	// 生成查询键
 	queryKey := s.generateQueryKey(engineName, query, page, pageSize)
 
-	// 检查是否有查询统计信息
 	stat, exists := s.queryStats[queryKey]
 	if exists {
 		s.cacheHits++
@@ -148,114 +146,14 @@ func (s *DynamicCacheStrategy) GetCacheDuration(engineName, query string, page, 
 		s.cacheMisses++
 	}
 
-	// 基础缓存时间
 	duration := s.baseDuration
-
-	// 根据查询统计调整缓存时间
 	if exists {
-		// 如果查询频繁且成功，增加缓存时间
-		if stat.count > 5 && stat.successCount > int(float64(stat.count)*0.8) {
-			duration = duration * 2
-		}
-
-		// 如果查询时间较长，增加缓存时间
-		if stat.avgResponseTime > 5*time.Second {
-			duration = duration * 15 / 10
-		}
-
-		// 如果最近查询过，减少缓存时间
-		if time.Since(stat.lastQuery) < 5*time.Minute {
-			duration = duration / 2
-		}
-
-		// 根据缓存命中率调整
-		if stat.cacheHitRate > 0.8 {
-			duration = duration * 3 / 2
-		} else if stat.cacheHitRate < 0.2 {
-			duration = duration / 2
-		}
-
-		// 根据查询频率调整
-		if stat.queryFrequency > 100 { // 每小时查询超过100次
-			duration = duration * 3 / 2
-		} else if stat.queryFrequency < 1 { // 每小时查询少于1次
-			duration = duration * 3 / 2 // 低频查询可以缓存更长时间
-		}
-
-		// 如果检测到数据变化，减少缓存时间
-		if stat.dataChangeDetected {
-			duration = duration / 3
-		}
+		duration = s.adjustByQueryStat(duration, stat)
 	}
-
-	// 根据引擎统计调整缓存时间
-	engStat, engineExists := s.engineStats[engineName]
-	if engineExists {
-		// 如果引擎缓存命中率高，增加缓存时间
-		if engStat.cacheHitRate > 0.7 {
-			duration = duration * 3 / 2
-		}
-
-		// 如果引擎查询成功率低，减少缓存时间
-		if engStat.successCount < int(float64(engStat.count)*0.5) {
-			duration = duration / 2
-		}
-	}
-
-	// 根据引擎性能调整
-	perfStat, perfExists := s.enginePerformanceStats[engineName]
-	if perfExists {
-		// 如果引擎响应时间长，增加缓存时间
-		if perfStat.avgResponseTime > 10*time.Second {
-			duration = duration * 2
-		}
-
-		// 如果引擎错误率高，减少缓存时间
-		if perfStat.errorRate > 0.1 {
-			duration = duration / 2
-		}
-
-		// 如果有连续失败，减少缓存时间
-		if perfStat.consecutiveFailures > 3 {
-			duration = duration / 3
-		}
-	}
-
-	// 根据数据波动性调整
-	volStat, volExists := s.dataVolatilityStats[engineName]
-	if volExists {
-		// 如果数据变化率高，减少缓存时间
-		if volStat.changeRate > 0.5 {
-			duration = duration / 4
-		} else if volStat.changeRate > 0.1 {
-			duration = duration / 2
-		}
-
-		// 如果最近检测到变化，减少缓存时间
-		if time.Since(volStat.lastChangeDetected) < 1*time.Hour {
-			duration = duration / 2
-		}
-	}
-
-	// 根据查询特征调整缓存时间
+	duration = s.adjustByEngineStats(duration, engineName)
 	duration = s.adjustByQueryFeatures(duration, query)
+	duration = s.adjustByFrequencyStats(duration, queryKey)
 
-	// 根据查询频率统计调整
-	freqStat, freqExists := s.queryFrequencyStats[queryKey]
-	if freqExists {
-		if freqStat.count > 10 {
-			// 计算平均查询间隔
-			avgInterval := freqStat.intervalSum / time.Duration(freqStat.count-1)
-			// 如果查询间隔短，减少缓存时间
-			if avgInterval < 5*time.Minute {
-				duration = duration / 2
-			} else if avgInterval > 1*time.Hour {
-				duration = duration * 2
-			}
-		}
-	}
-
-	// 确保缓存时间在合理范围内
 	if duration < s.minDuration {
 		duration = s.minDuration
 	}
@@ -266,28 +164,113 @@ func (s *DynamicCacheStrategy) GetCacheDuration(engineName, query string, page, 
 	return duration
 }
 
+// adjustByQueryStat adjusts duration based on per-query statistics.
+func (s *DynamicCacheStrategy) adjustByQueryStat(duration time.Duration, stat queryStat) time.Duration {
+	if stat.count > 5 && stat.successCount > int(float64(stat.count)*0.8) {
+		duration = duration * 2
+	}
+	if stat.avgResponseTime > 5*time.Second {
+		duration = duration * 15 / 10
+	}
+	if time.Since(stat.lastQuery) < 5*time.Minute {
+		duration = duration / 2
+	}
+	if stat.cacheHitRate > 0.8 {
+		duration = duration * 3 / 2
+	} else if stat.cacheHitRate < 0.2 {
+		duration = duration / 2
+	}
+	if stat.queryFrequency > 100 {
+		duration = duration * 3 / 2
+	} else if stat.queryFrequency < 1 {
+		duration = duration * 3 / 2
+	}
+	if stat.dataChangeDetected {
+		duration = duration / 3
+	}
+	return duration
+}
+
+// adjustByEngineStats adjusts duration based on engine-level statistics.
+func (s *DynamicCacheStrategy) adjustByEngineStats(duration time.Duration, engineName string) time.Duration {
+	engStat, engineExists := s.engineStats[engineName]
+	if engineExists {
+		if engStat.cacheHitRate > 0.7 {
+			duration = duration * 3 / 2
+		}
+		if engStat.successCount < int(float64(engStat.count)*0.5) {
+			duration = duration / 2
+		}
+	}
+
+	perfStat, perfExists := s.enginePerformanceStats[engineName]
+	if perfExists {
+		if perfStat.avgResponseTime > 10*time.Second {
+			duration = duration * 2
+		}
+		if perfStat.errorRate > 0.1 {
+			duration = duration / 2
+		}
+		if perfStat.consecutiveFailures > 3 {
+			duration = duration / 3
+		}
+	}
+
+	volStat, volExists := s.dataVolatilityStats[engineName]
+	if volExists {
+		if volStat.changeRate > 0.5 {
+			duration = duration / 4
+		} else if volStat.changeRate > 0.1 {
+			duration = duration / 2
+		}
+		if time.Since(volStat.lastChangeDetected) < 1*time.Hour {
+			duration = duration / 2
+		}
+	}
+
+	return duration
+}
+
+// adjustByFrequencyStats adjusts duration based on query frequency statistics.
+func (s *DynamicCacheStrategy) adjustByFrequencyStats(duration time.Duration, queryKey string) time.Duration {
+	freqStat, freqExists := s.queryFrequencyStats[queryKey]
+	if !freqExists || freqStat.count <= 10 {
+		return duration
+	}
+	avgInterval := freqStat.intervalSum / time.Duration(freqStat.count-1)
+	if avgInterval < 5*time.Minute {
+		duration = duration / 2
+	} else if avgInterval > 1*time.Hour {
+		duration = duration * 2
+	}
+	return duration
+}
+
 // RecordQuery 记录查询信息
 func (s *DynamicCacheStrategy) RecordQuery(engineName, query string, page, pageSize int, duration time.Duration, success bool) {
 	s.lock()
 	defer s.unlock()
 
-	// 生成查询键
 	queryKey := s.generateQueryKey(engineName, query, page, pageSize)
 
-	// 更新查询统计
-	stat, exists := s.queryStats[queryKey]
-	if !exists {
-		stat = queryStat{}
-	}
+	s.updateFrequencyStats(queryKey)
+	s.updateQueryStats(queryKey, duration, success)
+	s.updateEngineStats(engineName, duration, success)
+	s.updatePerformanceStats(engineName, queryKey, duration, success)
 
-	// 更新查询频率统计
-	freqStat, freqExists := s.queryFrequencyStats[queryKey]
-	if !freqExists {
-		freqStat = frequencyStat{
-			firstQuery: time.Now(),
-		}
+	s.totalQueries++
+	s.totalDuration += duration
+	s.lastUpdate = time.Now()
+
+	s.cleanupOldStats()
+}
+
+// updateFrequencyStats updates per-query frequency tracking.
+func (s *DynamicCacheStrategy) updateFrequencyStats(queryKey string) {
+	freqStat, exists := s.queryFrequencyStats[queryKey]
+	if !exists {
+		freqStat = frequencyStat{firstQuery: time.Now()}
 	} else {
-		// 计算查询间隔
 		interval := time.Since(freqStat.lastQuery)
 		freqStat.intervalSum += interval
 		freqStat.queryIntervals = append(freqStat.queryIntervals, interval)
@@ -298,8 +281,11 @@ func (s *DynamicCacheStrategy) RecordQuery(engineName, query string, page, pageS
 	freqStat.count++
 	freqStat.lastQuery = time.Now()
 	s.queryFrequencyStats[queryKey] = freqStat
+}
 
-	// 更新查询统计
+// updateQueryStats updates per-query aggregate statistics.
+func (s *DynamicCacheStrategy) updateQueryStats(queryKey string, duration time.Duration, success bool) {
+	stat := s.queryStats[queryKey]
 	stat.count++
 	stat.totalDuration += duration
 	if success {
@@ -312,47 +298,40 @@ func (s *DynamicCacheStrategy) RecordQuery(engineName, query string, page, pageS
 	}
 	stat.lastQuery = time.Now()
 
-	// 计算平均响应时间
 	if stat.count > 0 {
 		stat.avgResponseTime = stat.totalDuration / time.Duration(stat.count)
 	}
-
-	// 计算缓存命中率
 	totalCache := s.cacheHits + s.cacheMisses
 	if totalCache > 0 {
 		stat.cacheHitRate = float64(s.cacheHits) / float64(totalCache)
 	}
-
-	// 计算查询频率（查询/小时）
 	if stat.count > 1 {
 		hours := time.Since(stat.lastQuery).Hours()
 		if hours > 0 {
 			stat.queryFrequency = float64(stat.count) / hours
 		}
 	}
-
 	s.queryStats[queryKey] = stat
+}
 
-	// 更新引擎统计
-	engStat, engineExists := s.engineStats[engineName]
-	if !engineExists {
-		engStat = engineStat{}
-	}
+// updateEngineStats updates per-engine aggregate statistics.
+func (s *DynamicCacheStrategy) updateEngineStats(engineName string, duration time.Duration, success bool) {
+	engStat := s.engineStats[engineName]
 	engStat.count++
 	engStat.totalDuration += duration
 	if success {
 		engStat.successCount++
 	}
-	// 简单的缓存命中率估算（实际应该根据缓存系统的统计）
 	engStat.cacheHitRate = float64(engStat.successCount) / float64(engStat.count)
 	s.engineStats[engineName] = engStat
+}
 
-	// 更新引擎性能统计
-	perfStat, perfExists := s.enginePerformanceStats[engineName]
-	if !perfExists {
-		perfStat = performanceStat{}
-	}
-	// 更新性能统计
+// updatePerformanceStats updates per-engine performance statistics.
+func (s *DynamicCacheStrategy) updatePerformanceStats(engineName, queryKey string, duration time.Duration, success bool) {
+	engStat := s.engineStats[engineName]
+	perfStat := s.enginePerformanceStats[engineName]
+	stat := s.queryStats[queryKey]
+
 	if success {
 		perfStat.avgResponseTime = (perfStat.avgResponseTime*time.Duration(engStat.count-1) + duration) / time.Duration(engStat.count)
 		perfStat.successRate = float64(engStat.successCount) / float64(engStat.count)
@@ -365,14 +344,6 @@ func (s *DynamicCacheStrategy) RecordQuery(engineName, query string, page, pageS
 		}
 	}
 	s.enginePerformanceStats[engineName] = perfStat
-
-	// 更新全局统计
-	s.totalQueries++
-	s.totalDuration += duration
-	s.lastUpdate = time.Now()
-
-	// 定期清理过期的查询统计
-	s.cleanupOldStats()
 }
 
 // GetStats 获取策略统计信息

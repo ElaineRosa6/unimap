@@ -45,7 +45,7 @@
 
 			<div class="progress-container" id="progress-container">
 				<div class="progress-bar">
-					<div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%"></div>
+					<div class="progress-bar-fill progress-bar-fill-init" id="progress-bar-fill"></div>
 				</div>
 				<div class="progress-text" id="progress-text">准备中...</div>
 			</div>
@@ -57,6 +57,10 @@
 	</main>
 
 <script nonce="{{.CSPNonce}}">
+function escapeHtml(value) {
+	const str = value === null || value === undefined ? '' : String(value);
+	return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 document.addEventListener('DOMContentLoaded', function() {
 	const urlList = document.getElementById('url-list');
 	const concurrency = document.getElementById('concurrency');
@@ -127,22 +131,49 @@ document.addEventListener('DOMContentLoaded', function() {
 				btn.disabled = false; btn.textContent = '开始截图';
 				return;
 			}
-			progressBarFill.style.width = '100%';
-			progressText.textContent = '截图完成';
-			resultsContainer.classList.remove('hidden');
-			resultsList.innerHTML = '';
-			(data.results || []).forEach(r => {
-				const div = document.createElement('div');
-				div.className = 'result-item';
-				const status = r.success ? '✅ 成功' : '❌ 失败';
-				const link = r.file_path ? ` <a href="${r.file_path}" target="_blank">查看</a>` : '';
-				div.innerHTML = `<strong>${r.url}</strong> — ${status} ${r.error || ''}${link}`;
-				resultsList.appendChild(div);
-			});
+
+			// P1-4: 异步轮询进度
+			const jobID = data.job_id;
+			const total = data.total || urls.length;
+			progressText.textContent = `正在截图... (0/${total})`;
+
+			const pollInterval = setInterval(async function() {
+				try {
+					const pResp = await fetch(`/api/v1/screenshot/batch/progress?job_id=${encodeURIComponent(jobID)}`);
+					const job = await pResp.json();
+					if (job.error) return;
+
+					const completed = job.completed || 0;
+					const success = job.success || 0;
+					const failed = job.failed || 0;
+					const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+					progressBarFill.style.width = percent + '%';
+					progressText.textContent = `正在截图... ${completed}/${total} (${success} 成功, ${failed} 失败)`;
+
+					if (job.status === 'completed' || job.status === 'failed') {
+						clearInterval(pollInterval);
+						progressBarFill.style.width = '100%';
+						progressText.textContent = job.status === 'completed' ? `截图完成: ${success} 成功, ${failed} 失败` : `截图失败: ${job.error || '未知错误'}`;
+						resultsContainer.classList.remove('hidden');
+						resultsList.innerHTML = '';
+						(job.results || []).forEach(r => {
+							const div = document.createElement('div');
+							div.className = 'result-item';
+							const status = r.success ? '✅ 成功' : '❌ 失败';
+							const link = r.file_path ? ` <a href="${escapeHtml(r.file_path)}" target="_blank">查看</a>` : '';
+							div.innerHTML = `<strong>${escapeHtml(r.url || r.URL)}</strong> — ${status} ${escapeHtml(r.error || r.Error || '')}${link}`;
+							resultsList.appendChild(div);
+						});
+						btn.disabled = false; btn.textContent = '开始截图';
+					}
+				} catch(e) { /* 轮询失败时静默继续 */ }
+			}, 2000);
+			setTimeout(function() { clearInterval(pollInterval); btn.disabled = false; btn.textContent = '开始截图'; }, 600000);
 		} catch(e) {
 			progressText.textContent = '截图失败: ' + e.message;
+			btn.disabled = false; btn.textContent = '开始截图';
 		}
-		btn.disabled = false; btn.textContent = '开始截图';
 	});
 });
 </script>

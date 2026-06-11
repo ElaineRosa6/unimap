@@ -42,16 +42,11 @@ func (p *UQLParser) Parse(query string) (*model.UQLAST, error) {
 
 // tokenize 将查询字符串分解为token
 func (p *UQLParser) tokenize(query string) []string {
-	// 简单的tokenize实现
-	// 支持: field="value", field="value" && field="value", field IN ["a", "b"], (condition)
-
 	tokens := []string{}
 	current := ""
 	inQuotes := false
 	inBrackets := false
 	escape := false
-
-	// 将字符串转换为rune切片以正确处理UTF-8
 	runes := []rune(query)
 
 	for i := 0; i < len(runes); i++ {
@@ -61,131 +56,75 @@ func (p *UQLParser) tokenize(query string) []string {
 			escape = false
 			continue
 		}
-
 		if ch == '\\' {
 			escape = true
 			continue
 		}
-
 		if ch == '"' {
 			inQuotes = !inQuotes
 			current += string(ch)
 			continue
 		}
 
-		// 在引号外时，括号作为独立token
-		if !inQuotes && ch == '(' {
-			if current != "" {
-				tokens = append(tokens, current)
-				current = ""
+		if !inQuotes {
+			if op, consumed := tryTokenizeOperator(runes, i); op != "" {
+				if current != "" {
+					tokens = append(tokens, current)
+					current = ""
+				}
+				tokens = append(tokens, op)
+				i += consumed - 1 // -1 because loop increments
+				continue
 			}
-			tokens = append(tokens, "(")
-			continue
-		}
 
-		if !inQuotes && ch == ')' {
-			if current != "" {
-				tokens = append(tokens, current)
-				current = ""
+			switch ch {
+			case '(':
+				if current != "" {
+					tokens = append(tokens, current)
+					current = ""
+				}
+				tokens = append(tokens, "(")
+				continue
+			case ')':
+				if current != "" {
+					tokens = append(tokens, current)
+					current = ""
+				}
+				tokens = append(tokens, ")")
+				continue
+			case '[':
+				if current != "" {
+					tokens = append(tokens, current)
+					current = ""
+				}
+				tokens = append(tokens, "[")
+				inBrackets = true
+				continue
+			case ']':
+				if current != "" {
+					tokens = append(tokens, current)
+					current = ""
+				}
+				tokens = append(tokens, "]")
+				inBrackets = false
+				continue
+			case ',':
+				if inBrackets {
+					if current != "" {
+						tokens = append(tokens, current)
+						current = ""
+					}
+					continue
+				}
 			}
-			tokens = append(tokens, ")")
-			continue
-		}
 
-		// 在引号外时，方括号作为独立token
-		if !inQuotes && ch == '[' {
-			if current != "" {
-				tokens = append(tokens, current)
-				current = ""
-			}
-			tokens = append(tokens, "[")
-			inBrackets = true
-			continue
-		}
-
-		if !inQuotes && ch == ']' {
-			if current != "" {
-				tokens = append(tokens, current)
-				current = ""
-			}
-			tokens = append(tokens, "]")
-			inBrackets = false
-			continue
-		}
-
-		// 在方括号内时，逗号作为分隔符
-		if !inQuotes && inBrackets && ch == ',' {
-			if current != "" {
-				tokens = append(tokens, current)
-				current = ""
-			}
-			continue
-		}
-
-		if !inQuotes && !inBrackets && (ch == ' ' || ch == '\t' || ch == '\n') {
-			if current != "" {
-				tokens = append(tokens, current)
-				current = ""
-			}
-			continue
-		}
-
-		if !inQuotes && !inBrackets && (ch == '&' || ch == '|' || ch == '=' || ch == '!' || ch == '>' || ch == '<' || ch == '~') {
-			if current != "" {
-				tokens = append(tokens, current)
-				current = ""
-			}
-			// 处理多字符操作符
-			if ch == '&' && i+1 < len(runes) && runes[i+1] == '&' {
-				tokens = append(tokens, "&&")
-				current = ""
-				i++
+			if !inBrackets && (ch == ' ' || ch == '\t' || ch == '\n') {
+				if current != "" {
+					tokens = append(tokens, current)
+					current = ""
+				}
 				continue
 			}
-			if ch == '|' && i+1 < len(runes) && runes[i+1] == '|' {
-				tokens = append(tokens, "||")
-				current = ""
-				i++
-				continue
-			}
-			if ch == '!' && i+1 < len(runes) && runes[i+1] == '=' {
-				tokens = append(tokens, "!=")
-				current = ""
-				i++
-				continue
-			}
-			if ch == '=' && i+1 < len(runes) && runes[i+1] == '=' {
-				tokens = append(tokens, "==")
-				current = ""
-				i++
-				continue
-			}
-			if ch == '>' && i+1 < len(runes) && runes[i+1] == '=' {
-				tokens = append(tokens, ">=")
-				current = ""
-				i++
-				continue
-			}
-			if ch == '<' && i+1 < len(runes) && runes[i+1] == '=' {
-				tokens = append(tokens, "<=")
-				current = ""
-				i++
-				continue
-			}
-			if ch == '<' && i+1 < len(runes) && runes[i+1] == '>' {
-				tokens = append(tokens, "<>")
-				current = ""
-				i++
-				continue
-			}
-			if ch == '~' && i+1 < len(runes) && runes[i+1] == '=' {
-				tokens = append(tokens, "~=")
-				current = ""
-				i++
-				continue
-			}
-			tokens = append(tokens, string(ch))
-			continue
 		}
 
 		current += string(ch)
@@ -194,8 +133,38 @@ func (p *UQLParser) tokenize(query string) []string {
 	if current != "" {
 		tokens = append(tokens, current)
 	}
-
 	return tokens
+}
+
+// tryTokenizeOperator 尝试从当前位置匹配多字符操作符，返回 (操作符, 消耗字符数)
+func tryTokenizeOperator(runes []rune, pos int) (string, int) {
+	ch := runes[pos]
+	if ch != '&' && ch != '|' && ch != '=' && ch != '!' && ch != '>' && ch != '<' && ch != '~' {
+		return "", 0
+	}
+	if pos+1 >= len(runes) {
+		return string(ch), 1
+	}
+	next := runes[pos+1]
+	switch {
+	case ch == '&' && next == '&':
+		return "&&", 2
+	case ch == '|' && next == '|':
+		return "||", 2
+	case ch == '!' && next == '=':
+		return "!=", 2
+	case ch == '=' && next == '=':
+		return "==", 2
+	case ch == '>' && next == '=':
+		return ">=", 2
+	case ch == '<' && next == '=':
+		return "<=", 2
+	case ch == '<' && next == '>':
+		return "<>", 2
+	case ch == '~' && next == '=':
+		return "~=", 2
+	}
+	return string(ch), 1
 }
 
 // buildAST 从token构建AST
@@ -203,9 +172,6 @@ func (p *UQLParser) buildAST(tokens []string) (*model.UQLNode, error) {
 	if len(tokens) == 0 {
 		return nil, fmt.Errorf("no tokens")
 	}
-
-	// 简单的递归下降解析
-	// 支持: field="value", field IN [values], (condition), condition && condition, !=, <>, CONTAINS等
 
 	var parseOr func(int) (*model.UQLNode, int, error)
 	var parseAnd func(int) (*model.UQLNode, int, error)
@@ -215,8 +181,6 @@ func (p *UQLParser) buildAST(tokens []string) (*model.UQLNode, error) {
 		if start >= len(tokens) {
 			return nil, start, fmt.Errorf("unexpected end of expression")
 		}
-
-		// 处理括号
 		if tokens[start] == "(" {
 			node, next, err := parseOr(start + 1)
 			if err != nil {
@@ -227,67 +191,7 @@ func (p *UQLParser) buildAST(tokens []string) (*model.UQLNode, error) {
 			}
 			return node, next + 1, nil
 		}
-
-		// 基础条件: field operator value
-		if start+2 >= len(tokens) {
-			return nil, start, fmt.Errorf("incomplete condition")
-		}
-
-		field := tokens[start]
-		operator := tokens[start+1]
-
-		// 处理 IN 操作符
-		if strings.ToUpper(operator) == "IN" {
-			if start+3 >= len(tokens) || tokens[start+2] != "[" {
-				return nil, start, fmt.Errorf("expected [ after IN")
-			}
-			// 查找闭合]
-			end := start + 3
-			for end < len(tokens) && tokens[end] != "]" {
-				end++
-			}
-			if end >= len(tokens) {
-				return nil, start, fmt.Errorf("missing closing bracket")
-			}
-
-			// 收集数组值
-			values := []string{}
-			for i := start + 3; i < end; i++ {
-				// 去除引号
-				val := strings.TrimSpace(tokens[i])
-				val = strings.Trim(val, `"`)
-				values = append(values, val)
-			}
-
-			node := &model.UQLNode{
-				Type:  "condition",
-				Value: field,
-				Children: []*model.UQLNode{
-					{Type: "operator", Value: "IN"},
-					{Type: "array", Value: strings.Join(values, ",")},
-				},
-			}
-			return node, end + 1, nil
-		}
-
-		// 处理各种操作符
-		if operator == "=" || operator == "==" || operator == "!=" || operator == "<>" || operator == ">" || operator == "<" || operator == ">=" || operator == "<=" || operator == "~=" || strings.ToUpper(operator) == "CONTAINS" {
-			if start+2 >= len(tokens) {
-				return nil, start, fmt.Errorf("missing value")
-			}
-			value := strings.Trim(tokens[start+2], `"`)
-			node := &model.UQLNode{
-				Type:  "condition",
-				Value: field,
-				Children: []*model.UQLNode{
-					{Type: "operator", Value: operator},
-					{Type: "value", Value: value},
-				},
-			}
-			return node, start + 3, nil
-		}
-
-		return nil, start, fmt.Errorf("unsupported operator: %s", operator)
+		return parseCondition(tokens, start)
 	}
 
 	parseAnd = func(start int) (*model.UQLNode, int, error) {
@@ -295,27 +199,18 @@ func (p *UQLParser) buildAST(tokens []string) (*model.UQLNode, error) {
 		if err != nil {
 			return nil, start, err
 		}
-
 		for next < len(tokens) {
 			token := tokens[next]
-			upper := strings.ToUpper(token)
-			if token != "&&" && upper != "AND" {
+			if token != "&&" && strings.ToUpper(token) != "AND" {
 				break
 			}
-
 			right, after, err := parseTerm(next + 1)
 			if err != nil {
 				return nil, next, err
 			}
-
-			left = &model.UQLNode{
-				Type:     "logical",
-				Value:    "AND",
-				Children: []*model.UQLNode{left, right},
-			}
+			left = &model.UQLNode{Type: "logical", Value: "AND", Children: []*model.UQLNode{left, right}}
 			next = after
 		}
-
 		return left, next, nil
 	}
 
@@ -324,27 +219,18 @@ func (p *UQLParser) buildAST(tokens []string) (*model.UQLNode, error) {
 		if err != nil {
 			return nil, start, err
 		}
-
 		for next < len(tokens) {
 			token := tokens[next]
-			upper := strings.ToUpper(token)
-			if token != "||" && upper != "OR" {
+			if token != "||" && strings.ToUpper(token) != "OR" {
 				break
 			}
-
 			right, after, err := parseAnd(next + 1)
 			if err != nil {
 				return nil, next, err
 			}
-
-			left = &model.UQLNode{
-				Type:     "logical",
-				Value:    "OR",
-				Children: []*model.UQLNode{left, right},
-			}
+			left = &model.UQLNode{Type: "logical", Value: "OR", Children: []*model.UQLNode{left, right}}
 			next = after
 		}
-
 		return left, next, nil
 	}
 
@@ -355,7 +241,6 @@ func (p *UQLParser) buildAST(tokens []string) (*model.UQLNode, error) {
 	if next < len(tokens) {
 		return nil, fmt.Errorf("unexpected token: %s", tokens[next])
 	}
-
 	return root, nil
 }
 
@@ -409,6 +294,65 @@ func (p *UQLParser) ExtractConditions(ast *model.UQLAST) (map[string]interface{}
 
 	traverse(ast.Root)
 	return conditions, warnings
+}
+
+// parseCondition 解析单个条件表达式（field op value 或 field IN [...]）
+func parseCondition(tokens []string, start int) (*model.UQLNode, int, error) {
+	if start+2 >= len(tokens) {
+		return nil, start, fmt.Errorf("incomplete condition")
+	}
+	field := tokens[start]
+	operator := tokens[start+1]
+
+	if strings.ToUpper(operator) == "IN" {
+		return parseINExpression(tokens, field, start)
+	}
+
+	validOps := map[string]bool{
+		"=": true, "==": true, "!=": true, "<>": true,
+		">": true, "<": true, ">=": true, "<=": true, "~=": true,
+	}
+	if !validOps[operator] && strings.ToUpper(operator) != "CONTAINS" {
+		return nil, start, fmt.Errorf("unsupported operator: %s", operator)
+	}
+	if start+2 >= len(tokens) {
+		return nil, start, fmt.Errorf("missing value")
+	}
+	value := strings.Trim(tokens[start+2], `"`)
+	return &model.UQLNode{
+		Type:  "condition",
+		Value: field,
+		Children: []*model.UQLNode{
+			{Type: "operator", Value: operator},
+			{Type: "value", Value: value},
+		},
+	}, start + 3, nil
+}
+
+// parseINExpression 解析 IN [value1, value2, ...] 表达式
+func parseINExpression(tokens []string, field string, start int) (*model.UQLNode, int, error) {
+	if start+3 >= len(tokens) || tokens[start+2] != "[" {
+		return nil, start, fmt.Errorf("expected [ after IN")
+	}
+	end := start + 3
+	for end < len(tokens) && tokens[end] != "]" {
+		end++
+	}
+	if end >= len(tokens) {
+		return nil, start, fmt.Errorf("missing closing bracket")
+	}
+	values := make([]string, 0, end-start-3)
+	for i := start + 3; i < end; i++ {
+		values = append(values, strings.Trim(strings.TrimSpace(tokens[i]), `"`))
+	}
+	return &model.UQLNode{
+		Type:  "condition",
+		Value: field,
+		Children: []*model.UQLNode{
+			{Type: "operator", Value: "IN"},
+			{Type: "array", Value: strings.Join(values, ",")},
+		},
+	}, end + 1, nil
 }
 
 // Validate 验证UQL查询的有效性

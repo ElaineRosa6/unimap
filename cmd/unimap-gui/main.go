@@ -92,65 +92,76 @@ func createMainUI(window fyne.Window, state *AppState) fyne.CanvasObject {
 }
 
 func createQueryTab(window fyne.Window, state *AppState) fyne.CanvasObject {
-	// --- 1. 顶部：标题与配置 ---
-	configBtn := widget.NewButtonWithIcon("配置", theme.SettingsIcon(), func() {
-		showEngineConfigDialog(window, state)
-	})
-	helpBtn := widget.NewButtonWithIcon("帮助", theme.HelpIcon(), func() {
-		showHelpDialog(window)
-	})
-
-	topHeader := container.NewHBox(
-		widget.NewIcon(theme.SearchIcon()),
-		widget.NewLabelWithStyle("UniMap 资产查询", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		layout.NewSpacer(),
-		helpBtn,
-		configBtn,
+	topHeader := buildQueryTopHeader(window, state)
+	queryEntry := buildQueryEntry()
+	limitEntry, limitContainer := buildQueryLimitInput()
+	engineBox := buildQueryEngineChecks(state)
+	statusLabel, resultCountLabel, progressBar := buildQueryStatusBar()
+	resultTable := buildQueryResultTable(window, state)
+	startBtn, exportJSONBtn, exportExcelBtn, clearBtn := buildQueryButtons(
+		window, state, queryEntry, limitEntry, statusLabel, resultCountLabel, progressBar, resultTable,
 	)
 
-	// --- 2. 查询输入区 ---
-	queryEntry := widget.NewMultiLineEntry()
-	queryEntry.SetPlaceHolder("输入查询语句 (UQL)... \n例如: app=\"nginx\" && country=\"CN\"")
-	queryEntry.SetMinRowsVisible(3)
-
-	limitEntry := widget.NewEntry()
-	limitEntry.SetPlaceHolder("100")
-	limitEntry.SetText("100")
-	limitContainer := container.NewHBox(widget.NewLabel("数量限制:"), limitEntry)
-
-	// --- 3. 引擎选择区 ---
-	fofaCheck := widget.NewCheck("FOFA", func(b bool) { state.Config.Engines.Fofa.Enabled = b })
-	fofaCheck.SetChecked(state.Config.Engines.Fofa.Enabled)
-
-	hunterCheck := widget.NewCheck("Hunter", func(b bool) { state.Config.Engines.Hunter.Enabled = b })
-	hunterCheck.SetChecked(state.Config.Engines.Hunter.Enabled)
-
-	quakeCheck := widget.NewCheck("Quake", func(b bool) { state.Config.Engines.Quake.Enabled = b })
-	quakeCheck.SetChecked(state.Config.Engines.Quake.Enabled)
-
-	zoomeyeCheck := widget.NewCheck("ZoomEye", func(b bool) { state.Config.Engines.Zoomeye.Enabled = b })
-	zoomeyeCheck.SetChecked(state.Config.Engines.Zoomeye.Enabled)
-
-	engineBox := container.NewHBox(
-		widget.NewLabel("检索引擎:"),
-		fofaCheck, hunterCheck, quakeCheck, zoomeyeCheck,
+	controlRow1 := container.NewHBox(engineBox, layout.NewSpacer(), limitContainer)
+	controlRow2 := container.NewHBox(startBtn, clearBtn, layout.NewSpacer(), widget.NewLabel("导出:"), exportJSONBtn, exportExcelBtn)
+	topPanel := container.NewVBox(
+		container.NewPadded(topHeader), widget.NewSeparator(),
+		container.NewPadded(container.NewVBox(
+			widget.NewLabelWithStyle("查询语句 (UQL):", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			queryEntry, controlRow1, controlRow2,
+		)), widget.NewSeparator(),
 	)
+	statusBar := container.NewHBox(widget.NewIcon(theme.InfoIcon()), statusLabel, layout.NewSpacer(), resultCountLabel, container.NewPadded(progressBar))
+	return container.NewBorder(topPanel, container.NewVBox(widget.NewSeparator(), container.NewPadded(statusBar)), nil, nil, resultTable)
+}
 
-	// --- 4. 状态栏 (预定义以供闭包使用) ---
-	statusLabel := widget.NewLabel("就绪")
-	statusLabel.TextStyle = fyne.TextStyle{Italic: true}
-	resultCountLabel := widget.NewLabel("")
-	progressBar := widget.NewProgressBarInfinite()
-	progressBar.Hide()
+func buildQueryTopHeader(window fyne.Window, state *AppState) *fyne.Container {
+	configBtn := widget.NewButtonWithIcon("配置", theme.SettingsIcon(), func() { showEngineConfigDialog(window, state) })
+	helpBtn := widget.NewButtonWithIcon("帮助", theme.HelpIcon(), func() { showHelpDialog(window) })
+	return container.NewHBox(widget.NewIcon(theme.SearchIcon()), widget.NewLabelWithStyle("UniMap 资产查询", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), layout.NewSpacer(), helpBtn, configBtn)
+}
 
-	// --- 5. 结果表格 ---
+func buildQueryEntry() *widget.Entry {
+	e := widget.NewMultiLineEntry()
+	e.SetPlaceHolder("输入查询语句 (UQL)... \n例如: app=\"nginx\" && country=\"CN\"")
+	e.SetMinRowsVisible(3)
+	return e
+}
+
+func buildQueryLimitInput() (*widget.Entry, *fyne.Container) {
+	e := widget.NewEntry()
+	e.SetPlaceHolder("100")
+	e.SetText("100")
+	return e, container.NewHBox(widget.NewLabel("数量限制:"), e)
+}
+
+func buildQueryEngineChecks(state *AppState) *fyne.Container {
+	fofa := widget.NewCheck("FOFA", func(b bool) { state.Config.Engines.Fofa.Enabled = b })
+	fofa.SetChecked(state.Config.Engines.Fofa.Enabled)
+	hunter := widget.NewCheck("Hunter", func(b bool) { state.Config.Engines.Hunter.Enabled = b })
+	hunter.SetChecked(state.Config.Engines.Hunter.Enabled)
+	quake := widget.NewCheck("Quake", func(b bool) { state.Config.Engines.Quake.Enabled = b })
+	quake.SetChecked(state.Config.Engines.Quake.Enabled)
+	zoomeye := widget.NewCheck("ZoomEye", func(b bool) { state.Config.Engines.Zoomeye.Enabled = b })
+	zoomeye.SetChecked(state.Config.Engines.Zoomeye.Enabled)
+	return container.NewHBox(widget.NewLabel("检索引擎:"), fofa, hunter, quake, zoomeye)
+}
+
+func buildQueryStatusBar() (*widget.Label, *widget.Label, *widget.ProgressBarInfinite) {
+	status := widget.NewLabel("就绪")
+	status.TextStyle = fyne.TextStyle{Italic: true}
+	count := widget.NewLabel("")
+	progress := widget.NewProgressBarInfinite()
+	progress.Hide()
+	return status, count, progress
+}
+
+func buildQueryResultTable(window fyne.Window, state *AppState) *widget.Table {
 	headers := []string{"IP", "Port", "Proto", "Host", "URL", "Title", "Server", "Country", "Source"}
-	resultTable := widget.NewTable(
+	t := widget.NewTable(
 		func() (int, int) {
-			rows := 1 // header
-			if len(state.QueryResults) > 0 {
-				rows = len(state.QueryResults) + 1
-			}
+			rows := 1
+			if len(state.QueryResults) > 0 { rows = len(state.QueryResults) + 1 }
 			return rows, 9
 		},
 		func() fyne.CanvasObject {
@@ -162,278 +173,115 @@ func createQueryTab(window fyne.Window, state *AppState) fyne.CanvasObject {
 			label := cell.(*widget.Label)
 			label.Alignment = fyne.TextAlignLeading
 			label.TextStyle = fyne.TextStyle{}
-
 			if id.Row == 0 {
 				label.TextStyle = fyne.TextStyle{Bold: true}
-				if id.Col >= 0 && id.Col < len(headers) {
-					label.SetText(headers[id.Col])
-				}
+				if id.Col >= 0 && id.Col < len(headers) { label.SetText(headers[id.Col]) }
 				return
 			}
-
 			if len(state.QueryResults) == 0 {
-				if id.Col == 0 {
-					label.SetText("暂无结果")
-				} else {
-					label.SetText("")
-				}
+				if id.Col == 0 { label.SetText("暂无结果") } else { label.SetText("") }
 				return
 			}
-
 			rowIdx := id.Row - 1
-			if rowIdx < 0 || rowIdx >= len(state.QueryResults) {
-				label.SetText("")
-				return
-			}
-
-			asset := state.QueryResults[rowIdx]
-			switch id.Col {
-			case 0:
-				label.SetText(asset.IP)
-			case 1:
-				label.SetText(fmt.Sprintf("%d", asset.Port))
-			case 2:
-				label.SetText(asset.Protocol)
-			case 3:
-				label.SetText(asset.Host)
-			case 4:
-				label.SetText(asset.URL)
-			case 5:
-				label.SetText(asset.Title)
-			case 6:
-				label.SetText(asset.Server)
-			case 7:
-				label.SetText(asset.CountryCode)
-			case 8:
-				label.SetText(asset.Source)
-			}
+			if rowIdx < 0 || rowIdx >= len(state.QueryResults) { label.SetText(""); return }
+			a := state.QueryResults[rowIdx]
+			vals := []string{a.IP, fmt.Sprintf("%d", a.Port), a.Protocol, a.Host, a.URL, a.Title, a.Server, a.CountryCode, a.Source}
+			if id.Col < len(vals) { label.SetText(vals[id.Col]) }
 		},
 	)
-
-	resultTable.SetColumnWidth(0, 130)
-	resultTable.SetColumnWidth(1, 70)
-	resultTable.SetColumnWidth(2, 70)
-	resultTable.SetColumnWidth(3, 160)
-	resultTable.SetColumnWidth(4, 220)
-	resultTable.SetColumnWidth(5, 200)
-	resultTable.SetColumnWidth(6, 120)
-	resultTable.SetColumnWidth(7, 70)
-	resultTable.SetColumnWidth(8, 80)
-
-	resultTable.OnSelected = func(id widget.TableCellID) {
-		if id.Row == 0 {
-			resultTable.Unselect(id)
-			return
-		}
+	t.SetColumnWidth(0, 130); t.SetColumnWidth(1, 70); t.SetColumnWidth(2, 70)
+	t.SetColumnWidth(3, 160); t.SetColumnWidth(4, 220); t.SetColumnWidth(5, 200)
+	t.SetColumnWidth(6, 120); t.SetColumnWidth(7, 70); t.SetColumnWidth(8, 80)
+	t.OnSelected = func(id widget.TableCellID) {
+		if id.Row == 0 { t.Unselect(id); return }
 		rowIdx := id.Row - 1
 		if rowIdx >= 0 && rowIdx < len(state.QueryResults) {
-			asset := state.QueryResults[rowIdx]
-			showAssetDetails(window, asset)
-			resultTable.Unselect(id)
+			showAssetDetails(window, state.QueryResults[rowIdx])
+			t.Unselect(id)
 		}
 	}
+	return t
+}
 
-	// --- 6. 按钮与逻辑 ---
-	var startBtn *widget.Button
-	var exportJSONBtn *widget.Button
-	var exportExcelBtn *widget.Button
-	var clearBtn *widget.Button
-
-	runOnUI := func(fn func()) {
-		if fn != nil {
-			fn()
+func buildQueryButtons(window fyne.Window, state *AppState, queryEntry *widget.Entry, limitEntry *widget.Entry,
+	statusLabel, resultCountLabel *widget.Label, progressBar *widget.ProgressBarInfinite, resultTable *widget.Table,
+) (startBtn, exportJSONBtn, exportExcelBtn, clearBtn *widget.Button) {
+	setBusy := func(busy bool, start, clear, ej, ee *widget.Button) {
+		if busy {
+			statusLabel.SetText("正在查询..."); progressBar.Show()
+			start.Disable(); clear.Disable(); ej.Disable(); ee.Disable()
+			return
 		}
-	}
-
-	setBusy := func(busy bool) {
-		runOnUI(func() {
-			if busy {
-				statusLabel.SetText("正在查询...")
-				progressBar.Show()
-				startBtn.Disable()
-				if clearBtn != nil {
-					clearBtn.Disable()
-				}
-				if exportJSONBtn != nil {
-					exportJSONBtn.Disable()
-				}
-				if exportExcelBtn != nil {
-					exportExcelBtn.Disable()
-				}
-				return
-			}
-			progressBar.Hide()
-			startBtn.Enable()
-			if clearBtn != nil {
-				clearBtn.Enable()
-			}
-			if len(state.QueryResults) > 0 {
-				if exportJSONBtn != nil {
-					exportJSONBtn.Enable()
-				}
-				if exportExcelBtn != nil {
-					exportExcelBtn.Enable()
-				}
-			}
-		})
+		progressBar.Hide(); start.Enable(); clear.Enable()
+		if len(state.QueryResults) > 0 { ej.Enable(); ee.Enable() }
 	}
 
 	startBtn = widget.NewButtonWithIcon("立即查询", theme.MediaPlayIcon(), func() {
 		query := strings.TrimSpace(queryEntry.Text)
-		if query == "" {
-			dialog.ShowError(fmt.Errorf("请输入查询语句"), window)
-			return
-		}
-
-		limit := 100
-		if v := strings.TrimSpace(limitEntry.Text); v != "" {
-			parsed, err := strconv.Atoi(v)
-			if err == nil && parsed > 0 {
-				if parsed > 2000 {
-					parsed = 2000
-				}
-				limit = parsed
-			}
-		}
-
-		var engines []string
-		if state.Config.Engines.Fofa.Enabled {
-			engines = append(engines, "fofa")
-		}
-		if state.Config.Engines.Hunter.Enabled {
-			engines = append(engines, "hunter")
-		}
-		if state.Config.Engines.Quake.Enabled {
-			engines = append(engines, "quake")
-		}
-		if state.Config.Engines.Zoomeye.Enabled {
-			engines = append(engines, "zoomeye")
-		}
-
-		if len(engines) == 0 {
-			dialog.ShowError(fmt.Errorf("请至少选择一个引擎"), window)
-			return
-		}
-
-		setBusy(true)
-
+		if query == "" { dialog.ShowError(fmt.Errorf("请输入查询语句"), window); return }
+		limit := parseQueryLimit(limitEntry.Text)
+		engines := collectEnabledEngines(state)
+		if len(engines) == 0 { dialog.ShowError(fmt.Errorf("请至少选择一个引擎"), window); return }
+		setBusy(true, startBtn, clearBtn, exportJSONBtn, exportExcelBtn)
 		go func() {
-			defer setBusy(false)
+			defer setBusy(false, startBtn, clearBtn, exportJSONBtn, exportExcelBtn)
 			querySvc := service.NewUnifiedServiceWithConfig(state.Config)
 			registerEngines(querySvc, state.Config)
-
-			req := service.QueryRequest{
-				Query:       query,
-				Engines:     engines,
-				PageSize:    limit,
-				ProcessData: true,
-			}
-
-			resp, err := querySvc.Query(context.Background(), req)
+			resp, err := querySvc.Query(context.Background(), service.QueryRequest{
+				Query: query, Engines: engines, PageSize: limit, ProcessData: true,
+			})
 			if err != nil {
-				runOnUI(func() {
-					statusLabel.SetText(fmt.Sprintf("出错: %v", err))
-					dialog.ShowError(fmt.Errorf("查询失败: %v", err), window)
-				})
+				statusLabel.SetText(fmt.Sprintf("出错: %v", err))
+				dialog.ShowError(fmt.Errorf("查询失败: %v", err), window)
 				return
 			}
-
-			runOnUI(func() {
-				state.QueryResults = resp.Assets
-				resultCountLabel.SetText(fmt.Sprintf("%d 条结果", len(state.QueryResults)))
-				statusLabel.SetText("查询完成")
-				resultTable.Refresh()
-			})
+			state.QueryResults = resp.Assets
+			resultCountLabel.SetText(fmt.Sprintf("%d 条结果", len(state.QueryResults)))
+			statusLabel.SetText("查询完成")
+			resultTable.Refresh()
 		}()
 	})
 	startBtn.Importance = widget.HighImportance
 
 	clearBtn = widget.NewButtonWithIcon("清空结果", theme.ContentClearIcon(), func() {
-		state.QueryResults = nil
-		resultCountLabel.SetText("")
-		statusLabel.SetText("就绪")
-		exportJSONBtn.Disable()
-		exportExcelBtn.Disable()
-		resultTable.Refresh()
+		state.QueryResults = nil; resultCountLabel.SetText(""); statusLabel.SetText("就绪")
+		exportJSONBtn.Disable(); exportExcelBtn.Disable(); resultTable.Refresh()
 	})
-
 	exportJSONBtn = widget.NewButtonWithIcon("JSON", theme.DocumentSaveIcon(), func() {
 		dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
-			if err != nil || writer == nil {
-				return
-			}
+			if err != nil || writer == nil { return }
 			defer writer.Close()
-			exporter := exporter.NewJSONExporter()
-			if err := exporter.Export(state.QueryResults, writer.URI().Path()); err != nil {
-				dialog.ShowError(err, window)
-			} else {
-				dialog.ShowInformation("成功", "导出完成", window)
-			}
+			if err := exporter.NewJSONExporter().Export(state.QueryResults, writer.URI().Path()); err != nil { dialog.ShowError(err, window) } else { dialog.ShowInformation("成功", "导出完成", window) }
 		}, window)
 	})
 	exportJSONBtn.Disable()
-
 	exportExcelBtn = widget.NewButtonWithIcon("Excel", theme.DocumentCreateIcon(), func() {
 		dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
-			if err != nil || writer == nil {
-				return
-			}
+			if err != nil || writer == nil { return }
 			defer writer.Close()
-			ex := exporter.NewExcelExporter()
-			if err := ex.Export(state.QueryResults, writer.URI().Path()); err != nil {
-				dialog.ShowError(err, window)
-			} else {
-				dialog.ShowInformation("成功", "导出完成", window)
-			}
+			if err := exporter.NewExcelExporter().Export(state.QueryResults, writer.URI().Path()); err != nil { dialog.ShowError(err, window) } else { dialog.ShowInformation("成功", "导出完成", window) }
 		}, window)
 	})
 	exportExcelBtn.Disable()
+	return
+}
 
-	// --- 7. 布局组装 ---
+func parseQueryLimit(text string) int {
+	v := strings.TrimSpace(text)
+	if v == "" { return 100 }
+	parsed, err := strconv.Atoi(v)
+	if err != nil || parsed <= 0 { return 100 }
+	if parsed > 2000 { return 2000 }
+	return parsed
+}
 
-	// 控制区第二行：引擎+数量
-	controlRow1 := container.NewHBox(
-		engineBox,
-		layout.NewSpacer(),
-		limitContainer,
-	)
-
-	// 控制区第三行：按钮
-	controlRow2 := container.NewHBox(
-		startBtn, clearBtn,
-		layout.NewSpacer(),
-		widget.NewLabel("导出:"), exportJSONBtn, exportExcelBtn,
-	)
-
-	// 顶部面板总成
-	topPanel := container.NewVBox(
-		container.NewPadded(topHeader),
-		widget.NewSeparator(),
-		container.NewPadded(container.NewVBox(
-			widget.NewLabelWithStyle("查询语句 (UQL):", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-			queryEntry,
-			controlRow1,
-			controlRow2,
-		)),
-		widget.NewSeparator(),
-	)
-
-	// 底部状态栏
-	statusBar := container.NewHBox(
-		widget.NewIcon(theme.InfoIcon()),
-		statusLabel,
-		layout.NewSpacer(),
-		resultCountLabel,
-		container.NewPadded(progressBar),
-	)
-
-	// 主布局： 上(TopPanel) - 下(StatusBar) - 中(Table)
-	return container.NewBorder(
-		topPanel,
-		container.NewVBox(widget.NewSeparator(), container.NewPadded(statusBar)),
-		nil, nil,
-		resultTable, // Table 放在 Center 可自适应并支持内置滚动
-	)
+func collectEnabledEngines(state *AppState) []string {
+	var engines []string
+	if state.Config.Engines.Fofa.Enabled { engines = append(engines, "fofa") }
+	if state.Config.Engines.Hunter.Enabled { engines = append(engines, "hunter") }
+	if state.Config.Engines.Quake.Enabled { engines = append(engines, "quake") }
+	if state.Config.Engines.Zoomeye.Enabled { engines = append(engines, "zoomeye") }
+	return engines
 }
 
 func buildScreenshotManager(cfg *config.Config) *screenshot.Manager {
@@ -708,6 +556,47 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 			cfg.Engines.Quake.APIKey,
 			cfg.Engines.Quake.QPS,
 			time.Duration(cfg.Engines.Quake.Timeout)*time.Second,
+		))
+	}
+	if cfg.Engines.Censys.Enabled && cfg.Engines.Censys.APIID != "" && cfg.Engines.Censys.APISecret != "" {
+		svc.RegisterAdapter(adapter.NewCensysAdapter(
+			cfg.Engines.Censys.BaseURL,
+			cfg.Engines.Censys.APIID,
+			cfg.Engines.Censys.APISecret,
+			cfg.Engines.Censys.QPS,
+			time.Duration(cfg.Engines.Censys.Timeout)*time.Second,
+		))
+	}
+	if cfg.Engines.Daydaymap.Enabled && cfg.Engines.Daydaymap.APIKey != "" {
+		svc.RegisterAdapter(adapter.NewDayDayMapAdapter(
+			cfg.Engines.Daydaymap.BaseURL,
+			cfg.Engines.Daydaymap.APIKey,
+			cfg.Engines.Daydaymap.QPS,
+			time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second,
+		))
+	}
+	if cfg.Engines.Binaryedge.Enabled && cfg.Engines.Binaryedge.APIKey != "" {
+		svc.RegisterAdapter(adapter.NewBinaryEdgeAdapter(
+			cfg.Engines.Binaryedge.BaseURL,
+			cfg.Engines.Binaryedge.APIKey,
+			cfg.Engines.Binaryedge.QPS,
+			time.Duration(cfg.Engines.Binaryedge.Timeout)*time.Second,
+		))
+	}
+	if cfg.Engines.Onyphe.Enabled && cfg.Engines.Onyphe.APIKey != "" {
+		svc.RegisterAdapter(adapter.NewOnypheAdapter(
+			cfg.Engines.Onyphe.BaseURL,
+			cfg.Engines.Onyphe.APIKey,
+			cfg.Engines.Onyphe.QPS,
+			time.Duration(cfg.Engines.Onyphe.Timeout)*time.Second,
+		))
+	}
+	if cfg.Engines.Greynoise.Enabled && cfg.Engines.Greynoise.APIKey != "" {
+		svc.RegisterAdapter(adapter.NewGreyNoiseAdapter(
+			cfg.Engines.Greynoise.BaseURL,
+			cfg.Engines.Greynoise.APIKey,
+			cfg.Engines.Greynoise.QPS,
+			time.Duration(cfg.Engines.Greynoise.Timeout)*time.Second,
 		))
 	}
 }

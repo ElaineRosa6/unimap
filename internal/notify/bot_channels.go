@@ -160,163 +160,88 @@ func (c *FeishuChannel) Send(ctx context.Context, n TaskNotification) error {
 	if !c.enabled {
 		return nil
 	}
+	body := c.buildFeishuBody(n)
+	return c.sendFeishuRequest(ctx, body)
+}
 
-	statusEmoji := map[string]string{
-		"success": "✅",
-		"failed":  "❌",
-		"timeout": "⏰",
-	}
+// buildFeishuBody 构建飞书消息卡片 body
+func (c *FeishuChannel) buildFeishuBody(n TaskNotification) map[string]interface{} {
+	statusEmoji := map[string]string{"success": "✅", "failed": "❌", "timeout": "⏰"}
 	emoji := statusEmoji[n.Status]
 	template := "blue"
-	if n.Status == "failed" {
-		template = "red"
-	} else if n.Status == "timeout" {
-		template = "orange"
-	}
+	if n.Status == "failed" { template = "red" } else if n.Status == "timeout" { template = "orange" }
 	title := fmt.Sprintf("%s **[UniMap]** 定时任务 **[%s]** %s", emoji, n.TaskName, statusLabel(n.Status))
 
-	// 构建 payload 上下文
-	var payloadLines []string
-	if n.Payload != nil {
-		if urls, ok := n.Payload["urls"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**目标**: %v", urls))
-		}
-		if query, ok := n.Payload["query"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**查询**: `%v`", query))
-		}
-		if queries, ok := n.Payload["queries"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**查询**: %v", queries))
-		}
-		if engines, ok := n.Payload["engines"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**引擎**: %v", engines))
-		}
-		if engine, ok := n.Payload["engine"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**引擎**: %v", engine))
-		}
-		if mode, ok := n.Payload["detection_mode"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**检测模式**: %v", mode))
-		}
-		if threshold, ok := n.Payload["low_threshold"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**阈值**: %v", threshold))
-		}
-		if format, ok := n.Payload["format"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**格式**: %v", format))
-		}
-		if ports, ok := n.Payload["ports"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**端口**: %v", ports))
-		}
-		if maxAge, ok := n.Payload["max_age_days"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**保留天数**: %v", maxAge))
-		}
-		if alertType, ok := n.Payload["alert_type"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**告警类型**: %v", alertType))
-		}
-		if duration, ok := n.Payload["duration_minutes"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**静默时长**: %v 分钟", duration))
-		}
-		if taskType, ok := n.Payload["task_type"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**任务类型**: %v", taskType))
-		}
-		if icpType, ok := n.Payload["type"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**备案类型**: %v", icpType))
-		}
-		if filePattern, ok := n.Payload["file_pattern"]; ok {
-			payloadLines = append(payloadLines, fmt.Sprintf("**文件模式**: %v", filePattern))
-		}
-	}
+	elements := buildFeishuPayloadElements(n)
 
-	elements := []map[string]interface{}{}
-
-	// Payload 上下文
-	if len(payloadLines) > 0 {
-		elements = append(elements, map[string]interface{}{
-			"tag":     "markdown",
-			"content": strings.Join(payloadLines, "\n"),
-		})
-	}
-
-	// 耗时
-	elements = append(elements, map[string]interface{}{
-		"tag":     "markdown",
-		"content": fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0),
-	})
-
-	// 执行结果（多行详情）
-	if n.Result != "" {
-		elements = append(elements, map[string]interface{}{
-			"tag": "hr",
-		})
-		elements = append(elements, map[string]interface{}{
-			"tag":     "markdown",
-			"content": fmt.Sprintf("**执行结果**:\n%s", n.Result),
-		})
-	}
-
-	// 错误信息
-	if n.Error != "" {
-		elements = append(elements, map[string]interface{}{
-			"tag": "hr",
-		})
-		elements = append(elements, map[string]interface{}{
-			"tag":     "markdown",
-			"content": fmt.Sprintf("**错误**: %s", n.Error),
-		})
-	}
-
-	body := map[string]interface{}{
+	return map[string]interface{}{
 		"msg_type": "interactive",
 		"card": map[string]interface{}{
-			"header": map[string]interface{}{
-				"title": map[string]interface{}{
-					"tag":     "plain_text",
-					"content": title,
-				},
-				"template": template,
-			},
+			"header":   map[string]interface{}{"title": map[string]interface{}{"tag": "plain_text", "content": title}, "template": template},
 			"elements": elements,
 		},
 	}
+}
 
+// buildFeishuPayloadElements 构建飞书卡片内容元素
+func buildFeishuPayloadElements(n TaskNotification) []map[string]interface{} {
+	var elements []map[string]interface{}
+	if n.Payload != nil {
+		payloadFields := []struct{ key, label string }{
+			{"urls", "目标"}, {"query", "查询"}, {"queries", "查询"}, {"engines", "引擎"}, {"engine", "引擎"},
+			{"detection_mode", "检测模式"}, {"low_threshold", "阈值"}, {"format", "格式"}, {"ports", "端口"},
+			{"max_age_days", "保留天数"}, {"alert_type", "告警类型"}, {"duration_minutes", "静默时长"},
+			{"task_type", "任务类型"}, {"type", "备案类型"}, {"file_pattern", "文件模式"},
+		}
+		var lines []string
+		for _, f := range payloadFields {
+			if v, ok := n.Payload[f.key]; ok {
+				if f.key == "query" {
+					lines = append(lines, fmt.Sprintf("**%s**: `%v`", f.label, v))
+				} else {
+					lines = append(lines, fmt.Sprintf("**%s**: %v", f.label, v))
+				}
+			}
+		}
+		if len(lines) > 0 {
+			elements = append(elements, map[string]interface{}{"tag": "markdown", "content": strings.Join(lines, "\n")})
+		}
+	}
+	elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0)})
+	if n.Result != "" {
+		elements = append(elements, map[string]interface{}{"tag": "hr"})
+		elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**执行结果**:\n%s", n.Result)})
+	}
+	if n.Error != "" {
+		elements = append(elements, map[string]interface{}{"tag": "hr"})
+		elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**错误**: %s", n.Error)})
+	}
+	return elements
+}
+
+// sendFeishuRequest 发送飞书请求并验证响应
+func (c *FeishuChannel) sendFeishuRequest(ctx context.Context, body map[string]interface{}) error {
 	if c.secret != "" {
-		// Warn if the secret looks like an unresolved environment variable placeholder
 		if len(c.secret) > 3 && c.secret[0] == '$' && c.secret[1] == '{' && c.secret[len(c.secret)-1] == '}' {
 			return fmt.Errorf("feishu secret is an unresolved placeholder: %s — set the environment variable or use the raw value", c.secret)
 		}
 		ts := TimestampNow() / 1000
 		sign, err := FeishuSign(c.secret, ts)
-		if err != nil {
-			return fmt.Errorf("feishu sign error: %w", err)
-		}
+		if err != nil { return fmt.Errorf("feishu sign error: %w", err) }
 		body["timestamp"] = fmt.Sprintf("%d", ts)
 		body["sign"] = sign
 	}
-
 	data, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewBuffer(data))
-	if err != nil {
-		return fmt.Errorf("create feishu request: %w", err)
-	}
+	if err != nil { return fmt.Errorf("create feishu request: %w", err) }
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
 	resp, err := c.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("send feishu: %w", err)
-	}
+	if err != nil { return fmt.Errorf("send feishu: %w", err) }
 	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("feishu returned status %d", resp.StatusCode)
-	}
-
-	// Feishu returns HTTP 200 even on API errors — check the response body.
-	var feishuResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&feishuResp); err == nil {
-		if feishuResp.Code != 0 {
-			return fmt.Errorf("feishu api error: code=%d msg=%s", feishuResp.Code, feishuResp.Msg)
-		}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 { return fmt.Errorf("feishu returned status %d", resp.StatusCode) }
+	var feishuResp struct { Code int `json:"code"`; Msg string `json:"msg"` }
+	if err := json.NewDecoder(resp.Body).Decode(&feishuResp); err == nil && feishuResp.Code != 0 {
+		return fmt.Errorf("feishu api error: code=%d msg=%s", feishuResp.Code, feishuResp.Msg)
 	}
 	return nil
 }
@@ -601,122 +526,55 @@ func (c *FeishuAppChannel) Send(ctx context.Context, n TaskNotification) error {
 	if !c.enabled {
 		return nil
 	}
-
-	statusEmoji := map[string]string{
-		"success": "✅",
-		"failed":  "❌",
-		"timeout": "⏰",
-	}
-	emoji := statusEmoji[n.Status]
+	elements := buildFeishuAppPayloadElements(ctx, c, n)
+	title := buildFeishuAppTitle(n)
 	template := "blue"
-	if n.Status == "failed" {
-		template = "red"
-	} else if n.Status == "timeout" {
-		template = "orange"
+	if n.Status == "failed" { template = "red" } else if n.Status == "timeout" { template = "orange" }
+	card := map[string]interface{}{
+		"header":   map[string]interface{}{"title": map[string]interface{}{"tag": "plain_text", "content": title}, "template": template},
+		"elements": elements,
 	}
-	title := fmt.Sprintf("%s [UniMap] 定时任务 [%s] %s", emoji, n.TaskName, statusLabel(n.Status))
-
-	// 构建 payload 上下文
-	var payloadLines []string
-	if n.Payload != nil {
-		payloadFields := []string{"urls", "query", "queries", "engines", "engine",
-			"detection_mode", "low_threshold", "format", "ports", "max_age_days",
-			"alert_type", "duration_minutes", "task_type", "type", "file_pattern"}
-		for _, field := range payloadFields {
-			if val, ok := n.Payload[field]; ok {
-				payloadLines = append(payloadLines, fmt.Sprintf("**%s**: %v", field, val))
-			}
-		}
-	}
-
-	elements := []map[string]interface{}{}
-
-	// Payload 上下文
-	if len(payloadLines) > 0 {
-		elements = append(elements, map[string]interface{}{
-			"tag":     "markdown",
-			"content": strings.Join(payloadLines, "\n"),
-		})
-	}
-
-	// 耗时
-	elements = append(elements, map[string]interface{}{
-		"tag":     "markdown",
-		"content": fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0),
+	cardJSON, _ := json.Marshal(card)
+	return c.sendMessage(ctx, map[string]interface{}{
+		"receive_id": c.chatID, "msg_type": "interactive", "content": string(cardJSON),
 	})
+}
 
-	// 上传图片并添加到卡片
+func buildFeishuAppTitle(n TaskNotification) string {
+	statusEmoji := map[string]string{"success": "✅", "failed": "❌", "timeout": "⏰"}
+	return fmt.Sprintf("%s [UniMap] 定时任务 [%s] %s", statusEmoji[n.Status], n.TaskName, statusLabel(n.Status))
+}
+
+func buildFeishuAppPayloadElements(ctx context.Context, c *FeishuAppChannel, n TaskNotification) []map[string]interface{} {
+	var elements []map[string]interface{}
+	if n.Payload != nil {
+		fields := []string{"urls", "query", "queries", "engines", "engine", "detection_mode", "low_threshold", "format", "ports", "max_age_days", "alert_type", "duration_minutes", "task_type", "type", "file_pattern"}
+		var lines []string
+		for _, f := range fields {
+			if v, ok := n.Payload[f]; ok { lines = append(lines, fmt.Sprintf("**%s**: %v", f, v)) }
+		}
+		if len(lines) > 0 { elements = append(elements, map[string]interface{}{"tag": "markdown", "content": strings.Join(lines, "\n")}) }
+	}
+	elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0)})
 	if len(n.ImagePaths) > 0 {
-		elements = append(elements, map[string]interface{}{
-			"tag": "hr",
-		})
-		elements = append(elements, map[string]interface{}{
-			"tag":     "markdown",
-			"content": "**截图预览**:",
-		})
-
+		elements = append(elements, map[string]interface{}{"tag": "hr"})
+		elements = append(elements, map[string]interface{}{"tag": "markdown", "content": "**截图预览**:"})
 		for i, imgPath := range n.ImagePaths {
 			imageKey, err := c.uploadImage(ctx, imgPath)
 			if err != nil {
-				// 上传失败，不暴露系统路径
-				elements = append(elements, map[string]interface{}{
-					"tag":     "markdown",
-					"content": fmt.Sprintf("⚠️ 截图 #%d 上传失败", i+1),
-				})
+				elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("⚠️ 截图 #%d 上传失败", i+1)})
 				continue
 			}
-			elements = append(elements, map[string]interface{}{
-				"tag": "img",
-				"img_key": imageKey,
-				"alt": map[string]interface{}{
-					"tag":     "plain_text",
-					"content": fmt.Sprintf("截图 #%d", i+1),
-				},
-			})
+			elements = append(elements, map[string]interface{}{"tag": "img", "img_key": imageKey, "alt": map[string]interface{}{"tag": "plain_text", "content": fmt.Sprintf("截图 #%d", i+1)}})
 		}
 	}
-
-	// 执行结果
 	if n.Result != "" {
-		elements = append(elements, map[string]interface{}{
-			"tag": "hr",
-		})
-		elements = append(elements, map[string]interface{}{
-			"tag":     "markdown",
-			"content": fmt.Sprintf("**执行结果**:\n%s", n.Result),
-		})
+		elements = append(elements, map[string]interface{}{"tag": "hr"})
+		elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**执行结果**:\n%s", n.Result)})
 	}
-
-	// 错误信息
 	if n.Error != "" {
-		elements = append(elements, map[string]interface{}{
-			"tag": "hr",
-		})
-		elements = append(elements, map[string]interface{}{
-			"tag":     "markdown",
-			"content": fmt.Sprintf("**错误**: %s", n.Error),
-		})
+		elements = append(elements, map[string]interface{}{"tag": "hr"})
+		elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**错误**: %s", n.Error)})
 	}
-
-	// 构建卡片消息
-	card := map[string]interface{}{
-		"header": map[string]interface{}{
-			"title": map[string]interface{}{
-				"tag":     "plain_text",
-				"content": title,
-			},
-			"template": template,
-		},
-		"elements": elements,
-	}
-
-	cardJSON, _ := json.Marshal(card)
-
-	body := map[string]interface{}{
-		"receive_id": c.chatID,
-		"msg_type":   "interactive",
-		"content":    string(cardJSON),
-	}
-
-	return c.sendMessage(ctx, body)
+	return elements
 }

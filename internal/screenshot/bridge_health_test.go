@@ -480,13 +480,13 @@ func TestExtensionHealthChecker_MockBypass(t *testing.T) {
 	svc.Start(context.Background())
 	defer svc.Stop()
 
-	e := &ExtensionHealthChecker{BridgeService: svc, IsMock: true}
+	e := &ExtensionHealthChecker{BridgeService: svc, IsMock: true, LiveClient: func() bool { return true }}
 	ok, err := e.Check(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !ok {
-		t.Error("expected true for mock bypass")
+		t.Error("expected true for mock bypass with live client")
 	}
 }
 
@@ -498,7 +498,7 @@ func TestExtensionHealthChecker_QueueOverload(t *testing.T) {
 	defer svc.Stop()
 
 	// Submit many tasks to fill the queue
-	e := &ExtensionHealthChecker{BridgeService: svc}
+	e := &ExtensionHealthChecker{BridgeService: svc, LiveClient: func() bool { return true }}
 	ok, err := e.Check(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -514,13 +514,13 @@ func TestExtensionHealthChecker_StartedAndOK(t *testing.T) {
 	svc.Start(context.Background())
 	defer svc.Stop()
 
-	e := &ExtensionHealthChecker{BridgeService: svc}
+	e := &ExtensionHealthChecker{BridgeService: svc, LiveClient: func() bool { return true }}
 	ok, err := e.Check(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !ok {
-		t.Error("expected true for started healthy bridge")
+		t.Error("expected true for started healthy bridge with live client")
 	}
 }
 

@@ -123,7 +123,7 @@ func TestDefaultCookieDomain_Hunter(t *testing.T) {
 }
 
 func TestDefaultCookieDomain_Quake(t *testing.T) {
-	assert.Equal(t, ".quake.360.cn", DefaultCookieDomain("quake"))
+	assert.Equal(t, ".quake.360.net", DefaultCookieDomain("quake"))
 }
 
 func TestDefaultCookieDomain_Zoomeye(t *testing.T) {

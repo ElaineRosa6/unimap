@@ -3,26 +3,8 @@ package screenshot
 import (
 	"context"
 
-	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/collection"
 )
-
-// CollectResult holds structured data extracted from a search engine result page.
-type CollectResult struct {
-	Engine        string               `json:"engine"`
-	Query         string               `json:"query"`
-	RawURL        string               `json:"raw_url"`
-	Title         string               `json:"title"`
-	Timestamp     int64                `json:"timestamp"`
-	Assets        []model.UnifiedAsset `json:"assets,omitempty"`
-	Total         int                  `json:"total,omitempty"`
-	HasMore       bool                 `json:"has_more,omitempty"`
-	IsLoginWall      bool   `json:"is_login_wall,omitempty"`
-	LoginRequired    bool   `json:"login_required,omitempty"`
-	ExtractionMethod string `json:"extraction_method,omitempty"`
-	RowSelectorUsed  string `json:"row_selector_used,omitempty"`
-	RowsFound        int    `json:"rows_found,omitempty"`
-	ExtractionError  string `json:"extraction_error,omitempty"`
-}
 
 // Provider defines screenshot capabilities used by the app service layer.
 type Provider interface {
@@ -30,10 +12,12 @@ type Provider interface {
 	CaptureTargetWebsite(ctx context.Context, targetURL, ip, port, protocol, queryID string) (string, error)
 	CaptureBatchURLs(ctx context.Context, urls []string, batchID string, concurrency int) ([]BatchScreenshotResult, error)
 	GetScreenshotDirectory() string
-	// OpenSearchEngineResult opens a search engine result page in the browser
-	// without capturing a screenshot. Returns the opened URL.
 	OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error)
-	// CollectSearchEngineResult opens a search engine result page and extracts
-	// structured data from the page. Returns collected results.
-	CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error)
+	CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error)
+}
+
+// BatchProgressProvider is implemented by providers that can report each batch
+// item as it finishes.
+type BatchProgressProvider interface {
+	CaptureBatchURLsWithProgress(ctx context.Context, urls []string, batchID string, concurrency int, onResult func(BatchScreenshotResult)) ([]BatchScreenshotResult, error)
 }

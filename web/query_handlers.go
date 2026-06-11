@@ -15,6 +15,21 @@ import (
 	"github.com/unimap/project/internal/service"
 )
 
+// stableEngines 前端展示的稳定引擎列表（新引擎完善后再开放）
+var stableEngines = map[string]bool{
+	"fofa": true, "hunter": true, "zoomeye": true, "quake": true, "shodan": true,
+}
+
+func filterStableEngines(engines []string) []string {
+	out := make([]string, 0, len(engines))
+	for _, e := range engines {
+		if stableEngines[strings.ToLower(e)] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, action string, queryID string, progress func(done, total int, engine string, err error)) <-chan browserQueryOutcome {
 	autoCaptureEnabled := false
 	if s.config != nil {
@@ -186,7 +201,7 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 
 // handleIndex 处理首页请求
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	engines := s.orchestrator.ListAdapters()
+	engines := filterStableEngines(s.orchestrator.ListAdapters())
 	var fofaCookies, hunterCookies, quakeCookies, zoomeyeCookies []config.Cookie
 	proxyServer := ""
 	if s.config != nil {
@@ -308,94 +323,78 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 // handleQuota 处理配额页面请求
 func (s *Server) handleQuota(w http.ResponseWriter, r *http.Request) {
 	engines := s.orchestrator.ListAdapters()
-	quotaInfo := make(map[string]*model.QuotaInfo)
-	errorInfo := make(map[string]string)
+	quotaInfo, errorInfo := s.fetchEngineQuotas(engines)
+	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "quota.html", map[string]interface{}{
+		"engines": engines, "quotaInfo": quotaInfo, "errorInfo": errorInfo, "staticVersion": s.staticVersion,
+	}) {
+		return
+	}
+}
 
-	// Fetch quota concurrently for all engines with timeout
-	type result struct {
+// fetchEngineQuotas 并发获取所有引擎配额
+func (s *Server) fetchEngineQuotas(engines []string) (map[string]*model.QuotaInfo, map[string]string) {
+	type quotaResult struct {
 		engine string
 		quota  *model.QuotaInfo
 		err    error
 	}
+	quotaInfo := make(map[string]*model.QuotaInfo)
+	errorInfo := make(map[string]string)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	ch := make(chan result, len(engines))
+	ch := make(chan quotaResult, len(engines))
 	for _, engine := range engines {
 		go func(e string) {
 			adapter, exists := s.orchestrator.GetAdapter(e)
 			if !exists {
-				ch <- result{engine: e, err: fmt.Errorf("adapter not found")}
+				ch <- quotaResult{engine: e, err: fmt.Errorf("adapter not found")}
 				return
 			}
 			quota, err := adapter.GetQuota()
 			select {
-			case ch <- result{engine: e, quota: quota, err: err}:
+			case ch <- quotaResult{engine: e, quota: quota, err: err}:
 			case <-ctx.Done():
 			}
 		}(engine)
 	}
 
-	// Collect results with timeout
-	done := make(chan struct{})
-	go func() {
-		// Map engine name to channel result
-		results := make(map[string]result)
-	outer:
-		for i := 0; i < len(engines); i++ {
-			var res result
-			select {
-			case res = <-ch:
-			case <-ctx.Done():
-				break outer
-			}
+	results := make(map[string]quotaResult)
+	for i := 0; i < len(engines); i++ {
+		select {
+		case res := <-ch:
 			results[res.engine] = res
+		case <-ctx.Done():
+			break
 		}
-		// Assign in engine declaration order
-		for _, engine := range engines {
-			res, ok := results[engine]
-			if !ok {
-				errorInfo[engine] = "timeout: failed to fetch quota"
-				continue
-			}
-			if res.err != nil {
-				msg := strings.TrimSpace(res.err.Error())
-				if msg == "" {
-					msg = "failed to fetch quota"
-				} else if len(msg) > 120 {
-					lines := strings.SplitN(msg, "\n", 2)
-					short := strings.TrimSpace(lines[0])
-					if len(short) > 120 {
-						short = short[:120] + "..."
-					}
-					msg = short
-				}
-				errorInfo[engine] = msg
-				continue
-			}
-			if res.quota == nil {
-				errorInfo[engine] = "quota not available"
-				continue
-			}
+	}
+
+	for _, engine := range engines {
+		res, ok := results[engine]
+		if !ok {
+			errorInfo[engine] = "timeout: failed to fetch quota"
+		} else if res.err != nil {
+			errorInfo[engine] = truncateQuotaError(res.err.Error())
+		} else if res.quota == nil {
+			errorInfo[engine] = "quota not available"
+		} else {
 			quotaInfo[engine] = res.quota
 		}
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-ctx.Done():
 	}
+	return quotaInfo, errorInfo
+}
 
-	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "quota.html", map[string]interface{}{
-		"engines":       engines,
-		"quotaInfo":     quotaInfo,
-		"errorInfo":     errorInfo,
-		"staticVersion": s.staticVersion,
-	}) {
-		return
+func truncateQuotaError(msg string) string {
+	msg = strings.TrimSpace(msg)
+	if msg == "" { return "failed to fetch quota" }
+	if len(msg) > 120 {
+		lines := strings.SplitN(msg, "\n", 2)
+		short := strings.TrimSpace(lines[0])
+		if len(short) > 120 { short = short[:120] + "..." }
+		return short
 	}
+	return msg
 }
 
 // handleQueryStatus 处理查询状态请求

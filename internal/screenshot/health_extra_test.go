@@ -67,6 +67,7 @@ func TestExtensionHealthChecker_RecentActivity(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			e := &ExtensionHealthChecker{
 				BridgeService:        svc,
+				LiveClient:           func() bool { return true },
 				LastActivity:         func() int64 { return tt.lastUnix },
 				RecentActivityCutoff: cutoff,
 				now:                  func() time.Time { return fixedNow },
@@ -82,11 +83,10 @@ func TestExtensionHealthChecker_RecentActivity(t *testing.T) {
 	}
 }
 
-// TestExtensionHealthChecker_NilProvidersBackwardsCompat confirms that with
-// no LiveClient or LastActivity providers configured, behavior matches the
-// previous "started + queue not overloaded" rule. This protects existing
-// router init paths that do not yet wire the new signals.
-func TestExtensionHealthChecker_NilProvidersBackwardsCompat(t *testing.T) {
+// TestExtensionHealthChecker_NilLiveClient_TreatedAsAbsent verifies that a
+// bridge service started without a LiveClient provider is reported as
+// unhealthy. "Service started" alone does not prove any extension is paired.
+func TestExtensionHealthChecker_NilLiveClient_TreatedAsAbsent(t *testing.T) {
 	svc := NewBridgeService(&mockBridgeClient{}, 5, 30*time.Second)
 	svc.Start(context.Background())
 	defer svc.Stop()
@@ -96,8 +96,8 @@ func TestExtensionHealthChecker_NilProvidersBackwardsCompat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !ok {
-		t.Error("expected true with no extra providers (matches legacy behavior)")
+	if ok {
+		t.Error("expected false: bridge started but no live-client signal")
 	}
 }
 
