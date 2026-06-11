@@ -18,10 +18,10 @@ type Plugin interface {
 	Type() PluginType    // 插件类型
 
 	// 生命周期方法
-	Initialize(config map[string]interface{}) error // 初始化
-	Start(ctx context.Context) error                // 启动
-	Stop() error                                    // 停止
-	Health() HealthStatus                           // 健康检查
+	Initialize(config *model.PluginConfig) error // 初始化
+	Start(ctx context.Context) error             // 启动
+	Stop() error                                 // 停止
+	Health() HealthStatus                        // 健康检查
 }
 
 // EnginePlugin 搜索引擎插件接口
@@ -80,7 +80,7 @@ const (
 type HealthStatus struct {
 	Healthy bool
 	Message string
-	Details map[string]interface{}
+	Details *model.HealthDetails
 }
 
 // RateLimitConfig 速率限制配置
@@ -96,7 +96,7 @@ type NotificationMessage struct {
 	Title    string
 	Content  string
 	Level    string // info, warning, error
-	Metadata map[string]interface{}
+	Metadata *model.NotificationMetadata
 }
 
 // PluginRegistry 插件注册表

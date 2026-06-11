@@ -23,10 +23,12 @@ func main() {
 
 	// 数据清洗处理器
 	cleaner := processors.NewDataCleaningProcessor()
-	if err := svc.RegisterProcessor(cleaner, map[string]interface{}{
-		"removeEmpty":    true,
-		"normalizeURLs":  true,
-		"trimWhitespace": true,
+	if err := svc.RegisterProcessor(cleaner, &model.PluginConfig{
+		Extra: map[string]any{
+			"removeEmpty":    true,
+			"normalizeURLs":  true,
+			"trimWhitespace": true,
+		},
 	}); err != nil {
 		log.Fatal(err)
 	}
@@ -34,11 +36,13 @@ func main() {
 
 	// 数据验证处理器
 	validator := processors.NewValidationProcessor(false)
-	if err := svc.RegisterProcessor(validator, map[string]interface{}{
-		"strictMode":     false,
-		"validateIP":     true,
-		"validatePort":   true,
-		"allowPrivateIP": true,
+	if err := svc.RegisterProcessor(validator, &model.PluginConfig{
+		Extra: map[string]any{
+			"strictMode":     false,
+			"validateIP":     true,
+			"validatePort":   true,
+			"allowPrivateIP": true,
+		},
 	}); err != nil {
 		log.Fatal(err)
 	}
@@ -46,10 +50,12 @@ func main() {
 
 	// 数据富化处理器
 	enricher := processors.NewEnrichmentProcessor()
-	if err := svc.RegisterProcessor(enricher, map[string]interface{}{
-		"addTimestamp":     true,
-		"addFingerprint":   true,
-		"normalizeCountry": true,
+	if err := svc.RegisterProcessor(enricher, &model.PluginConfig{
+		Extra: map[string]any{
+			"addTimestamp":     true,
+			"addFingerprint":   true,
+			"normalizeCountry": true,
+		},
 	}); err != nil {
 		log.Fatal(err)
 	}
@@ -57,8 +63,8 @@ func main() {
 
 	// 数据去重处理器
 	dedup := processors.NewDeduplicationProcessor(processors.StrategyAdvanced)
-	if err := svc.RegisterProcessor(dedup, map[string]interface{}{
-		"strategy": "advanced",
+	if err := svc.RegisterProcessor(dedup, &model.PluginConfig{
+		Extra: map[string]any{"strategy": "advanced"},
 	}); err != nil {
 		log.Fatal(err)
 	}
@@ -69,27 +75,27 @@ func main() {
 	hooks := svc.GetPluginManager().GetHooks()
 
 	// 查询前钩子
-	hooks.RegisterHook(plugin.HookBeforeQuery, func(pluginName string, data map[string]interface{}) error {
-		fmt.Printf("→ 查询前: query=%v, engines=%v\n", data["query"], data["engines"])
+	hooks.RegisterHook(plugin.HookBeforeQuery, func(pluginName string, data *model.HookData) error {
+		fmt.Printf("→ 查询前: query=%v, engines=%v\n", data.Query, data.Engines)
 		return nil
 	})
 
 	// 查询后钩子
-	hooks.RegisterHook(plugin.HookAfterQuery, func(pluginName string, data map[string]interface{}) error {
-		fmt.Printf("→ 查询后: 结果数量=%v\n", data["result_count"])
+	hooks.RegisterHook(plugin.HookAfterQuery, func(pluginName string, data *model.HookData) error {
+		fmt.Printf("→ 查询后: 结果数量=%v\n", data.Extra["result_count"])
 		return nil
 	})
 
 	// 数据处理前钩子
-	hooks.RegisterHook(plugin.HookBeforeProcess, func(pluginName string, data map[string]interface{}) error {
+	hooks.RegisterHook(plugin.HookBeforeProcess, func(pluginName string, data *model.HookData) error {
 		fmt.Println("→ 开始数据处理...")
 		return nil
 	})
 
 	// 数据处理后钩子
-	hooks.RegisterHook(plugin.HookAfterProcess, func(pluginName string, data map[string]interface{}) error {
+	hooks.RegisterHook(plugin.HookAfterProcess, func(pluginName string, data *model.HookData) error {
 		fmt.Printf("→ 数据处理完成: 原始=%v, 处理后=%v\n",
-			data["original_count"], data["processed_count"])
+			data.Extra["original_count"], data.Extra["processed_count"])
 		return nil
 	})
 	fmt.Println("✓ 钩子已注册")

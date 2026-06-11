@@ -3,6 +3,8 @@ package plugin
 import (
 	"fmt"
 	"sync"
+
+	"github.com/unimap/project/internal/model"
 )
 
 // HookType 钩子类型
@@ -33,7 +35,7 @@ const (
 )
 
 // HookFunc 钩子函数类型
-type HookFunc func(pluginName string, data map[string]interface{}) error
+type HookFunc func(pluginName string, data *model.HookData) error
 
 // HookRegistry 钩子注册表
 type HookRegistry struct {
@@ -65,7 +67,7 @@ func (r *HookRegistry) UnregisterHook(hookType HookType) {
 }
 
 // TriggerHook 触发钩子
-func (r *HookRegistry) TriggerHook(hookType HookType, pluginName string, data map[string]interface{}) error {
+func (r *HookRegistry) TriggerHook(hookType HookType, pluginName string, data *model.HookData) error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
