@@ -1,0 +1,67 @@
+/* CSP-safe utility classes — replaces inline style= attributes */
+
+/* --- Display --- */
+.hidden-init { display: none; }
+.visible-init { display: block; }
+.flex-row { display: flex; align-items: center; gap: 12px; }
+.flex-row-tight { display: flex; gap: 8px; align-items: center; }
+.inline-flex { display: inline-flex; }
+
+/* --- Spacing --- */
+.mt-6 { margin-top: 6px; }
+.mt-8 { margin-top: 8px; }
+.ml-4 { margin-left: 4px; }
+.ml-8 { margin-left: 8px; }
+.ml-12 { margin-left: 12px; }
+
+/* --- Typography --- */
+.sub-label { font-size: 0.7em; font-weight: normal; }
+.text-muted { color: #888; }
+.text-warn { color: #c0392b; }
+.text-warning { color: #e67e22; }
+
+/* --- Status dots --- */
+.status-dot-muted { color: #999; }
+
+/* --- Progress bar --- */
+.progress-bar-fill-init { width: 0%; }
+
+/* --- Form controls --- */
+.select-tall { height: 80px; }
+
+/* --- Monitor detail table --- */
+.detail-table { width: 100%; border-collapse: collapse; }
+.detail-th { text-align: left; padding: 4px; }
+.detail-td { padding: 4px; }
+.detail-row-even { border-bottom: 1px solid #eee; }
+.detail-row-header { border-bottom: 1px solid #ddd; }
+
+/* --- Notification channel badges --- */
+.nch-row { grid-template-columns: 1fr auto; }
+.nch-flex { display: flex; align-items: center; gap: 12px; }
+.nch-badge {
+	display: inline-block;
+	padding: 2px 10px;
+	border-radius: 3px;
+	font-size: 11px;
+	font-weight: 600;
+	color: #fff;
+	background: var(--badge-bg, #666);
+	min-width: 48px;
+	text-align: center;
+}
+.nch-id { font-weight: 600; color: var(--text-primary); }
+.nch-actions { display: flex; gap: 8px; align-items: center; }
+.nch-btn { font-size: 11px; padding: 4px 10px; }
+.nch-btn-danger {
+	font-size: 11px;
+	padding: 4px 10px;
+	color: var(--danger);
+	border-color: var(--danger);
+}
+
+/* --- Change link --- */
+.change-link { color: #e67e22; cursor: pointer; }
+
+/* --- Quota progress (server-computed width via nonce style) --- */
+.quota-progress-bar { transition: width 0.3s ease; }

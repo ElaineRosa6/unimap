@@ -2,9 +2,7 @@ package web
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -94,6 +92,7 @@ type Server struct {
 	staticVersion    string
 	screenshotMgr    *screenshot.Manager
 	screenshotRouter *screenshot.ScreenshotRouter
+	batchJobs        *batchJobStore
 	config           *config.Config
 	configManager    *config.Manager
 	chromeCmd        *os.Process
@@ -230,6 +229,7 @@ func newServerStruct(port int, webRoot string, templates *template.Template,
 		webRoot:       webRoot,
 		staticVersion: strconv.FormatInt(time.Now().Unix(), 10),
 		screenshotMgr: screenshotMgr,
+		batchJobs:     newBatchJobStore(),
 		config:        cfg,
 		configManager: cfgManager,
 		bridge: &BridgeState{
@@ -771,44 +771,6 @@ func isWebRoot(dir string) bool {
 	return true
 }
 
-type cspNonceKey struct{}
-
-func cspNonceFromContext(ctx context.Context) string {
-	if v := ctx.Value(cspNonceKey{}); v != nil {
-		s, ok := v.(string)
-		if ok {
-			return s
-		}
-	}
-	return ""
-}
-
-func generateCSPNonce() string {
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
-	}
-	return base64.RawURLEncoding.EncodeToString(buf)
-}
-
-// securityMiddleware 添加安全响应头的中间件
-func securityMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		nonce := generateCSPNonce()
-		ctx := context.WithValue(r.Context(), cspNonceKey{}, nonce)
-		r = r.WithContext(ctx)
-
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-XSS-Protection", "1; mode=block")
-		w.Header().Set("Content-Security-Policy",
-			fmt.Sprintf("default-src 'self'; script-src 'self' 'nonce-%s' 'unsafe-hashes'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.googleapis.font.im https://fonts.gstatic.font.im; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com https://fonts.gstatic.font.im;", nonce))
-		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-
-		next.ServeHTTP(w, r)
-	})
-}
 
 // icpConfigProvider returns a snapshot of the current ICP config for the scheduler runner.
 func (s *Server) icpConfigProvider() adapter.ICPConfig {
@@ -840,6 +802,7 @@ func (s *Server) Start() error {
 	s.httpServer = &http.Server{Addr: addr, Handler: rootHandler, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second}
 	go s.cleanupStaleQueries()
 	go s.cleanupStaleBridgeTokens()
+	go s.cleanupStaleBatchJobs()
 	logger.Infof("Web server started at http://%s:%d", s.bindAddr(), s.port)
 	logger.Infof("Registered %d routes", len(router.GetRoutes()))
 	logger.Infof("Web security config loaded: cors_origins=%d rate_limit_enabled=%t max_body_bytes=%d", len(allowedOrigins), rateLimitEnabled, maxBodyBytes)
@@ -848,13 +811,17 @@ func (s *Server) Start() error {
 
 func (s *Server) configureServerLimits() (rateLimitEnabled bool, maxBodyBytes int64) {
 	rateLimitEnabled = true
-	if s.config != nil { rateLimitEnabled = s.config.Web.RateLimit.Enabled }
+	if s.config != nil {
+		rateLimitEnabled = s.config.Web.RateLimit.Enabled
+	}
 	SetRateLimitEnabled(rateLimitEnabled)
 	if rateLimitEnabled && s.config != nil {
 		SetRateLimitConfig(s.config.Web.RateLimit.RequestsPerWindow, time.Duration(s.config.Web.RateLimit.WindowSeconds)*time.Second)
 	}
 	maxBodyBytes = int64(10 * 1024 * 1024)
-	if s.config != nil && s.config.Web.RequestLimits.MaxBodyBytes > 0 { maxBodyBytes = s.config.Web.RequestLimits.MaxBodyBytes }
+	if s.config != nil && s.config.Web.RequestLimits.MaxBodyBytes > 0 {
+		maxBodyBytes = s.config.Web.RequestLimits.MaxBodyBytes
+	}
 	return
 }
 
@@ -863,7 +830,9 @@ func (s *Server) initExtensionIDs() {
 	if len(extIDs) == 0 {
 		if envVal := os.Getenv("UNIMAP_ALLOWED_EXTENSION_IDS"); envVal != "" {
 			for _, part := range strings.Split(envVal, ",") {
-				if part = strings.TrimSpace(part); part != "" { extIDs = append(extIDs, part) }
+				if part = strings.TrimSpace(part); part != "" {
+					extIDs = append(extIDs, part)
+				}
 			}
 		}
 	}
@@ -876,11 +845,19 @@ func (s *Server) buildServerMiddlewareChain(mux http.Handler, rateLimitEnabled b
 	exposed := []string{requestid.HeaderName}
 	creds, maxAge := true, 600
 	if s.config != nil {
-		if len(s.config.Web.CORS.AllowedMethods) > 0 { methods = s.config.Web.CORS.AllowedMethods }
-		if len(s.config.Web.CORS.AllowedHeaders) > 0 { headers = s.config.Web.CORS.AllowedHeaders }
-		if len(s.config.Web.CORS.ExposedHeaders) > 0 { exposed = s.config.Web.CORS.ExposedHeaders }
+		if len(s.config.Web.CORS.AllowedMethods) > 0 {
+			methods = s.config.Web.CORS.AllowedMethods
+		}
+		if len(s.config.Web.CORS.AllowedHeaders) > 0 {
+			headers = s.config.Web.CORS.AllowedHeaders
+		}
+		if len(s.config.Web.CORS.ExposedHeaders) > 0 {
+			exposed = s.config.Web.CORS.ExposedHeaders
+		}
 		creds = s.config.Web.CORS.AllowCredentials
-		if s.config.Web.CORS.MaxAge > 0 { maxAge = s.config.Web.CORS.MaxAge }
+		if s.config.Web.CORS.MaxAge > 0 {
+			maxAge = s.config.Web.CORS.MaxAge
+		}
 	}
 	handler := securityMiddleware(mux)
 	handler = requestIDMiddleware(handler)
@@ -903,9 +880,12 @@ func (s *Server) buildServerRootHandler(handler http.Handler) http.HandlerFunc {
 		if isWS && r.URL.Path == "/api/v1/ws" {
 			if s.adminToken() != "" && !s.isPublicPath(r.URL.Path) {
 				token := s.getSessionToken(r)
-				if token == "" { token = r.URL.Query().Get("token") }
-				if token == "" { token = r.Header.Get("X-Admin-Token") }
-				if token == "" { token = extractBearerToken(r.Header.Get("Authorization")) }
+				if token == "" {
+					token = r.Header.Get("X-Admin-Token")
+				}
+				if token == "" {
+					token = extractBearerToken(r.Header.Get("Authorization"))
+				}
 				if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.adminToken())) != 1 {
 					writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized: valid admin token required"})
 					return
@@ -1115,6 +1095,27 @@ func (s *Server) cleanupStaleBridgeTokens() {
 	}
 }
 
+func (s *Server) cleanupStaleBatchJobs() {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf("panic in cleanupStaleBatchJobs: %v", r)
+		}
+	}()
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if s.batchJobs != nil {
+				s.batchJobs.cleanup(1 * time.Hour)
+			}
+		case <-s.shutdownCtx.Done():
+			return
+		}
+	}
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -1124,171 +1125,4 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = json.NewEncoder(w).Encode(health)
-}
-
-func parseEnginesParam(r *http.Request) []string {
-	_ = r.ParseForm()
-
-	seen := make(map[string]struct{})
-	engines := make([]string, 0)
-	for _, raw := range r.Form["engines"] {
-		for _, part := range strings.Split(raw, ",") {
-			engine := strings.TrimSpace(part)
-			if engine == "" {
-				continue
-			}
-			if _, ok := seen[engine]; ok {
-				continue
-			}
-			seen[engine] = struct{}{}
-			engines = append(engines, engine)
-		}
-	}
-
-	return engines
-}
-
-func parseWSStringList(val interface{}) []string {
-	if val == nil {
-		return nil
-	}
-
-	sanitizeAndAppend := func(out []string, raw string) []string {
-		for _, part := range strings.Split(raw, ",") {
-			item := strings.TrimSpace(part)
-			if item == "" {
-				continue
-			}
-			out = append(out, item)
-		}
-		return out
-	}
-
-	switch v := val.(type) {
-	case string:
-		return sanitizeAndAppend(nil, v)
-	case []string:
-		out := make([]string, 0, len(v))
-		for _, item := range v {
-			out = sanitizeAndAppend(out, item)
-		}
-		return out
-	case []interface{}:
-		out := make([]string, 0, len(v))
-		for _, item := range v {
-			if s, ok := item.(string); ok {
-				out = sanitizeAndAppend(out, s)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
-}
-
-func parseWSInt(val interface{}, defaultValue int) int {
-	if val == nil {
-		return defaultValue
-	}
-
-	switch v := val.(type) {
-	case float64:
-		if v > 0 {
-			return int(v)
-		}
-		return defaultValue
-	case int:
-		if v > 0 {
-			return v
-		}
-		return defaultValue
-	case string:
-		v = strings.TrimSpace(v)
-		if v == "" {
-			return defaultValue
-		}
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
-		return defaultValue
-	default:
-		return defaultValue
-	}
-}
-
-func validateQueryInput(query string) error {
-	if strings.TrimSpace(query) == "" {
-		return fmt.Errorf("query cannot be empty")
-	}
-	if len(query) > 1000 {
-		return fmt.Errorf("query is too long (maximum 1000 characters)")
-	}
-	for _, r := range query {
-		if r < 32 && r != '\t' && r != '\n' && r != '\r' {
-			return fmt.Errorf("Query contains invalid characters")
-		}
-	}
-	return nil
-}
-
-func parseBoolValue(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
-}
-
-func parseWSBool(raw interface{}) bool {
-	switch value := raw.(type) {
-	case bool:
-		return value
-	case string:
-		return parseBoolValue(value)
-	case float64:
-		return value != 0
-	case int:
-		return value != 0
-	default:
-		return false
-	}
-}
-
-func appendUniqueStrings(base []string, extra []string) []string {
-	seen := make(map[string]struct{}, len(base)+len(extra))
-	merged := make([]string, 0, len(base)+len(extra))
-	for _, item := range base {
-		if strings.TrimSpace(item) == "" {
-			continue
-		}
-		if _, ok := seen[item]; ok {
-			continue
-		}
-		seen[item] = struct{}{}
-		merged = append(merged, item)
-	}
-	for _, item := range extra {
-		if strings.TrimSpace(item) == "" {
-			continue
-		}
-		if _, ok := seen[item]; ok {
-			continue
-		}
-		seen[item] = struct{}{}
-		merged = append(merged, item)
-	}
-	return merged
-}
-
-// maskAPIKey 屏蔽API密钥，用于日志输出与 GET /api/config 响应。
-// 空字符串原样返回，便于前端区分「未配置」与「已配置但已脱敏」。
-func maskAPIKey(apiKey string) string {
-	if apiKey == "" {
-		return ""
-	}
-	if len(apiKey) <= 8 {
-		return "****"
-	}
-	return apiKey[:4] + "****" + apiKey[len(apiKey)-4:]
 }

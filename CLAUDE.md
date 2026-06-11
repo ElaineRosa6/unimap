@@ -195,8 +195,40 @@ go run -tags gui ./cmd/unimap-gui
 2. ~~34 个函数超 50 行~~ ✅ 已拆分完成（191→144，最大 `plugin_demo.go:main` 183 行为示例文件）
 
 ### Low (后续迭代修复)
-7. **L-01** 错误消息大写 (23 处，多数为缩写词可接受)
+7. ~~**L-01** 错误消息大写~~ ✅ 已修复（2 处非缩写词改为小写，其余 21 处为 HTTP/API/ICP 等缩写词可接受）
 8. **L-05** `map[string]interface{}` 强类型 (插件接口等广泛使用，渐进重构)
+
+### 2026-06-10 复核记录
+- ✅ 批量 URL 截图改为异步 job + progress 查询；无效/内网 URL 作为单条 failed 结果返回，不再拒绝整个批次。
+- ✅ 批量截图 Provider 增加逐项进度回调；CDP/Extension provider 均支持完成一条即更新 job 进度。
+- ✅ `main.js` API 请求统一走 `apiFetch`；CSV/JSON 导出基于完整结果数组，不再只导出当前 DOM 页。
+- ⏸ 仍剩长期项：L-05/TD-4 强类型渐进重构；L2 Hook 与 Quake/Shodan stealth 真机链路。
+- 📝 剩余长期项已补充评估与实施文档：`docs/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md` §7（TD-4/L2 Hook/stealth 总评估）与 `docs/EXTENSION_ANTI_SCRAPING_ARCHITECTURE.md` §11（Quake/Shodan stealth 执行方案）。
+
+### 2026-06-11 安全与稳定性修复（19 项）
+- ✅ **CRITICAL** `batchJobStore.get()` → `getSnapshot()` 深拷贝，消除 progress handler 与后台 goroutine 数据竞争。
+- ✅ **HIGH** 批量截图后台 goroutine 使用 `s.shutdownCtx`，服务器关闭时正确取消。
+- ✅ **HIGH** `BridgeService` worker 添加 `executeJobSafely` panic recovery，单 job panic 不杀死 worker。
+- ✅ **P0** `monitor.html` 6 处 stored XSS 转义（`escapeHtml`）；`batch-screenshot.html` XSS 转义。
+- ✅ **P1** `ResourceMonitor.Stop()` 改为 `sync.Once` 幂等化；WS `JSON.parse` 添加 try/catch。
+- ✅ **P1** 所有 fetch 调用统一 `parseJsonResponse`（`resp.ok` 检查）；`adminToken()` auto-generate 持久化。
+- ✅ **P1** `ScreenshotAppService` setters 加 `sync.RWMutex`，bridge 方法使用 `configSnapshot()` 快照。
+- ✅ **P1** 批量截图 metrics success/partial 互斥；`handleSetScreenshotMode` config save 日志。
+- ✅ **P1** `cleanupStaleBatchJobs` 定期清理 goroutine；前端 progress polling 失败停止 + 超时反馈。
+- ✅ **P2** `cmd/unimap-web/main.go` 添加 `defer logger.Sync()`；`.dockerignore` 排除 `configs/config.yaml`。
+- ✅ 死代码清理：`updateProgress` 方法、TOCTOU nil guard。
+- ✅ 新增 5 个测试：batchJobStore cleanup、nil store、classify URLs、merge results、WS token rejection。
+- ⏸ 剩余：L-05/TD-4 强类型渐进重构；L2 Hook 与 Quake/Shodan stealth 真机链路。
+
+### 2026-06-11 后续修复
+- ✅ 所有管理端点添加限流保护（cookies、CDP、bridge、nodes、scheduler、notifications、tamper、config、backup、user 等）。
+- ✅ Auth 测试覆盖率从 76.5% 提升至 94.7%（新增 user_db_test.go）。
+- ✅ CSP 配置移除非官方 Google 域名（`fonts.googleapis.font.im`/`fonts.gstatic.font.im`）。
+- ✅ `handleScreenshot` 改为通过 `ScreenshotRouter.CaptureTargetWebsite` 执行，移除直接 chromedp 调用，统一走 Router 降级链路。
+- ✅ CSP `unsafe-inline` 完全移除：settings.html style 加 nonce，21处静态 inline style 迁移为 CSS 类（utils.css），28处 JS template literal inline style 迁移为 CSS 类，动态颜色用 CSS 变量。
+- ✅ server.go 拆分：提取 middleware_security.go（安全中间件+CSP，38行）和 server_helpers.go（解析/验证工具函数，165行），从 1335 行降至 1128 行。
+- ✅ 硬编码路径检查：所有 hardcoded 路径均在 test 文件中，生产代码无硬编码路径。
+- ✅ go.mod 已为 go 1.26，与安装版本匹配。
 
 ## 常用命令
 

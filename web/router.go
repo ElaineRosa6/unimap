@@ -63,7 +63,7 @@ func (r *Router) registerAuthRoutes() {
 	s := r.server
 	r.addRoute("login-page", "GET", "/login", s.handleLoginPage, false)
 	r.addAPIRoute("login-api", "POST", "/api/login", s.handleLoginAPI, true)
-	r.addAPIRoute("logout-api", "POST", "/api/logout", s.handleLogoutAPI, false)
+	r.addAPIRoute("logout-api", "POST", "/api/logout", s.handleLogoutAPI, true)
 }
 
 func (r *Router) registerQueryRoutes() {
@@ -80,16 +80,16 @@ func (r *Router) registerQueryRoutes() {
 
 func (r *Router) registerCookieRoutes() {
 	s := r.server
-	r.addAPIRoute("cookies-save", "POST", "/api/cookies", s.handleSaveCookies, false)
-	r.addAPIRoute("cookies-verify", "POST", "/api/cookies/verify", s.handleVerifyCookies, false)
-	r.addAPIRoute("cookies-import", "POST", "/api/cookies/import", s.handleImportCookieJSON, false)
-	r.addAPIRoute("cookies-login-status", "GET", "/api/cookies/login-status", s.handleCookieLoginStatus, false)
+	r.addAPIRoute("cookies-save", "POST", "/api/cookies", s.handleSaveCookies, true)
+	r.addAPIRoute("cookies-verify", "POST", "/api/cookies/verify", s.handleVerifyCookies, true)
+	r.addAPIRoute("cookies-import", "POST", "/api/cookies/import", s.handleImportCookieJSON, true)
+	r.addAPIRoute("cookies-login-status", "GET", "/api/cookies/login-status", s.handleCookieLoginStatus, true)
 }
 
 func (r *Router) registerCDPRoutes() {
 	s := r.server
-	r.addAPIRoute("cdp-status", "GET", "/api/cdp/status", s.handleCDPStatus, false)
-	r.addAPIRoute("cdp-connect", "POST", "/api/cdp/connect", s.handleCDPConnect, false)
+	r.addAPIRoute("cdp-status", "GET", "/api/cdp/status", s.handleCDPStatus, true)
+	r.addAPIRoute("cdp-connect", "POST", "/api/cdp/connect", s.handleCDPConnect, true)
 }
 
 func (r *Router) registerScreenshotRoutes() {
@@ -99,19 +99,20 @@ func (r *Router) registerScreenshotRoutes() {
 	r.addAPIRoute("screenshot-target", "POST", "/api/screenshot/target", s.handleTargetScreenshot, true)
 	r.addAPIRoute("screenshot-batch", "POST", "/api/screenshot/batch", s.handleBatchScreenshot, true)
 	r.addAPIRoute("screenshot-batch-urls", "POST", "/api/screenshot/batch-urls", s.handleBatchURLsScreenshot, true)
-	r.addAPIRoute("screenshot-batches", "GET", "/api/screenshot/batches", s.handleScreenshotBatches, false)
-	r.addAPIRoute("screenshot-batch-files", "GET", "/api/screenshot/batches/files", s.handleScreenshotBatchFiles, false)
-	r.addAPIRoute("screenshot-batch-delete", "DELETE", "/api/screenshot/batches/delete", s.handleScreenshotBatchDelete, false)
-	r.addAPIRoute("screenshot-file-delete", "DELETE", "/api/screenshot/file/delete", s.handleScreenshotFileDelete, false)
+	r.addAPIRoute("screenshot-batch-progress", "GET", "/api/screenshot/batch/progress", s.handleBatchScreenshotProgress, true)
+	r.addAPIRoute("screenshot-batches", "GET", "/api/screenshot/batches", s.handleScreenshotBatches, true)
+	r.addAPIRoute("screenshot-batch-files", "GET", "/api/screenshot/batches/files", s.handleScreenshotBatchFiles, true)
+	r.addAPIRoute("screenshot-batch-delete", "DELETE", "/api/screenshot/batches/delete", s.handleScreenshotBatchDelete, true)
+	r.addAPIRoute("screenshot-file-delete", "DELETE", "/api/screenshot/file/delete", s.handleScreenshotFileDelete, true)
 	r.addRoute("screenshot-file", "GET", "/screenshots/", s.handleScreenshotFile, false)
-	r.addAPIRoute("screenshot-bridge-health", "GET", "/api/screenshot/bridge/health", s.handleScreenshotBridgeHealth, false)
-	r.addAPIRoute("screenshot-bridge-status", "GET", "/api/screenshot/bridge/status", s.handleScreenshotBridgeStatus, false)
-	r.addAPIRoute("screenshot-bridge-pair", "POST", "/api/screenshot/bridge/pair", s.handleScreenshotBridgePair, false)
-	r.addAPIRoute("screenshot-bridge-token-rotate", "POST", "/api/screenshot/bridge/token/rotate", s.handleScreenshotBridgeRotateToken, false)
-	r.addAPIRoute("screenshot-bridge-task-next", "GET", "/api/screenshot/bridge/tasks/next", s.handleScreenshotBridgeTaskNext, false)
-	r.addAPIRoute("screenshot-bridge-mock-result", "POST", "/api/screenshot/bridge/mock/result", s.handleScreenshotBridgeMockResult, false)
-	r.addAPIRoute("screenshot-router-status", "GET", "/api/screenshot/router/status", s.handleScreenshotRouterStatus, false)
-	r.addAPIRoute("screenshot-set-mode", "POST", "/api/screenshot/set-mode", s.handleSetScreenshotMode, false)
+	r.addAPIRoute("screenshot-bridge-health", "GET", "/api/screenshot/bridge/health", s.handleScreenshotBridgeHealth, true)
+	r.addAPIRoute("screenshot-bridge-status", "GET", "/api/screenshot/bridge/status", s.handleScreenshotBridgeStatus, true)
+	r.addAPIRoute("screenshot-bridge-pair", "POST", "/api/screenshot/bridge/pair", s.handleScreenshotBridgePair, true)
+	r.addAPIRoute("screenshot-bridge-token-rotate", "POST", "/api/screenshot/bridge/token/rotate", s.handleScreenshotBridgeRotateToken, true)
+	r.addAPIRoute("screenshot-bridge-task-next", "GET", "/api/screenshot/bridge/tasks/next", s.handleScreenshotBridgeTaskNext, true)
+	r.addAPIRoute("screenshot-bridge-mock-result", "POST", "/api/screenshot/bridge/mock/result", s.handleScreenshotBridgeMockResult, true)
+	r.addAPIRoute("screenshot-router-status", "GET", "/api/screenshot/router/status", s.handleScreenshotRouterStatus, true)
+	r.addAPIRoute("screenshot-set-mode", "POST", "/api/screenshot/set-mode", s.handleSetScreenshotMode, true)
 }
 
 func (r *Router) registerImportRoutes() {
@@ -123,71 +124,71 @@ func (r *Router) registerImportRoutes() {
 
 func (r *Router) registerNodeRoutes() {
 	s := r.server
-	r.addAPIRoute("node-register", "POST", "/api/nodes/register", s.handleNodeRegister, false)
-	r.addAPIRoute("node-heartbeat", "POST", "/api/nodes/heartbeat", s.handleNodeHeartbeat, false)
-	r.addAPIRoute("node-status", "GET", "/api/nodes/status", s.handleNodeStatus, false)
-	r.addAPIRoute("node-get", "GET", "/api/nodes/get", s.handleNodeGet, false)
-	r.addAPIRoute("node-deregister", "DELETE", "/api/nodes/deregister", s.handleNodeDeregister, false)
-	r.addAPIRoute("node-network-profile", "GET", "/api/nodes/network/profile", s.handleNodeNetworkProfile, false)
-	r.addAPIRoute("node-task-enqueue", "POST", "/api/nodes/task/enqueue", s.handleNodeTaskEnqueue, false)
-	r.addAPIRoute("node-task-claim", "POST", "/api/nodes/task/claim", s.handleNodeTaskClaim, false)
-	r.addAPIRoute("node-task-result", "POST", "/api/nodes/task/result", s.handleNodeTaskResult, false)
-	r.addAPIRoute("node-task-status", "GET", "/api/nodes/task/status", s.handleNodeTaskStatus, false)
-	r.addAPIRoute("node-task-get", "GET", "/api/nodes/task/get", s.handleNodeTaskGet, false)
-	r.addAPIRoute("node-task-delete", "DELETE", "/api/nodes/task/delete", s.handleNodeTaskDelete, false)
+	r.addAPIRoute("node-register", "POST", "/api/nodes/register", s.handleNodeRegister, true)
+	r.addAPIRoute("node-heartbeat", "POST", "/api/nodes/heartbeat", s.handleNodeHeartbeat, true)
+	r.addAPIRoute("node-status", "GET", "/api/nodes/status", s.handleNodeStatus, true)
+	r.addAPIRoute("node-get", "GET", "/api/nodes/get", s.handleNodeGet, true)
+	r.addAPIRoute("node-deregister", "DELETE", "/api/nodes/deregister", s.handleNodeDeregister, true)
+	r.addAPIRoute("node-network-profile", "GET", "/api/nodes/network/profile", s.handleNodeNetworkProfile, true)
+	r.addAPIRoute("node-task-enqueue", "POST", "/api/nodes/task/enqueue", s.handleNodeTaskEnqueue, true)
+	r.addAPIRoute("node-task-claim", "POST", "/api/nodes/task/claim", s.handleNodeTaskClaim, true)
+	r.addAPIRoute("node-task-result", "POST", "/api/nodes/task/result", s.handleNodeTaskResult, true)
+	r.addAPIRoute("node-task-status", "GET", "/api/nodes/task/status", s.handleNodeTaskStatus, true)
+	r.addAPIRoute("node-task-get", "GET", "/api/nodes/task/get", s.handleNodeTaskGet, true)
+	r.addAPIRoute("node-task-delete", "DELETE", "/api/nodes/task/delete", s.handleNodeTaskDelete, true)
 }
 
 func (r *Router) registerSchedulerRoutes() {
 	s := r.server
-	r.addAPIRoute("scheduler-tasks-list", "GET", "/api/scheduler/tasks", s.handleListTasks, false)
-	r.addAPIRoute("scheduler-task-get", "GET", "/api/scheduler/tasks/get", s.handleGetTask, false)
-	r.addAPIRoute("scheduler-task-create", "POST", "/api/scheduler/tasks/create", s.handleCreateTask, false)
-	r.addAPIRoute("scheduler-task-update", "POST", "/api/scheduler/tasks/update", s.handleUpdateTask, false)
-	r.addAPIRoute("scheduler-task-delete", "POST", "/api/scheduler/tasks/delete", s.handleDeleteTask, false)
-	r.addAPIRoute("scheduler-task-run", "POST", "/api/scheduler/tasks/run", s.handleRunTaskNow, false)
-	r.addAPIRoute("scheduler-task-enable", "POST", "/api/scheduler/tasks/enable", s.handleEnableTask, false)
-	r.addAPIRoute("scheduler-task-disable", "POST", "/api/scheduler/tasks/disable", s.handleDisableTask, false)
-	r.addAPIRoute("scheduler-history", "GET", "/api/scheduler/history", s.handleTaskHistory, false)
+	r.addAPIRoute("scheduler-tasks-list", "GET", "/api/scheduler/tasks", s.handleListTasks, true)
+	r.addAPIRoute("scheduler-task-get", "GET", "/api/scheduler/tasks/get", s.handleGetTask, true)
+	r.addAPIRoute("scheduler-task-create", "POST", "/api/scheduler/tasks/create", s.handleCreateTask, true)
+	r.addAPIRoute("scheduler-task-update", "POST", "/api/scheduler/tasks/update", s.handleUpdateTask, true)
+	r.addAPIRoute("scheduler-task-delete", "POST", "/api/scheduler/tasks/delete", s.handleDeleteTask, true)
+	r.addAPIRoute("scheduler-task-run", "POST", "/api/scheduler/tasks/run", s.handleRunTaskNow, true)
+	r.addAPIRoute("scheduler-task-enable", "POST", "/api/scheduler/tasks/enable", s.handleEnableTask, true)
+	r.addAPIRoute("scheduler-task-disable", "POST", "/api/scheduler/tasks/disable", s.handleDisableTask, true)
+	r.addAPIRoute("scheduler-history", "GET", "/api/scheduler/history", s.handleTaskHistory, true)
 }
 
 func (r *Router) registerNotificationRoutes() {
 	s := r.server
-	r.addAPIRoute("notify-channels", "GET", "/api/notifications/channels", s.handleNotificationChannels, false)
-	r.addAPIRoute("notify-channels-save", "POST", "/api/notifications/channels", s.handleNotifyChannelSave, false)
-	r.addAPIRoute("notify-channels-delete", "DELETE", "/api/notifications/channels", s.handleNotifyChannelDelete, false)
-	r.addAPIRoute("notify-channels-test", "POST", "/api/notifications/channels/test", s.handleNotifyChannelTest, false)
-	r.addAPIRoute("notify-reload", "POST", "/api/notifications/reload", s.handleNotifyReload, false)
+	r.addAPIRoute("notify-channels", "GET", "/api/notifications/channels", s.handleNotificationChannels, true)
+	r.addAPIRoute("notify-channels-save", "POST", "/api/notifications/channels", s.handleNotifyChannelSave, true)
+	r.addAPIRoute("notify-channels-delete", "DELETE", "/api/notifications/channels", s.handleNotifyChannelDelete, true)
+	r.addAPIRoute("notify-channels-test", "POST", "/api/notifications/channels/test", s.handleNotifyChannelTest, true)
+	r.addAPIRoute("notify-reload", "POST", "/api/notifications/reload", s.handleNotifyReload, true)
 }
 
 func (r *Router) registerTamperRoutes() {
 	s := r.server
 	r.addAPIRoute("tamper-check", "POST", "/api/tamper/check", s.handleTamperCheck, true)
 	r.addAPIRoute("tamper-baseline", "POST", "/api/tamper/baseline", s.handleTamperBaseline, true)
-	r.addAPIRoute("tamper-baseline-list", "GET", "/api/tamper/baseline/list", s.handleTamperBaselineList, false)
-	r.addAPIRoute("tamper-baseline-delete", "DELETE", "/api/tamper/baseline/delete", s.handleTamperBaselineDelete, false)
-	r.addAPIRoute("tamper-history", "GET", "/api/tamper/history", s.handleTamperHistory, false)
-	r.addAPIRoute("tamper-history-delete", "DELETE", "/api/tamper/history/delete", s.handleTamperHistoryDelete, false)
+	r.addAPIRoute("tamper-baseline-list", "GET", "/api/tamper/baseline/list", s.handleTamperBaselineList, true)
+	r.addAPIRoute("tamper-baseline-delete", "DELETE", "/api/tamper/baseline/delete", s.handleTamperBaselineDelete, true)
+	r.addAPIRoute("tamper-history", "GET", "/api/tamper/history", s.handleTamperHistory, true)
+	r.addAPIRoute("tamper-history-delete", "DELETE", "/api/tamper/history/delete", s.handleTamperHistoryDelete, true)
 }
 
 func (r *Router) registerMiscRoutes() {
 	s := r.server
-	r.addAPIRoute("backup-create", "POST", "/api/backup/create", s.handleCreateBackup, false)
-	r.addAPIRoute("backup-list", "GET", "/api/backup/list", s.handleListBackups, false)
-	r.addAPIRoute("account-change-password", "POST", "/api/account/change-password", s.handleChangePassword, false)
-	r.addAPIRoute("account-admin-token", "GET", "/api/account/admin-token", s.handleGetAdminToken, false)
+	r.addAPIRoute("backup-create", "POST", "/api/backup/create", s.handleCreateBackup, true)
+	r.addAPIRoute("backup-list", "GET", "/api/backup/list", s.handleListBackups, true)
+	r.addAPIRoute("account-change-password", "POST", "/api/account/change-password", s.handleChangePassword, true)
+	r.addAPIRoute("account-admin-token", "GET", "/api/account/admin-token", s.handleGetAdminToken, true)
 	r.addAPIRoute("user-register", "POST", "/api/users/register", s.handleRegister, true)
-	r.addAPIRoute("user-list", "GET", "/api/users", s.handleListUsers, false)
-	r.addAPIRoute("user-get", "GET", "/api/users/{id}", s.handleGetUser, false)
-	r.addAPIRoute("user-update", "PUT", "/api/users/{id}", s.handleUpdateUser, false)
-	r.addAPIRoute("user-delete", "DELETE", "/api/users/{id}", s.handleDeleteUser, false)
-	r.addAPIRoute("user-change-password", "POST", "/api/users/{id}/password", s.handleChangeUserPassword, false)
+	r.addAPIRoute("user-list", "GET", "/api/users", s.handleListUsers, true)
+	r.addAPIRoute("user-get", "GET", "/api/users/{id}", s.handleGetUser, true)
+	r.addAPIRoute("user-update", "PUT", "/api/users/{id}", s.handleUpdateUser, true)
+	r.addAPIRoute("user-delete", "DELETE", "/api/users/{id}", s.handleDeleteUser, true)
+	r.addAPIRoute("user-change-password", "POST", "/api/users/{id}/password", s.handleChangeUserPassword, true)
 	r.addAPIRoute("icp-health", "GET", "/api/icp/health", s.handleICPHealth, true)
 	r.addAPIRoute("icp-query", "GET", "/api/icp/query", s.handleICPQuery, true)
 	r.addAPIRoute("icp-history", "GET", "/api/icp/history", s.handleICPHistory, true)
 	r.addAPIRoute("icp-history-results", "GET", "/api/icp/history/results", s.handleICPHistoryResults, true)
 	r.addAPIRoute("icp-compare", "GET", "/api/icp/compare", s.handleICPCompare, true)
-	r.addAPIRoute("config-get", "GET", "/api/config", s.handleGetConfig, false)
-	r.addAPIRoute("config-save", "POST", "/api/config", s.handleSaveConfig, false)
+	r.addAPIRoute("config-get", "GET", "/api/config", s.handleGetConfig, true)
+	r.addAPIRoute("config-save", "POST", "/api/config", s.handleSaveConfig, true)
 }
 
 func (r *Router) buildMux() http.Handler {
