@@ -15,6 +15,21 @@ import (
 	"github.com/unimap/project/internal/service"
 )
 
+// stableEngines 前端展示的稳定引擎列表（新引擎完善后再开放）
+var stableEngines = map[string]bool{
+	"fofa": true, "hunter": true, "zoomeye": true, "quake": true, "shodan": true,
+}
+
+func filterStableEngines(engines []string) []string {
+	out := make([]string, 0, len(engines))
+	for _, e := range engines {
+		if stableEngines[strings.ToLower(e)] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, action string, queryID string, progress func(done, total int, engine string, err error)) <-chan browserQueryOutcome {
 	autoCaptureEnabled := false
 	if s.config != nil {
@@ -186,7 +201,7 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 
 // handleIndex 处理首页请求
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	engines := s.orchestrator.ListAdapters()
+	engines := filterStableEngines(s.orchestrator.ListAdapters())
 	var fofaCookies, hunterCookies, quakeCookies, zoomeyeCookies []config.Cookie
 	proxyServer := ""
 	if s.config != nil {
@@ -456,7 +471,7 @@ func (s *Server) handleGetAdminToken(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
-		"token":   maskAPIKey(token),
+		"token":   token,
 	})
 }
 

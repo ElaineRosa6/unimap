@@ -175,8 +175,10 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 					combined, combinedAvailable = browserRouter.(CombinedBrowserRouter)
 				}
 
-				// Open search engine result page unless the combined path will navigate once itself.
-				if !combinedAvailable {
+				// Open search engine result page only for "open" action.
+				// For "collect" and "collect_and_capture", the collect step already
+				// navigates to the page, so opening here would cause duplicate navigation.
+				if action == "open" && !combinedAvailable {
 					if browserRouter != nil {
 						if _, err := browserRouter.OpenSearchEngineResult(ctx, engine, browserQuery); err != nil {
 							engineErr = err

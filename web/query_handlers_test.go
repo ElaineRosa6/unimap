@@ -822,8 +822,8 @@ func TestHandleGetAdminToken_ReturnsToken(t *testing.T) {
 	if ok, _ := resp["success"].(bool); !ok {
 		t.Fatalf("expected success=true, got %v", resp)
 	}
-	if tok, _ := resp["token"].(string); tok != "test****-123" {
-		t.Fatalf("expected masked token 'test****-123', got %q", tok)
+	if tok, _ := resp["token"].(string); tok != "test-admin-token-123" {
+		t.Fatalf("expected real token 'test-admin-token-123', got %q", tok)
 	}
 }
 

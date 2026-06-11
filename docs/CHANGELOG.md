@@ -2,6 +2,32 @@
 
 ---
 
+## [2026-06-11] Bridge 状态语义修复 + Token 复制 + 状态抖动
+
+### 修复
+
+- **Bridge/CDP 状态语义统一**：`ExtensionHealthChecker` 要求 `LiveClient` 返回 true 才报告健康；`buildBridgeDiagnosticSnapshot` 新增 `extension_online` 字段；设置页不再将"服务启动"显示为"在线"，改为三态：在线 / 等待扩展连接 / 离线。
+- **Bridge 状态抖动修复**：`liveWindowSeconds` 从 15 秒提高到 60 秒，覆盖扩展执行任务期间不轮询的场景。
+- **Account 页 Token 复制修复**：`GET /api/v1/account/admin-token` 返回真实 token（接口已受 auth 保护），不再返回脱敏值。
+
+### 涉及文件
+
+| 文件 | 变更 |
+|------|------|
+| `internal/screenshot/health.go` | `LiveClient == nil` → 返回 `false` |
+| `internal/screenshot/router.go` | `extHealthy` 初始 `false`；`LiveClient` nil 也赋值 |
+| `web/server.go` | `LiveClient` 回调改用 live token 检查 |
+| `web/screenshot_bridge_handlers.go` | 新增 `extension_online`；`liveWindowSeconds` 15→60；提取共享函数 |
+| `web/query_handlers.go` | admin token API 返回真实 token |
+| `web/templates/settings.html` | Bridge 状态三态显示 |
+
+### 测试
+
+- 新增 7 个测试 + 修复 4 个已有测试适配新语义
+- `go test -race ./internal/screenshot/... ./web/...` 全部通过
+
+---
+
 ## [1.0.0] - 2026-05-26 生产级就绪正式版发布 (Major Upgrade)
 
 > **变更类型**: 核心架构升级 & 正式发布

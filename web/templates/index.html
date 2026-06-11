@@ -30,7 +30,8 @@
 								<div class="engine-option">
 									<input type="checkbox" id="engine-{{.}}" name="engines" value="{{.}}" checked>
 									<label for="engine-{{.}}">{{.}}</label>
-									<span class="engine-status" id="status-{{.}}">&#10003;</span>
+									<span class="engine-badge" id="apikey-{{.}}" title="API Key">Key</span>
+									<span class="engine-badge dot" id="login-{{.}}" title="登录状态">●</span>
 								</div>
 							{{end}}
 						</div>

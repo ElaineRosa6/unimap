@@ -661,15 +661,7 @@ func setExtensionHealthSignals(router *screenshot.ScreenshotRouter, bridge *Brid
 	const recentActivityCutoff = 5 * time.Minute
 	router.SetExtensionHealthSignals(
 		func() bool {
-			bridge.mu.Lock()
-			defer bridge.mu.Unlock()
-			cutoff := time.Now().Unix() - int64(recentActivityCutoff.Seconds())
-			for _, ts := range bridge.LastSeen {
-				if ts >= cutoff {
-					return true
-				}
-			}
-			return false
+			return activeBridgeLiveTokenCount(bridge) > 0
 		},
 		func() int64 {
 			bridge.mu.Lock()

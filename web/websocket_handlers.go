@@ -166,7 +166,7 @@ func (s *Server) validateWebSocketRequest(r *http.Request) bool {
 
 // handleWebSocketQuery 处理WebSocket查询请求
 func (s *Server) handleWebSocketQuery(ctx context.Context, connID string, message map[string]interface{}, writeJSON func(interface{}) error) {
-	query, engines, pageSize, browserQuery, browserAction, err := parseWSQueryParams(message, s.orchestrator)
+	query, engines, apiEngines, pageSize, browserQuery, browserAction, err := parseWSQueryParams(message, s.orchestrator)
 	if err != nil {
 		if wErr := writeJSON(map[string]interface{}{"type": "query_error", "error": err.Error()}); wErr != nil {
 			logger.Errorf("WebSocket write error: %v", wErr)
@@ -189,12 +189,12 @@ func (s *Server) handleWebSocketQuery(ctx context.Context, connID string, messag
 		logger.Errorf("WebSocket write error: %v", wErr)
 	}
 
-	go s.executeWSQueryAsync(ctx, connID, queryID, query, engines, pageSize, browserQuery, browserAction, writeJSON)
+	go s.executeWSQueryAsync(ctx, connID, queryID, query, engines, apiEngines, pageSize, browserQuery, browserAction, writeJSON)
 }
 
 // parseWSQueryParams 解析并验证 WebSocket 查询参数
 func parseWSQueryParams(message map[string]interface{}, orch interface{ ListAdapters() []string }) (
-	query string, engines []string, pageSize int, browserQuery bool, browserAction string, err error,
+	query string, engines []string, apiEngines []string, pageSize int, browserQuery bool, browserAction string, err error,
 ) {
 	query, _ = message["query"].(string)
 	query = strings.TrimSpace(query)
@@ -215,12 +215,18 @@ func parseWSQueryParams(message map[string]interface{}, orch interface{ ListAdap
 	}
 	if len(engines) == 0 {
 		err = fmt.Errorf("no engines configured/registered. Please set API keys in configs/config.yaml and enable at least one engine.")
+		return
+	}
+	// api_engines: 浏览器查询模式下，API 只查询有 Key 的引擎
+	apiEngines = parseWSStringList(message["api_engines"])
+	if len(apiEngines) == 0 {
+		apiEngines = engines
 	}
 	return
 }
 
 // executeWSQueryAsync 异步执行 WebSocket 查询
-func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query string, engines []string, pageSize int, browserQuery bool, browserAction string, writeJSON func(interface{}) error) {
+func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query string, engines []string, apiEngines []string, pageSize int, browserQuery bool, browserAction string, writeJSON func(interface{}) error) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Errorf("WebSocket query panic for %s: %v", queryID, r)
@@ -232,13 +238,15 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	queryCtx, queryCancel := context.WithTimeout(ctx, 60*time.Second)
-	defer queryCancel()
+
+	// API 查询和浏览器查询独立超时，互不拖累
+	apiCtx, apiCancel := context.WithTimeout(ctx, 60*time.Second)
+	defer apiCancel()
 
 	if browserQuery {
 		s.updateQueryProgress(connID, queryID, 5)
 	}
-	browserQueryCh := s.runBrowserQueryAsync(queryCtx, query, engines, browserQuery, browserAction, queryID, func(done, total int, engine string, err error) {
+	browserQueryCh := s.runBrowserQueryAsync(ctx, query, engines, browserQuery, browserAction, queryID, func(done, total int, engine string, err error) {
 		if total <= 0 {
 			return
 		}
@@ -249,18 +257,39 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 		s.updateQueryProgress(connID, queryID, progress)
 	})
 
-	resp, queryErr := s.service.Query(queryCtx, service.QueryRequest{
-		Query: query, Engines: engines, PageSize: pageSize, ProcessData: true,
-	})
+	// API 查询在独立 goroutine 中执行
+	type apiResult struct {
+		resp *service.QueryResponse
+		err  error
+	}
+	apiCh := make(chan apiResult, 1)
+	go func() {
+		resp, err := s.service.Query(apiCtx, service.QueryRequest{
+			Query: query, Engines: apiEngines, PageSize: pageSize, ProcessData: true,
+		})
+		apiCh <- apiResult{resp, err}
+	}()
+
+	// 等待两个查询都完成（或超时）
+	var resp *service.QueryResponse
+	var queryErr error
 	var browserOutcome browserQueryOutcome
-	if browserQueryCh != nil {
+
+	apiDone := false
+	browserDone := browserQueryCh == nil
+	for !apiDone || !browserDone {
 		select {
-		case browserOutcome = <-browserQueryCh:
-		case <-queryCtx.Done():
+		case r := <-apiCh:
+			apiDone = true
+			resp = r.resp
+			queryErr = r.err
+		case outcome := <-browserQueryCh:
+			browserDone = true
+			browserOutcome = outcome
 		}
 	}
-	if queryErr == nil && queryCtx.Err() != nil {
-		queryErr = fmt.Errorf("query timeout after 60s: %v", queryCtx.Err())
+	if queryErr == nil && apiCtx.Err() != nil {
+		queryErr = fmt.Errorf("query timeout after 60s: %v", apiCtx.Err())
 	}
 
 	statusCopy := s.finalizeWSQueryStatus(queryID, query, engines, queryErr, resp, browserOutcome, browserAction)

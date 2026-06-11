@@ -539,6 +539,25 @@ footer {
 	color: var(--success);
 }
 
+.engine-badge {
+	display: inline-block;
+	font-size: 10px;
+	padding: 1px 5px;
+	border-radius: 3px;
+	font-weight: 600;
+	letter-spacing: 0.3px;
+	vertical-align: middle;
+}
+.engine-badge[data-state="ok"] { background: #d4edda; color: #155724; }
+.engine-badge[data-state="warn"] { background: #fff3cd; color: #856404; }
+.engine-badge[data-state="error"] { background: #f8d7da; color: #721c24; }
+.engine-badge:not([data-state]) { background: #e9ecef; color: #6c757d; }
+/* 圆点样式（Login 徽章） */
+.engine-badge.dot { padding: 0 4px; font-size: 14px; line-height: 1; }
+.engine-badge.dot[data-state="ok"] { background: transparent; color: #27ae60; }
+.engine-badge.dot[data-state="warn"] { background: transparent; color: #f39c12; }
+.engine-badge.dot[data-state="error"] { background: transparent; color: #e74c3c; }
+
 /* ============================================================
    Query options row
    ============================================================ */

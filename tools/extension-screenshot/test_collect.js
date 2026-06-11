@@ -9,7 +9,7 @@ const EXTRACT_SCRIPT = `(() => {
     if (lower.includes("fofa.info")) return "fofa";
     if (lower.includes("hunter.qianxin.com")) return "hunter";
     if (lower.includes("zoomeye.org")) return "zoomeye";
-    if (lower.includes("quake.360.cn")) return "quake";
+    if (lower.includes("quake.360.net") || lower.includes("quake.360.net")) return "quake";
     return "unknown";
   }
 
@@ -226,7 +226,7 @@ async function main() {
       searchUrl = `https://hunter.qianxin.com/list?searchValue=${encodeURIComponent(Buffer.from(query).toString('base64'))}`;
       break;
     case 'quake':
-      searchUrl = `https://quake.360.cn/quake/#/searchResult?searchVal=${encodeURIComponent(query)}`;
+      searchUrl = `https://quake.360.net/quake/#/searchResult?searchVal=${encodeURIComponent(query)}`;
       break;
     case 'zoomeye':
       searchUrl = `https://www.zoomeye.org/searchResult?q=${encodeURIComponent(query)}`;
