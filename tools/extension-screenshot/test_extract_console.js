@@ -87,7 +87,7 @@
     if (lower.includes("fofa.info")) return "fofa";
     if (lower.includes("hunter.qianxin.com")) return "hunter";
     if (lower.includes("zoomeye.org") || lower.includes("zoomeye.com")) return "zoomeye";
-    if (lower.includes("quake.360.cn")) return "quake";
+    if (lower.includes("quake.360.net") || lower.includes("quake.360.cn")) return "quake";
     return "unknown";
   }
 

@@ -163,11 +163,13 @@ function initQueryForm() {
 		
 		// 执行异步查询
 		const browserAction = getBrowserAction();
-			executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery, browserAction);
+			executeAsyncQuery(query, engines, enginesWithKey, submitBtn, originalText, browserQuery, browserAction);
 	});
 
 	// 初始化引擎状态
 	checkEngineStatus();
+	// 检查登录状态
+	checkLoginStatus();
 }
 
 function initCDPControls() {
@@ -261,7 +263,7 @@ function refreshBridgeStatus(statusBadge, statusInfo) {
 			// Consume runtime state from ScreenshotRouter (authoritative)
 			const routerMode = data && data.router_mode ? String(data.router_mode) : '';
 			const cdpHealthy = !!(data && data.router_cdp_healthy);
-			const extHealthy = !!(data && data.router_ext_healthy);
+			const extHealthy = !!(data && (data.extension_online || data.router_ext_healthy || (data.live_clients || 0) > 0));
 
 			// Fallback to legacy config-level fields
 			const engine = data && data.engine ? String(data.engine) : 'cdp';
@@ -1103,6 +1105,9 @@ function handleQueryError(message) {
 	// P1-2: 清除超时计时器
 	if (currentQueryTimeout) { clearTimeout(currentQueryTimeout); currentQueryTimeout = null; }
 
+	// 移除 loading 指示器
+	removeLoadingIndicator();
+
 	// 恢复按钮状态
 	const submitBtn = document.querySelector('button[type="submit"]');
 	if (submitBtn) {
@@ -1190,6 +1195,12 @@ function classifyEngineError(msg) {
 }
 
 // 处理查询开始
+// 移除查询结果页的 loading 指示器
+function removeLoadingIndicator() {
+	const loading = document.querySelector('.loading-indicator');
+	if (loading) loading.remove();
+}
+
 function handleQueryStart(message) {
 	currentQueryID = message.query_id;
 	const status = message.status;
@@ -1235,6 +1246,9 @@ function handleQueryComplete(message) {
 	// P1-2: 清除超时计时器
 	if (currentQueryTimeout) { clearTimeout(currentQueryTimeout); currentQueryTimeout = null; }
 
+	// 移除 loading 指示器
+	removeLoadingIndicator();
+
 	const results = message.results;
 
 	// 恢复按钮状态
@@ -1254,7 +1268,7 @@ function handleQueryComplete(message) {
 }
 
 // 执行异步查询（WebSocket版本）
-function executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery, browserAction) {
+function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, browserQuery, browserAction) {
 	const safeQuery = escapeHtml(query);
 	const safeEnginesText = engines.map(engine => escapeHtml(engine)).join(', ');
 
@@ -1285,7 +1299,7 @@ function executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery
 	// 检查WebSocket连接
 	if (!wsConnected || wsConnection.readyState !== WebSocket.OPEN) {
 		// WebSocket未连接，使用传统API
-		useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, browserAction);
+		useFallbackAPI(query, browserQuery ? apiEngines : engines, submitBtn, originalText, browserQuery, browserAction);
 		return;
 	}
 
@@ -1294,6 +1308,7 @@ function executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery
 		type: 'query',
 		query: query,
 		engines: engines,
+		api_engines: browserQuery ? apiEngines : engines,
 		page_size: 50,
 		browser_query: !!browserQuery,
 			browser_action: browserAction || '',
@@ -1301,9 +1316,10 @@ function executeAsyncQuery(query, engines, submitBtn, originalText, browserQuery
 
 	// P1-2: 客户端超时检测 — 90s 无响应则提示
 	currentQueryTimeout = setTimeout(function() {
-		const loading = document.querySelector('.loading-indicator');
-		if (loading) {
-			loading.innerHTML = `
+		removeLoadingIndicator();
+		const resultsContent = document.getElementById('results-content');
+		if (resultsContent) {
+			resultsContent.innerHTML = `
 				<div style="color:#856404; background:#fff3cd; padding:16px; border-radius:6px; border:1px solid #ffc107;">
 					<h4 style="margin:0 0 8px;">查询超时</h4>
 					<p style="margin:0;">查询已超过 90 秒未响应，可能是引擎响应缓慢或网络问题。</p>
@@ -1344,6 +1360,7 @@ function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, b
 	.then(parseJsonResponse)
 	.then(data => {
 		clearTimeout(timeoutId);
+		removeLoadingIndicator();
 		// 恢复按钮状态
 		if (submitBtn) {
 			submitBtn.textContent = originalText;
@@ -1362,6 +1379,7 @@ function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, b
 	})
 	.catch(error => {
 		clearTimeout(timeoutId);
+		removeLoadingIndicator();
 		// 恢复按钮状态
 		if (submitBtn) {
 			submitBtn.textContent = originalText;
@@ -1884,27 +1902,62 @@ function checkEngineStatus() {
 			if (!data.engines) return;
 			let anyHasKey = false;
 			Object.entries(data.engines).forEach(([name, eng]) => {
-				const el = document.getElementById(`status-${name}`);
+				const el = document.getElementById(`apikey-${name}`);
 				const hasKey = !!(eng.api_key && eng.api_key !== '****');
 				const enabled = eng.enabled !== false;
 				engineStatusMap[name] = { hasKey, enabled };
 				if (hasKey) anyHasKey = true;
 				if (!el) return;
 				if (enabled && hasKey) {
-					el.textContent = '✓';
-					el.style.color = '#27ae60';
+					el.textContent = 'Key ✓';
+					el.setAttribute('data-state', 'ok');
+					el.title = 'API Key 已配置';
 				} else if (enabled) {
-					el.textContent = '!';
-					el.style.color = '#f39c12';
+					el.textContent = 'Key ✗';
+					el.setAttribute('data-state', 'warn');
+					el.title = '未配置 API Key';
 				} else {
-					el.textContent = '✗';
-					el.style.color = '#e74c3c';
+					el.textContent = 'Key ✗';
+					el.setAttribute('data-state', 'error');
+					el.title = '引擎已禁用';
 				}
 			});
 			// P1-1: 首次使用引导 — 无任何引擎配置时显示提示
 			updateFirstUseBanner(anyHasKey);
 		})
 		.catch(function(err) { console.warn('checkEngineStatus failed:', err); });
+}
+
+// 检查各引擎登录状态（页面加载时调用）
+function checkLoginStatus() {
+	apiFetch('/api/v1/cookies/login-status')
+		.then(parseJsonResponse)
+		.then(data => {
+			if (!data.engines) return;
+			data.engines.forEach(function(item) {
+				var name = item.engine;
+				var loggedIn = !!item.logged_in;
+				var reason = item.reason || '';
+				var loginURL = item.login_url || '';
+				var el = document.getElementById('login-' + name);
+				if (!el) return;
+
+				if (loggedIn || reason === 'ext_connected' || reason === 'cdp_connected') {
+					el.textContent = '●';
+					el.setAttribute('data-state', 'ok');
+					el.title = '已连接';
+				} else if (reason === 'cookie_configured') {
+					el.textContent = '●';
+					el.setAttribute('data-state', 'warn');
+					el.title = 'Cookie 已配置，但未检测到登录状态';
+				} else {
+					el.textContent = '○';
+					el.setAttribute('data-state', 'error');
+					el.title = '未连接' + (loginURL ? '\n' + loginURL : '');
+				}
+			});
+		})
+		.catch(function(err) { console.warn('checkLoginStatus failed:', err); });
 }
 
 // 首次使用引导 banner
@@ -2734,7 +2787,7 @@ function getEngineLink(source, ip) {
 	switch(source ? source.toLowerCase() : '') {
 		case 'fofa': return `https://fofa.info/result?qbase64=${b64}`;
 		case 'hunter': return `https://hunter.qianxin.com/list?searchValue=${b64}`;
-		case 'quake': return `https://quake.360.cn/quake/#/searchResult?searchVal=${encodeURIComponent(query)}`;
+		case 'quake': return `https://quake.360.net/quake/#/searchResult?searchVal=${encodeURIComponent(query)}`;
 		case 'zoomeye': return `https://www.zoomeye.org/searchResult?q=${encodeURIComponent('ip:"'+ip+'"')}`;
 		default: return '#';
 	}

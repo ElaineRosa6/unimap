@@ -230,6 +230,15 @@ go run -tags gui ./cmd/unimap-gui
 - ✅ 硬编码路径检查：所有 hardcoded 路径均在 test 文件中，生产代码无硬编码路径。
 - ✅ go.mod 已为 go 1.26，与安装版本匹配。
 
+### 2026-06-11 P0 Bridge 状态修复 + Token 复制 + 状态抖动
+- ✅ **P0** Bridge/CDP 状态语义统一：`ExtensionHealthChecker` 要求 `LiveClient` 返回 true；`buildBridgeDiagnosticSnapshot` 新增 `extension_online` 字段；`ready` 逻辑修正为 `engine == "cdp" || (engine == "extension" && extensionOnline)`。
+- ✅ **P0** `router.extHealthy` 初始值改为 `false`（不再用 `extBridge != nil`）；`SetExtensionHealthSignals` 总是设置 `LiveClient`（nil 也设）。
+- ✅ **P0** 设置页 Bridge 状态三态显示：在线（`extension_online || router_ext_healthy || live_clients > 0`）/ 等待扩展连接（`bridge_connected` 但无活跃客户端）/ 离线。
+- ✅ **P1** Bridge 状态抖动修复：`liveWindowSeconds` 从 15 秒提高到 60 秒，覆盖扩展执行任务（10-25 秒）期间不轮询的场景。
+- ✅ **P1** Account 页 Token 复制修复：`GET /api/v1/account/admin-token` 返回真实 token（接口已受 auth 保护），不再返回 `maskAPIKey` 脱敏值。
+- ✅ 新增 7 个测试 + 修复 4 个已有测试适配新语义；`go test -race ./internal/screenshot/... ./web/...` 全部通过。
+- ⏸ 仍剩：新增引擎端到端未闭环（UI/凭据/cookie/浏览器链路）；UQL 查询历史无服务端持久化；L-05/TD-4 强类型渐进重构；L2 Hook；Quake/Shodan stealth。
+
 ## 常用命令
 
 ```bash

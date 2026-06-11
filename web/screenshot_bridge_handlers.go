@@ -843,23 +843,30 @@ func (s *Server) activeBridgeLiveTokens() int {
 	if s == nil {
 		return 0
 	}
+	return activeBridgeLiveTokenCount(s.bridge)
+}
+
+func activeBridgeLiveTokenCount(bridge *BridgeState) int {
+	if bridge == nil {
+		return 0
+	}
 	now := time.Now().Unix()
-	const liveWindowSeconds = 15
+	const liveWindowSeconds = 60
 	count := 0
-	s.bridge.mu.Lock()
-	for token, expireAt := range s.bridge.Tokens {
+	bridge.mu.Lock()
+	for token, expireAt := range bridge.Tokens {
 		if expireAt <= now {
-			delete(s.bridge.Tokens, token)
-			delete(s.bridge.LastSeen, token)
+			delete(bridge.Tokens, token)
+			delete(bridge.LastSeen, token)
 			continue
 		}
-		lastSeen := s.bridge.LastSeen[token]
+		lastSeen := bridge.LastSeen[token]
 		if lastSeen <= 0 || now-lastSeen > liveWindowSeconds {
 			continue
 		}
 		count++
 	}
-	s.bridge.mu.Unlock()
+	bridge.mu.Unlock()
 	return count
 }
 
@@ -893,7 +900,11 @@ func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
 		pending, waiters = s.bridge.Mock.Stats()
 	}
 
-	ready := engine == "cdp" || (engine == "extension" && enabled && bridgeConnected)
+	pairedClients := s.activeBridgeTokens()
+	liveClients := s.activeBridgeLiveTokens()
+	routerExtHealthy := s.screenshotRouterExtHealthy()
+	extensionOnline := enabled && (routerExtHealthy || liveClients > 0)
+	ready := engine == "cdp" || (engine == "extension" && extensionOnline)
 
 	s.bridge.mu.Lock()
 	lastErr := s.bridge.LastErr
@@ -910,8 +921,9 @@ func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
 		"listen_addr":        listenAddr,
 		"ready":              ready,
 		"bridge_connected":   bridgeConnected,
-		"paired_clients":     s.activeBridgeTokens(),
-		"live_clients":       s.activeBridgeLiveTokens(),
+		"extension_online":   extensionOnline,
+		"paired_clients":     pairedClients,
+		"live_clients":       liveClients,
 		"pending_tasks":      pending,
 		"awaiting_results":   waiters,
 		"in_flight_tasks":    inFlight,
@@ -924,7 +936,7 @@ func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
 		"last_callback_at":   lastCallbackAt,
 		"router_mode":        s.screenshotRouterMode(),
 		"router_cdp_healthy": s.screenshotRouterCDPHealthy(),
-		"router_ext_healthy": s.screenshotRouterExtHealthy(),
+		"router_ext_healthy": routerExtHealthy,
 	}
 }
 

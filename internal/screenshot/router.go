@@ -62,17 +62,15 @@ func (r *ScreenshotRouter) SetMetricsHooks(onModeSwitch func(from, to Screenshot
 	r.onHealthCheck = onHealthCheck
 }
 
-// SetExtensionHealthSignals injects optional liveness and activity providers
-// into the extension health checker. All parameters are optional — nil values
-// are ignored and preserve the existing checker state.
+// SetExtensionHealthSignals injects liveness and activity providers into the
+// extension health checker. A nil liveClient explicitly means no live extension
+// signal is available and keeps extension health false.
 func (r *ScreenshotRouter) SetExtensionHealthSignals(liveClient LiveClientProvider, lastActivity LastActivityProvider, cutoff time.Duration) {
 	if r.extChecker == nil {
 		return
 	}
 	if ext, ok := r.extChecker.(*ExtensionHealthChecker); ok {
-		if liveClient != nil {
-			ext.LiveClient = liveClient
-		}
+		ext.LiveClient = liveClient
 		if lastActivity != nil {
 			ext.LastActivity = lastActivity
 		}
@@ -113,7 +111,7 @@ func NewScreenshotRouter(cfg RouterConfig, cdp Provider, extBridge *BridgeServic
 	}
 
 	r.extChecker = &ExtensionHealthChecker{BridgeService: extBridge}
-	r.extHealthy.Store(extBridge != nil)
+	r.extHealthy.Store(false)
 
 	// Set initial mode
 	r.currentMode.Store(cfg.Priority)

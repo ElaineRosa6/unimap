@@ -89,16 +89,11 @@ type LastActivityProvider func() int64
 
 // ExtensionHealthChecker checks Extension Bridge mode health.
 //
-// Beyond the BridgeService running, the checker now optionally requires:
-//   - At least one live client (when LiveClient is non-nil).
-//   - Recent activity within RecentActivityCutoff (when LastActivity is
-//     non-nil and RecentActivityCutoff > 0). A zero LastActivity timestamp
-//     is treated as "never seen", which is fine immediately after start;
-//     it only fails the check once activity has been seen but is now stale.
-//
-// All extra signals are opt-in. When the providers are nil, behavior matches
-// the previous "started + queue not overloaded" check so existing callers
-// keep working.
+// Beyond the BridgeService running, the checker requires at least one live
+// extension client. Without a LiveClient provider there is no proof that an
+// extension is paired and polling, so the bridge is treated as unavailable for
+// capture routing. RecentActivity is optional telemetry used to reject stale
+// clients when configured.
 type ExtensionHealthChecker struct {
 	BridgeService *BridgeService
 	IsMock        bool
@@ -128,22 +123,18 @@ func (e *ExtensionHealthChecker) Check(ctx context.Context) (bool, error) {
 	if !e.BridgeService.IsStarted() {
 		return false, nil
 	}
-	// Mock client runs in-process — short-circuit network-level checks but
-	// still honor live-client signal so tests can simulate "extension absent".
+	if e.LiveClient == nil || !e.LiveClient() {
+		return false, nil
+	}
+	// Mock client runs in-process — short-circuit network-level checks after
+	// the live-client gate so tests can simulate "extension absent".
 	if e.IsMock {
-		if e.LiveClient != nil && !e.LiveClient() {
-			return false, nil
-		}
 		return true, nil
 	}
 	// Overload check: if queue is excessively backed up, consider unhealthy
 	queueLen := e.BridgeService.QueueLen()
 	const maxQueueThreshold = 50
 	if queueLen > maxQueueThreshold {
-		return false, nil
-	}
-
-	if e.LiveClient != nil && !e.LiveClient() {
 		return false, nil
 	}
 

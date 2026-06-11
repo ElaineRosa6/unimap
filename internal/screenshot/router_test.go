@@ -28,6 +28,15 @@ func TestNewScreenshotRouter_Defaults(t *testing.T) {
 	}
 }
 
+func TestNewScreenshotRouter_ExtBridgePresent_NoLiveClient_InitialUnhealthy(t *testing.T) {
+	extBridge := NewBridgeService(&mockBridgeClient{}, 5, time.Second)
+	r := NewScreenshotRouter(RouterConfig{Priority: ModeExtension}, nil, extBridge, nil)
+	_, extH := r.HealthStatus()
+	if extH {
+		t.Fatal("expected ext unhealthy when no LiveClient is wired")
+	}
+}
+
 func TestNewScreenshotRouter_WithCDPProvider(t *testing.T) {
 	cfg := RouterConfig{
 		Priority: ModeCDP,

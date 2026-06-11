@@ -386,7 +386,9 @@ func engineDomain(engine string) string {
 	case "fofa":
 		return "fofa.info"
 	case "quake":
-		return "quake.360.cn"
+		return "quake.360.net"
+	case "zoomeye":
+		return "zoomeye.org"
 	default:
 		return ""
 	}
@@ -409,6 +411,9 @@ func judgeLoginByCookieNames(engine string, byName map[string]string) bool {
 		return false
 	case "quake":
 		return strings.TrimSpace(byName["Q"]) != "" && strings.TrimSpace(byName["T"]) != ""
+	case "zoomeye":
+		// ZoomEye login cookie
+		return strings.TrimSpace(byName["_xsrf"]) != "" || strings.TrimSpace(byName["session"]) != ""
 	default:
 		return false
 	}
@@ -548,7 +553,7 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 	}
 
 	cdpConnected, extPaired := s.detectSessionChannels(r.Context())
-	engines := []string{"fofa", "hunter", "zoomeye", "quake"}
+	engines := []string{"fofa", "hunter", "zoomeye", "quake", "shodan"}
 	results := s.checkEngineLoginStatuses(r.Context(), engines, cdpConnected, extPaired)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -591,6 +596,14 @@ func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpC
 	}
 	cookieSet := s.engineCookieConfigured(engine)
 
+	// API Key 引擎（如 Shodan）：有 Key 即视为已就绪，无需浏览器登录
+	if engine == "shodan" && cookieSet {
+		return map[string]interface{}{
+			"engine": engine, "logged_in": true, "reason": "api_key_configured",
+			"login_url": loginURL, "cdp_connected": cdpConnected, "ext_paired": extPaired,
+		}
+	}
+
 	if !cdpConnected && !extPaired {
 		reason := "no_session"
 		if cookieSet {
@@ -611,6 +624,15 @@ func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpC
 		extCtx, extCancel := context.WithTimeout(ctx, 8*time.Second)
 		loggedIn, reason = s.detectLoginViaExtension(extCtx, engine, cookieSet)
 		extCancel()
+	}
+
+	// 扩展已连接但 cookie 检测未确认登录 → 标记为 "ext_connected"（非 "no_session"）
+	if !loggedIn && extPaired && reason != "browser_session" {
+		reason = "ext_connected"
+	}
+	// CDP 已连接但 cookie 检测未确认登录 → 标记为 "cdp_connected"
+	if !loggedIn && cdpConnected && reason != "browser_session" && reason != "ext_connected" {
+		reason = "cdp_connected"
 	}
 
 	return map[string]interface{}{
@@ -635,6 +657,8 @@ func (s *Server) engineCookieConfigured(engine string) bool {
 		return hasCookies(s.config.Engines.Quake.Cookies)
 	case "zoomeye":
 		return hasCookies(s.config.Engines.Zoomeye.Cookies)
+	case "shodan":
+		return strings.TrimSpace(s.config.Engines.Shodan.APIKey) != ""
 	}
 	return false
 }

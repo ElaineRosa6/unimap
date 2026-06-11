@@ -406,7 +406,7 @@ func (m *Manager) EngineLoginURL(engine string) string {
 	case "hunter":
 		return "https://hunter.qianxin.com/"
 	case "quake":
-		return "https://quake.360.cn/"
+		return "https://quake.360.net/"
 	case "zoomeye":
 		return "https://www.zoomeye.org/"
 	default:

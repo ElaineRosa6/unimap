@@ -294,8 +294,8 @@ func TestHandleCookieLoginStatus_ExtPaired_NotLoggedIn(t *testing.T) {
 	if first["logged_in"] != false {
 		t.Errorf("expected logged_in=false for ext_paired, got %v", first["logged_in"])
 	}
-	if first["reason"] != "extension_paired_session_unverified" {
-		t.Errorf("expected reason=extension_paired_session_unverified, got %v", first["reason"])
+	if first["reason"] != "ext_connected" {
+		t.Errorf("expected reason=ext_connected, got %v", first["reason"])
 	}
 	if first["ext_paired"] != true {
 		t.Errorf("expected ext_paired=true, got %v", first["ext_paired"])
@@ -348,4 +348,34 @@ func TestVerifyEngineSession_UnknownEngine(t *testing.T) {
 		t.Fatal("expected error for unknown engine")
 	}
 	_ = hint // hint varies by implementation
+}
+
+// ============================================================
+// activeBridgeLiveTokens / extPaired contract tests
+// ============================================================
+
+func TestActiveBridgeLiveTokens_StaleLastSeen_Zero(t *testing.T) {
+	now := time.Now().Unix()
+	s := &Server{
+		bridge: &BridgeState{
+			Tokens:   map[string]int64{"token1": now + 300},
+			LastSeen: map[string]int64{"token1": now - 70}, // stale (>60s window)
+		},
+	}
+	if got := s.activeBridgeLiveTokens(); got != 0 {
+		t.Fatalf("expected 0 live tokens with stale LastSeen, got %d", got)
+	}
+}
+
+func TestActiveBridgeLiveTokens_RecentLastSeen_One(t *testing.T) {
+	now := time.Now().Unix()
+	s := &Server{
+		bridge: &BridgeState{
+			Tokens:   map[string]int64{"token1": now + 300},
+			LastSeen: map[string]int64{"token1": now},
+		},
+	}
+	if got := s.activeBridgeLiveTokens(); got != 1 {
+		t.Fatalf("expected 1 live token with recent LastSeen, got %d", got)
+	}
 }

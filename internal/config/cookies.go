@@ -13,7 +13,7 @@ func DefaultCookieDomain(engine string) string {
 	case "hunter":
 		return ".hunter.qianxin.com"
 	case "quake":
-		return ".quake.360.cn"
+		return ".quake.360.net"
 	case "zoomeye":
 		return ".zoomeye.org"
 	default:
