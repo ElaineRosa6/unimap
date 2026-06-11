@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/scheduler"
 )
 
@@ -32,7 +33,7 @@ func setupScheduler(t *testing.T) *scheduler.Scheduler {
 type mockQueryHandler struct{}
 
 func (h *mockQueryHandler) Type() scheduler.TaskType { return scheduler.TaskQuery }
-func (h *mockQueryHandler) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (h *mockQueryHandler) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	return "mock query result", nil
 }
 
