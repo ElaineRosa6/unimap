@@ -304,11 +304,29 @@ func (r *ScreenshotRouter) CaptureTargetWebsite(ctx context.Context, targetURL, 
 
 // CaptureBatchURLs captures a batch of URLs using the active mode.
 func (r *ScreenshotRouter) CaptureBatchURLs(ctx context.Context, urls []string, batchID string, concurrency int) ([]BatchScreenshotResult, error) {
+	return r.CaptureBatchURLsWithProgress(ctx, urls, batchID, concurrency, nil)
+}
+
+// CaptureBatchURLsWithProgress captures a batch and reports each item as it completes when supported.
+func (r *ScreenshotRouter) CaptureBatchURLsWithProgress(ctx context.Context, urls []string, batchID string, concurrency int, onResult func(BatchScreenshotResult)) ([]BatchScreenshotResult, error) {
 	provider, err := r.resolveProvider(r.loadMode())
 	if err != nil {
 		return nil, err
 	}
-	return provider.CaptureBatchURLs(ctx, urls, batchID, concurrency)
+	if progressProvider, ok := provider.(BatchProgressProvider); ok {
+		return progressProvider.CaptureBatchURLsWithProgress(ctx, urls, batchID, concurrency, onResult)
+	}
+	if onResult == nil {
+		return provider.CaptureBatchURLs(ctx, urls, batchID, concurrency)
+	}
+	results, err := provider.CaptureBatchURLs(ctx, urls, batchID, concurrency)
+	if err != nil {
+		return nil, err
+	}
+	for _, result := range results {
+		onResult(result)
+	}
+	return results, nil
 }
 
 // GetScreenshotDirectory returns the screenshot base directory.
@@ -390,4 +408,3 @@ func (r *ScreenshotRouter) providerForMode(mode ScreenshotMode) Provider {
 		return nil
 	}
 }
-

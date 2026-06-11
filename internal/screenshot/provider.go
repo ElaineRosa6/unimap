@@ -15,3 +15,9 @@ type Provider interface {
 	OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error)
 	CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error)
 }
+
+// BatchProgressProvider is implemented by providers that can report each batch
+// item as it finishes.
+type BatchProgressProvider interface {
+	CaptureBatchURLsWithProgress(ctx context.Context, urls []string, batchID string, concurrency int, onResult func(BatchScreenshotResult)) ([]BatchScreenshotResult, error)
+}

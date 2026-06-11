@@ -103,6 +103,10 @@ func (p *ExtensionProvider) CaptureTargetWebsite(ctx context.Context, targetURL,
 }
 
 func (p *ExtensionProvider) CaptureBatchURLs(ctx context.Context, urls []string, batchID string, concurrency int) ([]BatchScreenshotResult, error) {
+	return p.CaptureBatchURLsWithProgress(ctx, urls, batchID, concurrency, nil)
+}
+
+func (p *ExtensionProvider) CaptureBatchURLsWithProgress(ctx context.Context, urls []string, batchID string, concurrency int, onResult func(BatchScreenshotResult)) ([]BatchScreenshotResult, error) {
 	if p == nil || p.bridge == nil {
 		return nil, fmt.Errorf("extension provider not initialized")
 	}
@@ -124,6 +128,9 @@ func (p *ExtensionProvider) CaptureBatchURLs(ctx context.Context, urls []string,
 				result.Success = false
 				result.Error = "invalid URL"
 				results[idx] = result
+				if onResult != nil {
+					onResult(result)
+				}
 				return
 			}
 
@@ -138,6 +145,9 @@ func (p *ExtensionProvider) CaptureBatchURLs(ctx context.Context, urls []string,
 				result.Success = false
 				result.Error = err.Error()
 				results[idx] = result
+				if onResult != nil {
+					onResult(result)
+				}
 				return
 			}
 
@@ -151,6 +161,9 @@ func (p *ExtensionProvider) CaptureBatchURLs(ctx context.Context, urls []string,
 				}
 			}
 			results[idx] = result
+			if onResult != nil {
+				onResult(result)
+			}
 		}(i, rawURL)
 	}
 
