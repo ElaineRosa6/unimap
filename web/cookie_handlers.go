@@ -341,31 +341,32 @@ func (s *Server) verifyEngineSession(ctx context.Context, engineMode, engine, qu
 }
 
 func titleFromBridgeResult(result screenshot.BridgeResult) string {
-	if title, ok := result.StructuredCollectedData["title"].(string); ok {
-		return strings.TrimSpace(title)
+	if result.StructuredCollectedData != nil && result.StructuredCollectedData.Extra != nil {
+		if title, ok := result.StructuredCollectedData.Extra["title"].(string); ok {
+			return strings.TrimSpace(title)
+		}
 	}
 	return strings.TrimSpace(result.CollectedData)
 }
 
 func hasCollectedAssets(result screenshot.BridgeResult) bool {
-	items, ok := result.StructuredCollectedData["items"].([]interface{})
-	if ok && len(items) > 0 {
-		return true
-	}
-	if total, ok := result.StructuredCollectedData["total"].(float64); ok && total > 0 {
+	if result.StructuredCollectedData != nil && len(result.StructuredCollectedData.Items) > 0 {
 		return true
 	}
 	return false
 }
 
 func loginRequiredFromBridgeResult(result screenshot.BridgeResult) bool {
-	data := result.StructuredCollectedData
-	if required, ok := data["login_required"].(bool); ok && required {
-		return true
+	if result.StructuredCollectedData != nil && result.StructuredCollectedData.Extra != nil {
+		if required, ok := result.StructuredCollectedData.Extra["login_required"].(bool); ok && required {
+			return true
+		}
 	}
 	textParts := []string{titleFromBridgeResult(result), strings.TrimSpace(result.Error), strings.TrimSpace(result.ErrorCode)}
-	if v, ok := data["extraction_error"].(string); ok {
-		textParts = append(textParts, v)
+	if result.StructuredCollectedData != nil && result.StructuredCollectedData.Extra != nil {
+		if v, ok := result.StructuredCollectedData.Extra["extraction_error"].(string); ok {
+			textParts = append(textParts, v)
+		}
 	}
 	joined := strings.ToLower(strings.Join(textParts, " "))
 	markers := []string{"login", "sign in", "signin", "登录", "登陆", "请先登录", "unauthorized", "未登录"}
@@ -497,18 +498,20 @@ func (s *Server) detectLoginViaExtension(ctx context.Context, engine string, coo
 	}
 
 	byName := make(map[string]string)
-	if data, ok := result.StructuredCollectedData["cookies"].([]interface{}); ok {
-		for _, item := range data {
-			m, ok := item.(map[string]interface{})
-			if !ok {
-				continue
+	if result.StructuredCollectedData != nil && result.StructuredCollectedData.Extra != nil {
+		if data, ok := result.StructuredCollectedData.Extra["cookies"].([]interface{}); ok {
+			for _, item := range data {
+				m, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				name, _ := m["name"].(string)
+				value, _ := m["value"].(string)
+				if name == "" {
+					continue
+				}
+				byName[name] = value
 			}
-			name, _ := m["name"].(string)
-			value, _ := m["value"].(string)
-			if name == "" {
-				continue
-			}
-			byName[name] = value
 		}
 	}
 

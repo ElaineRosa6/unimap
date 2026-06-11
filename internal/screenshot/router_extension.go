@@ -274,8 +274,8 @@ func (p *ExtensionProvider) submitCollectTask(ctx context.Context, searchURL, qu
 
 // isLoginWallDetected checks if the bridge result indicates a login wall.
 func isLoginWallDetected(result BridgeResult) bool {
-	if len(result.StructuredCollectedData) > 0 {
-		if lw, ok := result.StructuredCollectedData["is_login_wall"].(bool); ok && lw {
+	if result.StructuredCollectedData != nil && result.StructuredCollectedData.Extra != nil {
+		if lw, ok := result.StructuredCollectedData.Extra["is_login_wall"].(bool); ok && lw {
 			return true
 		}
 	}
@@ -293,10 +293,12 @@ func (p *ExtensionProvider) handleLoginWallResult(cr collection.CollectResult, r
 	cr.IsLoginWall = true
 	cr.LoginRequired = true
 	metrics.IncBrowserLoginRequired(engine)
-	if len(result.StructuredCollectedData) > 0 {
-		cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedData(result.StructuredCollectedData, engine)
-		if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
-			cr.Title = title
+	if result.StructuredCollectedData != nil {
+		cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(result.StructuredCollectedData.Items, engine)
+		if result.StructuredCollectedData.Extra != nil {
+			if title, ok := result.StructuredCollectedData.Extra["title"].(string); ok && title != "" {
+				cr.Title = title
+			}
 		}
 	}
 	return []collection.CollectResult{cr}
@@ -316,32 +318,34 @@ func collectBridgeError(result BridgeResult) error {
 
 // populateCollectResultFromBridge fills a collection.CollectResult from bridge structured data.
 func (p *ExtensionProvider) populateCollectResultFromBridge(cr *collection.CollectResult, result BridgeResult, engine string) {
-	if len(result.StructuredCollectedData) == 0 {
+	if result.StructuredCollectedData == nil {
 		if result.CollectedData != "" {
 			cr.Title = result.CollectedData
 		}
 		return
 	}
 	data := result.StructuredCollectedData
-	cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedData(data, engine)
-	if title, ok := data["title"].(string); ok && title != "" {
-		cr.Title = title
-	}
-	if v, ok := data["extraction_method"].(string); ok {
-		cr.ExtractionMethod = v
-	}
-	if v, ok := data["row_selector_used"].(string); ok {
-		cr.RowSelectorUsed = v
-	}
-	if v, ok := data["rows_found"].(float64); ok {
-		cr.RowsFound = int(v)
-	}
-	if v, ok := data["extraction_error"].(string); ok {
-		cr.ExtractionError = v
-	}
-	if lr, ok := data["login_required"].(bool); ok && lr {
-		cr.LoginRequired = true
-		metrics.IncBrowserLoginRequired(engine)
+	cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(data.Items, engine)
+	if data.Extra != nil {
+		if title, ok := data.Extra["title"].(string); ok && title != "" {
+			cr.Title = title
+		}
+		if v, ok := data.Extra["extraction_method"].(string); ok {
+			cr.ExtractionMethod = v
+		}
+		if v, ok := data.Extra["row_selector_used"].(string); ok {
+			cr.RowSelectorUsed = v
+		}
+		if v, ok := data.Extra["rows_found"].(float64); ok {
+			cr.RowsFound = int(v)
+		}
+		if v, ok := data.Extra["extraction_error"].(string); ok {
+			cr.ExtractionError = v
+		}
+		if lr, ok := data.Extra["login_required"].(bool); ok && lr {
+			cr.LoginRequired = true
+			metrics.IncBrowserLoginRequired(engine)
+		}
 	}
 }
 
