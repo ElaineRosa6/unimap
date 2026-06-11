@@ -13,6 +13,7 @@ import (
 
 // ScreenshotAppService 封装截图相关应用层流程。
 type ScreenshotAppService struct {
+	mu            sync.RWMutex
 	baseDir       string
 	provider      screenshot.Provider
 	engine        string
@@ -47,21 +48,27 @@ func (s *ScreenshotAppService) SetEngine(engine string) {
 	if engine == "" {
 		engine = "cdp"
 	}
+	s.mu.Lock()
 	s.engine = engine
+	s.mu.Unlock()
 }
 
 func (s *ScreenshotAppService) SetBridgeService(bridge *screenshot.BridgeService) {
 	if s == nil {
 		return
 	}
+	s.mu.Lock()
 	s.bridgeService = bridge
+	s.mu.Unlock()
 }
 
 func (s *ScreenshotAppService) SetFallbackToCDP(enabled bool) {
 	if s == nil {
 		return
 	}
+	s.mu.Lock()
 	s.fallbackToCDP = enabled
+	s.mu.Unlock()
 }
 
 // SetMode updates the screenshot execution mode. It maps the mode to the
@@ -72,9 +79,28 @@ func (s *ScreenshotAppService) SetMode(mode string) {
 	}
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode == "cdp" || mode == "extension" {
+		s.mu.Lock()
 		s.engine = mode
+		s.mu.Unlock()
 	}
 	// "auto" leaves engine as-is; the router handles mode selection.
+}
+
+// appConfigSnapshot captures the mutable config fields under a single read lock.
+type appConfigSnapshot struct {
+	engine        string
+	bridgeService *screenshot.BridgeService
+	fallbackToCDP bool
+}
+
+func (s *ScreenshotAppService) configSnapshot() appConfigSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return appConfigSnapshot{
+		engine:        s.engine,
+		bridgeService: s.bridgeService,
+		fallbackToCDP: s.fallbackToCDP,
+	}
 }
 
 // IsCaptureAvailable reports whether screenshot capture can run with current dependencies.
@@ -140,12 +166,13 @@ func (s *ScreenshotAppService) CaptureSearchEngineResultWithProxy(ctx context.Co
 		queryID = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 
-	if strings.EqualFold(s.engine, "extension") && s.bridgeService != nil {
+	cfg := s.configSnapshot()
+	if strings.EqualFold(cfg.engine, "extension") && cfg.bridgeService != nil {
 		path, bridgeErr := s.captureSearchEngineWithBridge(ctx, mgr, engine, query, queryID)
 		if bridgeErr == nil {
 			return path, engine, query, queryID, nil
 		}
-		if !s.fallbackToCDP {
+		if !cfg.fallbackToCDP {
 			return "", "", "", "", bridgeErr
 		}
 		metrics.IncBridgeFallback("extension_to_cdp")
@@ -184,12 +211,13 @@ func (s *ScreenshotAppService) CaptureTargetWebsiteWithProxy(ctx context.Context
 		queryID = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 
-	if strings.EqualFold(s.engine, "extension") && s.bridgeService != nil {
+	cfg := s.configSnapshot()
+	if strings.EqualFold(cfg.engine, "extension") && cfg.bridgeService != nil {
 		path, bridgeErr := s.captureTargetWithBridge(ctx, targetURL, ip, port, protocol, queryID)
 		if bridgeErr == nil {
 			return path, targetURL, ip, port, protocol, queryID, nil
 		}
-		if !s.fallbackToCDP {
+		if !cfg.fallbackToCDP {
 			return "", "", "", "", "", "", bridgeErr
 		}
 		metrics.IncBridgeFallback("extension_to_cdp")
@@ -289,12 +317,13 @@ func (s *ScreenshotAppService) CaptureBatchURLs(ctx context.Context, mgr *screen
 		req.Concurrency = 5
 	}
 
-	if strings.EqualFold(s.engine, "extension") && s.bridgeService != nil {
+	cfg := s.configSnapshot()
+	if strings.EqualFold(cfg.engine, "extension") && cfg.bridgeService != nil {
 		bridgeResp, bridgeErr := s.captureBatchURLsWithBridge(ctx, req)
 		if bridgeErr == nil {
 			return bridgeResp, nil
 		}
-		if !s.fallbackToCDP {
+		if !cfg.fallbackToCDP {
 			return nil, bridgeErr
 		}
 		metrics.IncBridgeFallback("extension_to_cdp")
@@ -331,7 +360,8 @@ func (s *ScreenshotAppService) CaptureBatchURLs(ctx context.Context, mgr *screen
 }
 
 func (s *ScreenshotAppService) captureBatchURLsWithBridge(ctx context.Context, req BatchURLsRequest) (*BatchURLsResponse, error) {
-	if s.bridgeService == nil {
+	cfg := s.configSnapshot()
+	if cfg.bridgeService == nil {
 		return nil, fmt.Errorf("bridge service not initialized")
 	}
 
@@ -364,7 +394,7 @@ func (s *ScreenshotAppService) captureBatchURLsWithBridge(ctx context.Context, r
 				BatchID:      req.BatchID,
 				WaitStrategy: "load",
 			}
-			bridgeResult, err := s.bridgeService.Submit(ctx, task)
+			bridgeResult, err := cfg.bridgeService.Submit(ctx, task)
 			if err != nil {
 				metrics.IncBridgeRequest("extension", "submit_failed")
 				metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
@@ -413,4 +443,3 @@ func (s *ScreenshotAppService) captureBatchURLsWithBridge(ctx context.Context, r
 		ScreenshotDir: s.baseDir,
 	}, nil
 }
-

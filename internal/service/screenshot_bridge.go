@@ -44,7 +44,12 @@ func buildSearchEngineResultURL(engine, query string) string {
 }
 
 func (s *ScreenshotAppService) captureSearchEngineWithBridge(ctx context.Context, mgr *screenshot.Manager, engine, query, queryID string) (string, error) {
-	if s == nil || s.bridgeService == nil {
+	if s == nil {
+		metrics.IncBridgeRequest("extension", "service_unavailable")
+		return "", fmt.Errorf("bridge service not initialized")
+	}
+	cfg := s.configSnapshot()
+	if cfg.bridgeService == nil {
 		metrics.IncBridgeRequest("extension", "service_unavailable")
 		return "", fmt.Errorf("bridge service not initialized")
 	}
@@ -69,7 +74,7 @@ func (s *ScreenshotAppService) captureSearchEngineWithBridge(ctx context.Context
 		BatchID:      queryID,
 		WaitStrategy: "load",
 	}
-	result, err := s.bridgeService.Submit(ctx, task)
+	result, err := cfg.bridgeService.Submit(ctx, task)
 	if err != nil {
 		metrics.IncBridgeRequest("extension", "submit_failed")
 		metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
@@ -128,7 +133,12 @@ func buildTargetCaptureURL(targetURL, ip, port, protocol string) (string, error)
 }
 
 func (s *ScreenshotAppService) captureTargetWithBridge(ctx context.Context, targetURL, ip, port, protocol, queryID string) (string, error) {
-	if s == nil || s.bridgeService == nil {
+	if s == nil {
+		metrics.IncBridgeRequest("extension", "service_unavailable")
+		return "", fmt.Errorf("bridge service not initialized")
+	}
+	cfg := s.configSnapshot()
+	if cfg.bridgeService == nil {
 		metrics.IncBridgeRequest("extension", "service_unavailable")
 		return "", fmt.Errorf("bridge service not initialized")
 	}
@@ -147,7 +157,7 @@ func (s *ScreenshotAppService) captureTargetWithBridge(ctx context.Context, targ
 		BatchID:      queryID,
 		WaitStrategy: "load",
 	}
-	result, err := s.bridgeService.Submit(ctx, task)
+	result, err := cfg.bridgeService.Submit(ctx, task)
 	if err != nil {
 		metrics.IncBridgeRequest("extension", "submit_failed")
 		metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
@@ -183,4 +193,3 @@ func (s *ScreenshotAppService) resolveProvider(mgr *screenshot.Manager) (screens
 	}
 	return nil, fmt.Errorf("screenshot manager not initialized")
 }
-

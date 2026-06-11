@@ -199,7 +199,7 @@ func (m *Manager) newAllocatorWithProxy(ctx context.Context, proxyOverride strin
 	// 确保有可用的Chrome路径
 	chromePath := findChromePath()
 	if chromePath == "" && os.Getenv("UNIMAP_CHROME_PATH") == "" {
-		return nil, nil, fmt.Errorf("Chrome not found. Please install Chrome or set UNIMAP_CHROME_PATH environment variable")
+		return nil, nil, fmt.Errorf("chrome not found; please install Chrome or set UNIMAP_CHROME_PATH environment variable")
 	}
 
 	logger.Infof("Starting Chrome with options, chrome path: %s", chromePath)

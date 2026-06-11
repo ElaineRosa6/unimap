@@ -108,6 +108,7 @@ type ResourceMonitor struct {
 	maxHistorySize  int
 	monitorInterval time.Duration
 	stopChan        chan struct{}
+	stopOnce        sync.Once
 
 	// 响应时间统计
 	responseTimeStats      ResponseTimeStats
@@ -158,10 +159,12 @@ func (m *ResourceMonitor) Start() {
 	logger.Info("Resource monitor started")
 }
 
-// Stop 停止资源监控
+// Stop 停止资源监控（幂等，可安全多次调用）
 func (m *ResourceMonitor) Stop() {
-	close(m.stopChan)
-	logger.Info("Resource monitor stopped")
+	m.stopOnce.Do(func() {
+		close(m.stopChan)
+		logger.Info("Resource monitor stopped")
+	})
 }
 
 // UpdatePoolStats 更新资源池统计

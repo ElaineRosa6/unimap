@@ -1,6 +1,6 @@
 # Extension 反爬虫架构分析与实施方案
 
-> 日期：2026-06-05 | 分支：release/major-upgrade-vNEXT
+> 日期：2026-06-05 | 更新：2026-06-10 | 分支：release/major-upgrade-vNEXT
 
 ## 一、背景
 
@@ -368,3 +368,94 @@ curl -s -X POST "http://127.0.0.1:8448/api/v1/query" \
 ### 与三层采集架构的关系
 
 Quake 在三层架构 H-3「强反爬引擎 L1/L2 归零」中属于 **stealth 可改善**范畴，不是无解项。本 stealth 方案是 Quake（及 Shodan）能否走 L1 Network / L2 Hook 层的前提——stealth 不到位时，三层全部退回 DOM 也无济于事。建议 **stealth 阶段 1-3 先行，再评估 Quake/Shodan 的三层采集可行性**。相关：`docs/THREE_LAYER_COLLECTION_ARCHITECTURE.md` 第 7、9 节。
+
+## 十一、后续实施评估与执行方案
+
+> 更新日期：2026-06-10。该项剩余工作依赖真实浏览器、真实登录态和目标站当前反爬策略，不能只靠单元测试闭环。实施时按阶段开关推进，每阶段都必须能回退到现有 Extension DOM 提取或 CDP 降级路径。
+
+### 11.1 工作量与风险评估
+
+| 阶段 | 预估工作量 | 主要风险 | 风险等级 | 是否依赖真机 |
+|------|------------|----------|----------|--------------|
+| 阶段 1 Stealth 注入 | 1-2 天 | 注入时机晚于站点检测；脚本特征本身被识别 | 高 | 是 |
+| 阶段 2 blocked/login/captcha 检测 | 1-2 天 | 不同站点提示文案和页面结构变化快 | 中 | 是 |
+| 阶段 3 智能等待 | 1-2 天 | SPA 空状态、慢响应、虚拟列表难区分 | 中 | 是 |
+| 阶段 4 速率控制 | 1 天 | 过严影响吞吐，过松触发封禁 | 中 | 否，最终需真机确认 |
+| 阶段 5 验证码人工介入 | 2-3 天 | 用户体验与任务超时状态复杂 | 高 | 是 |
+
+建议先完成阶段 1-3 并做 Quake smoke test，再决定是否继续阶段 4-5。阶段 4 配置可以先落地默认值，但真实阈值需要运行数据校准。
+
+### 11.2 实施边界
+
+- **主路径只做 Extension 真实浏览器**：优先修改 `tools/extension-screenshot/src/capture.js` 和 `background.js`，不把主要精力投入 CDP stealth。
+- **注入范围必须收窄**：`chrome.scripting.executeScript` 只对已配置引擎域名执行，保持当前域名白名单策略，不回退到 `<all_urls>`。
+- **注入时机尽量提前**：stealth 脚本在 `document_start` 或导航后第一时间执行；若 MV3 生命周期限制导致时机不稳定，需要记录实际触发顺序。
+- **不自动破解验证码**：检测到验证码只上报 `CAPTCHA_REQUIRED`、截图、等待人工处理或超时。
+- **不高频重试**：blocked/captcha/login 状态不进入普通重试循环，必须进入冷却或等待用户动作。
+
+### 11.3 关键实现点
+
+1. **Stealth 脚本**
+
+   建议新增独立 `stealth.js` 或在 `capture.js` 中拆出 `injectStealth(tabId, engine)`。最小覆盖：
+
+   - `navigator.webdriver` 返回 `false` 或 `undefined`
+   - `navigator.plugins`/`navigator.languages` 与真实 Chrome 接近
+   - `navigator.permissions.query` 对 notifications 等常见检测保持合理行为
+   - 必要时补 `chrome.runtime`、WebGL vendor/renderer 的轻量兼容，不做复杂指纹伪造
+
+2. **统一状态码**
+
+   Extension 返回结果应区分以下状态，后端不要把它们折叠成普通失败：
+
+   | 状态 | 含义 | 后续动作 |
+   |------|------|----------|
+   | `BLOCKED_BY_ANTI_BOT` | 命中反爬或风控拦截 | 记录特征，进入冷却，不自动重试 |
+   | `CAPTCHA_REQUIRED` | 需要人机验证 | 截图并提示人工处理 |
+   | `LOGIN_REQUIRED` | 登录态失效或账号未授权 | 提示用户重新登录 |
+   | `NO_RESULTS` | 查询成功但无结果 | 作为正常空结果 |
+   | `COLLECTED` | 已采集到结构化资产 | 进入归并去重 |
+
+3. **`waitForResults` 语义**
+
+   等待条件应是“任一终态出现”，而不是固定 sleep：
+
+   - 结果行出现：提取并返回 `COLLECTED`
+   - 明确空状态出现：返回 `NO_RESULTS`
+   - 登录页/登录弹窗出现：返回 `LOGIN_REQUIRED`
+   - 验证码或人机验证出现：返回 `CAPTCHA_REQUIRED`
+   - 反爬拦截文案出现：返回 `BLOCKED_BY_ANTI_BOT`
+   - 超时：返回带页面摘要和截图的 timeout error
+
+4. **限流配置**
+
+   初始建议：
+
+   | 引擎 | qps | burst | cooldown |
+   |------|-----|-------|----------|
+   | Quake | 0.5 | 1-2 | 120s |
+   | Shodan | 0.5 | 1-2 | 120s |
+   | Hunter | 1 | 2-3 | 60s |
+   | ZoomEye | 1 | 2-3 | 60s |
+   | FOFA | 1-2 | 3-5 | 30-60s |
+
+   配置落点建议在 `configs/config.yaml.example` 增加示例，并由 `background.js` 使用后端下发或本地默认值。连续 blocked 后应指数退避，但设置最大冷却，避免任务永久挂起。
+
+### 11.4 测试计划
+
+| 类型 | 内容 | 通过标准 |
+|------|------|----------|
+| 本地 mock 页面 | 构造结果页、空页、登录页、验证码页、blocked 页 | `waitForResults` 能返回正确终态 |
+| Extension E2E | 已配对 Extension 拉取后端任务并回传状态 | HMAC 回传成功，任务状态不丢失 |
+| Quake smoke test | 已登录真实 Chrome 执行 1 条低频查询 | 非拦截页且提取到结构化资产，或明确返回 blocked/captcha/login |
+| Shodan smoke test | 已登录真实 Chrome 执行 1 条低频查询 | 不把 OR 降级等语法限制误判为采集失败 |
+| 回归测试 | 普通截图、批量截图、已有 DOM 提取路径 | 未启用 stealth 时现有路径保持可用 |
+
+真机测试必须使用低频、小批量、可审计的查询。测试记录应包含时间、引擎、查询语句、页面状态、是否触发 blocked/captcha、截图路径或任务 id。
+
+### 11.5 回滚与观测
+
+- 增加 feature flag，例如 `extension.stealth.enabled`、`extension.rate_limit.enabled`、`extension.captcha_wait.enabled`。
+- 阶段 1-3 任一项导致正常引擎采集下降时，按引擎关闭，不全局回滚 Extension。
+- 后端记录 `engine/status/reason/task_id/duration/cooldown`，便于区分“无结果”和“被拦截”。
+- 前端或 API 结果中暴露可读状态，避免用户把 `CAPTCHA_REQUIRED`、`LOGIN_REQUIRED` 误解为系统错误。

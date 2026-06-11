@@ -414,7 +414,6 @@ func (m *Manager) EngineLoginURL(engine string) string {
 	}
 }
 
-
 // CaptureSearchEngineResult 截图搜索引擎结果页面
 func (m *Manager) CaptureSearchEngineResult(ctx context.Context, engine, query string, queryID string) (string, error) {
 	return m.CaptureSearchEngineResultWithProxy(ctx, engine, query, queryID, "")
@@ -592,8 +591,17 @@ func (m *Manager) CaptureBatchURLs(ctx context.Context, urls []string, batchID s
 	return m.CaptureBatchURLsWithTamper(ctx, urls, batchID, concurrency, false, nil)
 }
 
+// CaptureBatchURLsWithProgress 批量截图URL列表，并在单个 URL 完成时回调进度。
+func (m *Manager) CaptureBatchURLsWithProgress(ctx context.Context, urls []string, batchID string, concurrency int, onResult func(BatchScreenshotResult)) ([]BatchScreenshotResult, error) {
+	return m.captureBatchURLsWithTamper(ctx, urls, batchID, concurrency, false, nil, onResult)
+}
+
 // CaptureBatchURLsWithTamper 批量截图URL列表（带篡改检测）
 func (m *Manager) CaptureBatchURLsWithTamper(ctx context.Context, urls []string, batchID string, concurrency int, enableTamper bool, tamperDetector interface{}) ([]BatchScreenshotResult, error) {
+	return m.captureBatchURLsWithTamper(ctx, urls, batchID, concurrency, enableTamper, tamperDetector, nil)
+}
+
+func (m *Manager) captureBatchURLsWithTamper(ctx context.Context, urls []string, batchID string, concurrency int, enableTamper bool, tamperDetector interface{}, onResult func(BatchScreenshotResult)) ([]BatchScreenshotResult, error) {
 	if len(urls) == 0 {
 		return nil, fmt.Errorf("no URLs provided")
 	}
@@ -657,6 +665,9 @@ func (m *Manager) CaptureBatchURLsWithTamper(ctx context.Context, urls []string,
 			}
 
 			results[index] = result
+			if onResult != nil {
+				onResult(result)
+			}
 		}(i, targetURL)
 	}
 
@@ -706,4 +717,3 @@ func (m *Manager) generateBatchFilename(targetURL string, index int) string {
 	timestamp := time.Now().Format("20060102_150405")
 	return fmt.Sprintf("%03d_%s_%s.png", index, host, timestamp)
 }
-

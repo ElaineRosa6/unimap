@@ -202,5 +202,10 @@ func (s *Server) adminToken() string {
 	token = generateRandomToken()
 	s.config.Web.Auth.AdminToken = token
 	logger.Warnf("Admin token was not configured; auto-generated a random token: %s (save this to config.yaml)", maskTokenForLog(token))
+	if s.configManager != nil {
+		if err := s.configManager.Save(); err != nil {
+			logger.Warnf("failed to persist auto-generated admin token: %v", err)
+		}
+	}
 	return token
 }
