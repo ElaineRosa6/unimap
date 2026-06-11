@@ -11,6 +11,7 @@ import (
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/notify"
 	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/utils/urlguard"
 )
 
 func (s *Server) handleNotificationChannels(w http.ResponseWriter, r *http.Request) {
@@ -263,6 +264,17 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 	req, ok := parseNotifyChannelSaveRequest(w, r)
 	if !ok {
 		return
+	}
+
+	// P2-12: SSRF 校验 — webhook URL 保存时检查是否为私有/内网地址
+	if req.Type == "webhook" && req.WebhookURL != "" && !req.AllowPrivateIP {
+		if _, err := urlguard.Check(req.WebhookURL, urlguard.CheckOptions{
+			AllowPrivate:   false,
+			AllowedSchemes: []string{"http", "https"},
+		}); err != nil {
+			writeAPIError(w, http.StatusBadRequest, "blocked_webhook_url", "webhook URL resolves to private/internal address: "+sanitizeError(err.Error()), nil)
+			return
+		}
 	}
 
 	s.configMutex.Lock()

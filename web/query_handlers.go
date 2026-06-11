@@ -456,7 +456,7 @@ func (s *Server) handleGetAdminToken(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
-		"token":   token,
+		"token":   maskAPIKey(token),
 	})
 }
 

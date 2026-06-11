@@ -148,11 +148,7 @@ func (s *Server) validateWebSocketRequest(r *http.Request) bool {
 
 	// 1. Session cookie (browser sends automatically)
 	token := s.getSessionToken(r)
-	// 2. Query parameter (fallback for non-browser clients)
-	if token == "" {
-		token = r.URL.Query().Get("token")
-	}
-	// 3. Header
+	// 2. Header (non-browser clients)
 	if token == "" {
 		token = r.Header.Get("X-WebSocket-Token")
 	}

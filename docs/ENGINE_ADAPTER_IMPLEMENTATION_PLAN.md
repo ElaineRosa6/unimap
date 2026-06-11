@@ -1,7 +1,7 @@
 # 全量实施计划 — 空间搜索引擎 + 遗留问题
 
 > **创建日期**: 2026-06-07
-> **最后更新**: 2026-06-09
+> **最后更新**: 2026-06-10
 > **状态**: 🔄 阶段一✅ 阶段二✅ (P1/P2/P3全部完成) 阶段三：L1✅ L2暂缓 L3✅
 > **基准文档**: `SEARCH_ENGINE_SYNTAX_REFERENCE.md`（12 引擎语法，含归档）、`SEARCH_ENGINE_SYNTAX.md`（UQL→引擎翻译基准）
 > **前置依赖**: commit `0e3fcc3`（5 引擎语法修正闭环）
@@ -14,10 +14,12 @@
 - [〇、全局待解决问题清单](#〇全局待解决问题清单)
 - [一、阶段一：核查现有 5 引擎适配器](#一阶段一核查现有-5-引擎适配器)
 - [二、阶段二：新增搜索引擎](#二阶段二新增搜索引擎)
-- [三、阶段三：三层采集架构](#三阶段三层采集架构)
-- [四、每个引擎实施步骤](#四每个引擎实施步骤)
-- [五、字段映射速查](#五字段映射速查)
-- [六、风险与依赖](#六风险与依赖)
+- [三、每个引擎实施步骤](#三每个引擎实施步骤)
+- [四、字段映射速查](#四字段映射速查)
+- [五、阶段三：三层采集架构](#五阶段三三层采集架构)
+- [六、全局实施时间线建议](#六全局实施时间线建议)
+- [七、剩余大项评估与后续实施](#七剩余大项评估与后续实施)
+- [八、风险与依赖](#八风险与依赖)
 
 ---
 
@@ -38,7 +40,7 @@
 |---|------|------|------|
 | TD-1 | ~~10 个文件超 800 行~~ ✅ 已全部拆分完成（2026-06-09，最大 `metrics.go` 795 行） | CLAUDE.md Medium | 15 个 commit 拆分 10 个文件，全部 ≤ 795 行 |
 | TD-2 | ~~34 个函数超 50 行~~ ✅ 已全部拆分完成（2026-06-09，191→144，最大 `plugin_demo.go:main` 183 行为示例文件） | CLAUDE.md Medium | 47 个函数拆分，39 文件，净减 1159 行 |
-| TD-3 | 错误消息大写 23 处（多数为缩写词可接受） | CLAUDE.md Low | 逐条审查，非缩写词改为小写 |
+| TD-3 | ~~错误消息大写 23 处~~ ✅ 已修复（2026-06-10，2 处非缩写词改为小写，21 处为 HTTP/API/ICP 等缩写词可接受） | CLAUDE.md Low | 逐条审查，非缩写词改为小写 |
 | TD-4 | `map[string]interface{}` 强类型（插件接口广泛使用） | CLAUDE.md Low | 渐进重构，定义 `PluginResult` 等结构体 |
 
 ### 0.3 适配器 Code Review 遗留（2026-06-07 review）
@@ -106,7 +108,7 @@
   ARC-8  context 合并 ✅ 已完成 (2026-06-09，CollectAndCapture 单次导航)
 
 低优先（渐进改进，非阻塞）:
-  TD-3   错误消息大写 — 23处，多数为缩写词可接受，渐进修正
+  TD-3   错误消息大写 ✅ 已修复 (2026-06-10)
   TD-4   map[string]interface{} 强类型 — 插件接口广泛使用，渐进重构
   CR-1   Quake 排他区间 — 已知限制，Quake 语法不支持排他区间，文档已记录
   CR-2   Shodan OR 降级 — 已知限制，已加 logger.Warnf，长期考虑 UI 提示
@@ -153,7 +155,7 @@
 **C 类候选（favicon 跨引擎统一维度示例）**：
 FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favicon` / Hunter `web.icon`
 
-**当前状态**：⏸ 暂停，待用户查证 B 类官方语法后开工。
+**当前状态**：✅ B 类映射修正已闭环；C 类候选保留为后续产品扩展。
 
 ---
 
@@ -165,12 +167,12 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 |-------------|------------|------|------|
 | `body`/`title`/`header`/`port`/`protocol`/`ip`/`country`/`region`/`city`/`asn`/`org`/`domain`/`host`/`server`/`status_code`/`os`/`app`/`cert` | ✅ 官方字段 | 已有 18 条 | 无需改动 |
 | `url → host` | FOFA 无 `url` 字段，`host` 是合理折中 | ✅ 已有 | 无需改动 |
-| `isp → isp` | ⚠️ FOFA 官方语法**无此字段** | 🔴 B-1a | 需移除或改映射 |
+| `isp → isp` | ⚠️ FOFA 官方语法**无此字段** | B-1a | ✅ 已移除 |
 | — | `icon_hash` / `fid` / `js_name` / `js_md5` / `icp` / `banner` / `after` / `before` / `base_protocol` / `type` | A 类同名 | parser fallback 透传已能工作，无需硬编码映射 |
-| — | `cert.subject.cn` / `cert.issuer.cn` / `cert.domain` / `cert.subject.org` / `cert.issuer.org` | B-7 子字段 | FOFA 官方有独立子字段，需补充映射（当前仅有 `cert.subject`/`cert.issuer`） |
+| — | `cert.subject.cn` / `cert.issuer.cn` / `cert.domain` / `cert.subject.org` / `cert.issuer.org` | B-7 子字段 | ✅ 已补充 cert 子字段映射 |
 | — | `link` | ❌ 不在官方语法 | 旧文档遗留，已从参考手册删除 |
 
-**FOFA 待处理**: ✅ B-1a（isp 已移除）+ B-7（cert 子字段已补充）+ B-4a（`==` 运算符已修正）
+**FOFA 状态**: ✅ B-1a（isp 已移除）+ B-7（cert 子字段已补充）+ B-4a（`==` 运算符已修正）
 
 ### 1.2 Hunter（`internal/adapter/hunter.go`）
 
@@ -180,7 +182,7 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 |-------------|------------|------|------|
 | `web.body`/`web.title`/`header`/`port`/`protocol`/`ip`/`ip.country`/`ip.province`/`ip.city`/`ip.org`/`ip.isp`/`domain`/`web.status_code`/`ip.os`/`app.name`/`header.server`/`cert` | ✅ 官方字段（短格式均有效） | 已有 17 条 | 无需改动 |
 | `url → host` | Hunter 无 `url`，`host` 未列于官方语法（`domain` 才是正确字段） | ⚠️ 待确认 | host 透传是否被 Hunter 接受 |
-| `asn → ip.asn` | ⚠️ Hunter 官方语法无 `ip.asn`，应用 `asn`（短格式）或 `as.number`（全格式） | 🔴 B-1b | 需修正映射 |
+| `asn → ip.asn` | ⚠️ Hunter 官方语法无 `ip.asn`，应用 `asn`（短格式）或 `as.number`（全格式） | B-1b | ✅ 已修正为 `asn → asn` |
 | — | `web.icon` / `web.similar` / `web.tag` | A 类同名 / 付费 | parser fallback 已能工作（`web.icon` 需付费） |
 | — | `icp.number` / `icp.name` / `icp.web_name` / `icp.type` | A 类同名 | parser fallback 已能工作 |
 | — | `is.web` / `is_domain` | A 类同名 | parser fallback 已能工作 |
@@ -190,7 +192,7 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 | — | `after` / `before` | A 类同名 | parser fallback 已能工作 |
 | — | `as.name` / `as.org` | A 类同名 | parser fallback 已能工作 |
 
-**Hunter 待处理**: B-1b（`asn → ip.asn` 修正为 `asn → asn`）+ 确认 `banner`/`host` 透传行为
+**Hunter 状态**: ✅ B-1b 已修正；`banner`/`host` 透传作为兼容行为保留，后续按真机/API 行为观察。
 
 ### 1.3 ZoomEye（`internal/adapter/zoomeye.go`）
 
@@ -212,7 +214,7 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 | — | `http.body_hash` / `http.header_hash` / `http.header.version` | A 类同名 | parser fallback 已能工作 |
 | — | `dig` / `filehash` / `after` / `before` / `cidr` / `product` / `protocol` | A 类同名 | parser fallback 已能工作 |
 
-**ZoomEye 待处理**: ✅ 已确认 adapter 的 `buildCondition` 输出 `field="value"` 格式（`=` 分隔符），与官方语法一致
+**ZoomEye 状态**: ✅ 已确认 adapter 的 `buildCondition` 输出 `field="value"` 格式（`=` 分隔符），与官方语法一致
 
 ### 1.4 Quake（`internal/adapter/quake.go`）
 
@@ -222,7 +224,7 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 |-------------|------------|------|------|
 | `title`/`port`/`service`/`ip`/`country`/`province`/`city`/`asn`/`org`/`isp`/`domain`/`app`/`os`/`server`/`cert` | ✅ 官方字段 | 已有 15 条 | 无需改动 |
 | `body → response` | ✅ 已确认 Quake 正文字段为 `response`（非 `body`）| B-2 已确认 | 映射正确，无需改动 |
-| `header → headers` | ⚠️ Quake 官方语法**无 `header`/`headers` 字段** | 🔴 新发现 | 需决定：移除或改映射（`server` 已覆盖 Server 头） |
+| `header → headers` | ⚠️ Quake 官方语法**无 `header`/`headers` 字段** | B-2 follow-up | ✅ 已移除，`header` 走透传兼容 |
 | `url → url` | Quake 官方语法**无 `url` 字段** | ⚠️ | 透传给 API 可能被忽略 |
 | `status_code → status_code` | Quake 官方语法**无 `status_code` 字段** | ⚠️ | 透传给 API 可能被忽略 |
 | `host → domain` | ✅ `host` 透传无意义（Quake 用 `domain`），但当前已映射为 `domain` | ✅ | 无需改动 |
@@ -231,7 +233,7 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 | — | `owner` / `icp_nature` | A 类同名 | parser fallback 已能工作 |
 | — | `cert.subject.cn` / `cert.issuer.cn` | A 类同名 | parser fallback 已能工作 |
 
-**Quake 待处理**: 移除 `header → headers`（Quake 无此字段）+ 确认 `url`/`status_code` 透传行为
+**Quake 状态**: ✅ `header → headers` 已移除；`url`/`status_code` 透传行为保留为非阻塞观察项。
 
 ### 1.5 Shodan（`internal/adapter/shodan.go`）
 
@@ -240,16 +242,16 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 | 现有 mapping | 官方语法确认 | 分类 | 行动 |
 |-------------|------------|------|------|
 | `http.html`/`http.title`/`port`/`transport`/`ip`/`country`/`region`/`city`/`asn`/`org`/`domain`/`hostname`/`product`/`http.status`/`os`/`ssl` | ✅ 官方字段 | 已有 16 条 | 无需改动 |
-| `server → product` | 🔴 **错误**：Shodan 有独立 `http.server` 字段搜索 Server 头，`product` 搜索的是产品/软件名（不同概念） | B-5 已确认 | 需修正为 `http.server` |
-| `header → http.html` | 🔴 **错误**：`http.html` 是正文内容搜索（非 header）。Shodan **无独立 header 内容搜索**（仅有 `http.headers_hash` 哈希） | B-6 已确认 | 需决定：改映射为 `http.headers_hash` 或移除 |
+| `server → product` | 🔴 **错误**：Shodan 有独立 `http.server` 字段搜索 Server 头，`product` 搜索的是产品/软件名（不同概念） | B-5 已确认 | ✅ 已修正为 `http.server` |
+| `header → http.html` | 🔴 **错误**：`http.html` 是正文内容搜索（非 header）。Shodan **无独立 header 内容搜索**（仅有 `http.headers_hash` 哈希） | B-6 已确认 | ✅ 已修正为 `http.headers_hash` |
 | `isp → isp` | ⚠️ `isp` 不在 Shodan 官方过滤器列表中 | ⚠️ | 保留兼容（可能隐式支持），文档不收录 |
 | `app → product` | ✅ Shodan 用 `product` 搜索软件名 | ✅ | 映射正确 |
-| — | `http.server` / `http.location` / `http.favicon.hash` | B-5/B-6 相关 | 需补充 `http.server` 映射 |
+| — | `http.server` / `http.location` / `http.favicon.hash` | B-5/B-6 相关 | ✅ `http.server` 已补充，其余同名透传 |
 | — | `ssl.cert.subject.cn` / `ssl.cert.issuer.cn` / `ssl.cert.serial` / `ssl.cert.fingerprint` / `ssl.version` / `ssl.ja3s` / `ssl.jarm` | A 类同名 | parser fallback 已能工作 |
 | — | `vuln` / `has_screenshot` / `has_vuln` / `has_ssl` / `has_ipv6` | A 类同名 | parser fallback 已能工作 |
 | — | `http.component` / `http.waf` / `cloud.provider` / `cloud.region` / `screenshot.label` / `cpe` / `link` | A 类同名 | parser fallback 已能工作 |
 
-**Shodan 待处理**: B-5（`server → http.server` 修正）+ B-6（`header → http.html` 错误，需决定替代方案）
+**Shodan 状态**: ✅ B-5（`server → http.server`）+ B-6（`header → http.headers_hash`）已修正；跨字段 OR 降级为 AND 是已接受限制。
 
 ### 1.6 核查汇总（2026-06-08 基于官方语法更新）
 
@@ -609,7 +611,91 @@ Phase 4: 浏览器探针 + Network 健康检测（1-2 天）
 
 ---
 
-## 七、风险与依赖
+## 七、剩余大项评估与后续实施
+
+> 更新日期：2026-06-10。当前剩余项都不是小修补：要么影响跨包数据契约，要么依赖真实浏览器/真实账号验证。原则是先保留现有稳定路径，再用可回滚的阶段性改造降低风险。
+
+### 7.1 剩余项总览
+
+| 项目 | 当前状态 | 难度 | 影响面 | 外部依赖 | 建议 |
+|------|----------|------|--------|----------|------|
+| TD-4/L-05 `map[string]interface{}` 强类型 | 插件接口、任务 payload、扩展桥接、部分 API 响应仍使用动态 map | 中-高 | 插件兼容性、JSON 契约、测试 fixture、前后端交互 | 无外部服务依赖 | 渐进迁移，先边界后内部；保留 `Extra`/`Raw` 扩展字段 |
+| L2 Hook（Extension fetch/XHR Hook） | 设计明确但暂缓 | 高 | Extension MV3、消息桥、采集解析、任务安全边界 | 真实网页端点、SPA 行为、反爬状态 | 只有当 L1/L3 证据显示收益明确时实施 |
+| Quake/Shodan Extension stealth | 方案已成型，需真机验证 | 高 | Extension、登录态、速率控制、blocked/captcha 状态、用户提示 | 真实账号、真实浏览器、目标站反爬策略 | 若真实采集是业务关键，优先做阶段 1-3 |
+
+已接受限制不再作为代码任务推进：CR-1 Quake 无排他下界语法；CR-2 Shodan 跨字段 OR 降级为 AND（已 `Warnf`）；CR-4 Shodan header/body 映射折中。
+
+### 7.2 TD-4/L-05 强类型改造评估
+
+不建议全局一次性替换 `map[string]interface{}`。当前动态 map 分布在插件接口、调度任务参数、Extension bridge payload、Web API DTO、测试 fixture 等位置，其中一部分是对外契约，直接替换容易造成插件和前端兼容性回归。
+
+推荐实施顺序：
+
+1. **盘点分类**：按“公开 JSON 契约 / 插件接口 / 内部临时 map / 测试数据”分类，而不是按包名机械替换。
+2. **先定义边界结构体**：优先补 `PluginConfig`、`PluginResult`、`HookPayload`、`TaskPayload`、`BridgeTask`、`BridgeResult` 等边界类型。
+3. **保留扩展字段**：结构体中保留 `Extra map[string]any` 或 `Raw json.RawMessage`，避免把插件生态和引擎差异封死。
+4. **兼容适配层**：旧 map 输入先进入 adapter 转结构体；对外 JSON 字段名不变，避免 UI/API 同步大改。
+5. **按模块迁移**：插件接口 → scheduler payload → screenshot/extension bridge → Web API DTO → 内部辅助函数。
+6. **删除死 map**：等测试和调用方全部改完，再移除兼容 helper。
+
+建议验收标准：
+
+- 公共 API JSON 字段名不破坏，旧插件仍可加载或给出明确兼容错误。
+- 新增结构体覆盖核心业务字段，开放字段只用于真正不稳定的 metadata。
+- `go test ./...` 通过；涉及桥接协议时补充至少 1 个序列化兼容测试。
+- 文档同步更新插件开发指南或相关 API 文档，标注兼容期。
+
+### 7.3 L2 Hook 实施评估
+
+L2 Hook 的目标是从页面自身的 `fetch`/`XMLHttpRequest` 中捕获响应，但 MV3 content script 默认在 ISOLATED world，不能直接改写页面上下文中的 `window.fetch`。正确架构必须是 MAIN world hook + ISOLATED world bridge：MAIN world 负责拦截，`window.postMessage` 传出；ISOLATED world 校验消息并通过 `chrome.runtime` 回传扩展后台。
+
+当前 L1 Network 已覆盖 ZoomEye/Hunter/Quake，FOFA/Shodan 走 L3 DOM，已有可用采集路径。因此 L2 不应作为默认下一步，只有满足以下任一条件才值得启动：
+
+- L1 端点频繁变化或响应被 CDP 侧不可读，但页面 JS 仍可拿到明文数据。
+- L3 DOM 因虚拟列表/懒加载导致稳定性不足，且 L2 能显著提升字段完整度。
+- 某个新引擎必须依赖页面内部解密后的响应，L1 无法解析。
+
+推荐实施阶段：
+
+1. **单引擎 spike**：只选一个 SPA 引擎（优先 ZoomEye/Hunter，避免先碰 Quake 反爬变量），验证 MAIN world hook 能捕获目标响应。
+2. **消息协议**：定义 `{source, taskId, engine, url, status, headers, bodyHash, body}`，加入 schema 校验、大小限制和 task correlation。
+3. **安全边界**：只允许引擎域名注入；postMessage 必须校验 `origin`、`source`、任务 id，避免页面伪造采集结果。
+4. **解析与去重**：L2 结果进入 `internal/collection/`，与 L1/L3 做统一归并，不复制一套解析逻辑。
+5. **回退策略**：L2 timeout 或协议异常时自动回退 L1/L3，并记录 telemetry，不阻塞用户查询。
+
+建议验收标准：
+
+- 单引擎真实页面可稳定捕获目标响应，且不影响页面正常搜索。
+- 注入域名白名单明确，无 `<all_urls>` 泛化回退。
+- 有 bounded buffer/response size 上限，避免大响应撑爆扩展或后端。
+- L2 失败时结果状态可观测，用户仍能拿到 L1/L3 fallback。
+
+### 7.4 Quake/Shodan stealth 实施评估
+
+Quake/Shodan 的核心问题不是语法翻译，而是真实浏览器链路下的反爬、登录态和行为限制。该项必须以 Extension 真实浏览器路径为主，CDP stealth 只能作为低优先级降级方案；原因是 CDP/runtime/TLS/headless 指纹的可见面更大，投入产出较差。
+
+推荐实施阶段：
+
+1. **基础 stealth 注入**：在引擎域名 `document_start` 注入 webdriver/plugins/languages/permissions 等最小脚本，先验证 Quake 拦截页是否减少。
+2. **blocked/login/captcha 状态机**：统一返回 `BLOCKED_BY_ANTI_BOT`、`LOGIN_REQUIRED`、`CAPTCHA_REQUIRED`，并带截图和页面特征，避免把反爬误报成空结果。
+3. **智能等待**：`waitForResults` 等待“结果行 / 空状态 / blocked / login / captcha”之一，不再依赖固定 sleep。
+4. **限流与冷却**：Quake/Shodan 独立令牌桶，Quake 初始建议 `qps=0.5`、`cooldown=120s`；连续 blocked 后进入更长冷却。
+5. **人工介入**：验证码只提示和等待用户手动处理，不实现自动打码或激进绕过。
+
+建议验收标准：
+
+- 已登录真实 Chrome + 已配对 Extension 下，Quake 查询页面非拦截页，能提取至少 1 条真实资产。
+- 遇到登录失效、验证码、反爬拦截时，后端和 UI 能展示明确状态，不写入误导性空结果。
+- 限流配置可调整，任务取消/超时能释放等待。
+- Shodan OR 降级、header/body 折中等已知限制仍按当前文档处理，不混入 stealth 改造。
+
+### 7.5 推荐优先级
+
+1. **Quake/Shodan Extension stealth 阶段 1-3**：如果真实采集能力是近期目标，这是唯一直接改善成功率的路径。
+2. **TD-4/L-05 强类型渐进改造**：作为代码质量工作穿插推进，优先做边界类型和兼容测试，不打断功能交付。
+3. **L2 Hook**：只有在 L1/L3 telemetry 证明收益后启动；否则保持设计冻结，避免扩大 Extension 复杂度。
+
+## 八、风险与依赖
 
 | 风险 | 影响 | 缓解措施 |
 |------|------|---------|

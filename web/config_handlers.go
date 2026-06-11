@@ -385,20 +385,40 @@ func intField(data map[string]interface{}, key string) (int, bool) {
 	return 0, false
 }
 
-// isMaskedSecret returns true when the input looks like the UI's masked form
-// (a stretch of asterisks), so we don't write that back as the real secret.
+// isMaskedSecret returns true when the input matches the exact masked format
+// produced by maskAPIKey: "abcd****wxyz" (first 4 + **** + last 4).
+// P2-13: Precise matching prevents rejecting real keys that happen to contain "****".
 func isMaskedSecret(s string) bool {
 	if s == "" {
 		return false
 	}
+	// All-mask characters (pure redacted block)
+	allMask := true
 	for _, r := range s {
 		if r != '*' && r != '•' {
-			// Allow the redacted form "abcd****wxyz" we emit from maskAPIKey:
-			// if any non-mask, non-tail char is present treat it as user input.
-			// But we conservatively also reject inputs that contain runs of "***"
-			// since the UI shows that pattern.
+			allMask = false
 			break
 		}
 	}
-	return strings.Contains(s, "****")
+	if allMask {
+		return true
+	}
+	// Match maskAPIKey output: exactly "xxxx****xxxx" where x is non-asterisk
+	if len(s) < 9 {
+		return false
+	}
+	if s[4:8] != "****" {
+		return false
+	}
+	for _, r := range s[:4] {
+		if r == '*' || r == '•' {
+			return false
+		}
+	}
+	for _, r := range s[8:] {
+		if r == '*' || r == '•' {
+			return false
+		}
+	}
+	return true
 }
