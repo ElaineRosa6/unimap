@@ -45,8 +45,8 @@
 				</header>
 				<form id="login-form" autocomplete="off">
 					<!-- Hidden decoy fields to defeat Chrome autofill -->
-					<input type="text" name="prevent_autofill_username" style="display:none" tabindex="-1" autocomplete="username">
-					<input type="password" name="prevent_autofill_password" style="display:none" tabindex="-1" autocomplete="current-password">
+					<input type="text" name="prevent_autofill_username" class="hidden-init" tabindex="-1" autocomplete="username">
+					<input type="password" name="prevent_autofill_password" class="hidden-init" tabindex="-1" autocomplete="current-password">
 					<div class="field">
 						<label for="username">用户名</label>
 						<input type="text" id="username" name="username" autocomplete="off" placeholder="admin" required autofocus>
@@ -55,10 +55,10 @@
 						<label for="password">密码</label>
 						<input type="password" id="password" name="password" autocomplete="new-password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" required>
 					</div>
-					<div id="login-error" class="login-error" style="display:none;"></div>
+						<div id="login-error" class="login-error hidden-init"></div>
 					<button type="submit" id="login-btn" class="btn btn-primary">
 						<span class="btn__text">登录</span>
-						<span class="btn__spinner" style="display:none;" aria-hidden="true"></span>
+						<span class="btn__spinner hidden-init" aria-hidden="true"></span>
 					</button>
 				</form>
 			</div>

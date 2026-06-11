@@ -70,7 +70,7 @@
 								</div>
 								{{end}}
 								<div class="quota-bar">
-									<div class="quota-progress" style="width: {{if gt .Total 0}}{{printf "%.1f" (div (float .Used) (float .Total) | mul 100)}}{{else}}0{{end}}%"></div>
+									<div class="quota-progress qbar-{{$engine}}"></div>
 								</div>
 								<div class="quota-alert">
 									<label class="alert-label">
@@ -142,5 +142,12 @@
 			</div>
 		</div>
 	</main>
+
+	<style nonce="{{.CSPNonce}}">
+	{{range .engines}}
+	{{$engine := .}}
+	{{$quota := index $.quotaInfo $engine}}
+	{{with $quota}}.qbar-{{$engine}} { width: {{if gt .Total 0}}{{printf "%.1f" (div (float .Used) (float .Total) | mul 100)}}{{else}}0{{end}}%; }
+	{{end}}{{end}}
 
 {{template "footer" .}}

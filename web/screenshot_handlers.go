@@ -9,14 +9,133 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/chromedp/chromedp"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 )
+
+// ============================================================
+// Batch Screenshot Job Store (P1-4: async progress tracking)
+// ============================================================
+
+type batchJobStatus string
+
+const (
+	batchJobRunning   batchJobStatus = "running"
+	batchJobCompleted batchJobStatus = "completed"
+	batchJobFailed    batchJobStatus = "failed"
+)
+
+type batchJob struct {
+	ID        string                             `json:"id"`
+	Status    batchJobStatus                     `json:"status"`
+	Total     int                                `json:"total"`
+	Completed int                                `json:"completed"`
+	Success   int                                `json:"success"`
+	Failed    int                                `json:"failed"`
+	Results   []screenshot.BatchScreenshotResult `json:"results,omitempty"`
+	Error     string                             `json:"error,omitempty"`
+	StartedAt time.Time                          `json:"started_at"`
+	EndedAt   *time.Time                         `json:"ended_at,omitempty"`
+}
+
+type batchJobStore struct {
+	mu   sync.RWMutex
+	jobs map[string]*batchJob
+}
+
+func newBatchJobStore() *batchJobStore {
+	return &batchJobStore{jobs: make(map[string]*batchJob)}
+}
+
+func (s *batchJobStore) create(id string, total int) *batchJob {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job := &batchJob{
+		ID:        id,
+		Status:    batchJobRunning,
+		Total:     total,
+		StartedAt: time.Now(),
+	}
+	s.jobs[id] = job
+	return job
+}
+
+// getSnapshot returns a deep copy of the job to avoid data races when
+// the caller serializes it while background goroutines mutate the original.
+func (s *batchJobStore) getSnapshot(id string) *batchJob {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	job, ok := s.jobs[id]
+	if !ok {
+		return nil
+	}
+	cp := *job
+	if job.Results != nil {
+		cp.Results = make([]screenshot.BatchScreenshotResult, len(job.Results))
+		copy(cp.Results, job.Results)
+	}
+	if job.EndedAt != nil {
+		t := *job.EndedAt
+		cp.EndedAt = &t
+	}
+	return &cp
+}
+
+func (s *batchJobStore) recordResult(id string, result screenshot.BatchScreenshotResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if job, ok := s.jobs[id]; ok {
+		job.Results = append(job.Results, result)
+		job.Completed = len(job.Results)
+		if result.Success {
+			job.Success++
+		} else {
+			job.Failed++
+		}
+	}
+}
+
+func (s *batchJobStore) complete(id string, results []screenshot.BatchScreenshotResult, success, failed int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if job, ok := s.jobs[id]; ok {
+		job.Status = batchJobCompleted
+		job.Results = results
+		job.Success = success
+		job.Failed = failed
+		job.Completed = len(results)
+		now := time.Now()
+		job.EndedAt = &now
+	}
+}
+
+func (s *batchJobStore) fail(id string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if job, ok := s.jobs[id]; ok {
+		job.Status = batchJobFailed
+		job.Error = err.Error()
+		now := time.Now()
+		job.EndedAt = &now
+	}
+}
+
+// cleanup removes jobs older than maxAge.
+func (s *batchJobStore) cleanup(maxAge time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cutoff := time.Now().Add(-maxAge)
+	for id, job := range s.jobs {
+		if job.EndedAt != nil && job.EndedAt.Before(cutoff) {
+			delete(s.jobs, id)
+		}
+	}
+}
 
 func (s *Server) resolveScreenshotBaseDir() string {
 	baseDir := "./screenshots"
@@ -159,51 +278,28 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.WindowSize(1365, 768),
-	)
-
-	if chromePath := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PATH")); chromePath != "" {
-		st, statErr := os.Stat(chromePath)
-		if statErr != nil || st.IsDir() {
-			writeAPIError(w, http.StatusInternalServerError, "invalid_chrome_path", "invalid UNIMAP_CHROME_PATH", "file not found or not a file")
-			return
-		}
-		opts = append(opts, chromedp.ExecPath(chromePath))
+	if s.screenshotRouter == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "screenshot_router_unavailable", "screenshot router not initialized", nil)
+		return
 	}
 
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	defer allocCancel()
-
-	ctx, cancel := chromedp.NewContext(allocCtx)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	var buf []byte
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(targetURL),
-		chromedp.WaitReady("body", chromedp.ByQuery),
-		chromedp.Sleep(500*time.Millisecond),
-		chromedp.CaptureScreenshot(&buf),
-	); err != nil {
-		if strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PATH")) == "" {
-			writeAPIError(w, http.StatusInternalServerError, "screenshot_failed", "screenshot failed", map[string]string{
-				"error": err.Error(),
-				"hint":  "set UNIMAP_CHROME_PATH to your Chrome/Chromium executable path",
-			})
-			return
-		}
+	screenshotPath, err := s.screenshotRouter.CaptureTargetWebsite(ctx, targetURL, "", "", "", "")
+	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "screenshot_failed", "screenshot failed", sanitizeError(err.Error()))
 		return
 	}
 
+	imgData, err := os.ReadFile(screenshotPath)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "screenshot_read_failed", "failed to read screenshot file", sanitizeError(err.Error()))
+		return
+	}
+
 	w.Header().Set("Content-Type", "image/png")
-	_, _ = w.Write(buf)
+	_, _ = w.Write(imgData)
 }
 
 // handleSearchEngineScreenshot 处理搜索引擎结果页面截图请求
@@ -439,7 +535,7 @@ func (s *Server) handleBatchScreenshot(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results)
 }
 
-// handleBatchURLsScreenshot 处理批量URL截图请求
+// handleBatchURLsScreenshot 处理批量URL截图请求（P1-4: 异步执行，返回 job ID）
 func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -460,71 +556,185 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if !validateBatchURLsResponse(w, req.URLs) {
+	if len(req.URLs) == 0 {
+		writeAPIError(w, http.StatusBadRequest, "no_urls", "no URLs provided", nil)
 		return
+	}
+	validItems, invalidResults := classifyBatchURLs(req.URLs)
+	validURLs := make([]string, 0, len(validItems))
+	for _, item := range validItems {
+		validURLs = append(validURLs, item.URL)
 	}
 
 	metrics.IncBatchOperation("screenshot")
 	metrics.ObserveBatchOperationSize("screenshot", len(req.URLs))
 
-	results, err := s.executeBatchURLScreenshot(w, r.Context(), &req)
-	if err != nil {
+	// 生成 job ID，创建 job，立即返回
+	jobID := req.BatchID
+	if jobID == "" {
+		jobID = fmt.Sprintf("batch_%d", time.Now().UnixNano())
+	}
+	s.batchJobs.create(jobID, len(req.URLs))
+	for _, item := range invalidResults {
+		s.batchJobs.recordResult(jobID, item.Result)
+	}
+
+	if len(validURLs) == 0 {
+		finalResults, successCount, failedCount := mergeBatchURLResults(len(req.URLs), validItems, invalidResults, nil)
+		s.batchJobs.complete(jobID, finalResults, successCount, failedCount)
+		writeJSON(w, http.StatusAccepted, map[string]interface{}{
+			"job_id": jobID,
+			"total":  len(req.URLs),
+			"status": "completed",
+		})
+		return
+	}
+	req.URLs = validURLs
+
+	// 后台异步执行 — 使用 shutdownCtx 确保服务器关闭时取消
+	go func() {
+		ctx, cancel := context.WithCancel(s.shutdownCtx)
+		defer cancel()
+		results, err := s.executeBatchURLScreenshot(ctx, &req, func(result screenshot.BatchScreenshotResult) {
+			s.batchJobs.recordResult(jobID, result)
+		})
+		if err != nil {
+			s.batchJobs.fail(jobID, err)
+			return
+		}
+		if results != nil {
+			finalResults, successCount, failedCount := mergeBatchURLResults(len(req.URLs)+len(invalidResults), validItems, invalidResults, results.Results)
+			if failedCount > 0 {
+				metrics.IncScreenshotRequest("batch", "partial")
+			} else {
+				metrics.IncScreenshotRequest("batch", "success")
+			}
+			metrics.ObserveScreenshotBatchSize(successCount)
+			s.batchJobs.complete(jobID, finalResults, successCount, failedCount)
+		} else {
+			finalResults, successCount, failedCount := mergeBatchURLResults(len(req.URLs)+len(invalidResults), validItems, invalidResults, nil)
+			s.batchJobs.complete(jobID, finalResults, successCount, failedCount)
+		}
+	}()
+
+	// 立即返回 job ID
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+		"job_id": jobID,
+		"total":  len(validURLs) + len(invalidResults),
+		"status": "running",
+	})
+}
+
+// handleBatchScreenshotProgress 处理批量截图进度查询 (P1-4)
+func (s *Server) handleBatchScreenshotProgress(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
-	if results != nil {
-		metrics.IncScreenshotRequest("batch", "success")
-		metrics.ObserveScreenshotBatchSize(results.Success)
-		if results.Failed > 0 {
-			metrics.IncScreenshotRequest("batch", "partial")
-		}
+	jobID := r.URL.Query().Get("job_id")
+	if jobID == "" {
+		writeAPIError(w, http.StatusBadRequest, "missing_job_id", "job_id query parameter is required", nil)
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	if s.batchJobs == nil {
+		writeAPIError(w, http.StatusNotFound, "job_not_found", "batch job not found", nil)
+		return
+	}
+	job := s.batchJobs.getSnapshot(jobID)
+	if job == nil {
+		writeAPIError(w, http.StatusNotFound, "job_not_found", "batch job not found", nil)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, job)
 }
 
-// validateBatchURLsResponse checks all URLs in the batch for validity and SSRF safety.
-func validateBatchURLsResponse(w http.ResponseWriter, urls []string) bool {
-	for _, u := range urls {
+type batchURLItem struct {
+	Index int
+	URL   string
+}
+
+type batchURLResult struct {
+	Index  int
+	Result screenshot.BatchScreenshotResult
+}
+
+func classifyBatchURLs(urls []string) ([]batchURLItem, []batchURLResult) {
+	valid := make([]batchURLItem, 0, len(urls))
+	invalid := make([]batchURLResult, 0)
+	for i, u := range urls {
+		result := screenshot.BatchScreenshotResult{
+			URL:       u,
+			Timestamp: time.Now().Unix(),
+		}
 		parsed, err := url.Parse(u)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, "invalid_url", "invalid url", nil)
-			return false
+			result.Error = "invalid URL"
+			invalid = append(invalid, batchURLResult{Index: i, Result: result})
+			continue
 		}
 		if parsed.Scheme != "http" && parsed.Scheme != "https" {
-			writeAPIError(w, http.StatusBadRequest, "invalid_url_scheme", "only http/https schemes allowed", nil)
-			return false
+			result.Error = "only http/https schemes allowed"
+			invalid = append(invalid, batchURLResult{Index: i, Result: result})
+			continue
 		}
 		if isPrivateOrInternalIP(parsed.Hostname()) {
-			writeAPIError(w, http.StatusForbidden, "blocked_url", "url resolves to private/internal address", nil)
-			return false
+			result.Error = "url resolves to private/internal address"
+			invalid = append(invalid, batchURLResult{Index: i, Result: result})
+			continue
+		}
+		valid = append(valid, batchURLItem{Index: i, URL: u})
+	}
+	return valid, invalid
+}
+
+func mergeBatchURLResults(total int, validItems []batchURLItem, invalidResults []batchURLResult, captured []screenshot.BatchScreenshotResult) ([]screenshot.BatchScreenshotResult, int, int) {
+	merged := make([]screenshot.BatchScreenshotResult, total)
+	for _, item := range invalidResults {
+		if item.Index >= 0 && item.Index < len(merged) {
+			merged[item.Index] = item.Result
 		}
 	}
-	return true
+	for i, item := range validItems {
+		if i < len(captured) && item.Index >= 0 && item.Index < len(merged) {
+			merged[item.Index] = captured[i]
+		}
+	}
+	success, failed := 0, 0
+	for i := range merged {
+		if merged[i].URL == "" {
+			continue
+		}
+		if merged[i].Success {
+			success++
+		} else {
+			failed++
+		}
+	}
+	return merged, success, failed
 }
 
 // executeBatchURLScreenshot runs the batch screenshot via router or app service.
-func (s *Server) executeBatchURLScreenshot(w http.ResponseWriter, ctx context.Context, req *struct {
+func (s *Server) executeBatchURLScreenshot(ctx context.Context, req *struct {
 	URLs        []string `json:"urls"`
 	BatchID     string   `json:"batch_id"`
 	Concurrency int      `json:"concurrency"`
-}) (*service.BatchURLsResponse, error) {
+}, onResult func(screenshot.BatchScreenshotResult)) (*service.BatchURLsResponse, error) {
 	if s.screenshotRouter != nil {
-		return s.executeBatchURLScreenshotViaRouter(w, ctx, req)
+		return s.executeBatchURLScreenshotViaRouter(ctx, req, onResult)
 	}
-	return s.executeBatchURLScreenshotViaApp(w, ctx, req)
+	return s.executeBatchURLScreenshotViaApp(ctx, req)
 }
 
 // executeBatchURLScreenshotViaRouter executes batch screenshot using the router.
-func (s *Server) executeBatchURLScreenshotViaRouter(w http.ResponseWriter, ctx context.Context, req *struct {
+func (s *Server) executeBatchURLScreenshotViaRouter(ctx context.Context, req *struct {
 	URLs        []string `json:"urls"`
 	BatchID     string   `json:"batch_id"`
 	Concurrency int      `json:"concurrency"`
-}) (*service.BatchURLsResponse, error) {
-	routerResults, err := s.screenshotRouter.CaptureBatchURLs(ctx, req.URLs, req.BatchID, req.Concurrency)
+}, onResult func(screenshot.BatchScreenshotResult)) (*service.BatchURLsResponse, error) {
+	routerResults, err := s.screenshotRouter.CaptureBatchURLsWithProgress(ctx, req.URLs, req.BatchID, req.Concurrency, onResult)
 	if err != nil {
-		writeBatchScreenshotError(w, err)
 		return nil, err
 	}
 	successCount, failCount := 0, 0
@@ -543,7 +753,10 @@ func (s *Server) executeBatchURLScreenshotViaRouter(w http.ResponseWriter, ctx c
 }
 
 // executeBatchURLScreenshotViaApp executes batch screenshot using the app service.
-func (s *Server) executeBatchURLScreenshotViaApp(w http.ResponseWriter, ctx context.Context, req *struct {
+// NOTE: Unlike the router path, the app service does not support per-URL progress
+// callbacks (onResult). Progress granularity differs: router path reports each URL
+// as it completes; app path only reports final results.
+func (s *Server) executeBatchURLScreenshotViaApp(ctx context.Context, req *struct {
 	URLs        []string `json:"urls"`
 	BatchID     string   `json:"batch_id"`
 	Concurrency int      `json:"concurrency"`
@@ -552,7 +765,6 @@ func (s *Server) executeBatchURLScreenshotViaApp(w http.ResponseWriter, ctx cont
 		URLs: req.URLs, BatchID: req.BatchID, Concurrency: req.Concurrency,
 	})
 	if err != nil {
-		writeBatchScreenshotError(w, err)
 		return nil, err
 	}
 	return results, nil
@@ -774,8 +986,7 @@ func (s *Server) handleSetScreenshotMode(w http.ResponseWriter, r *http.Request)
 	var req struct {
 		Mode string `json:"mode"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -793,6 +1004,16 @@ func (s *Server) handleSetScreenshotMode(w http.ResponseWriter, r *http.Request)
 	// Also update the app service for its engine-first logic
 	if s.screenshotApp != nil {
 		s.screenshotApp.SetMode(mode)
+	}
+
+	// Persist mode change to config file
+	if s.config != nil {
+		s.config.Screenshot.Mode = mode
+		if s.configManager != nil {
+			if err := s.configManager.Save(); err != nil {
+				logger.Warnf("failed to persist screenshot mode %q: %v", mode, err)
+			}
+		}
 	}
 
 	routerMode := mode
