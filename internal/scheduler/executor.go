@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -413,11 +414,22 @@ func (r *DistributedSubmitRunner) Execute(ctx context.Context, payload *model.Ta
 	timeoutSec := extractInt(payload, "timeout_seconds", 300)
 	maxReassign := extractInt(payload, "max_reassign", 3)
 
+	// Convert taskPayload map to typed struct
+	var typedPayload *model.TaskPayload
+	if len(taskPayload) > 0 {
+		raw, err := json.Marshal(taskPayload)
+		if err == nil {
+			var p model.TaskPayload
+			_ = json.Unmarshal(raw, &p)
+			typedPayload = &p
+		}
+	}
+
 	// Build the envelope
 	envelope := distributed.TaskEnvelope{
 		TaskID:         generateDistributedTaskID(),
 		TaskType:       taskType,
-		Payload:        taskPayload,
+		Payload:        typedPayload,
 		Priority:       priority,
 		TimeoutSeconds: timeoutSec,
 		MaxReassign:    maxReassign,
