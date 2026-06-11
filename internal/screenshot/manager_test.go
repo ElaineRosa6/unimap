@@ -289,7 +289,7 @@ func TestManagerEngineLoginURL(t *testing.T) {
 	}{
 		{"fofa", "https://fofa.info/"},
 		{"hunter", "https://hunter.qianxin.com/"},
-		{"quake", "https://quake.360.cn/"},
+		{"quake", "https://quake.360.net/"},
 		{"zoomeye", "https://www.zoomeye.org/"},
 		{"unknown", ""},
 		{"FOFA", "https://fofa.info/"}, // case insensitive

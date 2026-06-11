@@ -148,11 +148,22 @@ func (s *BridgeService) worker(ctx context.Context) {
 			return
 		case job := <-s.queue:
 			s.inFlight.Add(1)
-			result, err := s.executeWithRetry(ctx, job.task)
+			result, err := s.executeJobSafely(ctx, job.task)
 			s.inFlight.Add(-1)
 			job.respCh <- bridgeJobResult{result: result, err: err}
 		}
 	}
+}
+
+// executeJobSafely wraps executeWithRetry with panic recovery so that a single
+// job panic does not kill the worker goroutine or block the caller forever.
+func (s *BridgeService) executeJobSafely(ctx context.Context, task BridgeTask) (result BridgeResult, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("bridge job panic: %v", r)
+		}
+	}()
+	return s.executeWithRetry(ctx, task)
 }
 
 func (s *BridgeService) QueueLen() int {

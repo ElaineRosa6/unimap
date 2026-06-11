@@ -56,7 +56,7 @@
 				<button type="button" class="btn btn-secondary" id="btn-set-baseline">设置基线</button>
 				<button type="button" class="btn btn-secondary" id="btn-batch-screenshot">批量截图</button>
 				<button type="button" class="btn btn-secondary" id="btn-export-json">导出JSON</button>
-				<button type="button" class="btn btn-secondary" id="btn-export-excel">导出Excel</button>
+				<button type="button" class="btn btn-secondary" id="btn-export-excel">导出CSV</button>
 				<button type="button" class="btn btn-secondary" id="btn-clear">清空</button>
 				<button type="button" class="btn btn-secondary" id="btn-load-example">加载示例</button>
 				<button type="button" class="btn btn-secondary" id="btn-import-file">导入文件</button>
@@ -65,7 +65,7 @@
 
 			<div class="progress-container" id="progress-container">
 				<div class="progress-bar">
-					<div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%"></div>
+					<div class="progress-bar-fill progress-bar-fill-init" id="progress-bar-fill"></div>
 				</div>
 				<div class="progress-text" id="progress-text">准备中...</div>
 			</div>
@@ -152,6 +152,10 @@
 	</main>
 
 <script nonce="{{.CSPNonce}}">
+function escapeHtml(value) {
+	const str = value === null || value === undefined ? '' : String(value);
+	return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 document.addEventListener('DOMContentLoaded', function() {
 	const urlList = document.getElementById('url-list');
 	const concurrency = document.getElementById('concurrency');
@@ -266,10 +270,10 @@ document.addEventListener('DOMContentLoaded', function() {
 				};
 				const label = statusMap[r.status] || r.status || '未知';
 				const changeCount = (r.changes && r.changes.length) || 0;
-				const changes = changeCount > 0 ? ` <a href="#" class="change-link" style="color:#e67e22;cursor:pointer">(${changeCount}处变更 ▸)</a>` : '';
-				const flags = (r.suspicious_flags && r.suspicious_flags.length > 0) ? ` [${r.suspicious_flags.join(', ')}]` : '';
-				const err = r.error_message ? ` — ${r.error_message}` : '';
-				div.innerHTML = `<strong>${r.url}</strong> — ${label}${changes}${flags}${err}`;
+				const changes = changeCount > 0 ? ` <a href="#" class="change-link">(${changeCount}处变更 ▸)</a>` : '';
+				const flags = (r.suspicious_flags && r.suspicious_flags.length > 0) ? ` [${escapeHtml(r.suspicious_flags.join(', '))}]` : '';
+				const err = r.error_message ? ` — ${escapeHtml(r.error_message)}` : '';
+				div.innerHTML = `<strong>${escapeHtml(r.url)}</strong> — ${label}${changes}${flags}${err}`;
 
 				// 点击变更链接展开详情
 				if (changeCount > 0) {
@@ -284,18 +288,18 @@ document.addEventListener('DOMContentLoaded', function() {
 					detailDiv.style.borderRadius = '4px';
 					detailDiv.style.fontSize = '13px';
 
-					let detailHTML = '<table style="width:100%;border-collapse:collapse">';
-					detailHTML += '<tr style="border-bottom:1px solid #ddd"><th style="text-align:left;padding:4px">区域</th><th style="text-align:left;padding:4px">变更类型</th><th style="text-align:left;padding:4px">说明</th></tr>';
+					let detailHTML = '<table class="detail-table">';
+					detailHTML += '<tr class="detail-row-header"><th class="detail-th">区域</th><th class="detail-th">变更类型</th><th class="detail-th">说明</th></tr>';
 					r.changes.forEach(c => {
-						detailHTML += `<tr style="border-bottom:1px solid #eee">
-							<td style="padding:4px"><code>${c.segment || '-'}</code></td>
-							<td style="padding:4px">${c.change_type || '-'}</td>
-							<td style="padding:4px">${c.description || '-'}</td>
+						detailHTML += `<tr class="detail-row-even">
+							<td class="detail-td"><code>${escapeHtml(c.segment || '-')}</code></td>
+							<td class="detail-td">${escapeHtml(c.change_type || '-')}</td>
+							<td class="detail-td">${escapeHtml(c.description || '-')}</td>
 						</tr>`;
 					});
 					detailHTML += '</table>';
 					if (r.tampered_segments && r.tampered_segments.length > 0) {
-						detailHTML += `<div style="margin-top:6px;color:#c0392b">受影响区域: ${r.tampered_segments.join(', ')}</div>`;
+						detailHTML += `<div class="mt-6 text-warn">受影响区域: ${r.tampered_segments.join(', ')}</div>`;
 					}
 					detailDiv.innerHTML = detailHTML;
 
@@ -352,7 +356,7 @@ document.addEventListener('DOMContentLoaded', function() {
 				const div = document.createElement('div');
 				div.className = 'result-item';
 				const ok = r.success !== false && !r.error;
-				div.innerHTML = `<strong>${r.url || r.target_url}</strong> — ${ok ? '✅ 基线已保存' : '❌ ' + (r.error || '失败')}`;
+				div.innerHTML = `<strong>${escapeHtml(r.url || r.target_url)}</strong> — ${ok ? '✅ 基线已保存' : '❌ ' + escapeHtml(r.error || '失败')}`;
 				container.appendChild(div);
 			});
 			if (!data.results || data.results.length === 0) {
@@ -427,12 +431,12 @@ document.addEventListener('DOMContentLoaded', function() {
 				const mode = r.detection_mode ? ` [${r.detection_mode}]` : '';
 				const changeCount = r.changes_count || 0;
 				const changes = changeCount > 0 ? ` (${changeCount}处变更)` : '';
-				const segments = (r.tampered_segments && r.tampered_segments.length > 0) ? ` — 影响区域: ${r.tampered_segments.join(', ')}` : '';
+				const segments = (r.tampered_segments && r.tampered_segments.length > 0) ? ` — 影响区域: ${escapeHtml(r.tampered_segments.join(', '))}` : '';
 				const hashes = [];
 				if (r.baseline_full_hash) hashes.push(`基线: ${r.baseline_full_hash.slice(0,12)}...`);
 				if (r.current_full_hash) hashes.push(`当前: ${r.current_full_hash.slice(0,12)}...`);
-				const hashInfo = hashes.length > 0 ? `<br><small style="color:#888">${hashes.join(' | ')}</small>` : '';
-				div.innerHTML = `<strong>${r.url}</strong> — ${label}${mode}${changes}${segments} <small>${time}</small>${hashInfo}`;
+					const hashInfo = hashes.length > 0 ? `<br><small class="text-muted">${hashes.join(' | ')}</small>` : '';
+				div.innerHTML = `<strong>${escapeHtml(r.url)}</strong> — ${label}${mode}${changes}${segments} <small>${time}</small>${hashInfo}`;
 				container.appendChild(div);
 			});
 		} catch(e) {
@@ -457,7 +461,7 @@ document.addEventListener('DOMContentLoaded', function() {
 				data.urls.forEach(url => {
 					const div = document.createElement('div');
 					div.className = 'result-item';
-					div.innerHTML = `<span>${url}</span> <button class="btn btn-sm btn-danger js-delete-baseline" data-url="${url.replace(/"/g, '&quot;')}">删除</button>`;
+					div.innerHTML = `<span>${escapeHtml(url)}</span> <button class="btn btn-sm btn-danger js-delete-baseline" data-url="${escapeHtml(url)}">删除</button>`;
 					container.appendChild(div);
 				});
 			} else {
@@ -502,22 +506,49 @@ document.addEventListener('DOMContentLoaded', function() {
 				btn.disabled = false; btn.textContent = '批量截图';
 				return;
 			}
-			progressBarFill.style.width = '100%';
-			progressText.textContent = '截图完成';
-			resultsSection.classList.remove('hidden');
-			document.querySelector('.tab[data-tab="screenshot"]').click();
-			const container = document.getElementById('screenshot-results');
-			container.innerHTML = '';
-			(data.results || []).forEach(r => {
-				const div = document.createElement('div');
-				div.className = 'result-item';
-				div.innerHTML = `<strong>${r.url}</strong> — ${r.success ? '✅ 成功' : '❌ 失败'} ${r.error || ''}`;
-				container.appendChild(div);
-			});
+
+			// P1-4: 异步轮询进度
+			const jobID = data.job_id;
+			const total = data.total || urls.length;
+			progressText.textContent = `正在截图... (0/${total})`;
+
+			const pollInterval = setInterval(async function() {
+				try {
+					const pResp = await fetch(`/api/v1/screenshot/batch/progress?job_id=${encodeURIComponent(jobID)}`);
+					const job = await pResp.json();
+					if (job.error) return;
+
+					const completed = job.completed || 0;
+					const success = job.success || 0;
+					const failed = job.failed || 0;
+					const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+					progressBarFill.style.width = percent + '%';
+					progressText.textContent = `正在截图... ${completed}/${total} (${success} 成功, ${failed} 失败)`;
+
+					if (job.status === 'completed' || job.status === 'failed') {
+						clearInterval(pollInterval);
+						progressBarFill.style.width = '100%';
+						progressText.textContent = job.status === 'completed' ? `截图完成: ${success} 成功, ${failed} 失败` : `截图失败: ${job.error || '未知错误'}`;
+						resultsSection.classList.remove('hidden');
+						document.querySelector('.tab[data-tab="screenshot"]').click();
+						const container = document.getElementById('screenshot-results');
+						container.innerHTML = '';
+						(job.results || []).forEach(r => {
+							const div = document.createElement('div');
+							div.className = 'result-item';
+							div.innerHTML = `<strong>${escapeHtml(r.url || r.URL)}</strong> — ${r.success ? '✅ 成功' : '❌ 失败'} ${escapeHtml(r.error || r.Error || '')}`;
+							container.appendChild(div);
+						});
+						btn.disabled = false; btn.textContent = '批量截图';
+					}
+				} catch(e) { /* 轮询失败时静默继续 */ }
+			}, 2000);
+			setTimeout(function() { clearInterval(pollInterval); btn.disabled = false; btn.textContent = '批量截图'; }, 600000);
 		} catch(e) {
 			progressText.textContent = '截图失败: ' + e.message;
+			btn.disabled = false; btn.textContent = '批量截图';
 		}
-		btn.disabled = false; btn.textContent = '批量截图';
 	});
 
 	// 刷新历史

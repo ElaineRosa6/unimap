@@ -55,7 +55,7 @@ internal/
   tamper/              网页篡改检测 (5 种模式)
   utils/               通用工具
 web/
-  server.go            Web 服务 + 路由 (73 API + 17 非 API = 163 mux 条目，含旧路径 shim)
+  server.go            Web 服务 + 路由 (73 API + 17 非 API = ~90 mux 条目)
   templates/           Go 页面模板
   static/              前端静态资源
   middleware_*.go      中间件 (auth/ratelimit/requestid/audit)
@@ -191,12 +191,53 @@ go run -tags gui ./cmd/unimap-gui
 无
 
 ### Medium (后续迭代修复)
-1. 10 个文件超 800 行 (最大 `monitor_native.go` 2150 行)
-2. 34 个函数超 50 行 (最大 `createMonitorTab` 390 行)
+1. ~~10 个文件超 800 行~~ ✅ 已全部拆分完成（最大 `metrics.go` 795 行）
+2. ~~34 个函数超 50 行~~ ✅ 已拆分完成（191→144，最大 `plugin_demo.go:main` 183 行为示例文件）
 
 ### Low (后续迭代修复)
-7. **L-01** 错误消息大写 (23 处，多数为缩写词可接受)
+7. ~~**L-01** 错误消息大写~~ ✅ 已修复（2 处非缩写词改为小写，其余 21 处为 HTTP/API/ICP 等缩写词可接受）
 8. **L-05** `map[string]interface{}` 强类型 (插件接口等广泛使用，渐进重构)
+
+### 2026-06-10 复核记录
+- ✅ 批量 URL 截图改为异步 job + progress 查询；无效/内网 URL 作为单条 failed 结果返回，不再拒绝整个批次。
+- ✅ 批量截图 Provider 增加逐项进度回调；CDP/Extension provider 均支持完成一条即更新 job 进度。
+- ✅ `main.js` API 请求统一走 `apiFetch`；CSV/JSON 导出基于完整结果数组，不再只导出当前 DOM 页。
+- ⏸ 仍剩长期项：L-05/TD-4 强类型渐进重构；L2 Hook 与 Quake/Shodan stealth 真机链路。
+- 📝 剩余长期项已补充评估与实施文档：`docs/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md` §7（TD-4/L2 Hook/stealth 总评估）与 `docs/EXTENSION_ANTI_SCRAPING_ARCHITECTURE.md` §11（Quake/Shodan stealth 执行方案）。
+
+### 2026-06-11 安全与稳定性修复（19 项）
+- ✅ **CRITICAL** `batchJobStore.get()` → `getSnapshot()` 深拷贝，消除 progress handler 与后台 goroutine 数据竞争。
+- ✅ **HIGH** 批量截图后台 goroutine 使用 `s.shutdownCtx`，服务器关闭时正确取消。
+- ✅ **HIGH** `BridgeService` worker 添加 `executeJobSafely` panic recovery，单 job panic 不杀死 worker。
+- ✅ **P0** `monitor.html` 6 处 stored XSS 转义（`escapeHtml`）；`batch-screenshot.html` XSS 转义。
+- ✅ **P1** `ResourceMonitor.Stop()` 改为 `sync.Once` 幂等化；WS `JSON.parse` 添加 try/catch。
+- ✅ **P1** 所有 fetch 调用统一 `parseJsonResponse`（`resp.ok` 检查）；`adminToken()` auto-generate 持久化。
+- ✅ **P1** `ScreenshotAppService` setters 加 `sync.RWMutex`，bridge 方法使用 `configSnapshot()` 快照。
+- ✅ **P1** 批量截图 metrics success/partial 互斥；`handleSetScreenshotMode` config save 日志。
+- ✅ **P1** `cleanupStaleBatchJobs` 定期清理 goroutine；前端 progress polling 失败停止 + 超时反馈。
+- ✅ **P2** `cmd/unimap-web/main.go` 添加 `defer logger.Sync()`；`.dockerignore` 排除 `configs/config.yaml`。
+- ✅ 死代码清理：`updateProgress` 方法、TOCTOU nil guard。
+- ✅ 新增 5 个测试：batchJobStore cleanup、nil store、classify URLs、merge results、WS token rejection。
+- ⏸ 剩余：L-05/TD-4 强类型渐进重构；L2 Hook 与 Quake/Shodan stealth 真机链路。
+
+### 2026-06-11 后续修复
+- ✅ 所有管理端点添加限流保护（cookies、CDP、bridge、nodes、scheduler、notifications、tamper、config、backup、user 等）。
+- ✅ Auth 测试覆盖率从 76.5% 提升至 94.7%（新增 user_db_test.go）。
+- ✅ CSP 配置移除非官方 Google 域名（`fonts.googleapis.font.im`/`fonts.gstatic.font.im`）。
+- ✅ `handleScreenshot` 改为通过 `ScreenshotRouter.CaptureTargetWebsite` 执行，移除直接 chromedp 调用，统一走 Router 降级链路。
+- ✅ CSP `unsafe-inline` 完全移除：settings.html style 加 nonce，21处静态 inline style 迁移为 CSS 类（utils.css），28处 JS template literal inline style 迁移为 CSS 类，动态颜色用 CSS 变量。
+- ✅ server.go 拆分：提取 middleware_security.go（安全中间件+CSP，38行）和 server_helpers.go（解析/验证工具函数，165行），从 1335 行降至 1128 行。
+- ✅ 硬编码路径检查：所有 hardcoded 路径均在 test 文件中，生产代码无硬编码路径。
+- ✅ go.mod 已为 go 1.26，与安装版本匹配。
+
+### 2026-06-11 P0 Bridge 状态修复 + Token 复制 + 状态抖动
+- ✅ **P0** Bridge/CDP 状态语义统一：`ExtensionHealthChecker` 要求 `LiveClient` 返回 true；`buildBridgeDiagnosticSnapshot` 新增 `extension_online` 字段；`ready` 逻辑修正为 `engine == "cdp" || (engine == "extension" && extensionOnline)`。
+- ✅ **P0** `router.extHealthy` 初始值改为 `false`（不再用 `extBridge != nil`）；`SetExtensionHealthSignals` 总是设置 `LiveClient`（nil 也设）。
+- ✅ **P0** 设置页 Bridge 状态三态显示：在线（`extension_online || router_ext_healthy || live_clients > 0`）/ 等待扩展连接（`bridge_connected` 但无活跃客户端）/ 离线。
+- ✅ **P1** Bridge 状态抖动修复：`liveWindowSeconds` 从 15 秒提高到 60 秒，覆盖扩展执行任务（10-25 秒）期间不轮询的场景。
+- ✅ **P1** Account 页 Token 复制修复：`GET /api/v1/account/admin-token` 返回真实 token（接口已受 auth 保护），不再返回 `maskAPIKey` 脱敏值。
+- ✅ 新增 7 个测试 + 修复 4 个已有测试适配新语义；`go test -race ./internal/screenshot/... ./web/...` 全部通过。
+- ⏸ 仍剩：新增引擎端到端未闭环（UI/凭据/cookie/浏览器链路）；UQL 查询历史无服务端持久化；L-05/TD-4 强类型渐进重构；L2 Hook；Quake/Shodan stealth。
 
 ## 常用命令
 

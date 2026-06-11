@@ -1,10 +1,15 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 func newBridgeState() *BridgeState {
@@ -13,6 +18,16 @@ func newBridgeState() *BridgeState {
 		LastSeen:       make(map[string]int64),
 		CallbackNonces: make(map[string]int64),
 	}
+}
+
+type noopBridgeClient struct{}
+
+func (noopBridgeClient) SubmitTask(context.Context, screenshot.BridgeTask) error {
+	return nil
+}
+
+func (noopBridgeClient) AwaitResult(context.Context, string) (screenshot.BridgeResult, error) {
+	return screenshot.BridgeResult{}, nil
 }
 
 // ============================================================
@@ -179,12 +194,113 @@ func TestBuildBridgeDiagnosticSnapshot_NilDeps(t *testing.T) {
 	if _, ok := snap["last_error"]; !ok {
 		t.Fatal("expected 'last_error' key in snapshot")
 	}
-	if _, ok := snap["engine"]; !ok {
-		t.Fatal("expected 'engine' key in snapshot")
+	if snap["engine"] != "cdp" {
+		t.Fatalf("expected default engine cdp, got %v", snap["engine"])
 	}
-	if _, ok := snap["ready"]; !ok {
-		t.Fatal("expected 'ready' key in snapshot")
+	if snap["ready"] != true {
+		t.Fatalf("expected cdp mode to be ready, got %v", snap["ready"])
 	}
+	if snap["bridge_connected"] != false {
+		t.Fatalf("expected no bridge service, got %v", snap["bridge_connected"])
+	}
+	if snap["extension_online"] != false {
+		t.Fatalf("expected extension offline, got %v", snap["extension_online"])
+	}
+	if snap["live_clients"] != 0 {
+		t.Fatalf("expected no live clients, got %v", snap["live_clients"])
+	}
+}
+
+func TestBuildBridgeDiagnosticSnapshot_ExtensionMode_ServiceStartedNoLiveClients_NotReady(t *testing.T) {
+	s := newExtensionModeBridgeServer(t)
+	snap := s.buildBridgeDiagnosticSnapshot()
+
+	if snap["bridge_connected"] != true {
+		t.Fatalf("expected bridge service started, got %v", snap["bridge_connected"])
+	}
+	if snap["extension_online"] != false {
+		t.Fatalf("expected extension offline without live clients, got %v", snap["extension_online"])
+	}
+	if snap["ready"] != false {
+		t.Fatalf("expected extension mode not ready without live clients, got %v", snap["ready"])
+	}
+	if snap["router_ext_healthy"] != false {
+		t.Fatalf("expected router extension unhealthy, got %v", snap["router_ext_healthy"])
+	}
+	if snap["live_clients"] != 0 {
+		t.Fatalf("expected no live clients, got %v", snap["live_clients"])
+	}
+}
+
+func TestBuildBridgeDiagnosticSnapshot_ExtensionMode_LiveClientPresent_Ready(t *testing.T) {
+	s := newExtensionModeBridgeServer(t)
+	now := time.Now().Unix()
+	s.bridge.mu.Lock()
+	s.bridge.Tokens["token1"] = now + 300
+	s.bridge.LastSeen["token1"] = now
+	s.bridge.mu.Unlock()
+	s.screenshotRouter.Start(t.Context())
+
+	snap := s.buildBridgeDiagnosticSnapshot()
+	if snap["live_clients"] != 1 {
+		t.Fatalf("expected one live client, got %v", snap["live_clients"])
+	}
+	if snap["extension_online"] != true {
+		t.Fatalf("expected extension online, got %v", snap["extension_online"])
+	}
+	if snap["ready"] != true {
+		t.Fatalf("expected extension mode ready, got %v", snap["ready"])
+	}
+	if snap["router_ext_healthy"] != true {
+		t.Fatalf("expected router extension healthy, got %v", snap["router_ext_healthy"])
+	}
+}
+
+func TestBuildBridgeDiagnosticSnapshot_ExtensionMode_PairedButStaleLastSeen_NotReady(t *testing.T) {
+	s := newExtensionModeBridgeServer(t)
+	now := time.Now().Unix()
+	s.bridge.mu.Lock()
+	s.bridge.Tokens["token1"] = now + 300
+	s.bridge.LastSeen["token1"] = now - 70 // beyond 60s live window
+	s.bridge.mu.Unlock()
+	s.screenshotRouter.Start(t.Context())
+
+	snap := s.buildBridgeDiagnosticSnapshot()
+	if snap["paired_clients"] != 1 {
+		t.Fatalf("expected one paired client, got %v", snap["paired_clients"])
+	}
+	if snap["live_clients"] != 0 {
+		t.Fatalf("expected no live clients, got %v", snap["live_clients"])
+	}
+	if snap["extension_online"] != false {
+		t.Fatalf("expected stale client to be offline, got %v", snap["extension_online"])
+	}
+	if snap["ready"] != false {
+		t.Fatalf("expected extension mode not ready with stale client, got %v", snap["ready"])
+	}
+}
+
+func newExtensionModeBridgeServer(t *testing.T) *Server {
+	t.Helper()
+	cfg := &config.Config{}
+	cfg.Screenshot.Engine = "extension"
+	cfg.Screenshot.Extension.Enabled = true
+
+	bridgeSvc := screenshot.NewBridgeService(noopBridgeClient{}, 5, 30*time.Second)
+	bridgeSvc.Start(t.Context())
+	t.Cleanup(bridgeSvc.Stop)
+
+	s := &Server{config: cfg, bridge: newBridgeState()}
+	s.bridge.Service = bridgeSvc
+	router := screenshot.NewScreenshotRouter(
+		screenshot.RouterConfig{Priority: screenshot.ModeExtension, Fallback: false},
+		nil,
+		bridgeSvc,
+		nil,
+	)
+	setExtensionHealthSignals(router, s.bridge)
+	s.screenshotRouter = router
+	return s
 }
 
 // ============================================================

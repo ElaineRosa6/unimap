@@ -5,27 +5,39 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/model"
-	"github.com/unimap/project/internal/screenshot"
 )
 
 type stubBrowserRouter struct {
 	openErrByEngine map[string]error
-	collectResults  map[string][]screenshot.CollectResult
+	collectResults  map[string][]collection.CollectResult
+	openCalls       int
 }
 
 func (r *stubBrowserRouter) OpenSearchEngineResult(_ context.Context, engine, _ string) (string, error) {
+	r.openCalls++
 	if err := r.openErrByEngine[engine]; err != nil {
 		return "", err
 	}
 	return "https://example.test/search", nil
 }
 
-func (r *stubBrowserRouter) CollectSearchEngineResult(_ context.Context, engine, query, _ string) ([]screenshot.CollectResult, error) {
+func (r *stubBrowserRouter) CollectSearchEngineResult(_ context.Context, engine, query, _ string) ([]collection.CollectResult, error) {
 	if results, ok := r.collectResults[engine]; ok {
 		return results, nil
 	}
-	return []screenshot.CollectResult{{Engine: engine, Query: query}}, nil
+	return []collection.CollectResult{{Engine: engine, Query: query}}, nil
+}
+
+type stubCombinedBrowserRouter struct {
+	stubBrowserRouter
+	combinedCalls int
+}
+
+func (r *stubCombinedBrowserRouter) CollectAndCaptureSearchEngineResult(_ context.Context, engine, query, queryID string) ([]collection.CollectResult, string, error) {
+	r.combinedCalls++
+	return []collection.CollectResult{{Engine: engine, Query: queryID, Assets: []model.UnifiedAsset{{URL: query}}}}, "/tmp/capture.png", nil
 }
 
 func TestRunBrowserQueryAsync_ReportsProgressForEachEngine(t *testing.T) {
@@ -83,7 +95,7 @@ func TestRunBrowserQueryAsync_ReportsProgressForEachEngine(t *testing.T) {
 func TestRunBrowserQueryAsync_CollectsStructuredAssets(t *testing.T) {
 	svc := NewQueryAppService(nil, nil)
 	router := &stubBrowserRouter{
-		collectResults: map[string][]screenshot.CollectResult{
+		collectResults: map[string][]collection.CollectResult{
 			"fofa": {{
 				Engine: "fofa",
 				Query:  "test",
@@ -104,5 +116,30 @@ func TestRunBrowserQueryAsync_CollectsStructuredAssets(t *testing.T) {
 	}
 	if outcome.CollectedResults[0].Assets[0].URL != "https://example.test" {
 		t.Fatalf("unexpected asset: %#v", outcome.CollectedResults[0].Assets[0])
+	}
+}
+
+func TestRunBrowserQueryAsync_CollectAndCaptureSkipsPreOpenForCombinedRouter(t *testing.T) {
+	svc := NewQueryAppService(nil, nil)
+	router := &stubCombinedBrowserRouter{}
+	screenshotApp := NewScreenshotAppServiceWithProvider(t.TempDir(), &mockScreenshotProvider{})
+
+	ch := svc.RunBrowserQueryAsync(
+		context.Background(), "test", []string{"fofa"}, true, "collect_and_capture", "q1", true,
+		screenshotApp, nil, func(path string) string { return "preview:" + path }, router, nil,
+	)
+	outcome := <-ch
+
+	if router.openCalls != 0 {
+		t.Fatalf("expected combined collect+capture to skip pre-open, got %d opens", router.openCalls)
+	}
+	if router.combinedCalls != 1 {
+		t.Fatalf("expected one combined call, got %d", router.combinedCalls)
+	}
+	if len(outcome.OpenedEngines) != 1 || outcome.OpenedEngines[0] != "fofa" {
+		t.Fatalf("expected combined flow to mark fofa opened, got %#v", outcome.OpenedEngines)
+	}
+	if got := outcome.AutoCapturedPaths["fofa"]; got != "preview:/tmp/capture.png" {
+		t.Fatalf("unexpected preview path: %q", got)
 	}
 }

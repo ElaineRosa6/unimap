@@ -35,3 +35,6 @@ LICENSE
 # Memory
 .clau*/
 memory/
+
+# Secrets (must not be baked into image)
+configs/config.yaml

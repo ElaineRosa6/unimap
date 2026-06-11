@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/model"
-	"github.com/unimap/project/internal/screenshot"
 )
 
 // BrowserQueryBackend provides browser-based result collection for engines
 // that don't have API credentials configured.
 type BrowserQueryBackend interface {
-	CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]screenshot.CollectResult, error)
+	CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error)
 }
 
 // WebOnlyAdapterBase Web-only 适配器基类

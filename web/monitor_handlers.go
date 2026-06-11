@@ -202,6 +202,10 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	if s.monitorApp == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "monitor_not_available", "monitor service not available", nil)
+		return
+	}
 	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
 		return
 	}
@@ -231,11 +235,6 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, http.StatusForbidden, "blocked_url", "target url resolves to private/internal address", nil)
 			return
 		}
-	}
-
-	if s.monitorApp == nil {
-		writeAPIError(w, http.StatusServiceUnavailable, "monitor_service_unavailable", "monitor app service not initialized", nil)
-		return
 	}
 
 	response, err := s.monitorApp.ScanURLPorts(r.Context(), req.URLs, req.Ports, req.Concurrency)

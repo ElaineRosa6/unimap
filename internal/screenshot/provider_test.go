@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/unimap/project/internal/collection"
 )
 
 // ===== buildSearchEngineURL (router.go) =====
@@ -544,6 +546,6 @@ func (m *mockScreenshotCDPProvider) GetScreenshotDirectory() string { return "/m
 func (m *mockScreenshotCDPProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
 	return "https://mock.engine/result?q=" + query, nil
 }
-func (m *mockScreenshotCDPProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]CollectResult, error) {
-	return []CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query, Title: "Mock Result", Timestamp: 0, Assets: nil}}, nil
+func (m *mockScreenshotCDPProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error) {
+	return []collection.CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query, Title: "Mock Result", Timestamp: 0, Assets: nil}}, nil
 }

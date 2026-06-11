@@ -177,20 +177,10 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		return
 	}
 
-	maxBodyBytes := int64(10 * 1024 * 1024)
-	if s.config != nil && s.config.Web.RequestLimits.MaxBodyBytes > 0 {
-		maxBodyBytes = s.config.Web.RequestLimits.MaxBodyBytes
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-
-	rawBody, err := io.ReadAll(r.Body)
+	rawBody, err := s.readAndValidateBridgeBody(w, r)
 	if err != nil {
-		s.setBridgeLastError("invalid_bridge_result: request body too large")
-		writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body exceeds configured limit", nil)
 		return
 	}
-	// Skip callback signature when authenticated via admin session (loopback + session cookie).
-	// The token is non-empty only when bridge token auth was used.
 	if token != "" {
 		if err := s.validateBridgeCallbackSignatureIfRequired(r, rawBody, token); err != nil {
 			s.setBridgeLastError("unauthorized_bridge: invalid callback signature")
@@ -224,56 +214,12 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		return
 	}
 
-	resolvedPath := strings.TrimSpace(req.ImagePath)
-	if resolvedPath == "" && strings.TrimSpace(req.ImageData) != "" {
-		taskMeta, _ := s.bridge.Mock.TaskForRequest(strings.TrimSpace(req.RequestID))
-		batchID := strings.TrimSpace(req.BatchID)
-		if batchID == "" {
-			batchID = strings.TrimSpace(taskMeta.BatchID)
-		}
-		targetURL := strings.TrimSpace(req.URL)
-		if targetURL == "" {
-			targetURL = strings.TrimSpace(taskMeta.URL)
-		}
-		savedPath, saveErr := s.persistBridgeImageData(strings.TrimSpace(req.ImageData), strings.TrimSpace(req.RequestID), batchID, targetURL)
-		if saveErr != nil {
-			s.setBridgeLastError("invalid_bridge_result: failed to persist image_data")
-			writeAPIError(w, http.StatusBadRequest, "invalid_bridge_result", "failed to persist image_data", saveErr.Error())
-			return
-		}
-		resolvedPath = savedPath
+	resolvedPath, pathOK := s.resolveBridgeImagePath(w, &req)
+	if !pathOK {
+		return
 	}
 
-	// Diagnostic: log structured collect data to trace the data loss issue
-	if req.StructuredCollectedData != nil {
-		itemsRaw := req.StructuredCollectedData["items"]
-		itemCount := 0
-		if items, ok := itemsRaw.([]interface{}); ok {
-			itemCount = len(items)
-		}
-		logger.Infof("[bridge-collect] request_id=%s items=%d total=%v has_more=%v engine=%v method=%v rows=%v row_sel=%q",
-			strings.TrimSpace(req.RequestID),
-			itemCount,
-			req.StructuredCollectedData["total"],
-			req.StructuredCollectedData["has_more"],
-			req.StructuredCollectedData["engine"],
-			req.StructuredCollectedData["extraction_method"],
-			req.StructuredCollectedData["rows_found"],
-			req.StructuredCollectedData["row_selector_used"])
-		// Log first 3 items for debugging
-		if items, ok := itemsRaw.([]interface{}); ok && len(items) > 0 {
-			for i := 0; i < len(items) && i < 3; i++ {
-				if m, ok := items[i].(map[string]interface{}); ok {
-					logger.Infof("[bridge-collect] item[%d]: ip=%v port=%v title=%v",
-						i, m["ip"], m["port"], m["title"])
-				}
-			}
-		} else {
-			logger.Warnf("[bridge-collect] request_id=%s has structured_collected_data but items is empty or missing", strings.TrimSpace(req.RequestID))
-		}
-	} else {
-		logger.Warnf("[bridge-collect] request_id=%s has nil StructuredCollectedData", strings.TrimSpace(req.RequestID))
-	}
+	logBridgeCollectedData(req.RequestID, req.StructuredCollectedData)
 
 	s.bridge.Mock.PushResult(screenshot.BridgeResult{
 		RequestID:               strings.TrimSpace(req.RequestID),
@@ -298,6 +244,86 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		"received_at":   time.Now().Unix(),
 		"result_source": "mock",
 	})
+}
+
+// readAndValidateBridgeBody reads and size-limits the request body.
+func (s *Server) readAndValidateBridgeBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	maxBodyBytes := int64(10 * 1024 * 1024)
+	if s.config != nil && s.config.Web.RequestLimits.MaxBodyBytes > 0 {
+		maxBodyBytes = s.config.Web.RequestLimits.MaxBodyBytes
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+
+	rawBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		s.setBridgeLastError("invalid_bridge_result: request body too large")
+		writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body exceeds configured limit", nil)
+		return nil, err
+	}
+	return rawBody, nil
+}
+
+// resolveBridgeImagePath resolves the image path from the bridge request,
+// persisting image_data if needed. Returns (path, true) on success.
+func (s *Server) resolveBridgeImagePath(w http.ResponseWriter, req *struct {
+	RequestID               string                 `json:"request_id"`
+	Success                 bool                   `json:"success"`
+	ImagePath               string                 `json:"image_path"`
+	ImageData               string                 `json:"image_data"`
+	BatchID                 string                 `json:"batch_id"`
+	URL                     string                 `json:"url"`
+	CollectedData           string                 `json:"collected_data"`
+	StructuredCollectedData map[string]interface{} `json:"structured_collected_data"`
+	Error                   string                 `json:"error"`
+	ErrorCode               string                 `json:"error_code"`
+	DurationMs              int64                  `json:"duration_ms"`
+}) (string, bool) {
+	resolvedPath := strings.TrimSpace(req.ImagePath)
+	if resolvedPath != "" || strings.TrimSpace(req.ImageData) == "" {
+		return resolvedPath, true
+	}
+	taskMeta, _ := s.bridge.Mock.TaskForRequest(strings.TrimSpace(req.RequestID))
+	batchID := strings.TrimSpace(req.BatchID)
+	if batchID == "" {
+		batchID = strings.TrimSpace(taskMeta.BatchID)
+	}
+	targetURL := strings.TrimSpace(req.URL)
+	if targetURL == "" {
+		targetURL = strings.TrimSpace(taskMeta.URL)
+	}
+	savedPath, saveErr := s.persistBridgeImageData(strings.TrimSpace(req.ImageData), strings.TrimSpace(req.RequestID), batchID, targetURL)
+	if saveErr != nil {
+		s.setBridgeLastError("invalid_bridge_result: failed to persist image_data")
+		writeAPIError(w, http.StatusBadRequest, "invalid_bridge_result", "failed to persist image_data", saveErr.Error())
+		return "", false
+	}
+	return savedPath, true
+}
+
+// logBridgeCollectedData logs diagnostic info about structured collect data.
+func logBridgeCollectedData(requestID string, data map[string]interface{}) {
+	requestID = strings.TrimSpace(requestID)
+	if data == nil {
+		logger.Warnf("[bridge-collect] request_id=%s has nil StructuredCollectedData", requestID)
+		return
+	}
+	itemsRaw := data["items"]
+	itemCount := 0
+	if items, ok := itemsRaw.([]interface{}); ok {
+		itemCount = len(items)
+	}
+	logger.Infof("[bridge-collect] request_id=%s items=%d total=%v has_more=%v engine=%v method=%v rows=%v row_sel=%q",
+		requestID, itemCount, data["total"], data["has_more"], data["engine"],
+		data["extraction_method"], data["rows_found"], data["row_selector_used"])
+	if items, ok := itemsRaw.([]interface{}); ok && len(items) > 0 {
+		for i := 0; i < len(items) && i < 3; i++ {
+			if m, ok := items[i].(map[string]interface{}); ok {
+				logger.Infof("[bridge-collect] item[%d]: ip=%v port=%v title=%v", i, m["ip"], m["port"], m["title"])
+			}
+		}
+	} else {
+		logger.Warnf("[bridge-collect] request_id=%s has structured_collected_data but items is empty or missing", requestID)
+	}
 }
 
 func (s *Server) handleScreenshotBridgeTaskNext(w http.ResponseWriter, r *http.Request) {
@@ -581,30 +607,11 @@ func (s *Server) revokeBridgeToken(token string) bool {
 }
 
 func (s *Server) persistBridgeImageData(dataURL, requestID, batchID, targetURL string) (string, error) {
-	metaPrefix := "data:image/"
-	if !strings.HasPrefix(dataURL, metaPrefix) {
-		return "", fmt.Errorf("image_data must be a data URL")
+	header, encoded, err := splitDataURL(dataURL)
+	if err != nil {
+		return "", err
 	}
-	parts := strings.SplitN(dataURL, ",", 2)
-	if len(parts) != 2 {
-		return "", fmt.Errorf("invalid data URL format")
-	}
-	header := parts[0]
-	encoded := parts[1]
-
-	ext := ".png"
-	mime := "image/png"
-	switch {
-	case strings.Contains(header, "image/jpeg"):
-		ext = ".jpg"
-		mime = "image/jpeg"
-	case strings.Contains(header, "image/webp"):
-		ext = ".webp"
-		mime = "image/webp"
-	case strings.Contains(header, "image/png"):
-		ext = ".png"
-		mime = "image/png"
-	}
+	ext, mime := detectImageFormat(header)
 
 	raw, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
@@ -614,6 +621,42 @@ func (s *Server) persistBridgeImageData(dataURL, requestID, batchID, targetURL s
 		return "", fmt.Errorf("decoded image data is empty")
 	}
 
+	batchDir, err := s.prepareBridgeBatchDir(batchID)
+	if err != nil {
+		return "", err
+	}
+
+	absPath := buildBridgeFilePath(batchDir, ext, requestID, targetURL)
+	return saveImageToFile(absPath, mime, ext, raw)
+}
+
+// splitDataURL parses a data URL into its header and encoded payload.
+func splitDataURL(dataURL string) (string, string, error) {
+	if !strings.HasPrefix(dataURL, "data:image/") {
+		return "", "", fmt.Errorf("image_data must be a data URL")
+	}
+	parts := strings.SplitN(dataURL, ",", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid data URL format")
+	}
+	return parts[0], parts[1], nil
+}
+
+// detectImageFormat returns the file extension and MIME type from a data URL header.
+func detectImageFormat(header string) (ext, mime string) {
+	ext = ".png"
+	mime = "image/png"
+	switch {
+	case strings.Contains(header, "image/jpeg"):
+		return ".jpg", "image/jpeg"
+	case strings.Contains(header, "image/webp"):
+		return ".webp", "image/webp"
+	}
+	return ext, mime
+}
+
+// prepareBridgeBatchDir creates and returns the batch directory for saving images.
+func (s *Server) prepareBridgeBatchDir(batchID string) (string, error) {
 	baseDir := s.resolveScreenshotBaseDir()
 	if strings.TrimSpace(batchID) == "" {
 		batchID = "bridge_" + time.Now().Format("20060102_150405")
@@ -626,7 +669,11 @@ func (s *Server) persistBridgeImageData(dataURL, requestID, batchID, targetURL s
 	if err := os.MkdirAll(batchDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create batch directory: %w", err)
 	}
+	return batchDir, nil
+}
 
+// buildBridgeFilePath constructs the full file path for a bridge image.
+func buildBridgeFilePath(batchDir, ext, requestID, targetURL string) string {
 	name := strings.TrimSpace(requestID)
 	if name == "" {
 		name = fmt.Sprintf("bridge_%d", time.Now().UnixNano())
@@ -645,74 +692,79 @@ func (s *Server) persistBridgeImageData(dataURL, requestID, batchID, targetURL s
 	if name == "" {
 		name = fmt.Sprintf("bridge_%d", time.Now().UnixNano())
 	}
-	fileName := name + ext
-	absPath := filepath.Join(batchDir, fileName)
+	return filepath.Join(batchDir, name+ext)
+}
 
+// saveImageToFile decodes raw image bytes and writes them to absPath.
+// For JPEG it re-encodes at quality 90; for WebP/PNG it converts to PNG.
+func saveImageToFile(absPath, mime, ext string, raw []byte) (string, error) {
 	if strings.EqualFold(mime, "image/jpeg") {
-		img, _, decErr := image.Decode(bytes.NewReader(raw))
-		f, createErr := os.Create(absPath)
-		if createErr != nil {
-			return "", createErr
-		}
-		var writeErr error
-		if decErr != nil {
-			_, writeErr = f.Write(raw)
-		} else {
-			writeErr = jpeg.Encode(f, img, &jpeg.Options{Quality: 90})
-		}
-		if closeErr := f.Close(); closeErr != nil {
-			os.Remove(absPath)
-			return "", closeErr
-		}
-		if writeErr != nil {
-			os.Remove(absPath)
-			return "", writeErr
-		}
-	} else if strings.EqualFold(mime, "image/webp") {
-		img, decErr := webp.Decode(bytes.NewReader(raw))
-		absPath = strings.TrimSuffix(absPath, ext) + ".png"
-		f, createErr := os.Create(absPath)
-		if createErr != nil {
-			return "", createErr
-		}
-		var writeErr error
-		if decErr != nil {
-			_, writeErr = f.Write(raw)
-		} else {
-			writeErr = png.Encode(f, img)
-		}
-		if closeErr := f.Close(); closeErr != nil {
-			os.Remove(absPath)
-			return "", closeErr
-		}
-		if writeErr != nil {
-			os.Remove(absPath)
-			return "", writeErr
-		}
-	} else {
-		img, _, decErr := image.Decode(bytes.NewReader(raw))
-		absPath = strings.TrimSuffix(absPath, ext) + ".png"
-		f, createErr := os.Create(absPath)
-		if createErr != nil {
-			return "", createErr
-		}
-		var writeErr error
-		if decErr != nil {
-			_, writeErr = f.Write(raw)
-		} else {
-			writeErr = png.Encode(f, img)
-		}
-		if closeErr := f.Close(); closeErr != nil {
-			os.Remove(absPath)
-			return "", closeErr
-		}
-		if writeErr != nil {
-			os.Remove(absPath)
-			return "", writeErr
-		}
+		return absPath, encodeOrWriteRaw(absPath, raw, func() error {
+			img, _, decErr := image.Decode(bytes.NewReader(raw))
+			if decErr != nil {
+				return writeRawToFile(absPath, raw)
+			}
+			return encodeJPEG(absPath, img)
+		})
 	}
 
-	return absPath, nil
+	outPath := strings.TrimSuffix(absPath, ext) + ".png"
+	if strings.EqualFold(mime, "image/webp") {
+		return outPath, encodeOrWriteRaw(outPath, raw, func() error {
+			img, decErr := webp.Decode(bytes.NewReader(raw))
+			if decErr != nil {
+				return writeRawToFile(outPath, raw)
+			}
+			return encodePNG(outPath, img)
+		})
+	}
+
+	return outPath, encodeOrWriteRaw(outPath, raw, func() error {
+		img, _, decErr := image.Decode(bytes.NewReader(raw))
+		if decErr != nil {
+			return writeRawToFile(outPath, raw)
+		}
+		return encodePNG(outPath, img)
+	})
+}
+
+// encodeOrWriteRaw runs the encodeFn and cleans up on failure.
+func encodeOrWriteRaw(path string, raw []byte, encodeFn func() error) error {
+	f, createErr := os.Create(path)
+	if createErr != nil {
+		return createErr
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return err
+	}
+	if err := encodeFn(); err != nil {
+		os.Remove(path)
+		return err
+	}
+	return nil
+}
+
+func writeRawToFile(path string, raw []byte) error {
+	return os.WriteFile(path, raw, 0644)
+}
+
+func encodeJPEG(path string, img image.Image) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return jpeg.Encode(f, img, &jpeg.Options{Quality: 90})
+}
+
+func encodePNG(path string, img image.Image) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return png.Encode(f, img)
 }
 
 func isLoopbackRequest(r *http.Request) bool {
@@ -791,23 +843,30 @@ func (s *Server) activeBridgeLiveTokens() int {
 	if s == nil {
 		return 0
 	}
+	return activeBridgeLiveTokenCount(s.bridge)
+}
+
+func activeBridgeLiveTokenCount(bridge *BridgeState) int {
+	if bridge == nil {
+		return 0
+	}
 	now := time.Now().Unix()
-	const liveWindowSeconds = 15
+	const liveWindowSeconds = 60
 	count := 0
-	s.bridge.mu.Lock()
-	for token, expireAt := range s.bridge.Tokens {
+	bridge.mu.Lock()
+	for token, expireAt := range bridge.Tokens {
 		if expireAt <= now {
-			delete(s.bridge.Tokens, token)
-			delete(s.bridge.LastSeen, token)
+			delete(bridge.Tokens, token)
+			delete(bridge.LastSeen, token)
 			continue
 		}
-		lastSeen := s.bridge.LastSeen[token]
+		lastSeen := bridge.LastSeen[token]
 		if lastSeen <= 0 || now-lastSeen > liveWindowSeconds {
 			continue
 		}
 		count++
 	}
-	s.bridge.mu.Unlock()
+	bridge.mu.Unlock()
 	return count
 }
 
@@ -841,7 +900,11 @@ func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
 		pending, waiters = s.bridge.Mock.Stats()
 	}
 
-	ready := engine == "cdp" || (engine == "extension" && enabled && bridgeConnected)
+	pairedClients := s.activeBridgeTokens()
+	liveClients := s.activeBridgeLiveTokens()
+	routerExtHealthy := s.screenshotRouterExtHealthy()
+	extensionOnline := enabled && (routerExtHealthy || liveClients > 0)
+	ready := engine == "cdp" || (engine == "extension" && extensionOnline)
 
 	s.bridge.mu.Lock()
 	lastErr := s.bridge.LastErr
@@ -858,8 +921,9 @@ func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
 		"listen_addr":        listenAddr,
 		"ready":              ready,
 		"bridge_connected":   bridgeConnected,
-		"paired_clients":     s.activeBridgeTokens(),
-		"live_clients":       s.activeBridgeLiveTokens(),
+		"extension_online":   extensionOnline,
+		"paired_clients":     pairedClients,
+		"live_clients":       liveClients,
 		"pending_tasks":      pending,
 		"awaiting_results":   waiters,
 		"in_flight_tasks":    inFlight,
@@ -872,7 +936,7 @@ func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
 		"last_callback_at":   lastCallbackAt,
 		"router_mode":        s.screenshotRouterMode(),
 		"router_cdp_healthy": s.screenshotRouterCDPHealthy(),
-		"router_ext_healthy": s.screenshotRouterExtHealthy(),
+		"router_ext_healthy": routerExtHealthy,
 	}
 }
 

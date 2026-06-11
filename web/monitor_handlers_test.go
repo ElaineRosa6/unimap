@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/unimap/project/internal/service"
 )
 
 func TestHandleImportURLs_GetMethod_Returns405(t *testing.T) {
@@ -248,7 +250,7 @@ func TestHandleURLPortScan_GetMethod_Returns405(t *testing.T) {
 }
 
 func TestHandleURLPortScan_EmptyURLs_Returns400(t *testing.T) {
-	s := &Server{}
+	s := &Server{monitorApp: &service.MonitorAppService{}}
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]interface{}{"urls": []string{}})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/monitor/portscan", bytes.NewReader(body))

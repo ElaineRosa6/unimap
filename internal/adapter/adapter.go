@@ -2,6 +2,8 @@ package adapter
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -30,6 +32,25 @@ func sanitizeBody(body string) string {
 // Used by adapters that wrap values in double quotes to prevent syntax breakage.
 func escapeQuotes(v string) string {
 	return strings.ReplaceAll(v, `"`, `\"`)
+}
+
+// buildAssetURL constructs asset.URL from IP/Port/Protocol/Host.
+// Default scheme: https for port 443, http otherwise.
+func buildAssetURL(asset *model.UnifiedAsset) {
+	if asset.Protocol == "" {
+		if asset.Port == 443 {
+			asset.Protocol = "https"
+		} else {
+			asset.Protocol = "http"
+		}
+	}
+	u := &url.URL{Scheme: asset.Protocol}
+	if asset.Host != "" {
+		u.Host = fmt.Sprintf("%s:%d", asset.Host, asset.Port)
+	} else {
+		u.Host = fmt.Sprintf("%s:%d", asset.IP, asset.Port)
+	}
+	asset.URL = u.String()
 }
 
 // EngineAdapter 引擎适配器接口

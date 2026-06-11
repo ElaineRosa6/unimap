@@ -2,23 +2,18 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
-	"net/url"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/unimap/project/internal/metrics"
-	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 )
 
 // ScreenshotAppService 封装截图相关应用层流程。
 type ScreenshotAppService struct {
+	mu            sync.RWMutex
 	baseDir       string
 	provider      screenshot.Provider
 	engine        string
@@ -53,21 +48,27 @@ func (s *ScreenshotAppService) SetEngine(engine string) {
 	if engine == "" {
 		engine = "cdp"
 	}
+	s.mu.Lock()
 	s.engine = engine
+	s.mu.Unlock()
 }
 
 func (s *ScreenshotAppService) SetBridgeService(bridge *screenshot.BridgeService) {
 	if s == nil {
 		return
 	}
+	s.mu.Lock()
 	s.bridgeService = bridge
+	s.mu.Unlock()
 }
 
 func (s *ScreenshotAppService) SetFallbackToCDP(enabled bool) {
 	if s == nil {
 		return
 	}
+	s.mu.Lock()
 	s.fallbackToCDP = enabled
+	s.mu.Unlock()
 }
 
 // SetMode updates the screenshot execution mode. It maps the mode to the
@@ -78,9 +79,28 @@ func (s *ScreenshotAppService) SetMode(mode string) {
 	}
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode == "cdp" || mode == "extension" {
+		s.mu.Lock()
 		s.engine = mode
+		s.mu.Unlock()
 	}
 	// "auto" leaves engine as-is; the router handles mode selection.
+}
+
+// appConfigSnapshot captures the mutable config fields under a single read lock.
+type appConfigSnapshot struct {
+	engine        string
+	bridgeService *screenshot.BridgeService
+	fallbackToCDP bool
+}
+
+func (s *ScreenshotAppService) configSnapshot() appConfigSnapshot {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return appConfigSnapshot{
+		engine:        s.engine,
+		bridgeService: s.bridgeService,
+		fallbackToCDP: s.fallbackToCDP,
+	}
 }
 
 // IsCaptureAvailable reports whether screenshot capture can run with current dependencies.
@@ -146,12 +166,13 @@ func (s *ScreenshotAppService) CaptureSearchEngineResultWithProxy(ctx context.Co
 		queryID = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 
-	if strings.EqualFold(s.engine, "extension") && s.bridgeService != nil {
+	cfg := s.configSnapshot()
+	if strings.EqualFold(cfg.engine, "extension") && cfg.bridgeService != nil {
 		path, bridgeErr := s.captureSearchEngineWithBridge(ctx, mgr, engine, query, queryID)
 		if bridgeErr == nil {
 			return path, engine, query, queryID, nil
 		}
-		if !s.fallbackToCDP {
+		if !cfg.fallbackToCDP {
 			return "", "", "", "", bridgeErr
 		}
 		metrics.IncBridgeFallback("extension_to_cdp")
@@ -190,12 +211,13 @@ func (s *ScreenshotAppService) CaptureTargetWebsiteWithProxy(ctx context.Context
 		queryID = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 
-	if strings.EqualFold(s.engine, "extension") && s.bridgeService != nil {
+	cfg := s.configSnapshot()
+	if strings.EqualFold(cfg.engine, "extension") && cfg.bridgeService != nil {
 		path, bridgeErr := s.captureTargetWithBridge(ctx, targetURL, ip, port, protocol, queryID)
 		if bridgeErr == nil {
 			return path, targetURL, ip, port, protocol, queryID, nil
 		}
-		if !s.fallbackToCDP {
+		if !cfg.fallbackToCDP {
 			return "", "", "", "", "", "", bridgeErr
 		}
 		metrics.IncBridgeFallback("extension_to_cdp")
@@ -295,12 +317,13 @@ func (s *ScreenshotAppService) CaptureBatchURLs(ctx context.Context, mgr *screen
 		req.Concurrency = 5
 	}
 
-	if strings.EqualFold(s.engine, "extension") && s.bridgeService != nil {
+	cfg := s.configSnapshot()
+	if strings.EqualFold(cfg.engine, "extension") && cfg.bridgeService != nil {
 		bridgeResp, bridgeErr := s.captureBatchURLsWithBridge(ctx, req)
 		if bridgeErr == nil {
 			return bridgeResp, nil
 		}
-		if !s.fallbackToCDP {
+		if !cfg.fallbackToCDP {
 			return nil, bridgeErr
 		}
 		metrics.IncBridgeFallback("extension_to_cdp")
@@ -337,7 +360,8 @@ func (s *ScreenshotAppService) CaptureBatchURLs(ctx context.Context, mgr *screen
 }
 
 func (s *ScreenshotAppService) captureBatchURLsWithBridge(ctx context.Context, req BatchURLsRequest) (*BatchURLsResponse, error) {
-	if s.bridgeService == nil {
+	cfg := s.configSnapshot()
+	if cfg.bridgeService == nil {
 		return nil, fmt.Errorf("bridge service not initialized")
 	}
 
@@ -370,7 +394,7 @@ func (s *ScreenshotAppService) captureBatchURLsWithBridge(ctx context.Context, r
 				BatchID:      req.BatchID,
 				WaitStrategy: "load",
 			}
-			bridgeResult, err := s.bridgeService.Submit(ctx, task)
+			bridgeResult, err := cfg.bridgeService.Submit(ctx, task)
 			if err != nil {
 				metrics.IncBridgeRequest("extension", "submit_failed")
 				metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
@@ -418,400 +442,4 @@ func (s *ScreenshotAppService) captureBatchURLsWithBridge(ctx context.Context, r
 		Results:       results,
 		ScreenshotDir: s.baseDir,
 	}, nil
-}
-
-func normalizeBridgeTargetURL(raw string) string {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return ""
-	}
-	if !strings.HasPrefix(trimmed, "http://") && !strings.HasPrefix(trimmed, "https://") {
-		trimmed = "http://" + trimmed
-	}
-	return trimmed
-}
-
-func buildSearchEngineResultURL(engine, query string) string {
-	b64Query := base64.StdEncoding.EncodeToString([]byte(query))
-	encodedB64 := url.QueryEscape(b64Query)
-	encodedQuery := url.QueryEscape(query)
-
-	switch strings.ToLower(strings.TrimSpace(engine)) {
-	case "fofa":
-		return fmt.Sprintf("%s/result?qbase64=%s", model.FOFAOfficialWebURL, encodedB64)
-	case "hunter":
-		return fmt.Sprintf("https://hunter.qianxin.com/list?search=%s", encodedB64)
-	case "quake":
-		return fmt.Sprintf("https://quake.360.net/quake/#/searchResult?search=%s", encodedQuery)
-	case "zoomeye":
-		return fmt.Sprintf("https://www.zoomeye.hk/searchResult?q=%s", encodedQuery)
-	default:
-		return ""
-	}
-}
-
-func (s *ScreenshotAppService) captureSearchEngineWithBridge(ctx context.Context, mgr *screenshot.Manager, engine, query, queryID string) (string, error) {
-	if s == nil || s.bridgeService == nil {
-		metrics.IncBridgeRequest("extension", "service_unavailable")
-		return "", fmt.Errorf("bridge service not initialized")
-	}
-	startedAt := time.Now()
-
-	searchURL := ""
-	if mgr != nil {
-		searchURL = strings.TrimSpace(mgr.BuildSearchEngineURL(engine, query))
-	}
-	if searchURL == "" {
-		searchURL = buildSearchEngineResultURL(engine, query)
-	}
-	if searchURL == "" {
-		metrics.IncBridgeRequest("extension", "unsupported_engine")
-		metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
-		return "", fmt.Errorf("unsupported engine: %s", engine)
-	}
-
-	task := screenshot.BridgeTask{
-		RequestID:    fmt.Sprintf("bridge_search_%d", time.Now().UnixNano()),
-		URL:          searchURL,
-		BatchID:      queryID,
-		WaitStrategy: "load",
-	}
-	result, err := s.bridgeService.Submit(ctx, task)
-	if err != nil {
-		metrics.IncBridgeRequest("extension", "submit_failed")
-		metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
-		return "", err
-	}
-	if !result.Success {
-		metrics.IncBridgeRequest("extension", "result_failed")
-		metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
-		if strings.TrimSpace(result.Error) != "" {
-			return "", fmt.Errorf("bridge capture failed: %s", strings.TrimSpace(result.Error))
-		}
-		if strings.TrimSpace(result.ErrorCode) != "" {
-			return "", fmt.Errorf("bridge capture failed: %s", strings.TrimSpace(result.ErrorCode))
-		}
-		return "", fmt.Errorf("bridge capture failed")
-	}
-	if strings.TrimSpace(result.ImagePath) == "" {
-		metrics.IncBridgeRequest("extension", "missing_image_path")
-		metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
-		return "", fmt.Errorf("bridge capture missing image path")
-	}
-	metrics.IncBridgeRequest("extension", "success")
-	metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
-	return strings.TrimSpace(result.ImagePath), nil
-}
-
-func buildTargetCaptureURL(targetURL, ip, port, protocol string) (string, error) {
-	resolvedURL := strings.TrimSpace(targetURL)
-	resolvedIP := strings.TrimSpace(ip)
-	resolvedPort := strings.TrimSpace(port)
-	resolvedProto := strings.TrimSpace(protocol)
-
-	if resolvedURL == "" {
-		if resolvedIP == "" {
-			return "", fmt.Errorf("target URL or IP is required")
-		}
-		proto := "http"
-		if resolvedProto != "" {
-			proto = strings.ToLower(resolvedProto)
-		} else if resolvedPort == "443" {
-			proto = "https"
-		}
-
-		if resolvedPort != "" && resolvedPort != "80" && resolvedPort != "443" {
-			resolvedURL = fmt.Sprintf("%s://%s:%s", proto, resolvedIP, resolvedPort)
-		} else {
-			resolvedURL = fmt.Sprintf("%s://%s", proto, resolvedIP)
-		}
-	}
-
-	if !strings.HasPrefix(resolvedURL, "http://") && !strings.HasPrefix(resolvedURL, "https://") {
-		resolvedURL = "http://" + resolvedURL
-	}
-
-	return resolvedURL, nil
-}
-
-func (s *ScreenshotAppService) captureTargetWithBridge(ctx context.Context, targetURL, ip, port, protocol, queryID string) (string, error) {
-	if s == nil || s.bridgeService == nil {
-		metrics.IncBridgeRequest("extension", "service_unavailable")
-		return "", fmt.Errorf("bridge service not initialized")
-	}
-	startedAt := time.Now()
-
-	resolvedURL, err := buildTargetCaptureURL(targetURL, ip, port, protocol)
-	if err != nil {
-		metrics.IncBridgeRequest("extension", "invalid_target")
-		metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
-		return "", err
-	}
-
-	task := screenshot.BridgeTask{
-		RequestID:    fmt.Sprintf("bridge_target_%d", time.Now().UnixNano()),
-		URL:          resolvedURL,
-		BatchID:      queryID,
-		WaitStrategy: "load",
-	}
-	result, err := s.bridgeService.Submit(ctx, task)
-	if err != nil {
-		metrics.IncBridgeRequest("extension", "submit_failed")
-		metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
-		return "", err
-	}
-	if !result.Success {
-		metrics.IncBridgeRequest("extension", "result_failed")
-		metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
-		if strings.TrimSpace(result.Error) != "" {
-			return "", fmt.Errorf("bridge capture failed: %s", strings.TrimSpace(result.Error))
-		}
-		if strings.TrimSpace(result.ErrorCode) != "" {
-			return "", fmt.Errorf("bridge capture failed: %s", strings.TrimSpace(result.ErrorCode))
-		}
-		return "", fmt.Errorf("bridge capture failed")
-	}
-	if strings.TrimSpace(result.ImagePath) == "" {
-		metrics.IncBridgeRequest("extension", "missing_image_path")
-		metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
-		return "", fmt.Errorf("bridge capture missing image path")
-	}
-	metrics.IncBridgeRequest("extension", "success")
-	metrics.ObserveBridgeDuration("extension", time.Since(startedAt))
-	return strings.TrimSpace(result.ImagePath), nil
-}
-
-func (s *ScreenshotAppService) resolveProvider(mgr *screenshot.Manager) (screenshot.Provider, error) {
-	if s != nil && s.provider != nil {
-		return s.provider, nil
-	}
-	if mgr != nil {
-		return screenshot.NewCDPProvider(mgr), nil
-	}
-	return nil, fmt.Errorf("screenshot manager not initialized")
-}
-
-// BatchInfo 批次信息
-type BatchInfo struct {
-	Name      string `json:"name"`
-	FileCount int    `json:"file_count"`
-	UpdatedAt int64  `json:"updated_at"`
-}
-
-// FileInfo 文件信息
-type FileInfo struct {
-	Name       string `json:"name"`
-	Size       int64  `json:"size"`
-	UpdatedAt  int64  `json:"updated_at"`
-	PreviewURL string `json:"preview_url,omitempty"`
-}
-
-// ListBatches 列出所有截图批次
-func (s *ScreenshotAppService) ListBatches() ([]BatchInfo, error) {
-	entries, err := os.ReadDir(s.baseDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []BatchInfo{}, nil
-		}
-		return nil, fmt.Errorf("failed to read screenshot directory: %w", err)
-	}
-
-	batches := make([]BatchInfo, 0)
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		info, infoErr := entry.Info()
-		if infoErr != nil {
-			continue
-		}
-
-		fileCount := 0
-		children, childErr := os.ReadDir(filepath.Join(s.baseDir, entry.Name()))
-		if childErr == nil {
-			for _, child := range children {
-				if !child.IsDir() {
-					fileCount++
-				}
-			}
-		}
-
-		batches = append(batches, BatchInfo{
-			Name:      entry.Name(),
-			FileCount: fileCount,
-			UpdatedAt: info.ModTime().Unix(),
-		})
-	}
-
-	sort.Slice(batches, func(i, j int) bool {
-		return batches[i].UpdatedAt > batches[j].UpdatedAt
-	})
-
-	return batches, nil
-}
-
-// ListBatchFiles 列出指定批次的文件
-func (s *ScreenshotAppService) ListBatchFiles(batch string, previewURLBuilder func(string) string) ([]FileInfo, error) {
-	batchToken := s.normalizePathToken(batch)
-	if batchToken == "" {
-		return nil, fmt.Errorf("invalid batch name")
-	}
-
-	batchDir := filepath.Join(s.baseDir, batchToken)
-	absBatchDir, err := filepath.Abs(batchDir)
-	if err != nil {
-		return nil, fmt.Errorf("invalid batch path")
-	}
-
-	// 安全检查：确保目录在 baseDir 内
-	absBaseDir, err := filepath.Abs(s.baseDir)
-	if err != nil {
-		return nil, fmt.Errorf("invalid base directory")
-	}
-	rel, err := filepath.Rel(absBaseDir, absBatchDir)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
-		return nil, fmt.Errorf("invalid batch path")
-	}
-
-	entries, err := os.ReadDir(absBatchDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("batch not found")
-		}
-		return nil, fmt.Errorf("failed to read batch directory: %w", err)
-	}
-
-	files := make([]FileInfo, 0)
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		info, infoErr := entry.Info()
-		if infoErr != nil {
-			continue
-		}
-
-		absPath := filepath.Join(absBatchDir, entry.Name())
-		previewURL := ""
-		if previewURLBuilder != nil {
-			previewURL = previewURLBuilder(absPath)
-		}
-
-		files = append(files, FileInfo{
-			Name:       entry.Name(),
-			Size:       info.Size(),
-			UpdatedAt:  info.ModTime().Unix(),
-			PreviewURL: previewURL,
-		})
-	}
-
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].UpdatedAt > files[j].UpdatedAt
-	})
-
-	return files, nil
-}
-
-// DeleteBatch 删除指定批次
-func (s *ScreenshotAppService) DeleteBatch(batch string) error {
-	batchToken := s.normalizePathToken(batch)
-	if batchToken == "" {
-		return fmt.Errorf("invalid batch name")
-	}
-
-	batchDir := filepath.Join(s.baseDir, batchToken)
-	absBatchDir, err := filepath.Abs(batchDir)
-	if err != nil {
-		return fmt.Errorf("invalid batch path")
-	}
-
-	// 安全检查
-	absBaseDir, err := filepath.Abs(s.baseDir)
-	if err != nil {
-		return fmt.Errorf("invalid base directory")
-	}
-	rel, err := filepath.Rel(absBaseDir, absBatchDir)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("invalid batch path")
-	}
-
-	if _, err := os.Stat(absBatchDir); err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("batch not found")
-		}
-		return fmt.Errorf("failed to access batch: %w", err)
-	}
-
-	return os.RemoveAll(absBatchDir)
-}
-
-// DeleteFile 删除指定批次中的文件
-func (s *ScreenshotAppService) DeleteFile(batch, fileName string) error {
-	batchToken := s.normalizePathToken(batch)
-	if batchToken == "" {
-		return fmt.Errorf("invalid batch name")
-	}
-
-	fileToken := s.normalizePathToken(fileName)
-	if fileToken == "" {
-		return fmt.Errorf("invalid file name")
-	}
-
-	batchDir := filepath.Join(s.baseDir, batchToken)
-	absBatchDir, err := filepath.Abs(batchDir)
-	if err != nil {
-		return fmt.Errorf("invalid batch path")
-	}
-
-	// 安全检查
-	absBaseDir, err := filepath.Abs(s.baseDir)
-	if err != nil {
-		return fmt.Errorf("invalid base directory")
-	}
-	rel, err := filepath.Rel(absBaseDir, absBatchDir)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("invalid batch path")
-	}
-
-	// Remove old hash entries
-
-	targetFile := filepath.Join(absBatchDir, fileToken)
-	absTarget, err := filepath.Abs(targetFile)
-	if err != nil {
-		return fmt.Errorf("invalid file path")
-	}
-
-	// 安全检查：确保文件在批次目录内
-	relFile, err := filepath.Rel(absBatchDir, absTarget)
-	if err != nil || relFile == "." || strings.HasPrefix(relFile, "..") {
-		return fmt.Errorf("invalid file path")
-	}
-
-	info, err := os.Stat(absTarget)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("file not found")
-		}
-		return fmt.Errorf("failed to access file: %w", err)
-	}
-	if info.IsDir() {
-		return fmt.Errorf("file name points to a directory")
-	}
-
-	return os.Remove(absTarget)
-}
-
-// normalizePathToken 规范化路径令牌，防止路径穿越
-func (s *ScreenshotAppService) normalizePathToken(raw string) string {
-	token := strings.TrimSpace(raw)
-	if token == "" || token == "." || token == ".." {
-		return ""
-	}
-	if strings.Contains(token, "/") || strings.Contains(token, "\\") {
-		return ""
-	}
-	if filepath.Base(token) != token {
-		return ""
-	}
-	return token
 }

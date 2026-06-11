@@ -329,15 +329,15 @@ func TestValidateWebSocketRequest_EnvToken_ValidHeader(t *testing.T) {
 	}
 }
 
-func TestValidateWebSocketRequest_EnvToken_ValidQuery(t *testing.T) {
+func TestValidateWebSocketRequest_EnvToken_QueryTokenRejected(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Web.Auth.Enabled = true
 	cfg.Web.Auth.AdminToken = "test-token"
 
 	s := &Server{config: cfg}
 	req := httptest.NewRequest(http.MethodGet, "/ws?token=test-token", nil)
-	if !s.validateWebSocketRequest(req) {
-		t.Fatal("expected request to be allowed with valid query token")
+	if s.validateWebSocketRequest(req) {
+		t.Fatal("expected URL-query token to be rejected")
 	}
 }
 

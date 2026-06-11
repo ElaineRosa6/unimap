@@ -20,130 +20,83 @@ import (
 
 func main() {
 	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
-		if runAPISubcommand(os.Args[1], os.Args[2:]) {
-			return
-		}
+		if runAPISubcommand(os.Args[1], os.Args[2:]) { return }
 	}
-
-	// Parse flags
-	queryPtr := flag.String("q", "", "Query string (e.g., 'country=\"CN\"')")
-	enginesPtr := flag.String("e", "", "Comma-separated list of engines to use (e.g., 'fofa,hunter')")
-	limitPtr := flag.Int("l", 100, "Limit number of results")
-	outputPtr := flag.String("o", "", "Output file path (e.g., 'results.csv' or 'results.json')")
-	configPtr := flag.String("c", "configs/config.yaml", "Configuration file path")
-	fofaCookiePtr := flag.String("cookie-fofa", "", "FOFA cookie header (e.g., 'session=xxx; token=yyy')")
-	hunterCookiePtr := flag.String("cookie-hunter", "", "Hunter cookie header (e.g., 'session=xxx; token=yyy')")
-	quakeCookiePtr := flag.String("cookie-quake", "", "Quake cookie header (e.g., 'session=xxx; token=yyy')")
-	zoomeyeCookiePtr := flag.String("cookie-zoomeye", "", "ZoomEye cookie header (e.g., 'session=xxx; token=yyy')")
-	versionPtr := flag.Bool("version", false, "Print version and exit")
-
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "UniMap CLI %s\n\n", appversion.Full())
-		fmt.Fprintf(os.Stderr, "API-first subcommands:\n")
-		fmt.Fprintf(os.Stderr, "  %s query -q '<uql>' [-e fofa,hunter] [-l 100] [--api-base http://127.0.0.1:8448]\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s tamper-check --urls 'https://a.com,https://b.com' [--mode relaxed]\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s screenshot-batch --urls 'https://a.com,https://b.com'\n\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Legacy direct-engine mode:\n")
-		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nExample:\n  %s -q 'app=\"Apache\"' -e fofa,hunter -o results.csv\n", os.Args[0])
-	}
-
-	flag.Parse()
-
-	if *versionPtr {
-		fmt.Printf("UniMap CLI %s\n", appversion.Full())
-		return
-	}
-
-	if *queryPtr == "" {
-		fmt.Println("Error: Query string is required")
-		flag.Usage()
-		os.Exit(1)
-	}
-
-	// Load config
-	cfgManager := config.NewManager(*configPtr)
-	if err := cfgManager.Load(); err != nil {
-		logger.Warnf("Failed to load config from %s: %v. Using defaults.", *configPtr, err)
-	}
-	cfg := cfgManager.GetConfig()
+	flags := parseCLIFlags()
+	if flags.version { fmt.Printf("UniMap CLI %s\n", appversion.Full()); return }
+	if flags.query == "" { fmt.Println("Error: Query string is required"); flag.Usage(); os.Exit(1) }
+	cfg, cfgManager, svc := initCLIService(flags.config)
 	if cfg != nil {
-		if applyCookiesFromFlags(cfg, *fofaCookiePtr, *hunterCookiePtr, *quakeCookiePtr, *zoomeyeCookiePtr) {
-			if err := cfgManager.Save(); err != nil {
-				logger.Warnf("Failed to save cookies to %s: %v", *configPtr, err)
-			}
+		if applyCookiesFromFlags(cfg, flags.fofaCookie, flags.hunterCookie, flags.quakeCookie, flags.zoomeyeCookie) {
+			if err := cfgManager.Save(); err != nil { logger.Warnf("Failed to save cookies to %s: %v", flags.config, err) }
 		}
 	}
-
-	// Init service
-	svc := service.NewUnifiedServiceWithConfig(cfg)
-
-	// Register engines
 	registerEngines(svc, cfg)
-
-	// Prepare request
-	var engines []string
-	if *enginesPtr != "" {
-		rawEngines := strings.Split(*enginesPtr, ",")
-		for _, e := range rawEngines {
-			e = strings.TrimSpace(e)
-			if e != "" {
-				engines = append(engines, e)
-			}
-		}
-	}
-	if len(engines) == 0 {
-		engines = getEnabledEngines(cfg)
-	}
-	if len(engines) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: no engines configured/enabled. Please set API keys and enable engines in %s, or specify -e.\n", *configPtr)
-		os.Exit(1)
-	}
-
+	engines := selectCLIEngines(cfg, flags.engines, flags.config)
 	fmt.Printf("Querying with engines: %v\n", engines)
+	resp, err := svc.Query(context.Background(), service.QueryRequest{Query: flags.query, Engines: engines, PageSize: flags.limit, ProcessData: true})
+	if err != nil { logger.Errorf("Query failed: %v", err); os.Exit(1) }
+	outputCLIResults(resp, flags.output)
+	if err := svc.Shutdown(); err != nil { logger.Warnf("Error during shutdown: %v", err) }
+}
 
-	ctx := context.Background()
-	req := service.QueryRequest{
-		Query:       *queryPtr,
-		Engines:     engines,
-		PageSize:    *limitPtr,
-		ProcessData: true,
+type cliFlags struct {
+	query, engines, output, config, fofaCookie, hunterCookie, quakeCookie, zoomeyeCookie string
+	limit int
+	version bool
+}
+
+func parseCLIFlags() cliFlags {
+	var f cliFlags
+	flag.StringVar(&f.query, "q", "", "Query string")
+	flag.StringVar(&f.engines, "e", "", "Comma-separated engines")
+	flag.IntVar(&f.limit, "l", 100, "Result limit")
+	flag.StringVar(&f.output, "o", "", "Output file path")
+	flag.StringVar(&f.config, "c", "configs/config.yaml", "Config file path")
+	flag.StringVar(&f.fofaCookie, "cookie-fofa", "", "FOFA cookie header")
+	flag.StringVar(&f.hunterCookie, "cookie-hunter", "", "Hunter cookie header")
+	flag.StringVar(&f.quakeCookie, "cookie-quake", "", "Quake cookie header")
+	flag.StringVar(&f.zoomeyeCookie, "cookie-zoomeye", "", "ZoomEye cookie header")
+	flag.BoolVar(&f.version, "version", false, "Print version")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "UniMap CLI %s\n\nUsage: %s -q '<uql>' [-e fofa,hunter] [-l 100] [-o results.csv]\n", appversion.Full(), os.Args[0])
+		flag.PrintDefaults()
 	}
+	flag.Parse()
+	return f
+}
 
-	// Execute query
-	resp, err := svc.Query(ctx, req)
-	if err != nil {
-		logger.Errorf("Query failed: %v", err)
+func initCLIService(configPath string) (*config.Config, *config.Manager, *service.UnifiedService) {
+	cfgManager := config.NewManager(configPath)
+	if err := cfgManager.Load(); err != nil { logger.Warnf("Failed to load config from %s: %v. Using defaults.", configPath, err) }
+	cfg := cfgManager.GetConfig()
+	svc := service.NewUnifiedServiceWithConfig(cfg)
+	return cfg, cfgManager, svc
+}
+
+func selectCLIEngines(cfg *config.Config, enginesFlag, configPath string) []string {
+	var engines []string
+	if enginesFlag != "" {
+		for _, e := range strings.Split(enginesFlag, ",") {
+			if e = strings.TrimSpace(e); e != "" { engines = append(engines, e) }
+		}
+	}
+	if len(engines) == 0 { engines = getEnabledEngines(cfg) }
+	if len(engines) == 0 {
+		fmt.Fprintf(os.Stderr, "Error: no engines configured/enabled. Set API keys in %s or use -e.\n", configPath)
 		os.Exit(1)
 	}
+	return engines
+}
 
+func outputCLIResults(resp *service.QueryResponse, output string) {
 	fmt.Printf("Found %d results.\n", resp.TotalCount)
-	for engine, count := range resp.EngineStats {
-		fmt.Printf("  %s: %d\n", engine, count)
-	}
-	for _, errMsg := range resp.Errors {
-		fmt.Printf("  Error: %s\n", errMsg)
-	}
-
-	// Output results
-	if *outputPtr != "" {
-		err := saveResults(resp.Assets, *outputPtr)
-		if err != nil {
-			logger.Errorf("Failed to save results: %v", err)
-		} else {
-			fmt.Printf("Results saved to %s\n", *outputPtr)
-		}
+	for engine, count := range resp.EngineStats { fmt.Printf("  %s: %d\n", engine, count) }
+	for _, errMsg := range resp.Errors { fmt.Printf("  Error: %s\n", errMsg) }
+	if output != "" {
+		if err := saveResults(resp.Assets, output); err != nil { logger.Errorf("Failed to save results: %v", err) } else { fmt.Printf("Results saved to %s\n", output) }
 	} else {
-		// Print to stdout (simple)
-		for _, asset := range resp.Assets {
-			fmt.Printf("%s\t%s:%d\t%s\n", asset.IP, asset.Host, asset.Port, asset.Title)
-		}
-	}
-
-	// 关闭服务
-	if err := svc.Shutdown(); err != nil {
-		logger.Warnf("Error during shutdown: %v", err)
+		for _, asset := range resp.Assets { fmt.Printf("%s\t%s:%d\t%s\n", asset.IP, asset.Host, asset.Port, asset.Title) }
 	}
 }
 
@@ -185,50 +138,42 @@ func getEnabledEngines(cfg *config.Config) []string {
 	if cfg.Engines.Shodan.Enabled {
 		list = append(list, "shodan")
 	}
+	if cfg.Engines.Censys.Enabled {
+		list = append(list, "censys")
+	}
+	if cfg.Engines.Daydaymap.Enabled {
+		list = append(list, "daydaymap")
+	}
+	if cfg.Engines.Binaryedge.Enabled {
+		list = append(list, "binaryedge")
+	}
+	if cfg.Engines.Onyphe.Enabled {
+		list = append(list, "onyphe")
+	}
 	return list
 }
 
 func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
-	if cfg.Engines.Fofa.Enabled {
-		svc.RegisterAdapter(adapter.NewFofaAdapter(
-			cfg.Engines.Fofa.APIBaseURL,
-			cfg.Engines.Fofa.APIKey,
-			cfg.Engines.Fofa.Email,
-			cfg.Engines.Fofa.QPS,
-			time.Duration(cfg.Engines.Fofa.Timeout)*time.Second,
-		))
+	type engineReg struct {
+		enabled bool
+		reg     func()
 	}
-	if cfg.Engines.Hunter.Enabled {
-		svc.RegisterAdapter(adapter.NewHunterAdapter(
-			cfg.Engines.Hunter.BaseURL,
-			cfg.Engines.Hunter.APIKey,
-			cfg.Engines.Hunter.QPS,
-			time.Duration(cfg.Engines.Hunter.Timeout)*time.Second,
-		))
+	regs := []engineReg{
+		{cfg.Engines.Fofa.Enabled, func() { svc.RegisterAdapter(adapter.NewFofaAdapter(cfg.Engines.Fofa.APIBaseURL, cfg.Engines.Fofa.APIKey, cfg.Engines.Fofa.Email, cfg.Engines.Fofa.QPS, time.Duration(cfg.Engines.Fofa.Timeout)*time.Second)) }},
+		{cfg.Engines.Hunter.Enabled, func() { svc.RegisterAdapter(adapter.NewHunterAdapter(cfg.Engines.Hunter.BaseURL, cfg.Engines.Hunter.APIKey, cfg.Engines.Hunter.QPS, time.Duration(cfg.Engines.Hunter.Timeout)*time.Second)) }},
+		{cfg.Engines.Zoomeye.Enabled, func() { svc.RegisterAdapter(adapter.NewZoomEyeAdapter(cfg.Engines.Zoomeye.BaseURL, cfg.Engines.Zoomeye.APIKey, cfg.Engines.Zoomeye.QPS, time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second)) }},
+		{cfg.Engines.Quake.Enabled, func() { svc.RegisterAdapter(adapter.NewQuakeAdapter(cfg.Engines.Quake.BaseURL, cfg.Engines.Quake.APIKey, cfg.Engines.Quake.QPS, time.Duration(cfg.Engines.Quake.Timeout)*time.Second)) }},
+		{cfg.Engines.Shodan.Enabled, func() { svc.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second)) }},
+		{cfg.Engines.Censys.Enabled, func() { svc.RegisterAdapter(adapter.NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second)) }},
+		{cfg.Engines.Daydaymap.Enabled, func() { svc.RegisterAdapter(adapter.NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second)) }},
+		{cfg.Engines.Binaryedge.Enabled, func() { svc.RegisterAdapter(adapter.NewBinaryEdgeAdapter(cfg.Engines.Binaryedge.BaseURL, cfg.Engines.Binaryedge.APIKey, cfg.Engines.Binaryedge.QPS, time.Duration(cfg.Engines.Binaryedge.Timeout)*time.Second)) }},
+		{cfg.Engines.Onyphe.Enabled, func() { svc.RegisterAdapter(adapter.NewOnypheAdapter(cfg.Engines.Onyphe.BaseURL, cfg.Engines.Onyphe.APIKey, cfg.Engines.Onyphe.QPS, time.Duration(cfg.Engines.Onyphe.Timeout)*time.Second)) }},
+		{cfg.Engines.Greynoise.Enabled, func() { svc.RegisterAdapter(adapter.NewGreyNoiseAdapter(cfg.Engines.Greynoise.BaseURL, cfg.Engines.Greynoise.APIKey, cfg.Engines.Greynoise.QPS, time.Duration(cfg.Engines.Greynoise.Timeout)*time.Second)) }},
 	}
-	if cfg.Engines.Zoomeye.Enabled {
-		svc.RegisterAdapter(adapter.NewZoomEyeAdapter(
-			cfg.Engines.Zoomeye.BaseURL,
-			cfg.Engines.Zoomeye.APIKey,
-			cfg.Engines.Zoomeye.QPS,
-			time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second,
-		))
-	}
-	if cfg.Engines.Quake.Enabled {
-		svc.RegisterAdapter(adapter.NewQuakeAdapter(
-			cfg.Engines.Quake.BaseURL,
-			cfg.Engines.Quake.APIKey,
-			cfg.Engines.Quake.QPS,
-			time.Duration(cfg.Engines.Quake.Timeout)*time.Second,
-		))
-	}
-	if cfg.Engines.Shodan.Enabled {
-		svc.RegisterAdapter(adapter.NewShodanAdapter(
-			cfg.Engines.Shodan.BaseURL,
-			cfg.Engines.Shodan.APIKey,
-			cfg.Engines.Shodan.QPS,
-			time.Duration(cfg.Engines.Shodan.Timeout)*time.Second,
-		))
+	for _, r := range regs {
+		if r.enabled {
+			r.reg()
+		}
 	}
 }
 

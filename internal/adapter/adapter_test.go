@@ -233,6 +233,54 @@ func TestFofaAdapter_Translate(t *testing.T) {
 			}},
 			want: `((port="80" || port="443") && country="CN")`,
 		},
+		{
+			name: "exact match operator == (B-4a fix)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "title",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "=="},
+					{Type: "value", Value: "admin"},
+				},
+			}},
+			want: `title=="admin"`,
+		},
+		{
+			name: "field mapping cert.subject.cn (B-7 fix)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "cert.subject.cn",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "baidu.com"},
+				},
+			}},
+			want: `cert.subject.cn="baidu.com"`,
+		},
+		{
+			name: "field mapping cert.issuer.cn (B-7 fix)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "cert.issuer.cn",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "DigiCert"},
+				},
+			}},
+			want: `cert.issuer.cn="DigiCert"`,
+		},
+		{
+			name: "isp field passthrough (FOFA has no isp, B-1a)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "isp",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "China Telecom"},
+				},
+			}},
+			want: `isp="China Telecom"`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -456,7 +504,7 @@ func TestFofaAdapter_GetQuota(t *testing.T) {
 // ===== Hunter Adapter: Translate =====
 
 func TestHunterAdapter_Translate(t *testing.T) {
-	a := NewHunterAdapter("https://hunter.io", "key", 3, 30*time.Second)
+	a := NewHunterAdapter("https://hunter.qianxin.com", "key", 3, 30*time.Second)
 
 	tests := []struct {
 		name    string
@@ -545,7 +593,7 @@ func TestHunterAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80"},
 				},
 			}},
-			want: `port>"80"`,
+			want: `port>"80"`, // Hunter 支持比较运算符，值加引号
 		},
 		{
 			name: "field mapping server dot notation",
@@ -571,6 +619,42 @@ func TestHunterAdapter_Translate(t *testing.T) {
 			}},
 			want: `ip.os="centos"`,
 		},
+		{
+			name: "field mapping asn short format (B-1b fix)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "asn",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "136800"},
+				},
+			}},
+			want: `asn="136800"`,
+		},
+		{
+			name: "field mapping cert",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "cert",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "baidu"},
+				},
+			}},
+			want: `cert="baidu"`,
+		},
+		{
+			name: "field mapping country short format",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "country",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "CN"},
+				},
+			}},
+			want: `ip.country="CN"`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -592,14 +676,14 @@ func TestHunterAdapter_Translate(t *testing.T) {
 }
 
 func TestHunterAdapter_Name(t *testing.T) {
-	a := NewHunterAdapter("https://hunter.io", "key", 3, 30*time.Second)
+	a := NewHunterAdapter("https://hunter.qianxin.com", "key", 3, 30*time.Second)
 	if got := a.Name(); got != "hunter" {
 		t.Errorf("Name() = %q, want %q", got, "hunter")
 	}
 }
 
 func TestHunterAdapter_IsWebOnly(t *testing.T) {
-	a := NewHunterAdapter("https://hunter.io", "key", 3, 30*time.Second)
+	a := NewHunterAdapter("https://hunter.qianxin.com", "key", 3, 30*time.Second)
 	if a.IsWebOnly() {
 		t.Error("expected IsWebOnly() = false")
 	}
@@ -608,7 +692,7 @@ func TestHunterAdapter_IsWebOnly(t *testing.T) {
 // ===== Hunter Adapter: Normalize =====
 
 func TestHunterAdapter_Normalize(t *testing.T) {
-	a := NewHunterAdapter("https://hunter.io", "key", 3, 30*time.Second)
+	a := NewHunterAdapter("https://hunter.qianxin.com", "key", 3, 30*time.Second)
 
 	t.Run("empty result", func(t *testing.T) {
 		results, err := a.Normalize(&model.EngineResult{RawData: []interface{}{}})
@@ -681,7 +765,7 @@ func TestHunterAdapter_Normalize(t *testing.T) {
 
 func TestHunterAdapter_Search(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewHunterAdapter("https://hunter.io", "", 3, 30*time.Second)
+		a := NewHunterAdapter("https://hunter.qianxin.com", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -732,7 +816,7 @@ func TestHunterAdapter_Search(t *testing.T) {
 
 func TestHunterAdapter_GetQuota(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewHunterAdapter("https://hunter.io", "", 3, 30*time.Second)
+		a := NewHunterAdapter("https://hunter.qianxin.com", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error for empty API key")
@@ -903,6 +987,66 @@ func TestShodanAdapter_Translate(t *testing.T) {
 				},
 			}},
 			want: `org:"Beijing University"`,
+		},
+		{
+			name: "field mapping server to http.server (B-5 fix)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "server",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "nginx"},
+				},
+			}},
+			want: `http.server:nginx`,
+		},
+		{
+			name: "field mapping header to http.headers_hash (B-6 fix)",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "header",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "elastic"},
+				},
+			}},
+			want: `http.headers_hash:elastic`,
+		},
+		{
+			name: "field mapping app to product",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "app",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "Apache"},
+				},
+			}},
+			want: `product:Apache`,
+		},
+		{
+			name: "field mapping body to http.html",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "body",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "login"},
+				},
+			}},
+			want: `http.html:login`,
+		},
+		{
+			name: "field mapping title to http.title",
+			ast: &model.UQLAST{Root: &model.UQLNode{
+				Type:  "condition",
+				Value: "title",
+				Children: []*model.UQLNode{
+					{Type: "operator", Value: "="},
+					{Type: "value", Value: "admin"},
+				},
+			}},
+			want: `http.title:admin`,
 		},
 	}
 	for _, tt := range tests {
@@ -1162,7 +1306,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 			want: `response:"nginx"`,
 		},
 		{
-			name: "field mapping header->headers",
+			name: "field mapping header passthrough (no Quake header field)",
 			ast: &model.UQLAST{Root: &model.UQLNode{
 				Type:  "condition",
 				Value: "header",
@@ -1171,7 +1315,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "nginx"},
 				},
 			}},
-			want: `headers:"nginx"`,
+			want: `header:"nginx"`,
 		},
 	}
 	for _, tt := range tests {
@@ -1480,7 +1624,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80"},
 				},
 			}},
-			want: `port>"80"`,
+			want: `port="80"`, // ZoomEye 不支持比较运算符，降级为等值查询
 		},
 		{
 			name: "nested OR and AND",
