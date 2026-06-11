@@ -11,6 +11,7 @@ import (
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/alerting"
 	"github.com/unimap/project/internal/distributed"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 )
@@ -36,7 +37,7 @@ func (m *mockBridgeSchedulerClient) AwaitResult(ctx context.Context, requestID s
 
 func TestQueryRunner_Execute_NilService(t *testing.T) {
 	r := NewQueryRunner(nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{"query": "test"})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{Query: "test"})
 	if err == nil {
 		t.Fatal("expected error for nil service")
 	}
@@ -47,7 +48,7 @@ func TestQueryRunner_Execute_NilService(t *testing.T) {
 
 func TestQueryRunner_Execute_MissingQuery(t *testing.T) {
 	r := NewQueryRunner(service.NewQueryAppService(nil, nil))
-	_, err := r.Execute(context.Background(), map[string]interface{}{})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{})
 	if err == nil {
 		t.Fatal("expected error for missing query")
 	}

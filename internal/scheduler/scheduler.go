@@ -13,6 +13,7 @@ import (
 
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/notify"
 )
 
@@ -107,9 +108,11 @@ func (s *Scheduler) saveLocked() error {
 			raw, err := json.Marshal(t.Payload)
 			if err != nil {
 				logger.Warnf("[scheduler] failed to deep-copy payload for task %s: %v", t.ID, err)
-				cp.Payload = make(map[string]interface{})
+				cp.Payload = &model.TaskPayload{}
 			} else {
-				_ = json.Unmarshal(raw, &cp.Payload)
+				var newPayload model.TaskPayload
+				_ = json.Unmarshal(raw, &newPayload)
+				cp.Payload = &newPayload
 			}
 		}
 		if cp.LastRunAt != nil {
@@ -327,9 +330,11 @@ func (s *Scheduler) RunTaskNow(id string) error {
 	// Deep copy the task for execution
 	taskCopy := *task
 	if task.Payload != nil {
-		taskCopy.Payload = make(map[string]interface{})
-		for k, v := range task.Payload {
-			taskCopy.Payload[k] = v
+		raw, err := json.Marshal(task.Payload)
+		if err == nil {
+			var newPayload model.TaskPayload
+			_ = json.Unmarshal(raw, &newPayload)
+			taskCopy.Payload = &newPayload
 		}
 	}
 	s.mu.RUnlock()
@@ -355,9 +360,11 @@ func (s *Scheduler) ListTasks() []*ScheduledTask {
 		// Copy to avoid mutation
 		cp := *t
 		if t.Payload != nil {
-			cp.Payload = make(map[string]interface{})
-			for k, v := range t.Payload {
-				cp.Payload[k] = v
+			raw, err := json.Marshal(t.Payload)
+			if err == nil {
+				var newPayload model.TaskPayload
+				_ = json.Unmarshal(raw, &newPayload)
+				cp.Payload = &newPayload
 			}
 		}
 		result = append(result, &cp)
@@ -556,7 +563,7 @@ func (s *Scheduler) executeTaskWithRetry(task *ScheduledTask, handler TaskHandle
 }
 
 // runTaskHandler 执行单次任务 handler（带 panic 恢复和超时）
-func (s *Scheduler) runTaskHandler(handler TaskHandler, payload map[string]interface{}, timeoutSec int) (string, error) {
+func (s *Scheduler) runTaskHandler(handler TaskHandler, payload *model.TaskPayload, timeoutSec int) (string, error) {
 	ctx, cancel := context.WithTimeout(s.ctx, time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 	var result string

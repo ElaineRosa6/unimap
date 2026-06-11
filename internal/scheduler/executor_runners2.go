@@ -16,6 +16,7 @@ import (
 	"github.com/unimap/project/internal/alerting"
 	icpdb "github.com/unimap/project/internal/icp/database"
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/utils/urlguard"
@@ -33,7 +34,7 @@ func NewAlertSummaryRunner(alertManager *alerting.Manager) *AlertSummaryRunner {
 
 func (r *AlertSummaryRunner) Type() TaskType { return TaskAlertSummary }
 
-func (r *AlertSummaryRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *AlertSummaryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.alertManager == nil {
 		return "", fmt.Errorf("alert manager not available")
 	}
@@ -93,7 +94,7 @@ func NewBaselineRefreshRunner(svc *service.TamperAppService) *BaselineRefreshRun
 
 func (r *BaselineRefreshRunner) Type() TaskType { return TaskBaselineRefresh }
 
-func (r *BaselineRefreshRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *BaselineRefreshRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.tamperSvc == nil {
 		return "", fmt.Errorf("tamper service not available")
 	}
@@ -149,7 +150,7 @@ func NewURLImportRunner(importDir string) *URLImportRunner {
 
 func (r *URLImportRunner) Type() TaskType { return TaskURLImport }
 
-func (r *URLImportRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *URLImportRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.importDir == "" {
 		return "", fmt.Errorf("import directory not configured")
 	}
@@ -236,7 +237,7 @@ func NewPluginHealthRunner(svc *service.UnifiedService) *PluginHealthRunner {
 
 func (r *PluginHealthRunner) Type() TaskType { return TaskPluginHealth }
 
-func (r *PluginHealthRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *PluginHealthRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.unifiedSvc == nil {
 		return "", fmt.Errorf("unified service not available")
 	}
@@ -281,7 +282,7 @@ func NewBridgeTokenRotateRunner(svc *screenshot.BridgeService) *BridgeHealthChec
 
 func (r *BridgeHealthCheckRunner) Type() TaskType { return TaskBridgeTokenRotate }
 
-func (r *BridgeHealthCheckRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *BridgeHealthCheckRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.bridgeSvc == nil {
 		return "", fmt.Errorf("bridge service not available")
 	}
@@ -321,7 +322,7 @@ func NewAlertSilenceRunner(alertManager *alerting.Manager) *AlertSilenceRunner {
 
 func (r *AlertSilenceRunner) Type() TaskType { return TaskAlertSilence }
 
-func (r *AlertSilenceRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *AlertSilenceRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.alertManager == nil {
 		return "", fmt.Errorf("alert manager not available")
 	}
@@ -365,7 +366,7 @@ func NewCacheWarmupRunner() *CacheWarmupRunner {
 
 func (r *URLHealthChecker) Type() TaskType { return TaskCacheWarmup }
 
-func (r *URLHealthChecker) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *URLHealthChecker) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	urls := extractStrings(payload, "warmup_urls", []string{})
 	if len(urls) == 0 {
 		return "URL 健康检查完成\n\n⚠️ 未配置 warmup_urls", nil
@@ -442,7 +443,7 @@ type icpQueryResult struct {
 	domains []string
 }
 
-func (r *ICPQueryRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *ICPQueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	cfg := r.cfgProvider()
 	if err := validateICPConfig(cfg); err != nil {
 		return "", err
@@ -491,7 +492,7 @@ func validateICPConfig(cfg adapter.ICPConfig) error {
 	return nil
 }
 
-func extractICPQueries(payload map[string]interface{}) ([]string, error) {
+func extractICPQueries(payload *model.TaskPayload) ([]string, error) {
 	queries := extractStrings(payload, "queries", nil)
 	if len(queries) == 0 {
 		if q := extractString(payload, "query", ""); q != "" {
@@ -507,7 +508,7 @@ func extractICPQueries(payload map[string]interface{}) ([]string, error) {
 	return queries, nil
 }
 
-func parseICPTypes(payload map[string]interface{}, defaultType string) ([]string, error) {
+func parseICPTypes(payload *model.TaskPayload, defaultType string) ([]string, error) {
 	rawType := extractString(payload, "type", defaultType)
 	if rawType == "" {
 		rawType = "web"
@@ -533,7 +534,7 @@ func parseICPTypes(payload map[string]interface{}, defaultType string) ([]string
 	return types, nil
 }
 
-func extractICPPagination(payload map[string]interface{}) (page, pageSize int) {
+func extractICPPagination(payload *model.TaskPayload) (page, pageSize int) {
 	page = extractInt(payload, "page", 1)
 	pageSize = extractInt(payload, "page_size", 20)
 	if pageSize > icpMaxPageSize {
@@ -710,7 +711,7 @@ func NewICPImportRunner(importDir string, scheduler *Scheduler) *ICPImportRunner
 
 func (r *ICPImportRunner) Type() TaskType { return TaskICPImport }
 
-func (r *ICPImportRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *ICPImportRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.importDir == "" {
 		return "", fmt.Errorf("import directory not configured")
 	}
@@ -770,7 +771,7 @@ func (r *ICPImportRunner) Execute(ctx context.Context, payload map[string]interf
 			Name:       fmt.Sprintf("ICP import batch %s", filePattern),
 			Type:       TaskICPQuery,
 			CronExpr:   "0 0 * * * *",
-			Payload:    map[string]interface{}{"queries": queries, "type": queryType},
+			Payload:    &model.TaskPayload{Queries: queries, Type: queryType},
 			TimeoutSec: 600,
 			MaxRetries: 1,
 			Enabled:    true,

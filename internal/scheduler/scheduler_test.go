@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/unimap/project/internal/model"
 )
 
 func TestNewScheduler(t *testing.T) {
@@ -523,7 +525,7 @@ type testHandler struct {
 
 func (h *testHandler) Type() TaskType { return h.typ }
 
-func (h *testHandler) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (h *testHandler) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	h.execCount.Add(1)
 	if h.sleepFor > 0 {
 		select {
