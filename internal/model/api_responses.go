@@ -18,14 +18,18 @@ type HealthResponse struct {
 
 // UserInfo represents a user in API responses.
 type UserInfo struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
+	ID        string `json:"id"`
+	Username  string `json:"username"`
+	Role      string `json:"role"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // UserListResponse is the response for GET /api/v1/users.
 type UserListResponse struct {
 	Users []UserInfo `json:"users"`
+	Total int        `json:"total"`
 }
 
 // NotificationChannelInfo represents a notification channel in API responses.
