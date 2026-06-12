@@ -536,7 +536,10 @@ func parseICPTypes(payload *model.TaskPayload, defaultType string) ([]string, er
 
 func extractICPPagination(payload *model.TaskPayload) (page, pageSize int) {
 	page = extractInt(payload, "page", 1)
-	pageSize = extractInt(payload, "page_size", 20)
+	pageSize = extractInt(payload, "icp_page_size", 0)
+	if pageSize <= 0 {
+		pageSize = extractInt(payload, "page_size", 20)
+	}
 	if pageSize > icpMaxPageSize {
 		pageSize = icpMaxPageSize
 	}
