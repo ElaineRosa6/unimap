@@ -42,6 +42,7 @@ internal/
   distributed/         分布式节点 (注册/心跳/任务队列/故障转移)
   error/               统一错误类型
   exporter/            数据导出
+  history/             操作历史持久化 (SQLite, 通用操作日志)
   logger/              日志系统 (zap, 异步, 动态级别)
   metrics/             Prometheus 指标
   model/               数据模型
@@ -196,7 +197,7 @@ go run -tags gui ./cmd/unimap-gui
 
 ### Low (后续迭代修复)
 7. ~~**L-01** 错误消息大写~~ ✅ 已修复（2 处非缩写词改为小写，其余 21 处为 HTTP/API/ICP 等缩写词可接受）
-8. **L-05** `map[string]interface{}` 强类型 (插件接口等广泛使用，渐进重构)
+8. ~~**L-05** `map[string]interface{}` 强类型~~ ✅ 已完成 Phase 1-5（799→227，减少 72%），剩余为低优先级 Web 响应负载和测试文件
 
 ### 2026-06-10 复核记录
 - ✅ 批量 URL 截图改为异步 job + progress 查询；无效/内网 URL 作为单条 failed 结果返回，不再拒绝整个批次。
@@ -237,7 +238,21 @@ go run -tags gui ./cmd/unimap-gui
 - ✅ **P1** Bridge 状态抖动修复：`liveWindowSeconds` 从 15 秒提高到 60 秒，覆盖扩展执行任务（10-25 秒）期间不轮询的场景。
 - ✅ **P1** Account 页 Token 复制修复：`GET /api/v1/account/admin-token` 返回真实 token（接口已受 auth 保护），不再返回 `maskAPIKey` 脱敏值。
 - ✅ 新增 7 个测试 + 修复 4 个已有测试适配新语义；`go test -race ./internal/screenshot/... ./web/...` 全部通过。
-- ⏸ 仍剩：新增引擎端到端未闭环（UI/凭据/cookie/浏览器链路）；UQL 查询历史无服务端持久化；L-05/TD-4 强类型渐进重构；L2 Hook；Quake/Shodan stealth。
+- ⏸ 仍剩：新增引擎端到端未闭环（UI/凭据/cookie/浏览器链路）；L2 Hook；Quake/Shodan stealth。
+
+### 2026-06-12 TD-4/L-05 强类型重构 + 操作历史持久化
+- ✅ **TD-4/L-05** `map[string]interface{}` 强类型渐进重构 Phase 1-5 完成：799→227 处（减少 72%）
+  - Phase 1: 定义边界结构体（PluginConfig/HookData/TaskPayload/BridgeCollectedData/APIResponse）
+  - Phase 2: Plugin.Initialize/HookFunc/HealthStatus.Details/NotificationMessage.Metadata → 强类型
+  - Phase 3: ScheduledTask.Payload/TaskTemplate.Payload/TaskHandler.Execute → *model.TaskPayload
+  - Phase 4: TaskEnvelope.Payload/TaskResult.Output/TaskRecord.Payload/Result → 强类型
+  - Phase 5: BridgeResult.StructuredCollectedData → *model.BridgeCollectedData
+  - Phase 6: Web API handlers (user/notification/node) → model.APIResponse
+- ✅ **BUG FIX** PageSizeICP JSON tag 冲突（`json:"page_size"` → `json:"icp_page_size"`），修复 ICP 默认 page_size=40 被静默丢弃
+- ✅ **UQL 查询历史服务端持久化**：新增 `internal/history/` 包，SQLite 存储操作历史+结果
+  - 支持多类型查询：query/icp_query/port_scan/screenshot/tamper_check
+  - API: POST/GET/DELETE `/api/v1/history`
+  - 前端自动保存查询结果，历史列表从 localStorage 迁移到服务端 API
 
 ## 常用命令
 
