@@ -17,7 +17,7 @@ type TaskPayload struct {
 	Queries     []string `json:"queries,omitempty"`
 	Type        string   `json:"type,omitempty"`
 	Page        int      `json:"page,omitempty"`
-	PageSizeICP int      `json:"page_size,omitempty"`
+	PageSizeICP int      `json:"icp_page_size,omitempty"`
 
 	// Batch screenshot
 	URLs []string `json:"urls,omitempty"`

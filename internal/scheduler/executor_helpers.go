@@ -148,6 +148,10 @@ func extractInt(payload *model.TaskPayload, key string, def int) int {
 		if payload.PageSize > 0 {
 			return payload.PageSize
 		}
+	case "icp_page_size":
+		if payload.PageSizeICP > 0 {
+			return payload.PageSizeICP
+		}
 	case "max_age_days":
 		if payload.MaxAgeDays > 0 {
 			return payload.MaxAgeDays
