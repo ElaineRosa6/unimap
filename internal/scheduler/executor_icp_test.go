@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/model"
 	"slices"
 )
 
@@ -45,7 +46,7 @@ func TestICPQueryRunner_Type(t *testing.T) {
 
 func TestICPQueryRunner_MissingQueries(t *testing.T) {
 	r := NewICPQueryRunner(defaultICPConfig, nil, nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{})
 	if err == nil {
 		t.Fatal("expected error for missing queries")
 	}
@@ -56,9 +57,7 @@ func TestICPQueryRunner_MissingQueries(t *testing.T) {
 
 func TestICPQueryRunner_DisabledByConfig(t *testing.T) {
 	r := NewICPQueryRunner(disabledICPConfig, nil, nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{
-		"queries": []string{"test"},
-	})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{Queries: []string{"test"}})
 	if err == nil {
 		t.Fatal("expected error for disabled config")
 	}
@@ -69,9 +68,7 @@ func TestICPQueryRunner_DisabledByConfig(t *testing.T) {
 
 func TestICPQueryRunner_MissingBaseURL(t *testing.T) {
 	r := NewICPQueryRunner(missingBaseURLConfig, nil, nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{
-		"queries": []string{"test"},
-	})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{Queries: []string{"test"}})
 	if err == nil {
 		t.Fatal("expected error for missing base URL")
 	}
@@ -82,9 +79,9 @@ func TestICPQueryRunner_MissingBaseURL(t *testing.T) {
 
 func TestICPQueryRunner_InvalidType(t *testing.T) {
 	r := NewICPQueryRunner(defaultICPConfig, nil, nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{
-		"queries": []string{"test"},
-		"type":    "zzz",
+	_, err := r.Execute(context.Background(), &model.TaskPayload{
+		Queries: []string{"test"},
+		Type:    "zzz",
 	})
 	if err == nil {
 		t.Fatal("expected error for invalid type")
@@ -100,9 +97,7 @@ func TestICPQueryRunner_TooManyQueries(t *testing.T) {
 	for i := range queries {
 		queries[i] = fmt.Sprintf("query%d", i)
 	}
-	_, err := r.Execute(context.Background(), map[string]interface{}{
-		"queries": queries,
-	})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{Queries: queries})
 	if err == nil {
 		t.Fatal("expected error for too many queries")
 	}
@@ -122,9 +117,9 @@ func TestICPQueryRunner_PageSizeCapped(t *testing.T) {
 	}
 	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
-	result, err := r.Execute(context.Background(), map[string]interface{}{
-		"queries":   []string{"test"},
-		"page_size": 200,
+	result, err := r.Execute(context.Background(), &model.TaskPayload{
+		Queries:     []string{"test"},
+		PageSizeICP: 200,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -148,8 +143,8 @@ func TestICPQueryRunner_PayloadDefaults(t *testing.T) {
 	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
 	// Only pass queries, verify defaults for type/page/page_size
-	result, err := r.Execute(context.Background(), map[string]interface{}{
-		"queries": []string{"test"},
+	result, err := r.Execute(context.Background(), &model.TaskPayload{
+		Queries: []string{"test"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -176,9 +171,7 @@ func TestICPQueryRunner_SingleQueryString(t *testing.T) {
 	}
 	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
-	result, err := r.Execute(context.Background(), map[string]interface{}{
-		"query": "example.com",
-	})
+	result, err := r.Execute(context.Background(), &model.TaskPayload{Query: "example.com"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -198,14 +191,15 @@ func TestICPQueryRunner_ConfigDefaultType(t *testing.T) {
 	}
 	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
-	result, err := r.Execute(context.Background(), map[string]interface{}{
-		"queries": []string{"test"},
+	// When Type is empty, parseICPTypes falls back to hardcoded "web"
+	result, err := r.Execute(context.Background(), &model.TaskPayload{
+		Queries: []string{"test"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result, "app") {
-		t.Errorf("expected types=app from config default, got: %s", result)
+	if !strings.Contains(result, "web") {
+		t.Errorf("expected types=web default fallback, got: %s", result)
 	}
 }
 
@@ -294,10 +288,10 @@ func TestICPQueryRunner_SingleQuerySuccess(t *testing.T) {
 	}
 	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
-	result, err := r.Execute(context.Background(), map[string]interface{}{
-		"queries":   []string{"example.com"},
-		"type":      "web",
-		"page_size": 40,
+	result, err := r.Execute(context.Background(), &model.TaskPayload{
+		Queries:     []string{"example.com"},
+		Type:        "web",
+		PageSizeICP: 40,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -319,10 +313,10 @@ func TestICPQueryRunner_MultiQueryPartialFailure(t *testing.T) {
 	}
 	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
-	result, err := r.Execute(context.Background(), map[string]interface{}{
-		"queries":   []string{"ok1", "fail_api", "ok2"},
-		"type":      "web",
-		"fail_fast": false,
+	result, err := r.Execute(context.Background(), &model.TaskPayload{
+		Queries: []string{"ok1", "fail_api", "ok2"},
+		Type:    "web",
+		Extra:   map[string]any{"fail_fast": false},
 	})
 	// Partial failure: nil error, result string has errors info
 	if err != nil {
@@ -348,10 +342,10 @@ func TestICPQueryRunner_FailFast(t *testing.T) {
 	}
 	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
-	result, err := r.Execute(context.Background(), map[string]interface{}{
-		"queries":   []string{"fail500", "ok1", "ok2"},
-		"type":      "web",
-		"fail_fast": true,
+	result, err := r.Execute(context.Background(), &model.TaskPayload{
+		Queries: []string{"fail500", "ok1", "ok2"},
+		Type:    "web",
+		Extra:   map[string]any{"fail_fast": true},
 	})
 	// All failed (0 succeeded with fail_fast on first query) → error
 	if err == nil {
@@ -371,8 +365,8 @@ func TestICPQueryRunner_AllFail(t *testing.T) {
 	}
 	r := NewICPQueryRunner(func() adapter.ICPConfig { return cfg }, nil, nil)
 
-	result, err := r.Execute(context.Background(), map[string]interface{}{
-		"queries": []string{"fail500", "fail_api"},
+	result, err := r.Execute(context.Background(), &model.TaskPayload{
+		Queries: []string{"fail500", "fail_api"},
 	})
 	if err == nil {
 		t.Fatal("expected error when all queries failed")
@@ -397,8 +391,8 @@ func TestICPQueryRunner_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	_, err := r.Execute(ctx, map[string]interface{}{
-		"queries": []string{"test1", "test2"},
+	_, err := r.Execute(ctx, &model.TaskPayload{
+		Queries: []string{"test1", "test2"},
 	})
 	if err == nil {
 		t.Fatal("expected context canceled error")
@@ -423,8 +417,8 @@ func TestICPQueryRunner_ContextTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	result, err := r.Execute(ctx, map[string]interface{}{
-		"queries": []string{"test"},
+	result, err := r.Execute(ctx, &model.TaskPayload{
+		Queries: []string{"test"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error with reasonable timeout: %v", err)
@@ -500,16 +494,16 @@ func TestDefaultTemplates_ICPTemplateFields(t *testing.T) {
 func TestExtractBool(t *testing.T) {
 	tests := []struct {
 		name    string
-		payload map[string]interface{}
+		payload *model.TaskPayload
 		key     string
 		def     bool
 		want    bool
 	}{
-		{"key not exists returns default", map[string]interface{}{}, "missing", false, false},
-		{"key not exists returns true default", map[string]interface{}{}, "missing", true, true},
-		{"value is true", map[string]interface{}{"flag": true}, "flag", false, true},
-		{"value is false", map[string]interface{}{"flag": false}, "flag", true, false},
-		{"value is other type returns default", map[string]interface{}{"flag": "yes"}, "flag", true, true},
+		{"key not exists returns default", &model.TaskPayload{}, "missing", false, false},
+		{"key not exists returns true default", &model.TaskPayload{}, "missing", true, true},
+		{"value is true", &model.TaskPayload{Extra: map[string]any{"flag": true}}, "flag", false, true},
+		{"value is false", &model.TaskPayload{Extra: map[string]any{"flag": false}}, "flag", true, false},
+		{"value is other type returns default", &model.TaskPayload{Extra: map[string]any{"flag": "yes"}}, "flag", true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

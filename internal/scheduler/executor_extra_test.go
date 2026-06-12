@@ -61,7 +61,7 @@ func TestQueryRunner_Execute_MissingQuery(t *testing.T) {
 
 func TestSearchScreenshotRunner_Execute_NilService(t *testing.T) {
 	r := NewSearchScreenshotRunner(nil, nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{"engine": "fofa", "query": "test"})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{Query: "test", Extra: map[string]any{"engine": "fofa"}})
 	if err == nil {
 		t.Fatal("expected error for nil service")
 	}
@@ -71,12 +71,12 @@ func TestSearchScreenshotRunner_Execute_MissingParams(t *testing.T) {
 	svc := service.NewScreenshotAppService("./screenshots")
 	r := NewSearchScreenshotRunner(svc, nil)
 
-	_, err := r.Execute(context.Background(), map[string]interface{}{"query": "test"})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{Query: "test"})
 	if err == nil {
 		t.Fatal("expected error for missing engine")
 	}
 
-	_, err = r.Execute(context.Background(), map[string]interface{}{"engine": "fofa"})
+	_, err = r.Execute(context.Background(), &model.TaskPayload{Extra: map[string]any{"engine": "fofa"}})
 	if err == nil {
 		t.Fatal("expected error for missing query")
 	}
@@ -86,7 +86,7 @@ func TestSearchScreenshotRunner_Execute_MissingParams(t *testing.T) {
 
 func TestBatchScreenshotRunner_Execute_NilService(t *testing.T) {
 	r := NewBatchScreenshotRunner(nil, nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{"urls": []string{"http://example.com"}})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{URLs: []string{"http://example.com"}})
 	if err == nil {
 		t.Fatal("expected error for nil service")
 	}
@@ -95,7 +95,7 @@ func TestBatchScreenshotRunner_Execute_NilService(t *testing.T) {
 func TestBatchScreenshotRunner_Execute_MissingURLs(t *testing.T) {
 	svc := service.NewScreenshotAppService("./screenshots")
 	r := NewBatchScreenshotRunner(svc, nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{})
 	if err == nil {
 		t.Fatal("expected error for missing urls")
 	}
@@ -105,7 +105,7 @@ func TestBatchScreenshotRunner_Execute_MissingURLs(t *testing.T) {
 
 func TestTamperCheckRunner_Execute_NilService(t *testing.T) {
 	r := NewTamperCheckRunner(nil, nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{"urls": []string{"http://example.com"}})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{URLs: []string{"http://example.com"}})
 	if err == nil {
 		t.Fatal("expected error for nil service")
 	}
@@ -114,7 +114,7 @@ func TestTamperCheckRunner_Execute_NilService(t *testing.T) {
 func TestTamperCheckRunner_Execute_MissingURLs(t *testing.T) {
 	svc := service.NewTamperAppService("", nil)
 	r := NewTamperCheckRunner(svc, nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{})
 	if err == nil {
 		t.Fatal("expected error for missing urls")
 	}
@@ -124,7 +124,7 @@ func TestTamperCheckRunner_Execute_MissingURLs(t *testing.T) {
 
 func TestURLReachabilityRunner_Execute_NilService(t *testing.T) {
 	r := NewURLReachabilityRunner(nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{"urls": []string{"http://example.com"}})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{URLs: []string{"http://example.com"}})
 	if err == nil {
 		t.Fatal("expected error for nil service")
 	}
@@ -132,7 +132,7 @@ func TestURLReachabilityRunner_Execute_NilService(t *testing.T) {
 
 func TestURLReachabilityRunner_Execute_MissingURLs(t *testing.T) {
 	r := NewURLReachabilityRunner(service.NewMonitorAppService(nil))
-	_, err := r.Execute(context.Background(), map[string]interface{}{})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{})
 	if err == nil {
 		t.Fatal("expected error for missing urls")
 	}
@@ -166,9 +166,7 @@ func TestCookieVerifyRunner_Execute_DefaultEngines(t *testing.T) {
 func TestCookieVerifyRunner_Execute_SpecificEngines(t *testing.T) {
 	mgr := &screenshot.Manager{}
 	r := NewCookieVerifyRunner(nil, mgr)
-	result, err := r.Execute(context.Background(), map[string]interface{}{
-		"engines": []string{"fofa", "custom"},
-	})
+	result, err := r.Execute(context.Background(), &model.TaskPayload{Engines: []string{"fofa", "custom"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -194,7 +192,7 @@ func TestLoginStatusCheckRunner_Execute_NilMgr(t *testing.T) {
 
 func TestDistributedSubmitRunner_Execute_NilQueue(t *testing.T) {
 	r := NewDistributedSubmitRunner(nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{"task_type": "scan"})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{Extra: map[string]any{"task_type": "scan"}})
 	if err == nil {
 		t.Fatal("expected error for nil queue")
 	}
@@ -203,7 +201,7 @@ func TestDistributedSubmitRunner_Execute_NilQueue(t *testing.T) {
 func TestDistributedSubmitRunner_Execute_MissingTaskType(t *testing.T) {
 	q := distributed.NewTaskQueue()
 	r := NewDistributedSubmitRunner(q)
-	_, err := r.Execute(context.Background(), map[string]interface{}{})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{})
 	if err == nil {
 		t.Fatal("expected error for missing task_type")
 	}
@@ -212,12 +210,12 @@ func TestDistributedSubmitRunner_Execute_MissingTaskType(t *testing.T) {
 func TestDistributedSubmitRunner_Execute_Success(t *testing.T) {
 	q := distributed.NewTaskQueue()
 	r := NewDistributedSubmitRunner(q)
-	result, err := r.Execute(context.Background(), map[string]interface{}{
+	result, err := r.Execute(context.Background(), &model.TaskPayload{Extra: map[string]any{
 		"task_type":       "port_scan",
-		"task_payload":    map[string]interface{}{"target": "example.com"},
+		"task_payload":    map[string]any{"target": "example.com"},
 		"priority":        5,
 		"timeout_seconds": 60,
-	})
+	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -233,7 +231,7 @@ func TestDistributedSubmitRunner_Execute_Success(t *testing.T) {
 
 func TestExportRunner_Execute_NilDeps(t *testing.T) {
 	r := NewExportRunner(nil, nil, "/tmp")
-	_, err := r.Execute(context.Background(), map[string]interface{}{"query": "test"})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{Query: "test"})
 	if err == nil {
 		t.Fatal("expected error for nil deps")
 	}
@@ -241,7 +239,7 @@ func TestExportRunner_Execute_NilDeps(t *testing.T) {
 
 func TestExportRunner_Execute_MissingQuery(t *testing.T) {
 	r := NewExportRunner(service.NewQueryAppService(nil, nil), adapter.NewEngineOrchestrator(), "/tmp")
-	_, err := r.Execute(context.Background(), map[string]interface{}{})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{})
 	if err == nil {
 		t.Fatal("expected error for missing query")
 	}
@@ -251,7 +249,7 @@ func TestExportRunner_Execute_MissingQuery(t *testing.T) {
 
 func TestPortScanRunner_Execute_NilService(t *testing.T) {
 	r := NewPortScanRunner(nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{"urls": []string{"http://example.com"}})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{URLs: []string{"http://example.com"}})
 	if err == nil {
 		t.Fatal("expected error for nil service")
 	}
@@ -259,7 +257,7 @@ func TestPortScanRunner_Execute_NilService(t *testing.T) {
 
 func TestPortScanRunner_Execute_MissingURLs(t *testing.T) {
 	r := NewPortScanRunner(service.NewMonitorAppService(nil))
-	_, err := r.Execute(context.Background(), map[string]interface{}{})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{})
 	if err == nil {
 		t.Fatal("expected error for missing urls")
 	}
@@ -320,9 +318,7 @@ func TestAlertSummaryRunner_Execute_NilManager(t *testing.T) {
 func TestAlertSummaryRunner_Execute_EmptyRecords(t *testing.T) {
 	m := alerting.NewManager()
 	r := NewAlertSummaryRunner(m)
-	result, err := r.Execute(context.Background(), map[string]interface{}{
-		"max_age_days": 7,
-	})
+	result, err := r.Execute(context.Background(), &model.TaskPayload{MaxAgeDays: 7})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -337,9 +333,7 @@ func TestAlertSummaryRunner_Execute_WithRecords(t *testing.T) {
 	m.SendWarning(alerting.AlertTypeSystem, "t2", "system alert", nil, "s", "u2")
 
 	r := NewAlertSummaryRunner(m)
-	result, err := r.Execute(context.Background(), map[string]interface{}{
-		"max_age_days": 7,
-	})
+	result, err := r.Execute(context.Background(), &model.TaskPayload{MaxAgeDays: 7})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -371,10 +365,10 @@ func TestURLImportRunner_Execute_Unconfigured(t *testing.T) {
 func TestURLImportRunner_Execute_NoFiles(t *testing.T) {
 	dir := t.TempDir()
 	r := NewURLImportRunner(dir)
-	result, err := r.Execute(context.Background(), map[string]interface{}{
+	result, err := r.Execute(context.Background(), &model.TaskPayload{Extra: map[string]any{
 		"file_pattern": "*.txt",
 		"max_lines":    1000,
-	})
+	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -392,10 +386,10 @@ func TestURLImportRunner_Execute_WithFile(t *testing.T) {
 	}
 
 	r := NewURLImportRunner(dir)
-	result, err := r.Execute(context.Background(), map[string]interface{}{
+	result, err := r.Execute(context.Background(), &model.TaskPayload{Extra: map[string]any{
 		"file_pattern": "*.txt",
 		"max_lines":    10,
-	})
+	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -416,10 +410,10 @@ func TestURLImportRunner_Execute_MaxLines(t *testing.T) {
 	}
 
 	r := NewURLImportRunner(dir)
-	result, err := r.Execute(context.Background(), map[string]interface{}{
+	result, err := r.Execute(context.Background(), &model.TaskPayload{Extra: map[string]any{
 		"file_pattern": "*.txt",
 		"max_lines":    5,
-	})
+	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -529,7 +523,7 @@ func TestBridgeTokenRotateRunner_Execute_Started(t *testing.T) {
 
 func TestAlertSilenceRunner_Execute_NilManager(t *testing.T) {
 	r := NewAlertSilenceRunner(nil)
-	_, err := r.Execute(context.Background(), map[string]interface{}{"alert_type": "tamper"})
+	_, err := r.Execute(context.Background(), &model.TaskPayload{Extra: map[string]any{"alert_type": "tamper"}})
 	if err == nil {
 		t.Fatal("expected error for nil manager")
 	}
@@ -540,10 +534,10 @@ func TestAlertSilenceRunner_Execute_WithAlertType(t *testing.T) {
 	m.SendInfo(alerting.AlertTypeTamper, "t1", "msg", nil, "s", "u1")
 
 	r := NewAlertSilenceRunner(m)
-	result, err := r.Execute(context.Background(), map[string]interface{}{
+	result, err := r.Execute(context.Background(), &model.TaskPayload{Extra: map[string]any{
 		"alert_type":       "tamper",
 		"duration_minutes": 30,
-	})
+	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -558,9 +552,7 @@ func TestAlertSilenceRunner_Execute_WithAlertType(t *testing.T) {
 func TestAlertSilenceRunner_Execute_CleanupOldRecords(t *testing.T) {
 	m := alerting.NewManager()
 	r := NewAlertSilenceRunner(m)
-	result, err := r.Execute(context.Background(), map[string]interface{}{
-		"max_age_days": 30,
-	})
+	result, err := r.Execute(context.Background(), &model.TaskPayload{MaxAgeDays: 30})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -584,9 +576,9 @@ func TestCacheWarmupRunner_Execute_NoURLs(t *testing.T) {
 
 func TestCacheWarmupRunner_Execute_WithInvalidURL(t *testing.T) {
 	r := NewCacheWarmupRunner()
-	result, err := r.Execute(context.Background(), map[string]interface{}{
+	result, err := r.Execute(context.Background(), &model.TaskPayload{Extra: map[string]any{
 		"warmup_urls": []string{"://invalid"},
-	})
+	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -597,9 +589,9 @@ func TestCacheWarmupRunner_Execute_WithInvalidURL(t *testing.T) {
 
 func TestCacheWarmupRunner_Execute_WithUnreachableURL(t *testing.T) {
 	r := NewCacheWarmupRunner()
-	result, err := r.Execute(context.Background(), map[string]interface{}{
+	result, err := r.Execute(context.Background(), &model.TaskPayload{Extra: map[string]any{
 		"warmup_urls": []string{"http://localhost:65535/unreachable"},
-	})
+	}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -611,7 +603,7 @@ func TestCacheWarmupRunner_Execute_WithUnreachableURL(t *testing.T) {
 // ===== extractStrings edge cases =====
 
 func TestExtractStrings_InterfaceSliceWithNoStrings(t *testing.T) {
-	payload := map[string]interface{}{"items": []interface{}{1, 2, 3}}
+	payload := &model.TaskPayload{Extra: map[string]any{"items": []any{1, 2, 3}}}
 	got := extractStrings(payload, "items", []string{"default"})
 	if len(got) != 0 {
 		t.Errorf("expected empty slice, got %v", got)
@@ -630,23 +622,25 @@ func TestSanitizePayload_NilMap(t *testing.T) {
 func TestSanitizePayload_StringValues(t *testing.T) {
 	// GBK bytes for "测试" = 0xB2 0xE2 0xCA 0xD4
 	gbkBytes := []byte{0xB2, 0xE2, 0xCA, 0xD4}
-	payload := map[string]interface{}{
-		"urls":  []string{"https://example.com"},
-		"name":  string(gbkBytes), // GBK encoded
-		"count": 42,
+	payload := &model.TaskPayload{
+		URLs: []string{"https://example.com"},
+		Extra: map[string]any{
+			"name":  string(gbkBytes), // GBK encoded
+			"count": 42,
+		},
 	}
 	got := sanitizePayload(payload)
 
 	// "name" should be converted
-	if got["name"] != "测试" {
-		t.Errorf("expected name=测试, got %q", got["name"])
+	if got.Extra["name"] != "测试" {
+		t.Errorf("expected name=测试, got %q", got.Extra["name"])
 	}
 	// non-string values pass through
-	if got["count"] != 42 {
-		t.Errorf("expected count=42, got %v", got["count"])
+	if got.Extra["count"] != 42 {
+		t.Errorf("expected count=42, got %v", got.Extra["count"])
 	}
 	// slice passes through
-	if got["urls"] == nil {
+	if got.URLs == nil {
 		t.Error("expected urls to be preserved")
 	}
 }
