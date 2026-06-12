@@ -405,6 +405,17 @@ func (m *Manager) applyMiscDefaults(config *Config) {
 		config.Query.BrowserFallback.Engines = []string{"fofa", "zoomeye", "shodan", "censys"}
 	}
 
+	// 操作历史
+	if !config.History.Enabled {
+		config.History.Enabled = true
+	}
+	if strings.TrimSpace(config.History.DatabasePath) == "" {
+		config.History.DatabasePath = "./data/history.db"
+	}
+	if config.History.MaxResults == 0 {
+		config.History.MaxResults = 1000
+	}
+
 	// 通知
 	if config.Notifications.SendTimeoutSec == 0 {
 		config.Notifications.SendTimeoutSec = 10

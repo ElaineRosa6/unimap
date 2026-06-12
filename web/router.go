@@ -189,6 +189,11 @@ func (r *Router) registerMiscRoutes() {
 	r.addAPIRoute("icp-compare", "GET", "/api/icp/compare", s.handleICPCompare, true)
 	r.addAPIRoute("config-get", "GET", "/api/config", s.handleGetConfig, true)
 	r.addAPIRoute("config-save", "POST", "/api/config", s.handleSaveConfig, true)
+	r.addAPIRoute("history-save", "POST", "/api/history/save", s.handleHistorySave, true)
+	r.addAPIRoute("history-list", "GET", "/api/history", s.handleHistoryListOrClear, true)
+	r.addAPIRoute("history-clear", "DELETE", "/api/history", s.handleHistoryListOrClear, true)
+	r.addAPIRoute("history-get", "GET", "/api/history/{id}", s.handleHistoryGetOrDelete, true)
+	r.addAPIRoute("history-delete", "DELETE", "/api/history/{id}", s.handleHistoryGetOrDelete, true)
 }
 
 func (r *Router) buildMux() http.Handler {

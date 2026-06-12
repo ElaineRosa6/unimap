@@ -230,6 +230,13 @@ type Config struct {
 		Sources    []string `yaml:"sources"`     // 要备份的目录/文件列表
 	} `yaml:"backup"`
 
+	// History 操作历史配置
+	History struct {
+		Enabled      bool   `yaml:"enabled"`
+		DatabasePath string `yaml:"database_path"` // SQLite 路径，默认 ./data/history.db
+		MaxResults   int    `yaml:"max_results"`   // 每次查询最大保存结果数，默认 1000
+	} `yaml:"history"`
+
 	// Scheduler 定时任务配置
 	Scheduler struct {
 		Enabled    bool `yaml:"enabled"`
