@@ -119,8 +119,8 @@ func TestBridgeMockResultForwardsCollectedData(t *testing.T) {
 	if result.StructuredCollectedData == nil {
 		t.Fatal("expected structured collected data to be forwarded")
 	}
-	if total, _ := result.StructuredCollectedData["total"].(float64); total != 1 {
-		t.Fatalf("expected total 1, got %v", result.StructuredCollectedData["total"])
+	if result.StructuredCollectedData.Total != 1 {
+		t.Fatalf("expected total 1, got %v", result.StructuredCollectedData.Total)
 	}
 }
 

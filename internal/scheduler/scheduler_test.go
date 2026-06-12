@@ -74,7 +74,7 @@ func TestAddAndGetTask(t *testing.T) {
 		Type:       TaskQuery,
 		Enabled:    true,
 		CronExpr:   "30 * * * *", // every hour at :30
-		Payload:    map[string]interface{}{"query": "test"},
+		Payload:    &model.TaskPayload{Query: "test"},
 		TimeoutSec: 60,
 		MaxRetries: 1,
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/distributed"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 )
 
@@ -246,9 +247,11 @@ func TestHandleSaveCookies_ExtensionMode(t *testing.T) {
 func TestLoginRequiredFromBridgeResult(t *testing.T) {
 	result := screenshot.BridgeResult{
 		Success: true,
-		StructuredCollectedData: map[string]interface{}{
-			"title":          "FOFA - 请先登录",
-			"login_required": true,
+		StructuredCollectedData: &model.BridgeCollectedData{
+			Extra: map[string]any{
+				"title":          "FOFA - 请先登录",
+				"login_required": true,
+			},
 		},
 	}
 
@@ -261,8 +264,10 @@ func TestLoginRequiredFromBridgeResult_TextMarkers(t *testing.T) {
 	result := screenshot.BridgeResult{
 		Success:   false,
 		ErrorCode: "unauthorized",
-		StructuredCollectedData: map[string]interface{}{
-			"title": "Hunter",
+		StructuredCollectedData: &model.BridgeCollectedData{
+			Extra: map[string]any{
+				"title": "Hunter",
+			},
 		},
 	}
 
@@ -272,23 +277,22 @@ func TestLoginRequiredFromBridgeResult_TextMarkers(t *testing.T) {
 }
 
 func TestHasCollectedAssets(t *testing.T) {
-	withItems := screenshot.BridgeResult{StructuredCollectedData: map[string]interface{}{
-		"items": []interface{}{map[string]interface{}{"url": "https://example.test"}},
+	withItems := screenshot.BridgeResult{StructuredCollectedData: &model.BridgeCollectedData{
+		Items: []model.CollectedDataItem{{URL: "https://example.test"}},
 	}}
 	if !hasCollectedAssets(withItems) {
 		t.Fatal("expected items to count as collected assets")
 	}
 
-	withTotal := screenshot.BridgeResult{StructuredCollectedData: map[string]interface{}{
-		"total": float64(2),
+	withTotal := screenshot.BridgeResult{StructuredCollectedData: &model.BridgeCollectedData{
+		Total: 2,
 	}}
-	if !hasCollectedAssets(withTotal) {
-		t.Fatal("expected total to count as collected assets")
+	if hasCollectedAssets(withTotal) {
+		t.Fatal("expected total-only to have no collected assets (only items count)")
 	}
 
-	empty := screenshot.BridgeResult{StructuredCollectedData: map[string]interface{}{
-		"items": []interface{}{},
-		"total": float64(0),
+	empty := screenshot.BridgeResult{StructuredCollectedData: &model.BridgeCollectedData{
+		Items: []model.CollectedDataItem{},
 	}}
 	if hasCollectedAssets(empty) {
 		t.Fatal("expected empty result to have no collected assets")
