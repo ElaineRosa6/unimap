@@ -622,14 +622,13 @@ export async function extractEngineAssets(tabId) {
               item.host = "";
             }
           }
-          // Hunter-specific: title — take first segment before category labels
+          // Hunter-specific: title — take first meaningful segment
           if (eng === "hunter" && item.title) {
             let t = String(item.title);
-            // Split on category labels (with or without preceding space)
-            const parts = t.split(/(?:\s+|(?=[\u4e00-\u9fa5]{2}(?:企业|个人|开源|政府|金融|邮件|办公)))/);
-            if (parts.length > 1) {
-              item.title = parts[0].replace(/-/g, "").trim();
-            }
+            // Remove trailing category labels and duplicates
+            t = t.replace(/\s*(?:企业|个人|开源|政府|金融|邮件|办公|系统).*$/, "");
+            t = t.replace(/-/g, "").trim();
+            item.title = t;
           }
 
           // Clean Shodan country/org: extract from multi-line result-details
