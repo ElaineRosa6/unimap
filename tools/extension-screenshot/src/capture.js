@@ -615,16 +615,21 @@ export async function extractEngineAssets(tabId) {
               item.country_code = "中国";
             }
           }
-          // Hunter-specific: clean host of UI artifacts
+          // Hunter-specific: clean host of UI filter artifacts only
           if (eng === "hunter" && item.host) {
-            item.host = String(item.host).replace(/不看空域名\s*-?\s*/g, "").replace(/-/g, "").trim();
-            if (!item.host || item.host === item.ip) item.host = "";
+            const h = String(item.host);
+            if (/不看空/.test(h) || h === "-" || h === "—") {
+              item.host = "";
+            }
           }
           // Hunter-specific: title — take first segment before category labels
           if (eng === "hunter" && item.title) {
             let t = String(item.title);
-            const parts = t.split(/\s+(?:企业|个人|开源|政府|金融|邮件|办公)/);
-            item.title = parts[0].replace(/-/g, "").trim();
+            // Split on category labels (with or without preceding space)
+            const parts = t.split(/(?:\s+|(?=[\u4e00-\u9fa5]{2}(?:企业|个人|开源|政府|金融|邮件|办公)))/);
+            if (parts.length > 1) {
+              item.title = parts[0].replace(/-/g, "").trim();
+            }
           }
 
           // Clean Shodan country/org: extract from multi-line result-details
