@@ -128,20 +128,18 @@ const extractHunterJS = `
 (function() {
   var rows = document.querySelectorAll('.q-table tbody tr');
   var assets = [];
+  var seen = {};
   rows.forEach(function(row) {
     var cells = row.querySelectorAll('td');
     if (cells.length < 5) return;
     var asset = {};
 
-    // Hunter Quasar UI: each cell has a .cell div wrapping content.
-    // Columns: 0=checkbox, 1=序号, 2=IP, 3=域名, 4=端口/服务, 5=标题, 6=状态码, 7=ICP, 8=应用, 9=标签, 10=地区, 11=更新时间
+    // Hunter Quasar UI columns: 0=checkbox, 1=序号, 2=IP, 3=域名, 4=端口/服务, 5=标题, 6=状态码, 7=ICP, 8=应用, 9=标签, 10=地区, 11=更新时间
     function getCellText(idx) {
       if (idx >= cells.length) return '';
       var cell = cells[idx];
-      // Try .cell wrapper first (Quasar UI structure)
       var cellDiv = cell.querySelector('.cell');
       var text = cellDiv ? cellDiv.textContent : cell.textContent;
-      // Clean Hunter UI filter labels
       text = text.replace(/只看该[^\s]*不看该[^\s]*/g, '');
       text = text.replace(/只看空[^\s]*不看空[^\s]*/g, '');
       text = text.replace(/看相似(网站|icon)/g, '');
@@ -149,35 +147,37 @@ const extractHunterJS = `
       text = text.replace(/复制[^\s]*/g, '');
       text = text.replace(/云厂商/g, '');
       text = text.replace(/-/g, '');
+      text = text.replace(/高危/g, '');
+      text = text.replace(/中危/g, '');
+      text = text.replace(/低危/g, '');
       return text.replace(/\s+/g, ' ').trim();
     }
 
-    // IP from column 2
     asset.ip = getCellText(2);
-    // Host/domain from column 3
     var hostText = getCellText(3);
     if (hostText && hostText !== asset.ip) asset.host = hostText;
-    // Port from column 4 (may contain "8081 http" or just "8081")
-    var portCell = getCellText(4);
+    // Port from column 4
+    var portCell = cells[cells.length > 4 ? 4 : 0].textContent || '';
     var pm = portCell.match(/(\d{1,5})/);
     if (pm) asset.port = parseInt(pm[1]);
-    // Protocol from column 4 (text after port number)
-    if (pm) {
-      var protoPart = portCell.substring(portCell.indexOf(pm[0]) + pm[0].length).trim();
-      if (protoPart && /^(http|https|tcp|udp|ssh|ftp|smtp|pop3|imap|mysql|rdp|smb|dns)$/i.test(protoPart)) {
-        asset.protocol = protoPart;
-      }
+    // Protocol: extract known protocol name from column 4
+    var protoMatch = portCell.match(/\b(http|https|tcp|udp|ssh|ftp|smtp|pop3|imap|mysql|rdp|smb|dns)\b/i);
+    if (protoMatch) asset.protocol = protoMatch[1].toLowerCase();
+    // Title from column 5 — keep only the first meaningful segment
+    var titleRaw = getCellText(5);
+    if (titleRaw) {
+      // Take text before Chinese category labels like "企业办公", "邮件系统"
+      var titleParts = titleRaw.split(/\s+(?:企业|个人|开源|政府|金融)/);
+      asset.title = titleParts[0].trim();
     }
-    // If protocol still empty, try column 4 as pure protocol name
-    if (!asset.protocol && portCell && /^(http|https|tcp|udp|ssh|ftp|smtp|pop3|imap)$/i.test(portCell)) {
-      asset.protocol = portCell;
-    }
-    // Title from column 5
-    asset.title = getCellText(5);
-
     asset.source = 'hunter';
-    // Skip rows with no IP or host
-    if (asset.ip || asset.host) assets.push(asset);
+
+    // Skip empty or duplicate rows
+    if (!asset.ip && !asset.host) return;
+    var key = asset.ip + ':' + asset.port;
+    if (asset.port > 0 && seen[key]) return;
+    if (asset.port > 0) seen[key] = true;
+    assets.push(asset);
   });
   var totalEl = document.querySelector('.page-list-body_statistic');
   var total = 0;
