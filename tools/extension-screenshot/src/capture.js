@@ -608,29 +608,6 @@ export async function extractEngineAssets(tabId) {
           if (typeof item.ip === "string") item.ip = cleanHunterText(item.ip);
           if (typeof item.host === "string") item.host = cleanHunterText(item.host);
 
-          // Hunter-specific: country_code from region column is city name, map to country
-          if (eng === "hunter" && item.country_code) {
-            const cc = String(item.country_code);
-            if (/省|市|区|县|镇/.test(cc) || /^[\u4e00-\u9fa5]{2,}$/.test(cc)) {
-              item.country_code = "中国";
-            }
-          }
-          // Hunter-specific: clean host of UI filter artifacts only
-          if (eng === "hunter" && item.host) {
-            const h = String(item.host);
-            if (/不看空/.test(h) || h === "-" || h === "—") {
-              item.host = "";
-            }
-          }
-          // Hunter-specific: title — take first meaningful segment
-          if (eng === "hunter" && item.title) {
-            let t = String(item.title);
-            // Remove trailing category labels and duplicates
-            t = t.replace(/\s*(?:企业|个人|开源|政府|金融|邮件|办公|系统).*$/, "");
-            t = t.replace(/-/g, "").trim();
-            item.title = t;
-          }
-
           // Clean Shodan country/org: extract from multi-line result-details
           if (typeof item.country_code === "string" && item.country_code.includes("\n")) {
             const lines = item.country_code.split(/\n/).map(l => l.trim()).filter(l => l.length > 1);
@@ -676,12 +653,6 @@ export async function extractEngineAssets(tabId) {
             } else if (/^\d+$/.test(String(item.protocol))) {
               item.protocol = ""; // Pure port number, not a protocol
             }
-          }
-
-          // Hunter-specific: title may contain component info after actual title
-          if (eng === "hunter" && item.title) {
-            const titleParts = String(item.title).split(/\s+(?:企业|个人|开源|政府|金融)/);
-            item.title = titleParts[0].replace(/-/g, "").trim();
           }
 
           // Post-fix: if ip is empty but host contains IP, move it
