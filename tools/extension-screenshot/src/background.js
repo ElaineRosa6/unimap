@@ -169,19 +169,6 @@ async function handleTask(task, token) {
 
         await reportResult(result);
       }
-    } else {
-      // "screenshot" or unknown action — capture screenshot
-      await waitForCaptureSlot();
-      const tab = await chrome.tabs.get(tabId);
-      let dataUrl;
-      try {
-        dataUrl = await captureWithFocus(tabId, tab.windowId);
-      } catch (captureErr) {
-        await waitForCaptureSlot();
-        dataUrl = await captureWithFocus(tabId, tab.windowId);
-      }
-      const result = normalizeImagePayload(dataUrl, requestId, startedAt);
-      await reportResult(result);
     } else if (action === "collect_and_capture") {
       // Combined: collect structured data + take screenshot in one navigation
       const assets = await extractEngineAssets(tabId);
@@ -221,6 +208,19 @@ async function handleTask(task, token) {
       }
 
       await reportResult(collectResult);
+    } else {
+      // "screenshot" or unknown action — capture screenshot
+      await waitForCaptureSlot();
+      const tab = await chrome.tabs.get(tabId);
+      let dataUrl;
+      try {
+        dataUrl = await captureWithFocus(tabId, tab.windowId);
+      } catch (captureErr) {
+        await waitForCaptureSlot();
+        dataUrl = await captureWithFocus(tabId, tab.windowId);
+      }
+      const result = normalizeImagePayload(dataUrl, requestId, startedAt);
+      await reportResult(result);
     }
 
     await saveRuntimeState({
