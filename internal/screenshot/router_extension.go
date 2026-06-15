@@ -45,7 +45,7 @@ func (p *ExtensionProvider) CaptureSearchEngineResult(ctx context.Context, engin
 		RequestID:    fmt.Sprintf("router_search_%d", time.Now().UnixNano()),
 		URL:          searchURL,
 		BatchID:      queryID,
-		WaitStrategy: "load",
+		WaitStrategy: "spa",
 	}
 	result, err := p.bridge.Submit(ctx, task)
 	if err != nil {
@@ -196,7 +196,7 @@ func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, 
 	task := BridgeTask{
 		RequestID:    fmt.Sprintf("router_open_%d", time.Now().UnixNano()),
 		URL:          searchURL,
-		WaitStrategy: "load",
+		WaitStrategy: "spa",
 		Timeout:      30 * time.Second,
 		Action:       "open",
 	}
@@ -262,12 +262,28 @@ func (p *ExtensionProvider) submitCollectTask(ctx context.Context, searchURL, qu
 		RequestID:    fmt.Sprintf("router_collect_%d", time.Now().UnixNano()),
 		URL:          searchURL,
 		BatchID:      queryID,
-		WaitStrategy: "load",
+		WaitStrategy: "spa",
 		Action:       "collect",
 	}
 	result, err := p.bridge.Submit(ctx, task)
 	if err != nil {
 		return result, fmt.Errorf("extension bridge collect failed: %w", err)
+	}
+	return result, nil
+}
+
+// submitCollectAndCaptureTask submits a combined collect+capture action to the bridge.
+func (p *ExtensionProvider) submitCollectAndCaptureTask(ctx context.Context, searchURL, queryID string) (BridgeResult, error) {
+	task := BridgeTask{
+		RequestID:    fmt.Sprintf("router_collect_capture_%d", time.Now().UnixNano()),
+		URL:          searchURL,
+		BatchID:      queryID,
+		WaitStrategy: "spa",
+		Action:       "collect_and_capture",
+	}
+	result, err := p.bridge.Submit(ctx, task)
+	if err != nil {
+		return result, fmt.Errorf("extension bridge collect+capture failed: %w", err)
 	}
 	return result, nil
 }

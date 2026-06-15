@@ -13,8 +13,9 @@ import (
 )
 
 type bridgeJob struct {
-	task   BridgeTask
-	respCh chan bridgeJobResult
+	task    BridgeTask
+	timeout time.Duration
+	respCh  chan bridgeJobResult
 }
 
 type bridgeJobResult struct {
@@ -117,7 +118,7 @@ func (s *BridgeService) Submit(ctx context.Context, task BridgeTask) (BridgeResu
 	workerCtx, cancel := context.WithTimeout(ctx, effectiveTimeout)
 	defer cancel()
 
-	job := bridgeJob{task: task, respCh: make(chan bridgeJobResult, 1)}
+	job := bridgeJob{task: task, timeout: effectiveTimeout, respCh: make(chan bridgeJobResult, 1)}
 	select {
 	case s.queue <- job:
 	case <-workerCtx.Done():
@@ -148,7 +149,13 @@ func (s *BridgeService) worker(ctx context.Context) {
 			return
 		case job := <-s.queue:
 			s.inFlight.Add(1)
-			result, err := s.executeJobSafely(ctx, job.task)
+			taskTimeout := job.timeout
+			if taskTimeout <= 0 {
+				taskTimeout = s.taskTimeout
+			}
+			taskCtx, cancel := context.WithTimeout(context.Background(), taskTimeout)
+			result, err := s.executeJobSafely(taskCtx, job.task)
+			cancel()
 			s.inFlight.Add(-1)
 			job.respCh <- bridgeJobResult{result: result, err: err}
 		}

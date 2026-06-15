@@ -26,10 +26,10 @@ var selectorsByEngine = map[string]*engineSelectors{
 		TotalSelector:  ".pull-left.m-b span",
 	},
 	"zoomeye": {
-		RowSelector:    "table.table-condensed tbody tr",
+		RowSelector:    "div.search-result-item-container",
 		ExtractJS:      extractZoomEyeJS,
-		PaginationNext: "ul.pagination li.next a",
-		TotalSelector:  ".result-count",
+		PaginationNext: "li.ant-pagination-next:not(.ant-pagination-disabled) a",
+		TotalSelector:  "li.ant-pagination-total-text span",
 	},
 	"quake": {
 		RowSelector:    "table tbody tr",
@@ -139,23 +139,60 @@ const extractHunterJS = `
 
 const extractZoomEyeJS = `
 (function() {
-  var rows = document.querySelectorAll('table.table-condensed tbody tr');
+  var containers = document.querySelectorAll('div.search-result-item-container');
   var assets = [];
-  rows.forEach(function(row) {
-    var cells = row.querySelectorAll('td');
-    if (cells.length < 5) return;
+  containers.forEach(function(container) {
     var asset = {};
-    asset.ip = cells[0] ? cells[0].textContent.trim() : '';
-    asset.port = parseInt(cells[1] ? cells[1].textContent.trim() : '0') || 0;
-    asset.protocol = cells[2] ? cells[2].textContent.trim() : '';
-    asset.title = cells[3] ? cells[3].textContent.trim() : '';
-    asset.country = cells[4] ? cells[4].textContent.trim() : '';
-    asset.server = cells[5] ? cells[5].textContent.trim() : '';
+    // Extract IP from ip-detail-box > span._public-hover_uxlu6_1
+    var ipEl = container.querySelector('span._public-hover_uxlu6_1');
+    if (ipEl) {
+      asset.ip = ipEl.textContent.trim();
+    }
+    // Extract host:port from header-bar > div.url-container
+    var urlContainer = container.querySelector('div.url-container');
+    if (urlContainer) {
+      var urlText = urlContainer.textContent.trim();
+      // Parse "domain:port" or "ip:port" format
+      var match = urlText.match(/^(.+?):(\d+)$/);
+      if (match) {
+        if (!asset.ip || /\d+\.\d+\.\d+\.\d+/.test(match[1])) {
+          asset.ip = match[1];
+        }
+        asset.host = /\d+\.\d+\.\d+\.\d+/.test(match[1]) ? '' : match[1];
+        asset.port = parseInt(match[2]) || 0;
+      } else {
+        asset.host = urlText;
+      }
+    }
+    // Extract port from protocol-port-box first button
+    var portBtn = container.querySelector('div.protocol-port-box button:first-child');
+    if (portBtn) {
+      var portVal = parseInt(portBtn.textContent.trim());
+      if (portVal > 0) asset.port = portVal;
+    }
+    // Extract protocol from protocol-port-box last button span
+    var protoBtn = container.querySelector('div.protocol-port-box button:last-child span');
+    if (protoBtn) {
+      asset.protocol = protoBtn.textContent.trim();
+    }
+    // Extract banner from pre tab panel
+    var preEl = container.querySelector('pre');
+    if (preEl) {
+      asset.banner = preEl.textContent.trim().substring(0, 500);
+    }
     asset.source = 'zoomeye';
-    assets.push(asset);
+    if (asset.ip || asset.host) {
+      assets.push(asset);
+    }
   });
+  // Get total from pagination
+  var totalEl = document.querySelector('li.ant-pagination-total-text span');
   var total = 0;
-  var hasNext = !!document.querySelector('ul.pagination li.next:not(.disabled) a');
+  if (totalEl) {
+    var m = totalEl.textContent.match(/[\d,]+/);
+    if (m) total = parseInt(m[0].replace(/,/g, '')) || 0;
+  }
+  var hasNext = !!document.querySelector('li.ant-pagination-next:not(.ant-pagination-disabled) a');
   return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
 })()
 `
