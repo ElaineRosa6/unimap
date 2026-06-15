@@ -583,6 +583,7 @@ export async function extractEngineAssets(tabId) {
         }
 
         // Extract data from each row/card
+        const seenKeys = new Set();
         rows.forEach((row) => {
           const cells = row.querySelectorAll("td");
           const item = {};
@@ -606,6 +607,25 @@ export async function extractEngineAssets(tabId) {
           if (typeof item.title === "string") item.title = cleanHunterText(item.title);
           if (typeof item.ip === "string") item.ip = cleanHunterText(item.ip);
           if (typeof item.host === "string") item.host = cleanHunterText(item.host);
+
+          // Hunter-specific: country_code from region column is city name, map to country
+          if (eng === "hunter" && item.country_code) {
+            const cc = String(item.country_code);
+            if (/省|市|区|县|镇/.test(cc) || /^[\u4e00-\u9fa5]{2,}$/.test(cc)) {
+              item.country_code = "中国";
+            }
+          }
+          // Hunter-specific: clean host of UI artifacts
+          if (eng === "hunter" && item.host) {
+            item.host = String(item.host).replace(/不看空域名\s*-?\s*/g, "").replace(/-/g, "").trim();
+            if (!item.host || item.host === item.ip) item.host = "";
+          }
+          // Hunter-specific: title — take first segment before category labels
+          if (eng === "hunter" && item.title) {
+            let t = String(item.title);
+            const parts = t.split(/\s+(?:企业|个人|开源|政府|金融|邮件|办公)/);
+            item.title = parts[0].replace(/-/g, "").trim();
+          }
 
           // Clean Shodan country/org: extract from multi-line result-details
           if (typeof item.country_code === "string" && item.country_code.includes("\n")) {
@@ -668,7 +688,16 @@ export async function extractEngineAssets(tabId) {
 
           // Skip completely empty rows
           const hasAnyValue = Object.values(item).some(v => v !== "" && v !== 0);
-          if (hasAnyValue) items.push(item);
+          if (!hasAnyValue) return;
+
+          // Deduplicate by ip:port (Hunter shows duplicate summary+detail rows)
+          if (item.ip && item.port > 0) {
+            const dedupKey = item.ip + ":" + item.port;
+            if (seenKeys.has(dedupKey)) return;
+            seenKeys.add(dedupKey);
+          }
+
+          items.push(item);
         });
 
         // Extract pagination info
