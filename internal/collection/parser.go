@@ -8,6 +8,8 @@ import (
 	"github.com/unimap/project/internal/model"
 )
 
+var rePortNum = regexp.MustCompile(`(\d{1,5})`)
+
 // ParseStructuredCollectedData extracts assets, total count, and has_more from
 // the extension's structured collect payload.
 func ParseStructuredCollectedData(data map[string]interface{}, engine string) ([]model.UnifiedAsset, int, bool) {
@@ -41,7 +43,7 @@ func ParseStructuredCollectedData(data map[string]interface{}, engine string) ([
 // ParseStructuredCollectedDataFromItems extracts assets from typed CollectedDataItem slice.
 func ParseStructuredCollectedDataFromItems(items []model.CollectedDataItem, engine string, hasMore bool) ([]model.UnifiedAsset, int, bool) {
 	if len(items) == 0 {
-		return []model.UnifiedAsset{}, 0, false
+		return []model.UnifiedAsset{}, 0, hasMore
 	}
 	assets := make([]model.UnifiedAsset, 0, len(items))
 	for _, item := range items {
@@ -67,23 +69,12 @@ func ParseStructuredCollectedDataFromItems(items []model.CollectedDataItem, engi
 		if asset.Title == "" && item.Product != "" {
 			asset.Title = item.Product
 		}
-		// Post-process: extract port from host field (e.g. "1.2.3.4:8080" → port=8080)
-		if asset.Port == 0 && asset.Host != "" {
-			if idx := strings.LastIndex(asset.Host, ":"); idx > 0 {
-				if p, err := strconv.Atoi(asset.Host[idx+1:]); err == nil && p > 0 && p < 65536 {
-					asset.Port = p
-					asset.Host = asset.Host[:idx]
-				}
-			}
+		// Post-process: extract port from host or IP if missing
+		if asset.Port == 0 {
+			asset.Port, asset.Host = extractPortFromHost(asset.Host)
 		}
-		// Post-process: extract port from IP field (e.g. "1.2.3.4:443" → port=443)
-		if asset.Port == 0 && asset.IP != "" {
-			if idx := strings.LastIndex(asset.IP, ":"); idx > 0 {
-				if p, err := strconv.Atoi(asset.IP[idx+1:]); err == nil && p > 0 && p < 65536 {
-					asset.Port = p
-					asset.IP = asset.IP[:idx]
-				}
-			}
+		if asset.Port == 0 {
+			asset.Port, asset.IP = extractPortFromHost(asset.IP)
 		}
 		// Post-process: infer port from protocol if still missing
 		if asset.Port == 0 && asset.Protocol != "" {
@@ -122,7 +113,7 @@ func ParseAssetItem(item map[string]interface{}, engine string) model.UnifiedAss
 	}
 	// Post-process: extract port from protocol field (e.g. "8081 http" → port=8081)
 	if asset.Port == 0 && asset.Protocol != "" {
-		if m := regexp.MustCompile(`(\d{1,5})`).FindStringSubmatch(asset.Protocol); len(m) > 1 {
+		if m := rePortNum.FindStringSubmatch(asset.Protocol); len(m) > 1 {
 			if p, err := strconv.Atoi(m[1]); err == nil && p > 0 && p < 65536 {
 				asset.Port = p
 			}
