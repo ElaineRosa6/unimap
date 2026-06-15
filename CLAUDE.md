@@ -203,8 +203,8 @@ go run -tags gui ./cmd/unimap-gui
 - ✅ 批量 URL 截图改为异步 job + progress 查询；无效/内网 URL 作为单条 failed 结果返回，不再拒绝整个批次。
 - ✅ 批量截图 Provider 增加逐项进度回调；CDP/Extension provider 均支持完成一条即更新 job 进度。
 - ✅ `main.js` API 请求统一走 `apiFetch`；CSV/JSON 导出基于完整结果数组，不再只导出当前 DOM 页。
-- ⏸ 仍剩长期项：L-05/TD-4 强类型渐进重构；L2 Hook 与 Quake/Shodan stealth 真机链路。
-- 📝 剩余长期项已补充评估与实施文档：`docs/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md` §7（TD-4/L2 Hook/stealth 总评估）与 `docs/EXTENSION_ANTI_SCRAPING_ARCHITECTURE.md` §11（Quake/Shodan stealth 执行方案）。
+- ⏸ 仍剩长期项：L-05/TD-4 强类型渐进重构；L2 Hook。
+- 📝 剩余长期项已补充评估与实施文档：`docs/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md` §7（TD-4/L2 Hook/stealth 总评估）与 `docs/EXTENSION_ANTI_SCRAPING_ARCHITECTURE.md` §11（stealth 执行方案）。
 
 ### 2026-06-11 安全与稳定性修复（19 项）
 - ✅ **CRITICAL** `batchJobStore.get()` → `getSnapshot()` 深拷贝，消除 progress handler 与后台 goroutine 数据竞争。
@@ -219,7 +219,7 @@ go run -tags gui ./cmd/unimap-gui
 - ✅ **P2** `cmd/unimap-web/main.go` 添加 `defer logger.Sync()`；`.dockerignore` 排除 `configs/config.yaml`。
 - ✅ 死代码清理：`updateProgress` 方法、TOCTOU nil guard。
 - ✅ 新增 5 个测试：batchJobStore cleanup、nil store、classify URLs、merge results、WS token rejection。
-- ⏸ 剩余：L-05/TD-4 强类型渐进重构；L2 Hook 与 Quake/Shodan stealth 真机链路。
+- ⏸ 剩余：L-05/TD-4 强类型渐进重构；L2 Hook。
 
 ### 2026-06-11 后续修复
 - ✅ 所有管理端点添加限流保护（cookies、CDP、bridge、nodes、scheduler、notifications、tamper、config、backup、user 等）。
@@ -238,7 +238,7 @@ go run -tags gui ./cmd/unimap-gui
 - ✅ **P1** Bridge 状态抖动修复：`liveWindowSeconds` 从 15 秒提高到 60 秒，覆盖扩展执行任务（10-25 秒）期间不轮询的场景。
 - ✅ **P1** Account 页 Token 复制修复：`GET /api/v1/account/admin-token` 返回真实 token（接口已受 auth 保护），不再返回 `maskAPIKey` 脱敏值。
 - ✅ 新增 7 个测试 + 修复 4 个已有测试适配新语义；`go test -race ./internal/screenshot/... ./web/...` 全部通过。
-- ⏸ 仍剩：新增引擎端到端未闭环（UI/凭据/cookie/浏览器链路）；L2 Hook；Quake/Shodan stealth。
+- ⏸ 仍剩：新增引擎端到端未闭环（UI/凭据/cookie/浏览器链路）；L2 Hook。
 
 ### 2026-06-12 TD-4/L-05 强类型重构 + 操作历史持久化
 - ✅ **TD-4/L-05** `map[string]interface{}` 强类型渐进重构 Phase 1-5 完成：799→227 处（减少 72%）
@@ -253,6 +253,41 @@ go run -tags gui ./cmd/unimap-gui
   - 支持多类型查询：query/icp_query/port_scan/screenshot/tamper_check
   - API: POST/GET/DELETE `/api/v1/history`
   - 前端自动保存查询结果，历史列表从 localStorage 迁移到服务端 API
+
+### 2026-06-15 Quake采集验证更新
+- ✅ **Quake采集成功**：URL格式修正后（`.cn`→`.net` + 参数补充），Extension采集成功（10 items, card_fallback方法）
+- ✅ **5引擎全部打通**：FOFA/ZoomEye/Shodan/Hunter/Quake均验证成功
+- ✅ **根因澄清**：Quake之前是URL格式过期，不是反爬拦截（手动查询正常证明账号权限）
+
+### 2026-06-15 ZoomEye选择器更新 + web包测试覆盖率提升
+- ✅ **ZoomEye DOM选择器更新**：根据保存的HTML页面分析，更新`capture.js`和`dom_selectors.go`中的ZoomEye选择器
+  - 旧：`table.table-condensed tbody tr` → 新：`div.search-result-item-container`
+  - IP提取：`span._public-hover_uxlu6_1` + `div.url-container span`
+  - 端口/协议：`div.protocol-port-box button`
+  - 分页：`li.ant-pagination-next:not(.ant-pagination-disabled) a`
+  - 总数：`li.ant-pagination-total-text span`
+- ✅ **ZoomEye WebOnly采集验证**：选择器更新后Extension采集成功（10条数据，字段提取正常）
+- ✅ **web包测试覆盖率**：42.6% → 54.6%（+12%），新增13个测试文件
+  - `login_handlers_test.go` — 12个测试
+  - `user_handlers_test.go` — 25个测试 + mockUserRepo
+  - `session_test.go` — 30+个测试（加密/session/CSRF）
+  - `config_handlers_test.go` — 15+个engine字段测试
+  - `http_helpers_extended_test.go` — 20+个测试
+  - `middleware_extended_test.go` — 25+个测试
+  - `notification_handlers_test.go` — 15+个测试
+  - `query_handlers_extended_test.go` — 8个测试
+  - `bridge_helpers_test.go` — 20+个测试（图片处理/路径构建）
+  - `server_helpers_extended_test.go` — 15+个测试（模板函数/配置）
+  - `cookie_helpers_extended_test.go` — 10+个测试
+  - `screenshot_bridge_mock_test.go` — 15+个测试
+  - `websocket_helpers_test.go` — 8个测试
+
+### 2026-06-15 截图SPA渲染时机修复
+- ✅ **Extension screenshot action 加 SPA 等待**：`background.js` 中 screenshot 和 collect action 都加 4000ms 等待
+- ✅ **Go Bridge 调用改用 `"spa"` 策略**：`router_extension.go` 中搜索结果页截图/采集/打开全部从 `"load"` 改为 `"spa"`（~8s 等待 vs ~3s）
+- ✅ **新增 Extension `collect_and_capture` action**：一次导航中同时完成数据采集+截图，避免分步调用导致的页面重载问题
+- ✅ **Go `CollectAndCaptureSearchEngineResult` 重构**：Extension 模式不再降级为分步调用，直接使用 `collect_and_capture` action
+- 问题根因：SPA 引擎（FOFA/Hunter/ZoomEye/Quake）搜索结果异步渲染，截图需等待 5-8 秒
 
 ## 常用命令
 

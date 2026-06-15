@@ -4,13 +4,20 @@ package model
 type CollectedDataItem struct {
 	IP          string         `json:"ip,omitempty"`
 	Port        int            `json:"port,omitempty"`
+	Protocol    string         `json:"protocol,omitempty"`
 	Host        string         `json:"host,omitempty"`
 	URL         string         `json:"url,omitempty"`
 	Title       string         `json:"title,omitempty"`
 	BodySnippet string         `json:"body_snippet,omitempty"`
 	Server      string         `json:"server,omitempty"`
 	StatusCode  int            `json:"status_code,omitempty"`
-	Protocol    string         `json:"protocol,omitempty"`
+	CountryCode string         `json:"country_code,omitempty"`
+	Region      string         `json:"region,omitempty"`
+	City        string         `json:"city,omitempty"`
+	ASN         string         `json:"asn,omitempty"`
+	Org         string         `json:"org,omitempty"`
+	ISP         string         `json:"isp,omitempty"`
+	Product     string         `json:"product,omitempty"`
 	Extra       map[string]any `json:"extra,omitempty"`
 }
 

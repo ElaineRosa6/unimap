@@ -250,3 +250,253 @@ func TestIsMaskedSecret(t *testing.T) {
 		}
 	}
 }
+
+func TestApplyEngineSections_NilConfig(t *testing.T) {
+	applyEngineSections(nil, map[string]interface{}{"fofa": map[string]interface{}{}})
+	// Should not panic
+}
+
+func TestApplyEngineSections_EmptyData(t *testing.T) {
+	cfg := &config.Config{}
+	applyEngineSections(cfg, map[string]interface{}{})
+	// Should not panic
+}
+
+func TestApplyEngineSections_InvalidEngineType(t *testing.T) {
+	cfg := &config.Config{}
+	applyEngineSections(cfg, map[string]interface{}{"fofa": "not-a-map"})
+	// Should not panic
+}
+
+func TestApplySingleEngineSection_Fofa(t *testing.T) {
+	cfg := &config.Config{}
+	eng := map[string]interface{}{
+		"enabled":    true,
+		"api_key":    "new-fofa-key",
+		"api_base_url": "https://fofa.example.com",
+		"email":      "test@example.com",
+		"qps":        float64(5),
+		"timeout":    float64(60),
+	}
+	applySingleEngineSection(cfg, "fofa", eng)
+	if !cfg.Engines.Fofa.Enabled {
+		t.Fatal("expected Fofa.Enabled=true")
+	}
+	if cfg.Engines.Fofa.APIKey != "new-fofa-key" {
+		t.Fatalf("expected Fofa.APIKey='new-fofa-key', got %q", cfg.Engines.Fofa.APIKey)
+	}
+	if cfg.Engines.Fofa.APIBaseURL != "https://fofa.example.com" {
+		t.Fatalf("expected Fofa.APIBaseURL='https://fofa.example.com', got %q", cfg.Engines.Fofa.APIBaseURL)
+	}
+	if cfg.Engines.Fofa.Email != "test@example.com" {
+		t.Fatalf("expected Fofa.Email='test@example.com', got %q", cfg.Engines.Fofa.Email)
+	}
+	if cfg.Engines.Fofa.QPS != 5 {
+		t.Fatalf("expected Fofa.QPS=5, got %d", cfg.Engines.Fofa.QPS)
+	}
+	if cfg.Engines.Fofa.Timeout != 60 {
+		t.Fatalf("expected Fofa.Timeout=60, got %d", cfg.Engines.Fofa.Timeout)
+	}
+}
+
+func TestApplySingleEngineSection_Hunter(t *testing.T) {
+	cfg := &config.Config{}
+	eng := map[string]interface{}{
+		"enabled":  true,
+		"api_key":  "new-hunter-key",
+		"base_url": "https://hunter.example.com",
+		"qps":      float64(3),
+		"timeout":  float64(45),
+	}
+	applySingleEngineSection(cfg, "hunter", eng)
+	if !cfg.Engines.Hunter.Enabled {
+		t.Fatal("expected Hunter.Enabled=true")
+	}
+	if cfg.Engines.Hunter.APIKey != "new-hunter-key" {
+		t.Fatalf("expected Hunter.APIKey='new-hunter-key', got %q", cfg.Engines.Hunter.APIKey)
+	}
+	if cfg.Engines.Hunter.BaseURL != "https://hunter.example.com" {
+		t.Fatalf("expected Hunter.BaseURL, got %q", cfg.Engines.Hunter.BaseURL)
+	}
+	if cfg.Engines.Hunter.QPS != 3 {
+		t.Fatalf("expected Hunter.QPS=3, got %d", cfg.Engines.Hunter.QPS)
+	}
+	if cfg.Engines.Hunter.Timeout != 45 {
+		t.Fatalf("expected Hunter.Timeout=45, got %d", cfg.Engines.Hunter.Timeout)
+	}
+}
+
+func TestApplySingleEngineSection_Zoomeye(t *testing.T) {
+	cfg := &config.Config{}
+	eng := map[string]interface{}{
+		"enabled":  true,
+		"api_key":  "new-zoomeye-key",
+		"base_url": "https://zoomeye.example.com",
+		"qps":      float64(2),
+		"timeout":  float64(30),
+	}
+	applySingleEngineSection(cfg, "zoomeye", eng)
+	if !cfg.Engines.Zoomeye.Enabled {
+		t.Fatal("expected Zoomeye.Enabled=true")
+	}
+	if cfg.Engines.Zoomeye.APIKey != "new-zoomeye-key" {
+		t.Fatalf("expected Zoomeye.APIKey='new-zoomeye-key', got %q", cfg.Engines.Zoomeye.APIKey)
+	}
+	if cfg.Engines.Zoomeye.BaseURL != "https://zoomeye.example.com" {
+		t.Fatalf("expected Zoomeye.BaseURL, got %q", cfg.Engines.Zoomeye.BaseURL)
+	}
+	if cfg.Engines.Zoomeye.QPS != 2 {
+		t.Fatalf("expected Zoomeye.QPS=2, got %d", cfg.Engines.Zoomeye.QPS)
+	}
+	if cfg.Engines.Zoomeye.Timeout != 30 {
+		t.Fatalf("expected Zoomeye.Timeout=30, got %d", cfg.Engines.Zoomeye.Timeout)
+	}
+}
+
+func TestApplySingleEngineSection_Quake(t *testing.T) {
+	cfg := &config.Config{}
+	eng := map[string]interface{}{
+		"enabled":  true,
+		"api_key":  "new-quake-key",
+		"base_url": "https://quake.example.com",
+		"qps":      float64(4),
+		"timeout":  float64(50),
+	}
+	applySingleEngineSection(cfg, "quake", eng)
+	if !cfg.Engines.Quake.Enabled {
+		t.Fatal("expected Quake.Enabled=true")
+	}
+	if cfg.Engines.Quake.APIKey != "new-quake-key" {
+		t.Fatalf("expected Quake.APIKey='new-quake-key', got %q", cfg.Engines.Quake.APIKey)
+	}
+	if cfg.Engines.Quake.BaseURL != "https://quake.example.com" {
+		t.Fatalf("expected Quake.BaseURL, got %q", cfg.Engines.Quake.BaseURL)
+	}
+	if cfg.Engines.Quake.QPS != 4 {
+		t.Fatalf("expected Quake.QPS=4, got %d", cfg.Engines.Quake.QPS)
+	}
+	if cfg.Engines.Quake.Timeout != 50 {
+		t.Fatalf("expected Quake.Timeout=50, got %d", cfg.Engines.Quake.Timeout)
+	}
+}
+
+func TestApplySingleEngineSection_Sholdan(t *testing.T) {
+	cfg := &config.Config{}
+	eng := map[string]interface{}{
+		"enabled":  true,
+		"api_key":  "new-shodan-key",
+		"base_url": "https://shodan.example.com",
+		"qps":      float64(1),
+	}
+	applySingleEngineSection(cfg, "shodan", eng)
+	if !cfg.Engines.Shodan.Enabled {
+		t.Fatal("expected Shodan.Enabled=true")
+	}
+	if cfg.Engines.Shodan.APIKey != "new-shodan-key" {
+		t.Fatalf("expected Shodan.APIKey='new-shodan-key', got %q", cfg.Engines.Shodan.APIKey)
+	}
+	if cfg.Engines.Shodan.BaseURL != "https://shodan.example.com" {
+		t.Fatalf("expected Shodan.BaseURL, got %q", cfg.Engines.Shodan.BaseURL)
+	}
+	if cfg.Engines.Shodan.QPS != 1 {
+		t.Fatalf("expected Shodan.QPS=1, got %d", cfg.Engines.Shodan.QPS)
+	}
+}
+
+func TestApplyFofaFields_MaskedKeyIgnored(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Engines.Fofa.APIKey = "original-key"
+	eng := map[string]interface{}{
+		"api_key": "abcd****efgh", // masked (4+****+4)
+	}
+	applyFofaFields(cfg, eng)
+	if cfg.Engines.Fofa.APIKey != "original-key" {
+		t.Fatalf("masked key should not overwrite, got %q", cfg.Engines.Fofa.APIKey)
+	}
+}
+
+func TestApplyFofaFields_EmptyKeyIgnored(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Engines.Fofa.APIKey = "original-key"
+	eng := map[string]interface{}{
+		"api_key": "",
+	}
+	applyFofaFields(cfg, eng)
+	if cfg.Engines.Fofa.APIKey != "original-key" {
+		t.Fatalf("empty key should not overwrite, got %q", cfg.Engines.Fofa.APIKey)
+	}
+}
+
+func TestApplyFofaFields_ZeroQPSIgnored(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Engines.Fofa.QPS = 5
+	eng := map[string]interface{}{
+		"qps": float64(0),
+	}
+	applyFofaFields(cfg, eng)
+	if cfg.Engines.Fofa.QPS != 5 {
+		t.Fatalf("zero QPS should not overwrite, got %d", cfg.Engines.Fofa.QPS)
+	}
+}
+
+func TestApplyEngineSections_AllEngines(t *testing.T) {
+	cfg := &config.Config{}
+	data := map[string]interface{}{
+		"fofa": map[string]interface{}{
+			"enabled": true,
+			"api_key": "fofa-key",
+		},
+		"hunter": map[string]interface{}{
+			"enabled": true,
+			"api_key": "hunter-key",
+		},
+		"zoomeye": map[string]interface{}{
+			"enabled": true,
+			"api_key": "zoomeye-key",
+		},
+		"quake": map[string]interface{}{
+			"enabled": true,
+			"api_key": "quake-key",
+		},
+		"shodan": map[string]interface{}{
+			"enabled": true,
+			"api_key": "shodan-key",
+		},
+	}
+	applyEngineSections(cfg, data)
+	if !cfg.Engines.Fofa.Enabled || cfg.Engines.Fofa.APIKey != "fofa-key" {
+		t.Fatal("fofa not applied correctly")
+	}
+	if !cfg.Engines.Hunter.Enabled || cfg.Engines.Hunter.APIKey != "hunter-key" {
+		t.Fatal("hunter not applied correctly")
+	}
+	if !cfg.Engines.Zoomeye.Enabled || cfg.Engines.Zoomeye.APIKey != "zoomeye-key" {
+		t.Fatal("zoomeye not applied correctly")
+	}
+	if !cfg.Engines.Quake.Enabled || cfg.Engines.Quake.APIKey != "quake-key" {
+		t.Fatal("quake not applied correctly")
+	}
+	if !cfg.Engines.Shodan.Enabled || cfg.Engines.Shodan.APIKey != "shodan-key" {
+		t.Fatal("shodan not applied correctly")
+	}
+}
+
+func TestApplySingleEngineSection_UnknownEngine(t *testing.T) {
+	cfg := &config.Config{}
+	eng := map[string]interface{}{"enabled": true}
+	applySingleEngineSection(cfg, "unknown_engine", eng)
+	// Should not panic, no effect
+}
+
+func TestApplyShodanFields_NoTimeout(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Engines.Shodan.Timeout = 30
+	eng := map[string]interface{}{
+		"timeout": float64(60),
+	}
+	applyShodanFields(cfg, eng)
+	// Shodan doesn't have timeout field - should not be changed
+	if cfg.Engines.Shodan.Timeout != 30 {
+		t.Fatalf("Shodan timeout should not change, got %d", cfg.Engines.Shodan.Timeout)
+	}
+}

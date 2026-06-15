@@ -1,6 +1,7 @@
 package collection
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -54,7 +55,35 @@ func ParseStructuredCollectedDataFromItems(items []model.CollectedDataItem, engi
 			BodySnippet: item.BodySnippet,
 			Server:      item.Server,
 			StatusCode:  item.StatusCode,
+			CountryCode: item.CountryCode,
+			Region:      item.Region,
+			City:        item.City,
+			ASN:         item.ASN,
+			Org:         item.Org,
+			ISP:         item.ISP,
 			Source:      engine,
+		}
+		// Post-process: extract port from host field (e.g. "1.2.3.4:8080" → port=8080)
+		if asset.Port == 0 && asset.Host != "" {
+			if idx := strings.LastIndex(asset.Host, ":"); idx > 0 {
+				if p, err := strconv.Atoi(asset.Host[idx+1:]); err == nil && p > 0 && p < 65536 {
+					asset.Port = p
+					asset.Host = asset.Host[:idx]
+				}
+			}
+		}
+		// Post-process: extract port from IP field (e.g. "1.2.3.4:443" → port=443)
+		if asset.Port == 0 && asset.IP != "" {
+			if idx := strings.LastIndex(asset.IP, ":"); idx > 0 {
+				if p, err := strconv.Atoi(asset.IP[idx+1:]); err == nil && p > 0 && p < 65536 {
+					asset.Port = p
+					asset.IP = asset.IP[:idx]
+				}
+			}
+		}
+		// Post-process: infer port from protocol if still missing
+		if asset.Port == 0 && asset.Protocol != "" {
+			asset.Port = defaultPortForProtocol(asset.Protocol)
 		}
 		assets = append(assets, asset)
 	}
@@ -79,6 +108,25 @@ func ParseAssetItem(item map[string]interface{}, engine string) model.UnifiedAss
 	}
 	if v, ok := item["host"].(string); ok {
 		asset.Host = v
+	}
+	// Post-process: extract port from host or IP if port is missing
+	if asset.Port == 0 {
+		asset.Port, asset.Host = extractPortFromHost(asset.Host)
+	}
+	if asset.Port == 0 {
+		asset.Port, asset.IP = extractPortFromHost(asset.IP)
+	}
+	// Post-process: extract port from protocol field (e.g. "8081 http" → port=8081)
+	if asset.Port == 0 && asset.Protocol != "" {
+		if m := regexp.MustCompile(`(\d{1,5})`).FindStringSubmatch(asset.Protocol); len(m) > 1 {
+			if p, err := strconv.Atoi(m[1]); err == nil && p > 0 && p < 65536 {
+				asset.Port = p
+			}
+		}
+	}
+	// Post-process: infer port from protocol name if still missing
+	if asset.Port == 0 && asset.Protocol != "" {
+		asset.Port = defaultPortForProtocol(asset.Protocol)
 	}
 	if v, ok := item["body_snippet"].(string); ok && v != "" {
 		asset.BodySnippet = v
@@ -139,6 +187,47 @@ func ExtractExtraFields(item map[string]interface{}) map[string]interface{} {
 		return nil
 	}
 	return extra
+}
+
+// extractPortFromHost extracts port from "host:port" string. Returns (port, cleanHost).
+func extractPortFromHost(s string) (int, string) {
+	if idx := strings.LastIndex(s, ":"); idx > 0 {
+		if p, err := strconv.Atoi(s[idx+1:]); err == nil && p > 0 && p < 65536 {
+			return p, s[:idx]
+		}
+	}
+	return 0, s
+}
+
+// defaultPortForProtocol returns the standard port for a protocol name.
+func defaultPortForProtocol(proto string) int {
+	switch strings.ToLower(strings.TrimSpace(proto)) {
+	case "http", "http/server":
+		return 80
+	case "https", "ssl/http", "http/ssl", "tls":
+		return 443
+	case "ssh":
+		return 22
+	case "ftp":
+		return 21
+	case "smtp", "smtps", "ssl/smtp", "smtp/ssl":
+		return 25
+	case "pop3", "pop3s", "ssl/pop3", "pop3/ssl":
+		return 110
+	case "imap", "imaps", "ssl/imap", "imap/ssl":
+		return 143
+	case "mysql":
+		return 3306
+	case "rdp", "ms-wbt-server":
+		return 3389
+	case "smb", "microsoft-ds":
+		return 445
+	case "dns":
+		return 53
+	case "redis":
+		return 6379
+	}
+	return 0
 }
 
 // ParseIntField extracts an int value from a map, supporting float64 and string types.
@@ -202,6 +291,17 @@ func ParseExtractedAssets(raw []map[string]interface{}, engine string) []model.U
 		a.StatusCode = ParseIntField(row, "status_code")
 		if v, ok := row["source"].(string); ok {
 			a.Source = v
+		}
+		// Post-process: extract port from host or IP if port is missing
+		if a.Port == 0 {
+			a.Port, a.Host = extractPortFromHost(a.Host)
+		}
+		if a.Port == 0 {
+			a.Port, a.IP = extractPortFromHost(a.IP)
+		}
+		// Post-process: infer port from protocol if still missing
+		if a.Port == 0 && a.Protocol != "" {
+			a.Port = defaultPortForProtocol(a.Protocol)
 		}
 		if a.IP == "" && a.Host == "" && a.URL == "" {
 			continue

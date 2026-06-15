@@ -101,7 +101,7 @@ async function handleTask(task, token) {
     await waitForPageReady(tabId, waitStrategy, effectiveTimeout);
 
     // Extra render wait for collect action (SPA search results take time to render)
-    if (action === "collect") {
+    if (action === "collect" || action === "screenshot") {
       await new Promise((resolve) => setTimeout(resolve, 4000));
     }
 
@@ -182,6 +182,39 @@ async function handleTask(task, token) {
       }
       const result = normalizeImagePayload(dataUrl, requestId, startedAt);
       await reportResult(result);
+    } else if (action === "collect_and_capture") {
+      // Combined: collect structured data + take screenshot in one navigation
+      const assets = await extractEngineAssets(tabId);
+
+      let captureDataUrl = null;
+      if (!assets.is_login_wall) {
+        await waitForCaptureSlot();
+        const tab = await chrome.tabs.get(tabId);
+        try {
+          captureDataUrl = await captureWithFocus(tabId, tab.windowId);
+        } catch (captureErr) {
+          await waitForCaptureSlot();
+          captureDataUrl = await captureWithFocus(tabId, tab.windowId);
+        }
+      }
+
+      const collectResult = normalizeCollectPayload(
+        assets.items, assets.title, requestId, startedAt
+      );
+
+      if (captureDataUrl) {
+        const imagePayload = normalizeImagePayload(captureDataUrl, requestId, startedAt);
+        collectResult.image_path = imagePayload.image_path || "";
+        collectResult.image_data = imagePayload.image_data || "";
+      }
+
+      if (result.structured_collected_data) {
+        collectResult.structured_collected_data.total = assets.total || assets.items.length;
+        collectResult.structured_collected_data.has_more = assets.has_more || false;
+        collectResult.structured_collected_data.engine = assets.engine || "unknown";
+      }
+
+      await reportResult(collectResult);
     }
 
     await saveRuntimeState({
