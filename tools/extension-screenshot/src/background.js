@@ -208,10 +208,16 @@ async function handleTask(task, token) {
         collectResult.image_data = imagePayload.image_data || "";
       }
 
-      if (result.structured_collected_data) {
+      if (collectResult.structured_collected_data) {
         collectResult.structured_collected_data.total = assets.total || assets.items.length;
         collectResult.structured_collected_data.has_more = assets.has_more || false;
         collectResult.structured_collected_data.engine = assets.engine || "unknown";
+        collectResult.structured_collected_data.extraction_method = assets.extraction_method || "unknown";
+        collectResult.structured_collected_data.row_selector_used = assets.row_selector_used || "";
+        collectResult.structured_collected_data.rows_found = assets.rows_found || 0;
+        if (assets.error) {
+          collectResult.structured_collected_data.extraction_error = assets.error;
+        }
       }
 
       await reportResult(collectResult);

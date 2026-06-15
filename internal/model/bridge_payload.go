@@ -25,6 +25,7 @@ type CollectedDataItem struct {
 type BridgeCollectedData struct {
 	Engine string              `json:"engine,omitempty"`
 	Total  int                 `json:"total,omitempty"`
+	HasMore bool              `json:"has_more,omitempty"`
 	Items  []CollectedDataItem `json:"items,omitempty"`
 	Extra  map[string]any      `json:"extra,omitempty"`
 }
