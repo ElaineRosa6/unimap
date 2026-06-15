@@ -14,16 +14,16 @@ type engineSelectors struct {
 // adjustment when engine frontends change.
 var selectorsByEngine = map[string]*engineSelectors{
 	"fofa": {
-		RowSelector:    "table.el-table__body tr.el-table__row",
+		RowSelector:    ".hsxa-meta-data-item",
 		ExtractJS:      extractFofaJS,
-		PaginationNext: "button.btn-next",
-		TotalSelector:  ".search-list-head span:first-child",
+		PaginationNext: "button.btn-next:not([disabled])",
+		TotalSelector:  "[class*='total']",
 	},
 	"hunter": {
-		RowSelector:    "table.table tbody tr",
+		RowSelector:    ".q-table tbody tr",
 		ExtractJS:      extractHunterJS,
-		PaginationNext: "li.next a",
-		TotalSelector:  ".pull-left.m-b span",
+		PaginationNext: ".q-pagination button:last-child:not([disabled])",
+		TotalSelector:  ".page-list-body_statistic",
 	},
 	"zoomeye": {
 		RowSelector:    "div.search-result-item-container",
@@ -32,9 +32,9 @@ var selectorsByEngine = map[string]*engineSelectors{
 		TotalSelector:  "li.ant-pagination-total-text span",
 	},
 	"quake": {
-		RowSelector:    "table tbody tr",
+		RowSelector:    ".item-container",
 		ExtractJS:      extractQuakeJS,
-		PaginationNext: "li.ant-pagination-next button",
+		PaginationNext: ".el-pagination__next:not([disabled]) button",
 		TotalSelector:  ".total-count",
 	},
 	"shodan": {
@@ -78,31 +78,46 @@ func getSelectors(engine string) *engineSelectors {
 
 const extractFofaJS = `
 (function() {
-  var rows = document.querySelectorAll('table.el-table__body tr.el-table__row');
+  var rows = document.querySelectorAll('.hsxa-meta-data-item');
   var assets = [];
   rows.forEach(function(row) {
-    var cells = row.querySelectorAll('td');
-    if (cells.length < 6) return;
     var asset = {};
-    var ipCell = cells[0].textContent.trim();
-    // FOFA column: "IP:Port" in first cell
-    var parts = ipCell.split(':');
-    asset.ip = parts[0] || '';
-    asset.port = parseInt(parts[1]) || 0;
-    asset.protocol = cells[1] ? cells[1].textContent.trim() : '';
-    asset.host = cells[2] ? cells[2].textContent.trim() : '';
-    asset.title = cells[3] ? cells[3].textContent.trim() : '';
-    asset.country = cells[4] ? cells[4].textContent.trim() : '';
-    asset.server = cells[5] ? cells[5].textContent.trim() : '';
+    // FOFA card layout: IP from .hsxa-host
+    var ipEl = row.querySelector('.hsxa-host');
+    if (ipEl) {
+      var ipText = ipEl.textContent.trim();
+      var parts = ipText.split(':');
+      asset.ip = parts[0] || '';
+      asset.port = parseInt(parts[1]) || 0;
+    }
+    // Port from qbase64 links
+    var portLink = row.querySelector("a[href*='qbase64=cG9ydD0']");
+    if (portLink) {
+      var m = portLink.textContent.trim().match(/(\d+)/);
+      if (m) asset.port = parseInt(m[1]);
+    }
+    // Protocol from qbase64 links
+    var protoLinks = row.querySelectorAll("a[href*='qbase64=']");
+    protoLinks.forEach(function(a) {
+      var text = a.textContent.trim().toLowerCase();
+      if (text === 'http' || text === 'https' || text === 'tcp') asset.protocol = text;
+    });
+    // Host, title, country, org from card fields
+    var fields = row.querySelectorAll('.hsxa-meta-data-item__field, [class*="field"]');
+    fields.forEach(function(f) {
+      var label = (f.querySelector('[class*="label"]') || {}).textContent || '';
+      var value = (f.querySelector('[class*="value"]') || f).textContent.trim();
+      if (label.includes('域名') || label.includes('host')) asset.host = value;
+      if (label.includes('标题') || label.includes('title')) asset.title = value;
+      if (label.includes('国家') || label.includes('country')) asset.country = value;
+      if (label.includes('组织') || label.includes('org')) asset.org = value;
+    });
     asset.source = 'fofa';
-    assets.push(asset);
+    if (asset.ip || asset.host) assets.push(asset);
   });
-  var totalText = document.querySelector('.search-list-head span:first-child');
+  var totalEl = document.querySelector('[class*="total"]');
   var total = 0;
-  if (totalText) {
-    var m = totalText.textContent.match(/(\d+)/);
-    if (m) total = parseInt(m[1]);
-  }
+  if (totalEl) { var m = totalEl.textContent.match(/(\d[\d,]*)/); if (m) total = parseInt(m[0].replace(/,/g, '')); }
   var hasNext = !!document.querySelector('button.btn-next:not([disabled])');
   return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
 })()
@@ -110,29 +125,39 @@ const extractFofaJS = `
 
 const extractHunterJS = `
 (function() {
-  var rows = document.querySelectorAll('table.table tbody tr');
+  var rows = document.querySelectorAll('.q-table tbody tr');
   var assets = [];
+  // Hunter stores data in .q-tooltip spans inside cells
+  var allTips = Array.from(document.querySelectorAll('.q-tooltip'));
   rows.forEach(function(row) {
     var cells = row.querySelectorAll('td');
-    if (cells.length < 6) return;
+    if (cells.length < 5) return;
     var asset = {};
-    asset.ip = cells[0] ? cells[0].textContent.trim() : '';
-    asset.port = parseInt(cells[1] ? cells[1].textContent.trim() : '0') || 0;
-    asset.protocol = cells[2] ? cells[2].textContent.trim() : '';
-    asset.host = cells[3] ? cells[3].textContent.trim() : '';
-    asset.title = cells[4] ? cells[4].textContent.trim() : '';
-    asset.country = cells[5] ? cells[5].textContent.trim() : '';
-    asset.server = cells[6] ? cells[6].textContent.trim() : '';
+    // Column mapping: 1=序号, 2=IP, 3=域名, 4=端口/服务, 5=标题, 6=状态码, 7=ICP, 8=应用
+    function getCellText(idx) {
+      if (idx >= cells.length) return '';
+      var cell = cells[idx];
+      var tips = cell.querySelectorAll('.q-tooltip');
+      for (var i = 0; i < tips.length; i++) {
+        var t = tips[i].textContent.trim();
+        if (t && !t.includes('只看') && !t.includes('不看')) return t;
+      }
+      return cell.textContent.trim().replace(/只看[^\s]*/g, '').replace(/不看[^\s]*/g, '').trim();
+    }
+    asset.ip = getCellText(1);
+    asset.host = getCellText(2);
+    var portText = getCellText(3);
+    var pm = portText.match(/(\d+)/);
+    if (pm) asset.port = parseInt(pm[1]);
+    asset.protocol = portText.replace(/\d+/g, '').trim();
+    asset.title = getCellText(4);
     asset.source = 'hunter';
-    assets.push(asset);
+    if (asset.ip || asset.host) assets.push(asset);
   });
-  var totalText = document.querySelector('.pull-left.m-b span');
+  var totalEl = document.querySelector('.page-list-body_statistic');
   var total = 0;
-  if (totalText) {
-    var m = totalText.textContent.match(/(\d+)/);
-    if (m) total = parseInt(m[1]);
-  }
-  var hasNext = !!document.querySelector('li.next:not(.disabled) a');
+  if (totalEl) { var m = totalEl.textContent.match(/(\d[\d,]*)/); if (m) total = parseInt(m[0].replace(/,/g, '')); }
+  var hasNext = !!document.querySelector('.q-pagination button:last-child:not([disabled])');
   return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
 })()
 `
@@ -199,24 +224,40 @@ const extractZoomEyeJS = `
 
 const extractQuakeJS = `
 (function() {
-  var rows = document.querySelectorAll('table tbody tr');
+  var containers = document.querySelectorAll('.item-container');
   var assets = [];
-  rows.forEach(function(row) {
-    var cells = row.querySelectorAll('td');
-    if (cells.length < 6) return;
+  containers.forEach(function(container) {
     var asset = {};
-    asset.ip = cells[0] ? cells[0].textContent.trim() : '';
-    asset.port = parseInt(cells[1] ? cells[1].textContent.trim() : '0') || 0;
-    asset.protocol = cells[2] ? cells[2].textContent.trim() : '';
-    asset.host = cells[3] ? cells[3].textContent.trim() : '';
-    asset.title = cells[4] ? cells[4].textContent.trim() : '';
-    asset.country = cells[5] ? cells[5].textContent.trim() : '';
-    asset.server = cells[6] ? cells[6].textContent.trim() : '';
+    // IP from div.ip span.copy_btn data-clipboard-text
+    var copyBtn = container.querySelector('div.ip span.copy_btn, [data-clipboard-text]');
+    if (copyBtn) {
+      var clipText = copyBtn.getAttribute('data-clipboard-text') || '';
+      var parts = clipText.split(':');
+      asset.ip = parts[0] || '';
+      if (parts.length > 1) asset.port = parseInt(parts[1]) || 0;
+    }
+    // Port from span.port
+    var portEl = container.querySelector('span.port');
+    if (portEl) {
+      var p = parseInt(portEl.textContent.trim());
+      if (p > 0) asset.port = p;
+    }
+    // Protocol from span.server-protocol
+    var protoEl = container.querySelector('span.server-protocol');
+    if (protoEl) asset.protocol = protoEl.textContent.trim();
+    // Title from .title-line span.ellipse-text
+    var titleEl = container.querySelector('.title-line span.ellipse-text');
+    if (titleEl) asset.title = titleEl.textContent.trim();
+    // Country from .country-container .address
+    var countryEl = container.querySelector('.country-container .address');
+    if (countryEl) asset.country = countryEl.textContent.trim();
     asset.source = 'quake';
-    assets.push(asset);
+    if (asset.ip || asset.host) assets.push(asset);
   });
+  var totalEl = document.querySelector('.total-count');
   var total = 0;
-  var hasNext = !!document.querySelector('li.ant-pagination-next:not(.ant-pagination-disabled) button');
+  if (totalEl) { var m = totalEl.textContent.match(/(\d[\d,]*)/); if (m) total = parseInt(m[0].replace(/,/g, '')); }
+  var hasNext = !!document.querySelector('.el-pagination__next:not([disabled]) button');
   return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
 })()
 `
