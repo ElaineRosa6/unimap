@@ -305,3 +305,54 @@ func ParseExtractedAssets(raw []map[string]interface{}, engine string) []model.U
 	}
 	return assets
 }
+
+// CleanHunterFields fixes common Hunter DOM extraction artifacts.
+// Called after parsing to normalize country, title, and host fields.
+func CleanHunterFields(assets []model.UnifiedAsset) {
+	for i := range assets {
+		a := &assets[i]
+		// Country: Chinese city/province names → "中国"
+		if a.CountryCode != "" {
+			cc := a.CountryCode
+			if strings.ContainsAny(cc, "省市县区镇") || isPureChinese(cc) {
+				a.CountryCode = "中国"
+			}
+		}
+		// Host: remove UI filter artifacts
+		if a.Host != "" {
+			h := a.Host
+			h = strings.ReplaceAll(h, "不看空域名", "")
+			h = strings.ReplaceAll(h, "-", "")
+			h = strings.TrimSpace(h)
+			if h == "" || h == a.IP {
+				a.Host = ""
+			} else {
+				a.Host = h
+			}
+		}
+		// Title: strip trailing category labels
+		if a.Title != "" {
+			t := a.Title
+			for _, label := range []string{"企业", "个人", "开源", "政府", "金融", "邮件", "办公", "系统"} {
+				if idx := strings.Index(t, label); idx > 0 {
+					t = t[:idx]
+				}
+			}
+			t = strings.ReplaceAll(t, "-", "")
+			t = strings.TrimSpace(t)
+			a.Title = t
+		}
+	}
+}
+
+func isPureChinese(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for _, r := range s {
+		if r < 0x4e00 || r > 0x9fa5 {
+			return false
+		}
+	}
+	return true
+}
