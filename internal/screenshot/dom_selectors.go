@@ -111,6 +111,7 @@ const extractFofaJS = `
       if (label.includes('标题') || label.includes('title')) asset.title = value;
       if (label.includes('国家') || label.includes('country')) asset.country = value;
       if (label.includes('组织') || label.includes('org')) asset.org = value;
+      if (label.includes('Server') || label.includes('server')) asset.server = value;
     });
     asset.source = 'fofa';
     if (asset.ip || asset.host) assets.push(asset);
@@ -127,8 +128,6 @@ const extractHunterJS = `
 (function() {
   var rows = document.querySelectorAll('.q-table tbody tr');
   var assets = [];
-  // Hunter stores data in .q-tooltip spans inside cells
-  var allTips = Array.from(document.querySelectorAll('.q-tooltip'));
   rows.forEach(function(row) {
     var cells = row.querySelectorAll('td');
     if (cells.length < 5) return;
@@ -251,6 +250,15 @@ const extractQuakeJS = `
     // Country from .country-container .address
     var countryEl = container.querySelector('.country-container .address');
     if (countryEl) asset.country = countryEl.textContent.trim();
+    // Host from .item span.label matching "host" + sibling .ellipse-text
+    var items = container.querySelectorAll('.item');
+    items.forEach(function(item) {
+      var label = item.querySelector('.label');
+      if (label && /host|domain/i.test(label.textContent)) {
+        var val = item.querySelector('.ellipse-text');
+        if (val) asset.host = val.textContent.trim();
+      }
+    });
     asset.source = 'quake';
     if (asset.ip || asset.host) assets.push(asset);
   });

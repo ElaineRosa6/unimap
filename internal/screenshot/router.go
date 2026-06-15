@@ -390,6 +390,10 @@ func (r *ScreenshotRouter) CollectAndCaptureSearchEngineResult(ctx context.Conte
 		}
 		return nil, "", fmt.Errorf("%s", errMsg)
 	}
+	// Detect login wall from structured data
+	if isLoginWallDetected(result) {
+		return nil, "", fmt.Errorf("login wall detected on %s", engine)
+	}
 	// Parse collected data
 	var collected []collection.CollectResult
 	if result.StructuredCollectedData != nil {
