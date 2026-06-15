@@ -697,14 +697,16 @@ export async function extractEngineAssets(tabId) {
           const idx = parseInt(match[1], 10) - 1;
           if (idx < 0 || idx >= cells.length) return "";
           const target = cells[idx];
-          // Use .cell wrapper if present (Quasar UI structure)
-          const cellDiv = target.querySelector(".cell");
-          let text = cellDiv ? cellDiv.textContent.trim() : target.textContent.trim();
-          // Clean Hunter UI filter labels
-          text = cleanHunterText(text);
-          // Remove standalone "-" artifacts
-          if (text === "-" || text === "—") text = "";
-          return text;
+          // Try all span elements first
+          const allSpans = target.querySelectorAll("span");
+          for (const sp of allSpans) {
+            const text = (sp.textContent || "").trim();
+            if (text && text !== "-" && text.length < 80 && !/只看|不看/.test(text)) {
+              return text;
+            }
+          }
+          // Fallback: raw cell text
+          return target.textContent.trim();
         }
 
         function fallbackExtraction() {
