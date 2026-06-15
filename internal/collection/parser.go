@@ -39,7 +39,7 @@ func ParseStructuredCollectedData(data map[string]interface{}, engine string) ([
 }
 
 // ParseStructuredCollectedDataFromItems extracts assets from typed CollectedDataItem slice.
-func ParseStructuredCollectedDataFromItems(items []model.CollectedDataItem, engine string) ([]model.UnifiedAsset, int, bool) {
+func ParseStructuredCollectedDataFromItems(items []model.CollectedDataItem, engine string, hasMore bool) ([]model.UnifiedAsset, int, bool) {
 	if len(items) == 0 {
 		return []model.UnifiedAsset{}, 0, false
 	}
@@ -62,6 +62,10 @@ func ParseStructuredCollectedDataFromItems(items []model.CollectedDataItem, engi
 			Org:         item.Org,
 			ISP:         item.ISP,
 			Source:      engine,
+		}
+		// Map Product to Title when Title is empty (e.g. Hunter engine)
+		if asset.Title == "" && item.Product != "" {
+			asset.Title = item.Product
 		}
 		// Post-process: extract port from host field (e.g. "1.2.3.4:8080" → port=8080)
 		if asset.Port == 0 && asset.Host != "" {
@@ -87,7 +91,7 @@ func ParseStructuredCollectedDataFromItems(items []model.CollectedDataItem, engi
 		}
 		assets = append(assets, asset)
 	}
-	return assets, len(items), false
+	return assets, len(items), hasMore
 }
 
 // ParseAssetItem converts a single item map into a UnifiedAsset.

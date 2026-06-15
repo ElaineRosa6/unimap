@@ -310,7 +310,7 @@ func (p *ExtensionProvider) handleLoginWallResult(cr collection.CollectResult, r
 	cr.LoginRequired = true
 	metrics.IncBrowserLoginRequired(engine)
 	if result.StructuredCollectedData != nil {
-		cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(result.StructuredCollectedData.Items, engine)
+		cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(result.StructuredCollectedData.Items, engine, result.StructuredCollectedData.HasMore)
 		if result.StructuredCollectedData.Extra != nil {
 			if title, ok := result.StructuredCollectedData.Extra["title"].(string); ok && title != "" {
 				cr.Title = title
@@ -341,7 +341,7 @@ func (p *ExtensionProvider) populateCollectResultFromBridge(cr *collection.Colle
 		return
 	}
 	data := result.StructuredCollectedData
-	cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(data.Items, engine)
+	cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(data.Items, engine, data.HasMore)
 	if data.Extra != nil {
 		if title, ok := data.Extra["title"].(string); ok && title != "" {
 			cr.Title = title

@@ -10,7 +10,6 @@ import (
 
 	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/logger"
-	"github.com/unimap/project/internal/model"
 )
 
 // ScreenshotMode represents the active screenshot capture mode.
@@ -395,21 +394,11 @@ func (r *ScreenshotRouter) CollectAndCaptureSearchEngineResult(ctx context.Conte
 	var collected []collection.CollectResult
 	if result.StructuredCollectedData != nil {
 		cr := collection.CollectResult{
-			Engine:  engine,
-			Total:   result.StructuredCollectedData.Total,
-			HasMore: len(result.StructuredCollectedData.Items) > 0,
+			Engine: engine,
 		}
-		for _, item := range result.StructuredCollectedData.Items {
-			asset := model.UnifiedAsset{Source: engine}
-			asset.IP = item.IP
-			asset.Port = item.Port
-			asset.Host = item.Host
-			asset.Title = item.Title
-			asset.BodySnippet = item.BodySnippet
-			asset.Server = item.Server
-			asset.CountryCode = item.CountryCode
-			cr.Assets = append(cr.Assets, asset)
-		}
+		cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(
+			result.StructuredCollectedData.Items, engine, result.StructuredCollectedData.HasMore,
+		)
 		collected = append(collected, cr)
 	}
 	return collected, result.ImagePath, nil
