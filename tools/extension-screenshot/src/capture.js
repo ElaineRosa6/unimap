@@ -582,17 +582,6 @@ export async function extractEngineAssets(tabId) {
           return text;
         }
 
-        // Global tooltip scan: ALL .q-tooltip in document (include hidden for position matching)
-        const allTips = Array.from(document.querySelectorAll(".q-tooltip"));
-        const tipData = []; // [{top, bottom, text}]
-        allTips.forEach(tip => {
-          const text = tip.textContent.trim();
-          if (!text || text.includes("只看") || text.includes("不看") || text.length > 50) return;
-          const rect = tip.getBoundingClientRect();
-          // Include tooltips even if height=0 (Quasar may hide them)
-          tipData.push({ top: rect.top || 0, bottom: rect.bottom || rect.top || 0, text });
-        });
-
         // Extract data from each row/card
         rows.forEach((row) => {
           const cells = row.querySelectorAll("td");
@@ -605,17 +594,6 @@ export async function extractEngineAssets(tabId) {
               const cfg = cellConfig[key];
               item[key] = extractCellTextFromCells(cells, cfg);
             });
-            // Fill from global tooltips: find tooltips whose vertical range overlaps this row
-            const rowRect = row.getBoundingClientRect();
-            if (rowRect.height > 0) {
-              for (const tip of tipData) {
-                // Check if tooltip vertical range overlaps row vertical range
-                if (tip.bottom >= rowRect.top && tip.top <= rowRect.bottom) {
-                  if (!item.status_code && /^\d{3}$/.test(tip.text)) item.status_code = parseInt(tip.text, 10);
-                  if (!item.country_code && /[\u4e00-\u9fa5]{2,}/.test(tip.text) && tip.text.length < 15) item.country_code = tip.text;
-                }
-              }
-            }
           } else {
             // Card/div-based layout: extract by selectors
             Object.keys(cellConfig).forEach((key) => {
@@ -719,24 +697,14 @@ export async function extractEngineAssets(tabId) {
           const idx = parseInt(match[1], 10) - 1;
           if (idx < 0 || idx >= cells.length) return "";
           const target = cells[idx];
-          // Hunter stores data in .q-tooltip spans inside cells
-          const tooltips = target.querySelectorAll(".q-tooltip");
-          for (const tip of tooltips) {
-            const text = (tip.textContent || "").trim();
-            if (text && !text.includes("只看") && !text.includes("不看")) {
-              return text;
-            }
-          }
-          // Fallback: try all span elements (for non-tooltip columns)
-          const allSpans = target.querySelectorAll("span");
-          for (const sp of allSpans) {
-            const text = (sp.textContent || "").trim();
-            if (text && !text.includes("只看") && !text.includes("不看") && text !== "-" && text.length < 50) {
-              return text;
-            }
-          }
-          // Last resort: raw cell text
-          return target.textContent.trim();
+          // Use .cell wrapper if present (Quasar UI structure)
+          const cellDiv = target.querySelector(".cell");
+          let text = cellDiv ? cellDiv.textContent.trim() : target.textContent.trim();
+          // Clean Hunter UI filter labels
+          text = cleanHunterText(text);
+          // Remove standalone "-" artifacts
+          if (text === "-" || text === "—") text = "";
+          return text;
         }
 
         function fallbackExtraction() {
