@@ -199,6 +199,29 @@ go run -tags gui ./cmd/unimap-gui
 7. ~~**L-01** 错误消息大写~~ ✅ 已修复（2 处非缩写词改为小写，其余 21 处为 HTTP/API/ICP 等缩写词可接受）
 8. ~~**L-05** `map[string]interface{}` 强类型~~ ✅ 已完成 Phase 1-5（799→227，减少 72%），剩余为低优先级 Web 响应负载和测试文件
 
+### 2026-06-16 全量问题核实（13 项）
+
+#### Critical（1 项）
+1. **截图未登录状态** — Extension 通过 `chrome.tabs.create` 打开新标签页，未继承用户已登录的 session cookies。FOFA/Hunter 截图均显示未登录页面。
+
+#### High（4 项）
+2. **Hunter country_code 为城市名** — 浏览器采集返回 "成都市" 而非 "中国"。Go 端 `CleanHunterFields` 已实现但未在 `browserCollectedData` 路径触发。
+3. **Hunter title 含分类标签** — "Dovecot imapd企业办公 邮件系统..." 应截断。
+4. **Hunter host 含 UI 噪声** — "不看空域名 -" 应清理。
+5. **CleanHunterFields 调用链断裂** — `router_extension.go:315,349` 已调用，但 `browserCollectedData` 路径可能绕过。
+
+#### Medium（5 项）
+6. **653 处 `map[string]interface{}`** — 含测试文件（~293）、Web 响应（~80）、collection/parser（~80）等。
+7. **新引擎端到端未闭环** — Censys/DayDayMap/Onyphe/GreyNoise 适配器代码存在，但 Extension DOM 选择器缺失、UI 未暴露。
+8. **L2 Hook 设计冻结** — 仅当 L1/L3 telemetry 证明收益时启动。
+9. **web/ flaky test** — `TestClassifyBatchURLsPreservesOriginalIndices` 并行端口冲突。
+10. **定时任务缺少简易定时功能** — 只支持 cron 循环，无一次性/延迟/指定时间执行。
+
+#### Low（3 项）
+11. **countGoroutines() 空桩** — `router_test.go:400` 硬编码 `return 0`。
+12. **ZoomEye 哈希 CSS class** — `span._public-hover_uxlu6_1` 前端改版即失效。
+13. **extractPortFromHost IPv6 边界** — `LastIndex(":")` 对 IPv6 地址错误解析。
+
 ### 2026-06-10 复核记录
 - ✅ 批量 URL 截图改为异步 job + progress 查询；无效/内网 URL 作为单条 failed 结果返回，不再拒绝整个批次。
 - ✅ 批量截图 Provider 增加逐项进度回调；CDP/Extension provider 均支持完成一条即更新 job 进度。
