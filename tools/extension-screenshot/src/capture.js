@@ -643,6 +643,23 @@ export async function extractEngineAssets(tabId) {
             if (pm) item.port = parseInt(pm[1], 10);
           }
 
+          // Hunter-specific: protocol may contain port number (e.g. "8081 http")
+          // Extract only the known protocol name
+          if (eng === "hunter" && item.protocol) {
+            const protoMatch = String(item.protocol).match(/\b(http|https|tcp|udp|ssh|ftp|smtp|pop3|imap|mysql|rdp|smb|dns)\b/i);
+            if (protoMatch) {
+              item.protocol = protoMatch[1].toLowerCase();
+            } else if (/^\d+$/.test(String(item.protocol))) {
+              item.protocol = ""; // Pure port number, not a protocol
+            }
+          }
+
+          // Hunter-specific: title may contain component info after actual title
+          if (eng === "hunter" && item.title) {
+            const titleParts = String(item.title).split(/\s+(?:企业|个人|开源|政府|金融)/);
+            item.title = titleParts[0].replace(/-/g, "").trim();
+          }
+
           // Post-fix: if ip is empty but host contains IP, move it
           if (!item.ip && item.host) {
             const m = String(item.host).match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
@@ -697,16 +714,16 @@ export async function extractEngineAssets(tabId) {
           const idx = parseInt(match[1], 10) - 1;
           if (idx < 0 || idx >= cells.length) return "";
           const target = cells[idx];
-          // Try all span elements first
-          const allSpans = target.querySelectorAll("span");
-          for (const sp of allSpans) {
-            const text = (sp.textContent || "").trim();
-            if (text && text !== "-" && text.length < 80 && !/只看|不看/.test(text)) {
-              return text;
-            }
-          }
-          // Fallback: raw cell text
-          return target.textContent.trim();
+          // Get raw cell text, remove UI artifacts
+          let text = target.textContent.trim();
+          text = text.replace(/只看该[^\s]*/g, "").replace(/不看该[^\s]*/g, "");
+          text = text.replace(/只看空[^\s]*/g, "").replace(/不看空[^\s]*/g, "");
+          text = text.replace(/看相似[^\s]*/g, "").replace(/访问[^\s]*/g, "");
+          text = text.replace(/复制[^\s]*/g, "").replace(/云厂商/g, "");
+          text = text.replace(/高危|中危|低危/g, "");
+          text = text.replace(/\s+/g, " ").trim();
+          if (text === "-" || text === "—") text = "";
+          return text;
         }
 
         function fallbackExtraction() {
