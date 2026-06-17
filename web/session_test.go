@@ -346,12 +346,11 @@ func TestSessionRevocationStore_Cleanup(t *testing.T) {
 }
 
 func TestSessionRevocationStore_StopIdempotent(t *testing.T) {
-	// Stop() calls close(s.stopCh) which panics on double-close.
-	// This is expected - callers should only call Stop once.
-	// We just verify Stop works once without panic.
+	// Stop() uses sync.Once to safely close the stopCh.
+	// Calling Stop multiple times should not panic.
 	store := newSessionRevocationStore()
 	store.Stop()
-	// Don't call Stop again - it would panic
+	store.Stop() // second call should be a no-op
 }
 
 func TestSetSessionCookieForUser_SetsRevocationStore(t *testing.T) {

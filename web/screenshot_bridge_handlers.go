@@ -204,9 +204,9 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		ErrorCode               string                 `json:"error_code"`
 		DurationMs              int64                  `json:"duration_ms"`
 	}
-	if err := decodeJSONReader(bytes.NewReader(rawBody), &req); err != nil {
+	if err := json.Unmarshal(rawBody, &req); err != nil {
 		s.setBridgeLastError("invalid_bridge_result: invalid bridge result payload")
-		writeAPIError(w, http.StatusBadRequest, "invalid_bridge_result", "invalid bridge result payload", nil)
+		writeAPIError(w, http.StatusBadRequest, "invalid_bridge_result", "invalid bridge result payload", err.Error())
 		return
 	}
 	if strings.TrimSpace(req.RequestID) == "" {

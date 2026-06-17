@@ -48,6 +48,31 @@ tmp/
 *.xlsx
 # *.json  # Commented out to allow examples/*.json
 
+# Debug / test-capture output (engine collection snapshots)
+test_hunter*.json
+test_*_verify*.json
+*_verify.json
+*_verify2.json
+web_cover
+
+# Credentials
+cookies.txt
+# Audit output (may contain generated secrets, e.g. first-admin password)
+.audit-results/
+
+# Browser "Save Page As" snapshots (html + paired _files/ dir)
+132.232.231.41.html
+132.232.231.41_files/
+port=_*_*.html
+port=_*_files/
+测试*.html
+测试*_files/
+360网络空间测绘*.html
+360网络空间测绘*_files/
+网络空间测绘*.html
+网络空间测绘*_files/
+*_files/
+
 # Archived historical documents
 archive/
 

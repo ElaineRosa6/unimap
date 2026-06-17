@@ -73,6 +73,14 @@ func (s *Server) handleMonitorPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handlePortScanPage(w http.ResponseWriter, r *http.Request) {
+	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "port-scan.html", map[string]interface{}{
+		"staticVersion": s.staticVersion,
+	}) {
+		return
+	}
+}
+
 // handleImportURLs 处理URL文件导入
 func (s *Server) handleImportURLs(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {

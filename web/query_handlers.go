@@ -9,13 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 )
 
-// stableEngines 前端展示的稳定引擎列表（新引擎完善后再开放）
+// stableEngines 前端展示的稳定引擎列表。新引擎（censys/daydaymap/binaryedge/onyphe/greynoise）代码保留，API Key 验证通过后补充到此列表即可启用。
 var stableEngines = map[string]bool{
 	"fofa": true, "hunter": true, "zoomeye": true, "quake": true, "shodan": true,
 }
@@ -69,6 +70,10 @@ func (s *Server) browserQueryProvider() screenshot.Provider {
 }
 
 func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string, explicitErrors ...string) map[string]interface{} {
+	for i := range browserOutcome.CollectedResults {
+		collection.NormalizeAssets(browserOutcome.CollectedResults[i].Engine, browserOutcome.CollectedResults[i].Assets)
+	}
+
 	// Build set of engines that browser query successfully handled
 	browserOK := make(map[string]bool)
 	for _, e := range browserOutcome.OpenedEngines {
@@ -253,7 +258,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	engines := parseEnginesParam(r)
 	if len(engines) == 0 {
 		// 如果没有选择引擎，使用默认引擎
-		defaultEngines := s.orchestrator.ListAdapters()
+		defaultEngines := filterStableEngines(s.orchestrator.ListAdapters())
 		if len(defaultEngines) > 0 {
 			engines = []string{defaultEngines[0]}
 		}
@@ -322,7 +327,7 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 
 // handleQuota 处理配额页面请求
 func (s *Server) handleQuota(w http.ResponseWriter, r *http.Request) {
-	engines := s.orchestrator.ListAdapters()
+	engines := filterStableEngines(s.orchestrator.ListAdapters())
 	quotaInfo, errorInfo := s.fetchEngineQuotas(engines)
 	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "quota.html", map[string]interface{}{
 		"engines": engines, "quotaInfo": quotaInfo, "errorInfo": errorInfo, "staticVersion": s.staticVersion,
@@ -387,11 +392,15 @@ func (s *Server) fetchEngineQuotas(engines []string) (map[string]*model.QuotaInf
 
 func truncateQuotaError(msg string) string {
 	msg = strings.TrimSpace(msg)
-	if msg == "" { return "failed to fetch quota" }
+	if msg == "" {
+		return "failed to fetch quota"
+	}
 	if len(msg) > 120 {
 		lines := strings.SplitN(msg, "\n", 2)
 		short := strings.TrimSpace(lines[0])
-		if len(short) > 120 { short = short[:120] + "..." }
+		if len(short) > 120 {
+			short = short[:120] + "..."
+		}
 		return short
 	}
 	return msg
@@ -462,12 +471,29 @@ func (s *Server) handleGetAdminToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := s.adminToken()
+	// When auth is disabled there is no admin token and no auth model in play;
+	// preserve the legacy behavior of returning an empty token (no escalation risk).
 	if token == "" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"success": true,
 			"token":   "",
 		})
 		return
+	}
+	// P0 fix (FINDING-001): a real admin token grants synthetic-admin (userID=-1)
+	// that bypasses all role checks. Returning it in plaintext to any logged-in
+	// user allowed vertical privilege escalation (normal user → super admin).
+	//
+	// Authorized identities:
+	//   - adminSyntheticUserID (-1): request authenticated via X-Admin-Token
+	//   - userID == 0: legacy single-user mode (config admin account, no user DB)
+	// Only multi-user DB users must be checked for the admin role.
+	uid := currentUserID(r)
+	if uid > 0 {
+		if ok, reason := s.requireAdmin(r); !ok {
+			writeAPIError(w, http.StatusForbidden, "forbidden", reason, nil)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,

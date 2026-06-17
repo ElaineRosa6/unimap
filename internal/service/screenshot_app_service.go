@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/screenshot"
 )
@@ -175,6 +176,7 @@ func (s *ScreenshotAppService) CaptureSearchEngineResultWithProxy(ctx context.Co
 		if !cfg.fallbackToCDP {
 			return "", "", "", "", bridgeErr
 		}
+		logger.Warnf("Extension bridge failed for %s:%s, falling back to CDP: %v", engine, queryID, bridgeErr)
 		metrics.IncBridgeFallback("extension_to_cdp")
 	}
 
@@ -220,6 +222,7 @@ func (s *ScreenshotAppService) CaptureTargetWebsiteWithProxy(ctx context.Context
 		if !cfg.fallbackToCDP {
 			return "", "", "", "", "", "", bridgeErr
 		}
+		logger.Warnf("Extension bridge failed for target %s, falling back to CDP: %v", targetURL, bridgeErr)
 		metrics.IncBridgeFallback("extension_to_cdp")
 	}
 
