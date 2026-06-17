@@ -26,6 +26,11 @@
 - **API 路径前缀是 `/api/v1/`**
 - **Hunter 429 不重试是设计决策**
 - **map→struct 迁移必须 grep JSON tag 冲突**
+- **`style.display=''` 陷阱**：只在元素无隐藏 class 时才显示。有 `hidden-init`（`display:none`）等 class 时必须用 `display='block'`/`'inline-block'`，否则 class 接管元素仍隐藏（2026-06-18 通知表单/飞书字段 bug 根因）
+- **`sync.Once.Do` 覆盖陷阱**：Once 闭包无论变量是否已赋值都会执行，会覆盖之前的 `SetXxxConfig`。懒加载默认值前必须检查 `if globalVar == nil`（2026-06-18 限流 60→300/min bug 根因）
+- **CSP 拦截 innerHTML 内联 handler**：`script-src 'self' 'nonce-xxx'`（无 `unsafe-inline`）不仅拦截 HTML 里的 `onclick=`，也拦截 innerHTML 字符串里的。动态元素必须用 `addEventListener`
+- **多用户模式**：`validateLoginCredentials` 是 DB 优先 → config 降级。要禁用 config 降级，清空 `config.yaml` 的 `web.auth.username`/`password_hash` 即可（代码无需改，字段为空时返回 "login not configured"）
+- **admin token 越权**：`handleGetAdminToken` 返回明文 token，多用户模式下必须 `requireAdmin` 校验。单用户模式（userID=0）和 admin-token 身份（-1）放行
 
 ## 剩余长期项
 
