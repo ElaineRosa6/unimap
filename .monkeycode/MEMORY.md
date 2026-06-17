@@ -122,3 +122,42 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
   - ZoomEye card text 格式：`"ip数据更新城市应用:X组织:YASN:Z标题:actual_title"`
   - `cleanZoomEyeTitle()` 提取 "标题:xxx"（停在末尾日期前），提取嵌入元数据（country_code/org/asn/server），清理残留前缀
   - Go 侧 `extractZoomEyeJS` 需同步添加同样的 title 清理 + 元数据提取逻辑
+
+### 前端 hidden-init + display='' 隐藏陷阱
+- Date: 2026-06-18
+- Context: settings 页面通知渠道编辑表单、飞书应用字段、scheduler 模板按钮均无法显示，排查发现 `style.display=''` 与 `hidden-init` class 冲突
+- Category: 代码模式
+- Instructions:
+  - `.hidden-init { display: none; }`（utils.css）。`element.style.display = ''` 只清空内联 display，class 的 `display:none` 会接管，元素仍隐藏
+  - 对带 `hidden-init` class 的元素，显示时必须用 `style.display = 'block'`（块级）或 `'inline-block'`（行内），不能用 `''`
+  - 受影响位置：`showNotifyForm`(notify-form-panel/btn-nch-test)、`updateNotifyFormVisibility`(nch-app-row)、`onTaskTypeChange`(btn-fill-template)
+  - 无隐藏 class 的元素（如 port-scan 的 scan-results 用内联 `style="display:none"`）用 `display=''` 是 OK 的
+
+### sync.Once 覆盖 SetXxxConfig 配置陷阱
+- Date: 2026-06-18
+- Context: 全局限流始终 60/min 而非 config 的 300/min，导致 settings 页面按钮无反应（429）
+- Category: 代码模式
+- Instructions:
+  - `sync.Once.Do(fn)` 无论目标变量是否已赋值都会执行 `fn`，会覆盖之前的 `SetXxxConfig` 设置
+  - `getGlobalLimiter` 的 Once 闭包无条件 `globalLimiter = NewRateLimiter(60, time.Minute)`，覆盖了 `SetRateLimitConfig(300)` 的值
+  - 修复：Once 闭包内 `if globalLimiter == nil { globalLimiter = NewRateLimiter(default...) }`
+  - 通用规则：懒加载默认值前必须检查变量是否已被显式配置
+
+### CSP 拦截 innerHTML 内联事件处理器
+- Date: 2026-06-18
+- Context: main.js 动态生成的"重新连接"/"重新查询"按钮点击无反应
+- Category: 代码模式
+- Instructions:
+  - CSP `script-src 'self' 'nonce-xxx'`（无 `unsafe-inline`）不仅拦截 HTML 属性 `onclick=`，也拦截 innerHTML 字符串里的内联 handler
+  - 动态生成元素必须用 `createElement` + `addEventListener`，不能在 innerHTML 字符串里写 `onclick=`
+  - 受影响：main.js WS 断连横幅、查询超时按钮；account.html 用户管理表格行
+
+### 多用户模式启用与 config 降级禁用
+- Date: 2026-06-18
+- Context: 启用多用户后 admin/admin123 弱密码仍能登录（config 降级路径）
+- Category: 环境配置
+- Instructions:
+  - `validateLoginCredentials`（login_handlers.go）是 DB 优先 → config 降级
+  - 禁用 config 降级：清空 `config.yaml` 的 `web.auth.username`/`password_hash`，代码无需改（字段为空时返回 "login not configured"）
+  - 首个用户通过 `/api/v1/users/register` 创建（0 用户时 public），创建后注册自动关闭
+  - `handleGetAdminToken` 多用户模式（userID>0）下必须 `requireAdmin`，否则普通用户越权拿 admin token

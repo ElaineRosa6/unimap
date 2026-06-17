@@ -232,6 +232,38 @@ go run -tags gui ./cmd/unimap-gui
 12. ~~**ZoomEye 哈希 CSS class**~~ ✅ 已修复（2026-06-16，`span._public-hover_uxlu6_1` 替换为 `div.url-container span` 等稳定选择器，Extension + Go 侧同步更新。新增 `cleanZoomEyeTitle()` 清理 title 中拼接元数据，提取 country_code/org/asn/server）
 13. ~~**extractPortFromHost IPv6 边界** — `LastIndex(":")` 对 IPv6 地址错误解析。~~ ✅ 已修复（2026-06-16，改用 `net.SplitHostPort` + 多冒号保护，补 IPv6 测试）
 
+### 2026-06-18 安全审计 + 多用户启用 + 前端交互全量修复
+
+#### 安全审计（qa-security-audit skill）
+- 审计报告：`.audit-results/audit_report.md` + `audit_report.json`（gitignored）
+- 扫描器原始 1430 项经人工去重后保留 8 项真实发现（1 P0 / 3 P1 / 4 P2）
+
+#### P0 安全修复（commit 37bc1d9）
+- `web/query_handlers.go` `handleGetAdminToken`：普通用户可明文获取 admin token → 垂直越权
+  - 修复：多用户模式下（userID>0）要求 `requireAdmin`；单用户模式（userID=0）和 admin-token 身份（-1）放行
+  - 测试：`ForbiddenForNonAdmin` + `LegacySingleUser` + `ReturnsToken` + `AuthDisabled`
+
+#### 多用户模式启用
+- `users.db` 创建首个 admin 用户（role=admin），公开注册自动关闭
+- `configs/config.yaml`：清空 `web.auth.username`/`password_hash`，禁用 config 降级登录
+  - 原弱密码 admin/admin123 降级路径已失效，唯一登录路径为 users.db
+  - `validateLoginCredentials` DB 优先 → config 降级，字段为空时返回 "login not configured"
+
+#### 前端交互修复（commit aba13aa）—— settings 按钮无反应根因
+1. **限流 bug**（`middleware_ratelimit.go`）：`getGlobalLimiter` 的 `sync.Once` 无条件创建 60/min 默认 limiter，覆盖 `SetRateLimitConfig` 的 300/min。修复：Once 内检查 `globalLimiter==nil`
+2. **CSP 内联 handler 拦截**：account.html 用户管理 3 处 `onclick`/`onchange`、main.js 2 处 innerHTML `onclick` → 全改 `addEventListener`/data-attr
+3. **`hidden-init` + `display=''` bug**：`showNotifyForm`/`btn-nch-test`/`nch-app-row`/`btn-fill-template` 用 `style.display=''` 清空内联，但 class `display:none` 接管导致元素永远隐藏。改用 `display='block'/'inline-block'`
+4. **`feyshu_app` 拼写**：`settings.html` loadConfig 读 `n.feyshu_app`（多 y），后端返回 `feishu_app`，飞书应用配置永远加载不出
+5. **`btn-feishu-app-save` 未绑定**：补 `addEventListener`
+6. **`<script>` 在 `</body>` 后**：settings.html、icp.html 的 footer 移到 script 后
+7. **apiFetch 429 未处理**：加 429 分支提示"请求过于频繁"+Retry-After
+8. **飞书应用面板折叠**：默认收起显示摘要，点"编辑"展开
+
+#### 关键教训（写入记忆）
+- `style.display=''` 只在元素**无**隐藏 class 时才显示；有 `hidden-init` 等 class 时必须用 `display='block'/'inline-block'`
+- `sync.Once.Do` 无论变量是否已赋值都会执行闭包，会覆盖之前的 `SetXxx` 配置
+- CSP `script-src 'self' 'nonce-xxx'`（无 `unsafe-inline`）会拦截所有内联 `onclick=`，包括 innerHTML 注入的
+
 ### 2026-06-17 新引擎代码基础设施全量补齐 + countGoroutines 空桩修复
 
 #### Phase 3.3：`countGoroutines()` 空桩修复
