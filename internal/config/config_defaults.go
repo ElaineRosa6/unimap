@@ -329,7 +329,7 @@ func (m *Manager) applyCacheDefaults(config *Config) {
 		"shodan":     {Enabled: true, TTL: 7200, MaxSize: 500},
 		"censys":     {Enabled: true, TTL: 7200, MaxSize: 500},
 		"daydaymap":  {Enabled: true, TTL: 3600, MaxSize: 500},
-		"binaryedge": {Enabled: true, TTL: 7200, MaxSize: 500},
+		"binaryedge": {Enabled: false, TTL: 7200, MaxSize: 500},  // ⚠️ BinaryEdge 服务已于 2025-03-31 停止
 		"onyphe":     {Enabled: true, TTL: 7200, MaxSize: 500},
 		"greynoise":  {Enabled: true, TTL: 7200, MaxSize: 500},
 	}

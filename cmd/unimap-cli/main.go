@@ -150,6 +150,9 @@ func getEnabledEngines(cfg *config.Config) []string {
 	if cfg.Engines.Onyphe.Enabled {
 		list = append(list, "onyphe")
 	}
+	if cfg.Engines.Greynoise.Enabled {
+		list = append(list, "greynoise")
+	}
 	return list
 }
 

@@ -1,8 +1,9 @@
 # 全量实施计划 — 空间搜索引擎 + 遗留问题
 
 > **创建日期**: 2026-06-07
-> **最后更新**: 2026-06-10
+> **最后更新**: 2026-06-17
 > **状态**: 🔄 阶段一✅ 阶段二✅ (P1/P2/P3全部完成) 阶段三：L1✅ L2暂缓 L3✅
+> **引擎服务状态更新**: ⚠️ BinaryEdge (2025-03-31 已停止)、DayDayMap (API 文档不公开，需真机验证) — 默认禁用
 > **基准文档**: `SEARCH_ENGINE_SYNTAX_REFERENCE.md`（12 引擎语法，含归档）、`SEARCH_ENGINE_SYNTAX.md`（UQL→引擎翻译基准）
 > **前置依赖**: commit `0e3fcc3`（5 引擎语法修正闭环）
 > **来源**: CLAUDE.md 已知待修复事项、code review 发现、memory 遗留缺陷、三层采集架构设计评审、外部语法审计
@@ -277,7 +278,7 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 |--------|------|------|-----------|-----------|
 | **P1** | **Censys** | 国际主流，API 文档完善，证书搜索强 | 分隔符 `:` + `AND`/`OR`/`NOT`（类 Quake） | ✅ 已完成 |
 | **P1** | **DayDayMap** | 国内平台，语法最丰富，兼容 FOFA/Hunter | 分隔符 `=` + `&&`/`||`（类 FOFA） | ✅ 已完成 |
-| ~~P2~~ | ~~**BinaryEdge**~~ | ⚠️ **已关闭**（2025-03-31），API 不可用 | — | 代码保留，默认禁用 |
+| ~~P2~~ | ~~**BinaryEdge**~~ | ⚠️ **已关闭**（2025-03-31），API 不可用 | — | 代码保留归档，**默认禁用** |
 | **P2** | **Onyphe** | OQL 语法差异大，但功能独特（暗网/威胁列表） | 分隔符 `:` + `+`(AND) | ✅ 已完成 |
 | **P3** | **GreyNoise** | 威胁情报补充，字段少 API 简单 | 分隔符 `:` + 空格/`OR`/`-` | ✅ 已完成 |
 | ~~P3~~ | ~~**DnsDB**~~ | ⚠️ **已停用**，服务不可用 | — | 不实施 |
@@ -334,10 +335,10 @@ FOFA `icon_hash` / ZoomEye `iconhash` / Shodan `http.favicon.hash` / Quake `favi
 
 ### 2.3 DayDayMap 实施详情
 
-> **状态**: ✅ 已完成（2026-06-08）
+> **状态**: ✅ 代码已完成（2026-06-08），⚠️ **真机 API 未验证**（需注册获取 API Key）
 > **文件**: `internal/adapter/daydaymap.go` + `daydaymap_test.go`（37 测试）
 
-**API**: 待确认（需注册获取 API Key，官网 `www.daydaymap.com`）
+**API**: `www.daydaymap.com/api/v1/search`（需注册获取 API Key，文档不公开）
 **认证**: API Key
 **语法兼容**: 与 FOFA 高度兼容（`=` 分隔、`&&`/`||` 连接）
 

@@ -9,6 +9,10 @@ import (
 	"github.com/unimap/project/internal/config"
 )
 
+func setTestRemoteAddr(req *http.Request, addr string) {
+	req.RemoteAddr = addr
+}
+
 func TestSecureCompare(t *testing.T) {
 	tests := []struct {
 		a, b string
@@ -32,6 +36,7 @@ func TestHandleLoginPage_AlreadyAuthenticated(t *testing.T) {
 	s.staticVersion = "1.0"
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	setTestRemoteAddr(req, "203.0.113.10:12345")
 	// Set session cookie with encrypted token format
 	s.setSessionCookieForUser(rec, req, 1)
 	// Re-read the response to get the cookie
@@ -54,6 +59,7 @@ func TestHandleLoginPage_WithAdminToken(t *testing.T) {
 	s.staticVersion = "1.0"
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	setTestRemoteAddr(req, "203.0.113.11:12345")
 	req.Header.Set("X-Admin-Token", "test-admin-token")
 	s.handleLoginPage(rec, req)
 	// With valid admin token, should redirect
@@ -69,6 +75,7 @@ func TestHandleLoginPage_WithWrongAdminToken(t *testing.T) {
 	s.config.Web.Auth.AdminToken = "correct-token"
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	setTestRemoteAddr(req, "203.0.113.12:12345")
 	req.Header.Set("X-Admin-Token", "wrong-token")
 	s.handleLoginPage(rec, req)
 	// Should render login page, not redirect
@@ -83,6 +90,7 @@ func TestHandleLoginPage_Normal(t *testing.T) {
 	s.staticVersion = "1.0"
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	setTestRemoteAddr(req, "203.0.113.13:12345")
 	s.handleLoginPage(rec, req)
 	// Should render login page (200 or 500 if template missing)
 	if rec.Code == http.StatusFound {
@@ -98,6 +106,7 @@ func TestHandleLoginAPI_InvalidForm(t *testing.T) {
 	s.staticVersion = "1.0"
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader("invalid"))
+	setTestRemoteAddr(req, "203.0.113.14:12345")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	s.handleLoginAPI(rec, req)
 	// Should return error (CSRF or bad request)
@@ -114,6 +123,7 @@ func TestHandleLoginAPI_InvalidCSRF(t *testing.T) {
 	s.staticVersion = "1.0"
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader("username=admin&password=test&csrf_token=wrong"))
+	setTestRemoteAddr(req, "203.0.113.15:12345")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	// Set valid CSRF cookie
 	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "valid-csrf"})
@@ -132,6 +142,7 @@ func TestHandleLoginAPI_WrongPassword(t *testing.T) {
 	s.staticVersion = "1.0"
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader("username=admin&password=wrong&csrf_token=valid"))
+	setTestRemoteAddr(req, "203.0.113.16:12345")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "valid"})
 	s.handleLoginAPI(rec, req)
@@ -145,6 +156,7 @@ func TestHandleLoginAPI_NoConfig(t *testing.T) {
 	s.config = nil
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader("username=admin&password=test&csrf_token=valid"))
+	setTestRemoteAddr(req, "203.0.113.17:12345")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "valid"})
 	s.handleLoginAPI(rec, req)
@@ -160,6 +172,7 @@ func TestHandleLoginAPI_EmptyCredentials(t *testing.T) {
 	s.config.Web.Auth.PasswordHash = ""
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader("username=&password=&csrf_token=valid"))
+	setTestRemoteAddr(req, "203.0.113.18:12345")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "valid"})
 	s.handleLoginAPI(rec, req)
@@ -172,6 +185,7 @@ func TestHandleLogoutAPI(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/logout", nil)
+	setTestRemoteAddr(req, "203.0.113.19:12345")
 	s.handleLogoutAPI(rec, req)
 	if rec.Code != http.StatusFound {
 		t.Fatalf("expected 302 redirect, got %d", rec.Code)
@@ -182,6 +196,7 @@ func TestValidateLoginCSRF_MissingToken(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", nil)
+	setTestRemoteAddr(req, "203.0.113.20:12345")
 	// No CSRF cookie set
 	ok := s.validateLoginCSRF(rec, req, "", "127.0.0.1")
 	if ok {
@@ -193,6 +208,7 @@ func TestValidateLoginCSRF_EmptyCSRFToken(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", nil)
+	setTestRemoteAddr(req, "203.0.113.21:12345")
 	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "valid"})
 	ok := s.validateLoginCSRF(rec, req, "", "127.0.0.1")
 	if ok {

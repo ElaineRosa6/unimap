@@ -40,7 +40,7 @@ engines:
         qps: 3
         timeout: 30
     binaryedge:
-        enabled: true
+        enabled: false  # ⚠️ BinaryEdge 服务已于 2025-03-31 停止，API 不可用，代码保留仅作参考
         api_key: "${BINARYEDGE_API_KEY}"
         base_url: https://api.binaryedge.io
         qps: 2

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/core/unimap"
 	"github.com/unimap/project/internal/logger"
@@ -42,10 +43,10 @@ type UnifiedService struct {
 	cacheBackend       string
 	strategyManager    *utils.CacheStrategyManager
 	mu                 sync.RWMutex
-	maxMemoryMB        int                    // 最大内存使用限制（MB）
-	maxConcurrent      int                    // 最大并发查询数
-	activeQueries      int                    // 当前活跃查询数
-	queryMutex         sync.Mutex             // 查询并发控制锁
+	maxMemoryMB        int                         // 最大内存使用限制（MB）
+	maxConcurrent      int                         // 最大并发查询数
+	activeQueries      int                         // 当前活跃查询数
+	queryMutex         sync.Mutex                  // 查询并发控制锁
 	browserBackend     adapter.BrowserQueryBackend // browser fallback backend
 	browserFallbackCfg *BrowserFallbackConfig      // fallback configuration
 }
@@ -77,13 +78,13 @@ func NewUnifiedServiceWithConfig(cfg *config.Config) *UnifiedService {
 }
 
 type serviceConfig struct {
-	cacheTTL           time.Duration
+	cacheTTL             time.Duration
 	cacheCleanupInterval time.Duration
-	memoryMaxSize      int
-	cacheBackend       string
-	maxMemoryMB        int
-	maxConcurrent      int
-	redisCfg           utils.RedisConfig
+	memoryMaxSize        int
+	cacheBackend         string
+	maxMemoryMB          int
+	maxConcurrent        int
+	redisCfg             utils.RedisConfig
 }
 
 func extractServiceConfig(cfg *config.Config) serviceConfig {
@@ -94,12 +95,22 @@ func extractServiceConfig(cfg *config.Config) serviceConfig {
 	if cfg == nil {
 		return c
 	}
-	if cfg.System.CacheTTL > 0 { c.cacheTTL = time.Duration(cfg.System.CacheTTL) * time.Second }
-	if cfg.System.CacheCleanupInterval > 0 { c.cacheCleanupInterval = time.Duration(cfg.System.CacheCleanupInterval) * time.Second }
-	if cfg.System.CacheMaxSize > 0 { c.memoryMaxSize = cfg.System.CacheMaxSize }
-	if cfg.System.MaxConcurrent > 0 { c.maxConcurrent = cfg.System.MaxConcurrent }
+	if cfg.System.CacheTTL > 0 {
+		c.cacheTTL = time.Duration(cfg.System.CacheTTL) * time.Second
+	}
+	if cfg.System.CacheCleanupInterval > 0 {
+		c.cacheCleanupInterval = time.Duration(cfg.System.CacheCleanupInterval) * time.Second
+	}
+	if cfg.System.CacheMaxSize > 0 {
+		c.memoryMaxSize = cfg.System.CacheMaxSize
+	}
+	if cfg.System.MaxConcurrent > 0 {
+		c.maxConcurrent = cfg.System.MaxConcurrent
+	}
 	c.cacheBackend = strings.ToLower(strings.TrimSpace(cfg.Cache.Backend))
-	if c.cacheBackend == "" { c.cacheBackend = "memory" }
+	if c.cacheBackend == "" {
+		c.cacheBackend = "memory"
+	}
 	c.redisCfg = buildRedisConfig(cfg)
 	return c
 }
@@ -110,10 +121,10 @@ func buildRedisConfig(cfg *config.Config) utils.RedisConfig {
 		Addr: strings.TrimSpace(r.Addr), Password: r.Password, DB: r.DB,
 		Prefix: strings.TrimSpace(r.Prefix), PoolSize: r.PoolSize,
 		MinIdleConns: r.MinIdleConns, MaxIdleConns: r.MaxIdleConns, MaxRetries: r.MaxRetries,
-		DialTimeout: time.Duration(r.DialTimeout) * time.Millisecond,
-		ReadTimeout: time.Duration(r.ReadTimeout) * time.Millisecond,
-		WriteTimeout: time.Duration(r.WriteTimeout) * time.Millisecond,
-		PoolTimeout: time.Duration(r.PoolTimeout) * time.Millisecond,
+		DialTimeout:     time.Duration(r.DialTimeout) * time.Millisecond,
+		ReadTimeout:     time.Duration(r.ReadTimeout) * time.Millisecond,
+		WriteTimeout:    time.Duration(r.WriteTimeout) * time.Millisecond,
+		PoolTimeout:     time.Duration(r.PoolTimeout) * time.Millisecond,
 		ConnMaxLifetime: time.Duration(r.ConnMaxLifetime) * time.Millisecond,
 		ConnMaxIdleTime: time.Duration(r.ConnMaxIdleTime) * time.Millisecond,
 	}
@@ -452,6 +463,7 @@ func (s *UnifiedService) tryBrowserFallback(ctx context.Context, engineResults [
 				assets = append(assets, asset)
 			}
 		}
+		collection.NormalizeAssets(engine, assets)
 
 		if len(assets) > 0 {
 			metrics.IncBrowserFallbackSuccess(engine)

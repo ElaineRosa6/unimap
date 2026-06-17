@@ -132,6 +132,7 @@ go run -tags gui ./cmd/unimap-gui
 
 ### 定时任务系统 (20 种 Runner)
 - Cron 表达式创建、启停、编辑、删除
+- **一次性/延迟执行**：`ScheduleType` 支持 `"once"`（指定时间）/`"delay"`（延迟 N 秒）/`"cron"`（循环），执行后自动禁用
 - 执行历史追踪、持久化
 - 高优先级：UQL 查询、截图、篡改检测、URL 检测、Cookie 验证
 - 中优先级：数据导出、端口扫描、缓存预热、配额监控
@@ -202,25 +203,142 @@ go run -tags gui ./cmd/unimap-gui
 ### 2026-06-16 全量问题核实（13 项）
 
 #### Critical（1 项）
-1. **截图未登录状态** — Extension 通过 `chrome.tabs.create` 打开新标签页，未继承用户已登录的 session cookies。FOFA/Hunter 截图均显示未登录页面。
+1. ~~**截图未登录状态**~~ ✅ 已修复（2026-06-16，4 处修复见下）
+   - `releaseTab()` 不再导航到 `about:blank`（根因：销毁 session cookies）
+   - `ensureTab()` 增加同域优先复用（4 级策略：同域 pool → 任意 pool → 同域 tab → 新建）
+   - `manifest.json` 添加 `<all_urls>` host permission（`captureVisibleTab` 程序化调用需要）
+   - `screenshot_bridge_handlers.go` 改用 `json.Unmarshal`（`DisallowUnknownFields` 拒绝 extension 新增的诊断字段）
+   - 新增 `checkLoginCookies()` 诊断函数，按引擎检测登录态 cookie
+   - FOFA/Hunter/Quake 三引擎截图验证通过（368KB/269KB/386KB）
 
 #### High（4 项）
-2. **Hunter country_code 为城市名** — 浏览器采集返回 "成都市" 而非 "中国"。Go 端 `CleanHunterFields` 已实现但未在 `browserCollectedData` 路径触发。
-3. **Hunter title 含分类标签** — "Dovecot imapd企业办公 邮件系统..." 应截断。
-4. **Hunter host 含 UI 噪声** — "不看空域名 -" 应清理。
-5. **CleanHunterFields 调用链断裂** — `router_extension.go:315,349` 已调用，但 `browserCollectedData` 路径可能绕过。
+2. ~~**Hunter country_code 为城市名**~~ ✅ 已修复（2026-06-16，`NormalizeAssets` + `CleanHunterFields` 全链路生效）
+3. ~~**Hunter title 含分类标签**~~ ✅ 已修复（2026-06-16，`Dovecot imapd企业办公 邮件系统...` 已截断）
+4. ~~**Hunter host 含 UI 噪声**~~ ✅ 已修复（2026-06-16，`不看空域名 -` 已清理为空）
+5. ~~**CleanHunterFields 调用链断裂**~~ ✅ 已修复（2026-06-16，解析、L1 fallback、Web payload 统一调用）
 
-#### Medium（5 项）
+#### Medium（4 项）
 6. **653 处 `map[string]interface{}`** — 含测试文件（~293）、Web 响应（~80）、collection/parser（~80）等。
-7. **新引擎端到端未闭环** — Censys/DayDayMap/Onyphe/GreyNoise 适配器代码存在，但 Extension DOM 选择器缺失、UI 未暴露。
 8. **L2 Hook 设计冻结** — 仅当 L1/L3 telemetry 证明收益时启动。
-9. **web/ flaky test** — `TestClassifyBatchURLsPreservesOriginalIndices` 并行端口冲突。
-10. **定时任务缺少简易定时功能** — 只支持 cron 循环，无一次性/延迟/指定时间执行。
+9. ~~**web/ flaky test**~~ ✅ 已修复（2026-06-16，`TestClassifyBatchURLsPreservesOriginalIndices` 改为稳定输入并通过 `-race` 复核）
+10. ~~**定时任务缺少简易定时功能**~~ ✅ 已修复（2026-06-16，新增 `ScheduleType` 字段支持 `"once"`/`"delay"`/`"cron"` 三种模式，⏳ 审计中）
+
+#### 长期项（2 项，需架构级改造，按需启动）
+- **L2 Hook** — 设计冻结。仅当 L1/L3 telemetry 证明收益时启动。
+- **新引擎端到端闭环** — Censys/DayDayMap/BinaryEdge/Onyphe/GreyNoise 适配器代码存在。✅ 代码基础设施已补齐（2026-06-17），⏳ 仍需各引擎 API Key 进行真机 API 查询验证。
 
 #### Low（3 项）
-11. **countGoroutines() 空桩** — `router_test.go:400` 硬编码 `return 0`。
-12. **ZoomEye 哈希 CSS class** — `span._public-hover_uxlu6_1` 前端改版即失效。
-13. **extractPortFromHost IPv6 边界** — `LastIndex(":")` 对 IPv6 地址错误解析。
+11. ~~**countGoroutines() 空桩** — `router_test.go:400` 硬编码 `return 0`。~~ ✅ 已修复（2026-06-17，改用 `runtime.NumGoroutine()`，goroutine leak 检测增加 5 协程容差，20 次 `-race` 运行均通过）
+12. ~~**ZoomEye 哈希 CSS class**~~ ✅ 已修复（2026-06-16，`span._public-hover_uxlu6_1` 替换为 `div.url-container span` 等稳定选择器，Extension + Go 侧同步更新。新增 `cleanZoomEyeTitle()` 清理 title 中拼接元数据，提取 country_code/org/asn/server）
+13. ~~**extractPortFromHost IPv6 边界** — `LastIndex(":")` 对 IPv6 地址错误解析。~~ ✅ 已修复（2026-06-16，改用 `net.SplitHostPort` + 多冒号保护，补 IPv6 测试）
+
+### 2026-06-17 新引擎代码基础设施全量补齐 + countGoroutines 空桩修复
+
+#### Phase 3.3：`countGoroutines()` 空桩修复
+- ✅ `router_test.go:400` 从 `return 0` 改为 `runtime.NumGoroutine()`
+- ✅ goroutine leak 检测加 5 协程容差（避免 GC/timer 等运行时协程误判）
+- 验证：`go test -race -count=20 -run TestRouterStartStop_NoGoroutineLeak` — 全部通过
+
+#### Phase 5：5 个新引擎代码基础设施全量补齐
+
+补齐了 Censys/DayDayMap/BinaryEdge/Onyphe/GreyNoise 在所有层级的集成：
+
+| 层级 | 改动文件 | 内容 |
+|------|---------|------|
+| CLI | `cmd/unimap-cli/main.go` | `listEnabledEngines` 补充 greynoise |
+| Web 设置页 | `web/templates/settings.html` | 5 引擎配置表单 + Censys `api_id/api_secret` 特殊处理 + JS `loadConfig`/`saveAllEngines` 适配 |
+| 配置 API | `web/config_handlers.go` | GET 暴露全部 10 引擎；5 个新 `apply*Fields` 函数（`applyCensysFields`/`applyDayDayMapFields`/`applyBinaryEdgeFields`/`applyOnypheFields`/`applyGreyNoiseFields`） |
+| 引擎重载 | `web/notification_handlers.go` | `reloadEngineAdapters` + `registerCoreEngineAdapters` 扩展至 10 引擎；Censys 用 `api_id/api_secret` 注册 |
+| 登录检测 | `web/cookie_handlers.go` | 引擎列表从 5 扩展到 10 |
+| 稳定引擎 | `web/query_handlers.go` | `stableEngines` map 从 5 扩展到 10 |
+| Extension | `tools/extension-screenshot/src/capture.js` | BinaryEdge 引擎检测 + DOM 选择器 |
+| Go 选择器 | `internal/screenshot/dom_selectors.go` | BinaryEdge 选择器条目 |
+| Extension 版本 | `tools/extension-screenshot/manifest.json` | 0.3.8 → 0.3.9 |
+
+**在册引擎现状（10 个）**：
+
+| 引擎 | API Adapter | Config | CLI | Web UI | Config API | Extension DOM | 真机 API 验证 | Extension 采集验证 | 截图验证 | 字段质量 |
+|------|------------|--------|-----|--------|------------|---------------|--------------|-------------------|---------|---------|
+| FOFA | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Hunter | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **ZoomEye** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（选择器已更新） | ✅ | ✅ **已验证（2026-06-17）** | ✅ **已验证** | ⚠️ title 字段待拆分 |
+| Quake | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Shodan** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **已验证（2026-06-17）** | ✅ **已验证** | ⚠️ timestamp 为空 |
+| Censys | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ⏳ 需 API Key | ⏳ 需 API Key + 登录 | ⏳ | ⏳ |
+| DayDayMap | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ⏳ 需 API Key | ⏳ 需 API Key + 登录 | ⏳ | ⏳ |
+| BinaryEdge | ✅ | ⚠️ **默认禁用** | ✅ | ✅ **新** | ✅ **新** | ✅ **新** | ⚠️ **服务已停止**（2025-03-31） | ⚠️ 服务已停止 | ⚠️ | ⚠️ |
+| Onyphe | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ⏳ 需 API Key | ⏳ 需 API Key + 登录 | ⏳ | ⏳ |
+| GreyNoise | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ **新** | ✅ | ⏳ 需 API Key | ⏳ 需 API Key + 登录 | ⏳ | ⏳ |
+
+**验证**：`go build ./...` / `go vet ./...` / `go test -race ./...` 全部通过（33/33 包）
+
+### ✅ ZoomEye / Shodan — Extension 采集已验证（2026-06-17）
+
+经过真实浏览器 + Extension 真机测试，两个引擎均已通过 Step 1-4 验证。
+
+**Shodan 选择器修复（4 处关键修复）**：
+| Bug | 根因 | 修复 |
+|-----|------|------|
+| PORT 全部为 0 | 端口正则 `/:(\d{1,5})\//` 不匹配 URL 结尾无 `/` | → `/:(\d{1,5})(\/|$)/` |
+| Row 提取 0 条 | `.result` 太宽泛匹配到非搜索结果元素 | → 优先 `.row.l-search-results .result` |
+| ORG 为空 | 选择器不精确 | → `.result-details a.filter-link.filter-org` |
+| Country 为空 | 无此字段选择器 | → 新增 `img.flag + a` |
+
+**已知待修复**：ZoomEye `cleanZoomEyeTitle` JS 函数未生效（title 含元数据前缀），Shodan `timestamp` 选择器待调试。
+
+### 2026-06-17 前端收敛 + Shodan 选择器修复 + 飞书应用 UI 补齐
+
+#### 核心 5 引擎收敛
+将前后端引擎列表从 10 个收敛为 5 个核心引擎（FOFA/Hunter/ZoomEye/Quake/Shodan），新引擎代码保留待启用。
+
+| 文件 | 改动 |
+|------|------|
+| `web/templates/settings.html` | HTML 表单删除 5 引擎、JS `saveAllEngines` 数组 10→5、清理 Censys 特殊分支 |
+| `web/query_handlers.go` | `stableEngines` 10→5、查询页/配额页默认引擎过滤 |
+| `web/config_handlers.go` | `engineNames` 10→5、GET 响应移除 5 引擎；新增 `notifications` 字段 |
+| `web/cookie_handlers.go` | 登录检测引擎列表 10→5 |
+| `web/notification_handlers.go` | `reloadEngineAdapters` 10→5、`registerCoreEngineAdapters` 仅保留核心 5（新引擎代码注释保留） |
+| `web/websocket_handlers.go` | 默认引擎过滤 |
+
+#### Shodan Extension DOM 选择器修复
+6 处关键修复，PORT 从全 0 → 正确提取，ORG/Country 从空 → 正确提取。
+
+| Bug | 根因 | 修复文件 |
+|-----|------|---------|
+| PORT 全部为 0 | 端口正则 `/:(\d{1,5})\//` 不匹配 URL 结尾无 `/` | `capture.js` → `/:(\d{1,5})(\/\|$)/` |
+| Row 0 条 | `.result` 太宽泛 | `capture.js` 优先 `.row.l-search-results .result` |
+| IP 不健壮 | 只匹配单一选择器 | `capture.js` + `dom_selectors.go` 多选择器 fallback |
+| ORG 为空 | 选择器路径不精确 | `.result-details a.filter-link.filter-org` |
+| Country 为空 | 无此选择器 | 新增 `img.flag + a` |
+| Go 侧端口提取错 | `a[href*='/port/']` 用文本提取 | 改为 `a.text-danger` href URL 解析 |
+
+**验证通过**：`port=80` + `country=CN` + `os=Linux` + `org=Google` 均成功采集 10 条。
+
+#### UQL 语法参考（查询页侧边抽屉）
+- 右下角浮动按钮 → 右侧滑出抽屉
+- 包含 UQL 操作符表 + 20 字段 × 5 引擎映射表
+- 数据来源：`adapter/*.go` 的 `mapField()` 逐字段对照
+
+#### 飞书应用配置 UI 补齐
+- `config_handlers.go`：GET 暴露 `notifications.feishu_app`、POST 支持 `"notifications"` section
+- `settings.html`：通知渠道面板新增飞书应用全局配置卡片（App ID/Secret/Chat ID/总开关）
+
+#### Bug 修复
+- **限流过紧**：`requests_per_window` 60→300（修复前端按钮"无交互"）
+- **通知渠道 API `Success: false`**：`handleNotificationChannels` + `handleNotifyReload` 补 `Success: true`
+- **settings.html 通知渠道不显示**：JS 读取路径 `data.channels` → `data.data.channels`
+- **scheduler.html `tasks.forEach` 报错**：添加非数组响应容错
+
+### 📋 剩余工作汇总
+1. **核心引擎完善**：ZoomEye title 字段拆分 + Shodan timestamp 选择器修复
+2. **新引擎真机验证**：Censys/DayDayMap/Onyphe/GreyNoise（需 API Key）
+3. **归档**：BinaryEdge 服务已停止（2025-03-31），代码保留默认禁用
+
+### 2026-06-16 shutdown panic 修复
+- ✅ **sessionRevocationStore.Stop() double-close panic** — `web/session.go` 添加 `sync.Once` 保护，`Stop()` 现在可安全多次调用。`session_test.go` 更新测试验证幂等性。
+
+### 2026-06-16 定时任务一次性/延迟执行功能
+- ✅ **Scheduler 一次性/延迟任务** — `ScheduledTask` 新增 `ScheduleType`（`"cron"`/`"once"`/`"delay"`）、`RunAt`、`DelaySeconds`、`timer` 字段。`time.AfterFunc` 调度，执行后自动禁用。API 向后兼容（空 `ScheduleType` 默认 `"cron"`）。审计修复 4 个问题（时序/逻辑/防御/设计）。前端：调度类型选择器 + datetime-local 日期选择器 + 预设按钮 + 标签样式。
 
 ### 2026-06-10 复核记录
 - ✅ 批量 URL 截图改为异步 job + progress 查询；无效/内网 URL 作为单条 failed 结果返回，不再拒绝整个批次。

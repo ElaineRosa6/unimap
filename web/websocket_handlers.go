@@ -208,7 +208,7 @@ func parseWSQueryParams(message map[string]interface{}, orch interface{ ListAdap
 	}
 	engines = parseWSStringList(message["engines"])
 	if len(engines) == 0 {
-		defaultEngines := orch.ListAdapters()
+		defaultEngines := filterStableEngines(orch.ListAdapters())
 		if len(defaultEngines) > 0 {
 			engines = []string{defaultEngines[0]}
 		}

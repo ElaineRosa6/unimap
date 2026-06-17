@@ -31,7 +31,7 @@
 
 1. **L2 Hook** — 设计冻结，仅当 L1/L3 telemetry 证明收益时启动
 2. 227 处 `map[string]interface{}` 剩余（Web 响应和测试文件）
-3. 新增引擎（Censys/DayDayMap/Onyphe/GreyNoise）端到端链路未闭环
+3. 新增引擎（Censys/DayDayMap/BinaryEdge/Onyphe/GreyNoise）API 查询端到端验证 — 代码基础设施已补齐（2026-06-17），⏳ 需各引擎 API Key
 
 ## Claude Code 记忆（2026-06-15 合并）
 
@@ -87,6 +87,17 @@
 - [已知问题清单 2026-05-09](claude-code-memory/project_remaining_issues_2026-05-09.md) — 原始问题清单
 - [Quake反爬非权限问题 2026-06-07](claude-code-memory/project_quake_antiscraping_not_permission_2026-06-07.md) — Quake采集失败是反爬拦截
 
+### 2026-06-17 新引擎代码基础设施全量补齐 + 空桩修复
+
+- ✅ **countGoroutines() 空桩**：`return 0` → `runtime.NumGoroutine()`，加 5 协程容差，20 次 `-race` 通过
+- ✅ **新引擎全层级集成**：
+  - **10 引擎启用**：CLI + Web UI（设置页/查询页）+ Config API（GET/POST）+ 引擎重载 + 登录检测 + 稳定引擎列表 → 全部从 5 扩展到 10
+  - **Censys 特殊处理**：`api_id`/`api_secret` 字段（非 `api_key`），Go 端 `applyCensysFields` + JS 端 `saveAllEngines`/`loadConfig` 适配
+  - **BinaryEdge 补齐**：Extension 引擎检测 + DOM 选择器 + Go `dom_selectors.go` 选择器
+  - **Extension 版本**：0.3.8 → 0.3.9
+- ✅ `go build ./...` / `go vet ./...` / `go test -race ./...` 全部通过（33/33 包）
+- ⏳ **待真机验证**：5 个新引擎需要 API Key 进行 API 查询验证
+
 ### 2026-06-16 Hunter DOM提取修复 + 采集闭环
 
 - ✅ **collect_and_capture 语法错误修复**：`else if` 在 `else` 之后 → 重构 if/else 链
@@ -97,7 +108,7 @@
 - ✅ **CDP 选择器更新**：FOFA/Hunter/Quake 从旧 table 布局更新为新 SPA 卡片布局
 - ✅ **Extension 版本迭代**：0.3.2 → 0.3.8（5 次 Chrome 重载测试）
 - ✅ **Hunter 提取优化**：去重（ip:port）、protocol 只保留协议名、raw cell text 替代 tooltip
-- ⏸ **Hunter country/title/host 清理**：Go 端 `CleanHunterFields` 已实现但未生效，需排查 `browserCollectedData` 路径
+- ✅ **Hunter country/title/host 清理**：`NormalizeAssets` + `CleanHunterFields` 全链路生效，browserCollectedData 已同步清理
 - ✅ **collection/parser 测试**：新增 7 个测试函数、55+ 子用例，覆盖全部 8 个导出函数
 - ✅ **FOFA 采集验证**：10 条资产，字段完整，截图正常
 
@@ -107,22 +118,22 @@
 1. **截图未登录状态** — Extension 通过 `chrome.tabs.create` 打开新标签页，未继承用户已登录的 session cookies。FOFA 截图显示"登录"按钮，Hunter 显示"未登录仅展示部分数据"。需排查 tab 创建方式和 cookie 共享机制。
 
 **High（4 项）**
-2. **Hunter country_code 为城市名** — 浏览器采集返回 "成都市" 而非 "中国"。Go 端 `CleanHunterFields` 已实现但未在 `browserCollectedData` 路径触发。
-3. **Hunter title 含分类标签** — "Dovecot imapd企业办公 邮件系统 开源 Dovecot imapd"，应截断到 "Dovecot imapd"。
-4. **Hunter host 含 UI 噪声** — "不看空域名 -" 出现在 host 字段。
-5. **CleanHunterFields 调用链断裂** — 函数在 `router_extension.go:315,349` 被调用，但 `browserCollectedData` 路径可能绕过了 `populateCollectResultFromBridge`。
+2. ~~**Hunter country_code 为城市名**~~ ✅ 已修复（2026-06-16，`NormalizeAssets` + `CleanHunterFields` 生效）
+3. ~~**Hunter title 含分类标签**~~ ✅ 已修复（2026-06-16，标题截断规则已覆盖）
+4. ~~**Hunter host 含 UI 噪声**~~ ✅ 已修复（2026-06-16，UI 噪声清理已覆盖）
+5. ~~**CleanHunterFields 调用链断裂**~~ ✅ 已修复（2026-06-16，parser / fallback / web payload 全链路调用）
 
 **Medium（5 项）**
 6. **653 处 `map[string]interface{}`** — 含测试文件（~293）、Web 响应（~80）、collection/parser（~80）等。核心逻辑已迁移，剩余为系统边界。
 7. **新引擎端到端未闭环** — Censys/DayDayMap/Onyphe/GreyNoise 适配器代码存在（有 `Search` 方法），但 Extension DOM 选择器缺失、UI 未暴露这些引擎。
 8. **L2 Hook 设计冻结** — 仅当 L1/L3 telemetry 证明收益时启动。
-9. **web/ flaky test** — `TestClassifyBatchURLsPreservesOriginalIndices` 并行运行端口冲突失败，单独运行通过。
+9. ~~**web/ flaky test**~~ ✅ 已修复（2026-06-16，稳定输入+`-race` 复核通过）
 10. **定时任务缺少简易定时功能** — scheduler 只支持 cron 循环表达式，无一次性延迟执行、简易间隔设置、指定时间点执行。
 
 **Low（3 项）**
 11. **countGoroutines() 空桩** — `router_test.go:400` 硬编码 `return 0`，`TestRouterStartStop_NoGoroutineLeak` 无效。
 12. **ZoomEye 哈希 CSS class** — `span._public-hover_uxlu6_1` 是编译哈希，前端改版即失效。
-13. **extractPortFromHost IPv6 边界** — `strings.LastIndex(s, ":")` 对 `2001:db8::1` 会错误解析为 port=1。
+13. ~~**extractPortFromHost IPv6 边界** — `strings.LastIndex(s, ":")` 对 `2001:db8::1` 会错误解析为 port=1。~~ ✅ 已修复（2026-06-16，`net.SplitHostPort` 支持 `[IPv6]:port`，裸 IPv6 不再误判端口）
 
 ## 当前活跃
 

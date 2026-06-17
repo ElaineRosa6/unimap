@@ -159,11 +159,33 @@ func (s *Scheduler) AddTask(task *ScheduledTask) error {
 		task.TimeoutSec = 300
 	}
 
-	// Validate cron expression (5 or 6 fields)
-	parser := cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
-	_, err := parser.Parse(task.CronExpr)
-	if err != nil {
-		return fmt.Errorf("invalid cron expression: %w", err)
+	// Normalize schedule type
+	if task.ScheduleType == "" {
+		task.ScheduleType = "cron"
+	}
+
+	// Validate schedule type
+	switch task.ScheduleType {
+	case "cron":
+		// Validate cron expression (5 or 6 fields)
+		parser := cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+		_, err := parser.Parse(task.CronExpr)
+		if err != nil {
+			return fmt.Errorf("invalid cron expression: %w", err)
+		}
+	case "once":
+		if task.RunAt == nil {
+			return fmt.Errorf("run_at is required for once schedule type")
+		}
+		if task.RunAt.Before(time.Now()) {
+			return fmt.Errorf("run_at must be in the future")
+		}
+	case "delay":
+		if task.DelaySeconds <= 0 {
+			return fmt.Errorf("delay_seconds must be positive for delay schedule type")
+		}
+	default:
+		return fmt.Errorf("unknown schedule type: %s (valid: cron, once, delay)", task.ScheduleType)
 	}
 
 	// Validate task type
@@ -241,6 +263,11 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 		s.cron.Remove(entryID)
 		delete(s.cronIDs, task.ID)
 	}
+	// Stop old timer for one-time tasks
+	if existing.timer != nil {
+		existing.timer.Stop()
+		existing.timer = nil
+	}
 
 	// Update fields
 	existing.Name = task.Name
@@ -253,6 +280,19 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 	existing.Notifications = task.Notifications
 	existing.DependsOn = task.DependsOn
 	existing.ExecutionWindow = task.ExecutionWindow
+
+	// Update schedule type fields
+	if task.ScheduleType != "" {
+		existing.ScheduleType = task.ScheduleType
+	} else if existing.ScheduleType == "" {
+		existing.ScheduleType = "cron"
+	}
+	if task.RunAt != nil {
+		existing.RunAt = task.RunAt
+	}
+	if task.DelaySeconds > 0 {
+		existing.DelaySeconds = task.DelaySeconds
+	}
 
 	if existing.Enabled {
 		if err := s.scheduleTask(existing); err != nil {
@@ -272,8 +312,14 @@ func (s *Scheduler) DeleteTask(id string) error {
 		s.cron.Remove(entryID)
 		delete(s.cronIDs, id)
 	}
-	if _, ok := s.tasks[id]; !ok {
+	task, ok := s.tasks[id]
+	if !ok {
 		return fmt.Errorf("task %s not found", id)
+	}
+	// Stop timer for one-time tasks
+	if task.timer != nil {
+		task.timer.Stop()
+		task.timer = nil
 	}
 	delete(s.tasks, id)
 	return s.saveLocked()
@@ -287,6 +333,12 @@ func (s *Scheduler) EnableTask(id string) error {
 	if !ok {
 		return fmt.Errorf("task %s not found", id)
 	}
+
+	// Prevent re-enabling expired one-time tasks
+	if (task.ScheduleType == "once" || task.ScheduleType == "delay") && task.RunAt != nil && task.RunAt.Before(time.Now()) && task.LastRunAt != nil {
+		return fmt.Errorf("cannot re-enable expired one-time task %s (was scheduled for %s)", id, task.RunAt.Format(time.RFC3339))
+	}
+
 	task.Enabled = true
 	if err := s.scheduleTask(task); err != nil {
 		task.Enabled = false
@@ -307,6 +359,11 @@ func (s *Scheduler) DisableTask(id string) error {
 	if entryID, ok := s.cronIDs[id]; ok {
 		s.cron.Remove(entryID)
 		delete(s.cronIDs, id)
+	}
+	// Stop timer for one-time tasks
+	if task.timer != nil {
+		task.timer.Stop()
+		task.timer = nil
 	}
 	return s.saveLocked()
 }
@@ -488,6 +545,16 @@ func (s *Scheduler) scheduleTask(task *ScheduledTask) error {
 		return nil
 	}
 
+	switch task.ScheduleType {
+	case "once", "delay":
+		return s.scheduleOneTimeTask(task, handler)
+	default: // "cron"
+		return s.scheduleCronTask(task, handler)
+	}
+}
+
+// scheduleCronTask schedules a recurring task via cron.
+func (s *Scheduler) scheduleCronTask(task *ScheduledTask, handler TaskHandler) error {
 	schedule := func() {
 		s.executeTask(task, handler, task.TimeoutSec, task.MaxRetries)
 	}
@@ -506,6 +573,70 @@ func (s *Scheduler) scheduleTask(task *ScheduledTask) error {
 		task.NextRunAt = &next
 	}
 	return nil
+}
+
+// scheduleOneTimeTask schedules a one-time or delayed task using a timer.
+func (s *Scheduler) scheduleOneTimeTask(task *ScheduledTask, handler TaskHandler) error {
+	var delay time.Duration
+	switch task.ScheduleType {
+	case "once":
+		if task.RunAt == nil {
+			return fmt.Errorf("run_at is nil for once task %s", task.ID)
+		}
+		delay = time.Until(*task.RunAt)
+	case "delay":
+		// Prefer persisted RunAt (survives restart correctly), fall back to DelaySeconds
+		if task.RunAt != nil {
+			delay = time.Until(*task.RunAt)
+		} else if task.DelaySeconds > 0 {
+			delay = time.Duration(task.DelaySeconds) * time.Second
+			runAt := time.Now().Add(delay)
+			task.RunAt = &runAt
+		} else {
+			return fmt.Errorf("delay task %s has no run_at or delay_seconds", task.ID)
+		}
+	}
+
+	if delay <= 0 {
+		// Past due — execute immediately
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Errorf("[scheduler] panic in one-time task %s: %v", task.ID, r)
+				}
+			}()
+			s.executeTask(task, handler, task.TimeoutSec, task.MaxRetries)
+			s.disableOneTimeTask(task.ID)
+		}()
+		return nil
+	}
+
+	task.timer = time.AfterFunc(delay, func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf("[scheduler] panic in one-time task %s: %v", task.ID, r)
+			}
+		}()
+		s.executeTask(task, handler, task.TimeoutSec, task.MaxRetries)
+		s.disableOneTimeTask(task.ID)
+	})
+
+	// Set NextRunAt for display
+	next := time.Now().Add(delay)
+	task.NextRunAt = &next
+	return nil
+}
+
+// disableOneTimeTask disables a one-time task after execution.
+func (s *Scheduler) disableOneTimeTask(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if task, ok := s.tasks[id]; ok {
+		task.Enabled = false
+		task.timer = nil
+		task.NextRunAt = nil // one-time task won't run again
+		_ = s.saveLocked()
+	}
 }
 
 // executeTask runs a single task execution with optional retries.
@@ -737,6 +868,13 @@ func (s *Scheduler) Stop() {
 	s.stopping = true
 	s.stopped = true
 	close(s.stopCh)
+	// Stop all one-time task timers
+	for _, task := range s.tasks {
+		if task.timer != nil {
+			task.timer.Stop()
+			task.timer = nil
+		}
+	}
 	s.mu.Unlock()
 
 	// 取消所有进行中的任务（context 派生自 s.ctx 的任务将收到取消信号）

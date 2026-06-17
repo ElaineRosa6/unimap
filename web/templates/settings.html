@@ -496,6 +496,19 @@
 
 				<div id="notify-channel-list"></div>
 
+				<!-- 飞书应用全局配置（来自 config.yaml，启动时注册） -->
+				<div class="cfg-group" id="feishu-app-config">
+					<div class="cfg-group-title"><span class="dot" id="feishu-app-dot"></span> 飞书应用 (Feishu App) — 全局配置</div>
+					<div class="cfg-row"><span class="cfg-key">App ID</span><div class="cfg-val"><input type="text" id="feishu-app-id" placeholder="cli_xxxxxxxx"><div class="hint">飞书应用 App ID</div></div></div>
+					<div class="cfg-row"><span class="cfg-key">App Secret</span><div class="cfg-val"><input type="password" id="feishu-app-secret" placeholder="留空保留原值" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">加密存储</div></div></div>
+					<div class="cfg-row"><span class="cfg-key">Chat ID</span><div class="cfg-val"><input type="text" id="feishu-app-chat-id" placeholder="oc_xxxxxxxx"><div class="hint">飞书群聊 Chat ID</div></div></div>
+					<div class="cfg-row toggle-row"><span class="cfg-key">通知总开关</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="feishu-app-notify-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用通知推送</span></label></div></div>
+					<div class="cfg-actions">
+						<button class="cfg-btn cfg-btn-save" id="btn-feishu-app-save">保存</button>
+						<span class="cfg-result" id="feishu-app-result"></span>
+					</div>
+				</div>
+
 				<div class="cfg-group hidden-init" id="notify-form-panel">
 					<div class="cfg-group-title" id="notify-form-title">新增渠道</div>
 					<div class="cfg-row"><span class="cfg-key">渠道 ID</span><div class="cfg-val"><input type="text" id="nch-id" placeholder="如 team-dingtalk"><div class="hint">唯一标识，创建后不可修改</div></div></div>
@@ -627,8 +640,46 @@
 				var cs = document.getElementById('cache-max-size');
 				if (cs) cs.value = data.system.cache_max_entries || 1000;
 			}
+			// 飞书应用全局配置
+			if (data.notifications) {
+				var n = data.notifications;
+				var dot = document.getElementById('feishu-app-dot');
+				var fa = n.feyshu_app;
+				if (fa) {
+					var aid = document.getElementById('feishu-app-id');
+					if (aid) aid.value = fa.app_id || '';
+					var asecret = document.getElementById('feishu-app-secret');
+					if (asecret) asecret.value = fa.app_secret ? '********' : '';
+					var chatId = document.getElementById('feishu-app-chat-id');
+					if (chatId) chatId.value = fa.chat_id || '';
+					if (dot) dot.className = 'dot on';
+				} else {
+					if (dot) dot.className = 'dot off';
+				}
+				var notifyEnabled = document.getElementById('feishu-app-notify-enabled');
+				if (notifyEnabled) notifyEnabled.checked = n.enabled !== false;
+			}
 		} catch (e) { console.error('Config load error:', e); }
 	}
+
+		window.saveFeishuApp = async function() {
+			var appId = document.getElementById("feishu-app-id").value.trim();
+			var appSecret = document.getElementById("feishu-app-secret").value;
+			var chatId = document.getElementById("feishu-app-chat-id").value.trim();
+			var notifyEnabled = document.getElementById("feishu-app-notify-enabled").checked;
+			var data = { enabled: notifyEnabled };
+			if (appId) data.feishu_app = { app_id: appId, app_secret: appSecret, chat_id: chatId };
+			try {
+				var resp = await fetch("/api/v1/config", {
+					method: "POST",
+					headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok() },
+					body: JSON.stringify({ section: "notifications", data: data })
+				});
+				var result = await resp.json();
+				showResult("feishu-app-result", result.success ? "ok" : "fail", result.message || (result.success ? "已保存，重启后生效" : ""));
+				if (result.success) loadConfig();
+			} catch (e) { showResult("feishu-app-result", "fail", "保存失败: " + e.message); }
+		};
 
 	window.saveAllEngines = async function() {
 		var engines = ['fofa', 'hunter', 'zoomeye', 'quake', 'shodan'];
@@ -933,7 +984,7 @@
 		fetch('/api/v1/notifications/channels', { headers: { 'Authorization': 'Bearer ' + tok() } })
 			.then(function(r) { return r.json(); })
 			.then(function(data) {
-				notifyChannels = (data && data.channels) || [];
+				notifyChannels = (data && data.data && data.data.channels) || (data && data.channels) || [];
 				renderNotifyChannelList();
 			})
 			.catch(function(e) { console.error('notify channels load error:', e); });

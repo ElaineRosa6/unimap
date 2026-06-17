@@ -30,6 +30,7 @@ type sessionRevocationStore struct {
 	mu      sync.RWMutex
 	revoked map[string]time.Time // session ID -> expiry time
 	stopCh  chan struct{}
+	stopOnce sync.Once
 }
 
 func newSessionRevocationStore() *sessionRevocationStore {
@@ -81,7 +82,7 @@ func (s *sessionRevocationStore) IsRevoked(sessionID string) bool {
 }
 
 func (s *sessionRevocationStore) Stop() {
-	close(s.stopCh)
+	s.stopOnce.Do(func() { close(s.stopCh) })
 }
 
 // deriveSessionKey derives a 32-byte AES key from adminToken + pepper.
