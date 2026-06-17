@@ -18,6 +18,7 @@ type CollectedDataItem struct {
 	Org         string         `json:"org,omitempty"`
 	ISP         string         `json:"isp,omitempty"`
 	Product     string         `json:"product,omitempty"`
+	LastSeen    string         `json:"last_seen,omitempty"` // last probe time (e.g. Shodan timestamp)
 	Extra       map[string]any `json:"extra,omitempty"`
 }
 

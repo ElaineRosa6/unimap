@@ -1,6 +1,7 @@
 package collection
 
 import (
+	"net"
 	"regexp"
 	"strconv"
 	"strings"
@@ -37,6 +38,7 @@ func ParseStructuredCollectedData(data map[string]interface{}, engine string) ([
 		}
 		assets = append(assets, ParseAssetItem(item, engine))
 	}
+	NormalizeAssets(engine, assets)
 	return assets, total, hasMore
 }
 
@@ -63,6 +65,7 @@ func ParseStructuredCollectedDataFromItems(items []model.CollectedDataItem, engi
 			ASN:         item.ASN,
 			Org:         item.Org,
 			ISP:         item.ISP,
+			LastSeen:    item.LastSeen,
 			Source:      engine,
 		}
 		// Map Product to Title when Title is empty (e.g. Hunter engine)
@@ -82,6 +85,7 @@ func ParseStructuredCollectedDataFromItems(items []model.CollectedDataItem, engi
 		}
 		assets = append(assets, asset)
 	}
+	NormalizeAssets(engine, assets)
 	return assets, len(items), hasMore
 }
 
@@ -150,6 +154,12 @@ func ParseAssetItem(item map[string]interface{}, engine string) model.UnifiedAss
 	if v, ok := item["isp"].(string); ok {
 		asset.ISP = v
 	}
+	// last_seen: prefer "last_seen" key, fall back to legacy "timestamp"
+	if v, ok := item["last_seen"].(string); ok && v != "" {
+		asset.LastSeen = v
+	} else if v, ok := item["timestamp"].(string); ok && v != "" {
+		asset.LastSeen = v
+	}
 	if v, ok := item["country"].(string); ok && asset.CountryCode == "" {
 		asset.CountryCode = v
 	}
@@ -171,6 +181,7 @@ func ExtractExtraFields(item map[string]interface{}) map[string]interface{} {
 		"country_code": true, "region": true, "city": true,
 		"asn": true, "org": true, "isp": true, "os": true,
 		"country": true, "product": true, "source": true,
+		"timestamp": true, "last_seen": true,
 	}
 	extra := make(map[string]interface{})
 	for k, v := range item {
@@ -186,6 +197,18 @@ func ExtractExtraFields(item map[string]interface{}) map[string]interface{} {
 
 // extractPortFromHost extracts port from "host:port" string. Returns (port, cleanHost).
 func extractPortFromHost(s string) (int, string) {
+	if s == "" {
+		return 0, s
+	}
+	if host, portText, err := net.SplitHostPort(s); err == nil {
+		if p, err := strconv.Atoi(portText); err == nil && p > 0 && p < 65536 {
+			return p, host
+		}
+		return 0, s
+	}
+	if strings.Count(s, ":") != 1 {
+		return 0, s
+	}
 	if idx := strings.LastIndex(s, ":"); idx > 0 {
 		if p, err := strconv.Atoi(s[idx+1:]); err == nil && p > 0 && p < 65536 {
 			return p, s[:idx]
@@ -280,7 +303,16 @@ func ParseExtractedAssets(raw []map[string]interface{}, engine string) []model.U
 		if v, ok := row["isp"].(string); ok {
 			a.ISP = v
 		}
+		// last_seen: prefer "last_seen" key, fall back to legacy "timestamp"
+		if v, ok := row["last_seen"].(string); ok && v != "" {
+			a.LastSeen = v
+		} else if v, ok := row["timestamp"].(string); ok && v != "" {
+			a.LastSeen = v
+		}
 		if v, ok := row["body_snippet"].(string); ok {
+			a.BodySnippet = v
+		}
+		if v, ok := row["banner"].(string); ok && v != "" && a.BodySnippet == "" {
 			a.BodySnippet = v
 		}
 		a.StatusCode = ParseIntField(row, "status_code")
@@ -303,7 +335,15 @@ func ParseExtractedAssets(raw []map[string]interface{}, engine string) []model.U
 		}
 		assets = append(assets, a)
 	}
+	NormalizeAssets(engine, assets)
 	return assets
+}
+
+// NormalizeAssets applies engine-specific cleanup after assets are parsed.
+func NormalizeAssets(engine string, assets []model.UnifiedAsset) {
+	if strings.EqualFold(strings.TrimSpace(engine), "hunter") {
+		CleanHunterFields(assets)
+	}
 }
 
 // CleanHunterFields fixes common Hunter DOM extraction artifacts.
@@ -322,8 +362,8 @@ func CleanHunterFields(assets []model.UnifiedAsset) {
 		if a.Host != "" {
 			h := a.Host
 			h = strings.ReplaceAll(h, "不看空域名", "")
-			h = strings.ReplaceAll(h, "-", "")
 			h = strings.TrimSpace(h)
+			h = strings.Trim(h, " \t\r\n-")
 			if h == "" || h == a.IP {
 				a.Host = ""
 			} else {
@@ -333,13 +373,13 @@ func CleanHunterFields(assets []model.UnifiedAsset) {
 		// Title: strip trailing category labels
 		if a.Title != "" {
 			t := a.Title
-			for _, label := range []string{"企业", "个人", "开源", "政府", "金融", "邮件", "办公", "系统"} {
+			for _, label := range []string{"企业办公", "邮件系统", "开源", "企业", "个人", "政府", "金融", "邮件", "办公", "系统"} {
 				if idx := strings.Index(t, label); idx > 0 {
 					t = t[:idx]
 				}
 			}
-			t = strings.ReplaceAll(t, "-", "")
 			t = strings.TrimSpace(t)
+			t = strings.Trim(t, " \t\r\n-")
 			a.Title = t
 		}
 	}
