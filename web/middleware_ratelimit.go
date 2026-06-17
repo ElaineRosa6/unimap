@@ -148,7 +148,13 @@ func init() {
 func getGlobalLimiter() *RateLimiter {
 	globalLimiterOnce.Do(func() {
 		globalLimiterMu.Lock()
-		globalLimiter = NewRateLimiter(60, time.Minute)
+		// SetRateLimitConfig may have already installed a configured limiter
+		// (e.g. from config.yaml) before the first request triggered this Once.
+		// Only create the default 60/min limiter if none was set yet, otherwise
+		// we would overwrite the configured rate (was bug: 300/min → 60/min).
+		if globalLimiter == nil {
+			globalLimiter = NewRateLimiter(60, time.Minute)
+		}
 		globalLimiterMu.Unlock()
 	})
 	globalLimiterMu.RLock()

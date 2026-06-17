@@ -498,14 +498,20 @@
 
 				<!-- 飞书应用全局配置（来自 config.yaml，启动时注册） -->
 				<div class="cfg-group" id="feishu-app-config">
-					<div class="cfg-group-title"><span class="dot" id="feishu-app-dot"></span> 飞书应用 (Feishu App) — 全局配置</div>
-					<div class="cfg-row"><span class="cfg-key">App ID</span><div class="cfg-val"><input type="text" id="feishu-app-id" placeholder="cli_xxxxxxxx"><div class="hint">飞书应用 App ID</div></div></div>
-					<div class="cfg-row"><span class="cfg-key">App Secret</span><div class="cfg-val"><input type="password" id="feishu-app-secret" placeholder="留空保留原值" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">加密存储</div></div></div>
-					<div class="cfg-row"><span class="cfg-key">Chat ID</span><div class="cfg-val"><input type="text" id="feishu-app-chat-id" placeholder="oc_xxxxxxxx"><div class="hint">飞书群聊 Chat ID</div></div></div>
-					<div class="cfg-row toggle-row"><span class="cfg-key">通知总开关</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="feishu-app-notify-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用通知推送</span></label></div></div>
-					<div class="cfg-actions">
-						<button class="cfg-btn cfg-btn-save" id="btn-feishu-app-save">保存</button>
-						<span class="cfg-result" id="feishu-app-result"></span>
+					<div class="cfg-group-title"><span class="dot" id="feishu-app-dot"></span> 飞书应用 (Feishu App) — 全局配置
+						<button class="cfg-btn cfg-btn-test" id="btn-feishu-app-edit" style="margin-left:auto">编辑</button>
+					</div>
+					<div class="cfg-row" id="feishu-app-summary"><span class="cfg-key">App ID</span><div class="cfg-val"><span id="feishu-app-summary-id" class="hint">未配置</span></div></div>
+					<div id="feishu-app-fields" class="hidden-init">
+						<div class="cfg-row"><span class="cfg-key">App ID</span><div class="cfg-val"><input type="text" id="feishu-app-id" placeholder="cli_xxxxxxxx"><div class="hint">飞书应用 App ID</div></div></div>
+						<div class="cfg-row"><span class="cfg-key">App Secret</span><div class="cfg-val"><input type="password" id="feishu-app-secret" placeholder="留空保留原值" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">加密存储</div></div></div>
+						<div class="cfg-row"><span class="cfg-key">Chat ID</span><div class="cfg-val"><input type="text" id="feishu-app-chat-id" placeholder="oc_xxxxxxxx"><div class="hint">飞书群聊 Chat ID</div></div></div>
+						<div class="cfg-row toggle-row"><span class="cfg-key">通知总开关</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="feishu-app-notify-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用通知推送</span></label></div></div>
+						<div class="cfg-actions">
+							<button class="cfg-btn cfg-btn-save" id="btn-feishu-app-save">保存</button>
+							<button class="cfg-btn cfg-btn-test" id="btn-feishu-app-collapse">收起</button>
+							<span class="cfg-result" id="feishu-app-result"></span>
+						</div>
 					</div>
 				</div>
 
@@ -562,8 +568,6 @@
 				</div>
 			</div>
 	</div>
-
-{{template "footer" .}}
 
 <script nonce="{{.CSPNonce}}">
 (function() {
@@ -644,7 +648,8 @@
 			if (data.notifications) {
 				var n = data.notifications;
 				var dot = document.getElementById('feishu-app-dot');
-				var fa = n.feyshu_app;
+				var summaryEl = document.getElementById('feishu-app-summary-id');
+				var fa = n.feishu_app;
 				if (fa) {
 					var aid = document.getElementById('feishu-app-id');
 					if (aid) aid.value = fa.app_id || '';
@@ -653,8 +658,10 @@
 					var chatId = document.getElementById('feishu-app-chat-id');
 					if (chatId) chatId.value = fa.chat_id || '';
 					if (dot) dot.className = 'dot on';
+					if (summaryEl) summaryEl.textContent = fa.app_id || '已配置';
 				} else {
 					if (dot) dot.className = 'dot off';
+					if (summaryEl) summaryEl.textContent = '未配置';
 				}
 				var notifyEnabled = document.getElementById('feishu-app-notify-enabled');
 				if (notifyEnabled) notifyEnabled.checked = n.enabled !== false;
@@ -1030,14 +1037,18 @@
 		var isApp = type === 'feishu_app';
 		var webhookRows = document.querySelectorAll('.nch-webhook-row');
 		var appRows = document.querySelectorAll('.nch-app-row');
-		webhookRows.forEach(function(row) { row.style.display = isApp ? 'none' : ''; });
-		appRows.forEach(function(row) { row.style.display = isApp ? '' : 'none'; });
+		webhookRows.forEach(function(row) { row.style.display = isApp ? 'none' : 'block'; });
+		// nch-app-row has class "hidden-init" (display:none); clearing inline display
+		// would let the class win, so use 'block' to actually show the rows.
+		appRows.forEach(function(row) { row.style.display = isApp ? 'block' : 'none'; });
 	}
 
 	function showNotifyForm(isEdit) {
 		editingChannelId = isEdit || null;
 		document.getElementById('notify-form-title').textContent = isEdit ? '编辑渠道: ' + isEdit : '新增渠道';
-		document.getElementById('notify-form-panel').style.display = '';
+		// Use 'block' not '' — the panel has class "hidden-init" (display:none),
+		// so clearing inline display would let the class win and keep it hidden.
+		document.getElementById('notify-form-panel').style.display = 'block';
 
 		if (isEdit) {
 			document.getElementById('nch-id').disabled = true;
@@ -1052,7 +1063,7 @@
 				document.getElementById('nch-chat-id').value = ch.chat_id || '';
 				document.getElementById('nch-enabled').checked = ch.enabled;
 			}
-			document.getElementById('btn-nch-test').style.display = '';
+			document.getElementById('btn-nch-test').style.display = 'inline-block';
 		} else {
 			document.getElementById('nch-id').disabled = false;
 			document.getElementById('nch-id').value = '';
@@ -1246,6 +1257,24 @@
 	if (btnScreenshotSave) btnScreenshotSave.addEventListener('click', window.saveScreenshot);
 	var btnSystemSave = document.getElementById('btn-system-save');
 	if (btnSystemSave) btnSystemSave.addEventListener('click', window.saveSystem);
+	var btnFeishuAppSave = document.getElementById('btn-feishu-app-save');
+	if (btnFeishuAppSave) btnFeishuAppSave.addEventListener('click', window.saveFeishuApp);
+	// Feishu app panel: expand on "编辑", collapse on "收起"
+	var btnFeishuAppEdit = document.getElementById('btn-feishu-app-edit');
+	var feishuAppFields = document.getElementById('feishu-app-fields');
+	if (btnFeishuAppEdit && feishuAppFields) {
+		btnFeishuAppEdit.addEventListener('click', function() {
+			feishuAppFields.style.display = 'block';
+			btnFeishuAppEdit.style.display = 'none';
+		});
+	}
+	var btnFeishuAppCollapse = document.getElementById('btn-feishu-app-collapse');
+	if (btnFeishuAppCollapse && feishuAppFields) {
+		btnFeishuAppCollapse.addEventListener('click', function() {
+			feishuAppFields.style.display = 'none';
+			if (btnFeishuAppEdit) btnFeishuAppEdit.style.display = '';
+		});
+	}
 
 	// Notification channel buttons
 	var btnAdd = document.getElementById('btn-nch-add');
@@ -1277,3 +1306,5 @@
 	loadNotifyChannelsPanel();
 })();
 </script>
+
+{{template "footer" .}}

@@ -7,8 +7,9 @@
 					<h2>账号管理</h2>
 
 					<div class="tabs" role="tablist">
-						<button class="tab-btn active" data-tab="tab-password" role="tab" aria-selected="true">修改密码</button>
-						<button class="tab-btn" data-tab="tab-user" role="tab" aria-selected="false">当前用户</button>
+					<button class="tab-btn active" data-tab="tab-password" role="tab" aria-selected="true">修改密码</button>
+					<button class="tab-btn" data-tab="tab-user" role="tab" aria-selected="false">当前用户</button>
+					{{if eq .role "admin"}}<button class="tab-btn" data-tab="tab-users" role="tab" aria-selected="false">用户管理</button>{{end}}
 					</div>
 
 					<div class="tab-content active" id="tab-password" role="tabpanel">
@@ -51,6 +52,52 @@
 							<p class="form-text mt-8">用于 Chrome Extension 桥接认证。复制后粘贴到 Extension 选项页面的 Admin Token 字段。</p>
 						</div>
 					</div>
+					{{if eq .role "admin"}}
+					<div class="tab-content" id="tab-users" role="tabpanel">
+						<div class="account-info">
+							<h3 style="margin-top:0">新增用户</h3>
+							<form id="register-user-form" autocomplete="off" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+								<div class="form-group" style="flex:1;min-width:140px">
+									<label for="new-username">用户名</label>
+									<input type="text" id="new-username" name="new_username" required minlength="3" maxlength="32" autocomplete="off" placeholder="3-32 字符">
+								</div>
+								<div class="form-group" style="flex:1;min-width:140px">
+									<label for="new-password-user">密码</label>
+									<input type="password" id="new-password-user" name="new_password_user" required minlength="8" autocomplete="new-password" placeholder="至少 8 位">
+								</div>
+								<div class="form-group" style="min-width:120px">
+									<label for="new-role">角色</label>
+									<select id="new-role" name="new_role" autocomplete="off">
+										<option value="readonly" selected>readonly</option>
+										<option value="operator">operator</option>
+										<option value="admin">admin</option>
+									</select>
+								</div>
+								<div class="form-group" style="margin-bottom:0">
+									<button type="submit" class="btn btn-primary">创建</button>
+								</div>
+							</form>
+						</div>
+
+						<h3>用户列表</h3>
+						<div class="table-wrap" style="overflow-x:auto">
+							<table class="user-table" id="users-table" style="width:100%;border-collapse:collapse;font-size:0.9rem">
+								<thead>
+									<tr style="text-align:left;border-bottom:2px solid var(--border-color,#ddd)">
+										<th style="padding:6px 8px">用户名</th>
+										<th style="padding:6px 8px">角色</th>
+										<th style="padding:6px 8px">状态</th>
+										<th style="padding:6px 8px">创建时间</th>
+										<th style="padding:6px 8px">操作</th>
+									</tr>
+								</thead>
+								<tbody id="users-tbody">
+									<tr><td colspan="5" style="padding:12px;text-align:center;color:var(--text-muted,#888)">加载中...</td></tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+					{{end}}
 				</section>
 
 				<div class="toast" id="toast"></div>
@@ -136,6 +183,158 @@
 					showToast('请求失败: ' + err.message, 'error');
 				}
 			});
+
+			{{if eq .role "admin"}}
+			// ===== User management (admin only) =====
+			const currentUid = '{{.userID}}';
+			const usersTbody = document.getElementById('users-tbody');
+
+			async function loadUsers() {
+				if (!usersTbody) return;
+				try {
+					const res = await fetch('/api/v1/users');
+					const data = await res.json();
+					if (!res.ok) {
+						usersTbody.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:#c00">' + (data.error || '加载失败') + '</td></tr>';
+						return;
+					}
+					const users = (data.data && data.data.users) || [];
+					if (!users.length) {
+						usersTbody.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:#888">暂无用户</td></tr>';
+						return;
+					}
+					usersTbody.innerHTML = users.map(u => renderUserRow(u)).join('');
+					bindUserRowEvents();
+				} catch (err) {
+					usersTbody.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:#c00">请求失败: ' + err.message + '</td></tr>';
+				}
+			}
+
+			function fmtTime(s) {
+				if (!s) return '-';
+				try { return new Date(s).toLocaleString('zh-CN'); } catch(e) { return s; }
+			}
+
+			function renderUserRow(u) {
+				const isSelf = String(u.id) === String(currentUid);
+				const statusBadge = u.status === 'active'
+					? '<span style="color:#2a8">启用</span>'
+					: '<span style="color:#c00">禁用</span>';
+				const roleSel = ['readonly','operator','admin'].map(r =>
+					'<option value="' + r + '"' + (r === u.role ? ' selected' : '') + '>' + r + '</option>'
+				).join('');
+				const toggleLabel = u.status === 'active' ? '禁用' : '启用';
+				const toggleStatus = u.status === 'active' ? 'disabled' : 'active';
+				const delBtn = isSelf
+					? '<button class="btn btn-sm" disabled title="不能删除自己" style="opacity:.5">删除</button>'
+					: '<button class="btn btn-sm u-del" data-uid="' + u.id + '" data-name="' + esc(u.username) + '">删除</button>';
+				return '<tr style="border-bottom:1px solid var(--border-color,#eee)">' +
+					'<td style="padding:6px 8px">' + esc(u.username) + (isSelf ? ' <small>(你)</small>' : '') + '</td>' +
+					'<td style="padding:6px 8px"><select class="u-role" data-uid="' + u.id + '"' + (isSelf ? ' disabled style="opacity:.7"' : '') + '>' + roleSel + '</select></td>' +
+					'<td style="padding:6px 8px">' + statusBadge + '</td>' +
+					'<td style="padding:6px 8px">' + fmtTime(u.created_at) + '</td>' +
+					'<td style="padding:6px 8px;white-space:nowrap">' +
+						(isSelf ? '' : '<button class="btn btn-sm u-toggle" data-uid="' + u.id + '" data-status="' + toggleStatus + '">' + toggleLabel + '</button> ') +
+						delBtn +
+					'</td>' +
+				'</tr>';
+			}
+
+			function bindUserRowEvents() {
+				if (!usersTbody) return;
+				// role change
+				usersTbody.querySelectorAll('.u-role').forEach(function(sel) {
+					sel.addEventListener('change', function() {
+						updateUser(this.dataset.uid, this.value, null);
+					});
+				});
+				// toggle status
+				usersTbody.querySelectorAll('.u-toggle').forEach(function(btn) {
+					btn.addEventListener('click', function() {
+						updateUser(this.dataset.uid, null, this.dataset.status);
+					});
+				});
+				// delete
+				usersTbody.querySelectorAll('.u-del').forEach(function(btn) {
+					btn.addEventListener('click', function() {
+						deleteUser(this.dataset.uid, this.dataset.name);
+					});
+				});
+			}
+
+			function esc(s) {
+				const d = document.createElement('div');
+				d.textContent = s || '';
+				return d.innerHTML;
+			}
+
+			async function updateUser(id, role, status) {
+				const body = {};
+				if (role !== null && role !== undefined) body.role = role;
+				if (status !== null && status !== undefined) body.status = status;
+				try {
+					const res = await fetch('/api/v1/users/' + id, {
+						method: 'PUT',
+						headers: {'Content-Type': 'application/json'},
+						body: JSON.stringify(body)
+					});
+					const data = await res.json();
+					if (!res.ok) { showToast(data.error || '更新失败', 'error'); return; }
+					showToast('用户已更新', 'success');
+					loadUsers();
+				} catch (err) { showToast('请求失败: ' + err.message, 'error'); }
+			}
+
+			async function deleteUser(id, name) {
+				if (!confirm('确认删除用户 "' + name + '"？此操作不可撤销。')) return;
+				try {
+					const res = await fetch('/api/v1/users/' + id, {method: 'DELETE'});
+					if (!res.ok) {
+						let msg = '删除失败';
+						try { const d = await res.json(); msg = d.error || msg; } catch(e){}
+						showToast(msg, 'error'); return;
+					}
+					showToast('用户已删除', 'success');
+					loadUsers();
+				} catch (err) { showToast('请求失败: ' + err.message, 'error'); }
+			}
+
+			document.getElementById('register-user-form').addEventListener('submit', async (e) => {
+				e.preventDefault();
+				const username = document.getElementById('new-username').value.trim();
+				const password = document.getElementById('new-password-user').value;
+				const role = document.getElementById('new-role').value;
+				if (username.length < 3) { showToast('用户名至少 3 字符', 'error'); return; }
+				if (password.length < 8) { showToast('密码至少 8 位', 'error'); return; }
+				try {
+					const res = await fetch('/api/v1/users/register', {
+						method: 'POST',
+						headers: {'Content-Type': 'application/json'},
+						body: JSON.stringify({username: username, password: password})
+					});
+					const data = await res.json();
+					if (!res.ok) { showToast(data.error || '创建失败', 'error'); return; }
+					// New users always start as readonly by backend; promote if admin requested
+					if (role !== 'readonly' && data.data && data.data.id) {
+						await fetch('/api/v1/users/' + data.data.id, {
+							method: 'PUT',
+							headers: {'Content-Type': 'application/json'},
+							body: JSON.stringify({role: role})
+						});
+					}
+					showToast('用户已创建 (' + role + ')', 'success');
+					e.target.reset();
+					loadUsers();
+				} catch (err) { showToast('请求失败: ' + err.message, 'error'); }
+			});
+
+			// Auto-load when switching to the users tab
+			document.querySelectorAll('.tab-btn').forEach(function(btn) {
+				btn.addEventListener('click', function() {
+					if (this.dataset.tab === 'tab-users') loadUsers();
+				});
+			});
+			{{end}}
 			</script>
 	{{template "footer" .}}
 {{end}}

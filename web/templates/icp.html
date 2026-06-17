@@ -300,8 +300,6 @@
 	</div>
 </main>
 
-{{template "footer" .}}
-
 <script nonce="{{.CSPNonce}}">
 (function() {
 	var typeGroup = document.getElementById('icp-type-group');
@@ -492,6 +490,8 @@
 	input.addEventListener('keydown', function(e) {
 		if (e.key === 'Enter') doSearch();
 	});
-})();
+	})();
 </script>
+
+{{template "footer" .}}
 {{end}}

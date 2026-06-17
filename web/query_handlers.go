@@ -438,12 +438,23 @@ func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 	username := ""
 	tokenPrefix := ""
 	isMultiUser := s.userRepo != nil
+	role := ""
 
 	// Try to get current user from session
 	currentUser := s.getCurrentUser(r)
 	if currentUser != nil && currentUser.ID > 0 {
 		// Real user from user DB
 		username = currentUser.Username
+		role = currentUser.Role
+	} else if currentUser != nil {
+		// Synthetic admin (token auth, userID=-1)
+		role = currentUser.Role
+		if s.config != nil {
+			token := s.adminToken()
+			if len(token) >= 8 {
+				tokenPrefix = token[:8]
+			}
+		}
 	} else if s.config != nil {
 		// Legacy config-based user
 		username = s.config.Web.Auth.Username
@@ -459,6 +470,7 @@ func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 		"staticVersion": s.staticVersion,
 		"isMultiUser":   isMultiUser,
 		"userID":        currentUserID(r),
+		"role":          role,
 	}) {
 		return
 	}
