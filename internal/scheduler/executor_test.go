@@ -2,55 +2,57 @@ package scheduler
 
 import (
 	"testing"
+
+	"github.com/unimap/project/internal/model"
 )
 
 // extractStrings 测试
 func TestExtractStrings(t *testing.T) {
 	tests := []struct {
 		name    string
-		payload map[string]interface{}
+		payload *model.TaskPayload
 		key     string
 		def     []string
 		want    []string
 	}{
 		{
 			name:    "key not exists returns default",
-			payload: map[string]interface{}{},
+			payload: &model.TaskPayload{},
 			key:     "missing",
 			def:     []string{"default"},
 			want:    []string{"default"},
 		},
 		{
-			name:    "value is []string returns it",
-			payload: map[string]interface{}{"engines": []string{"fofa", "hunter"}},
+			name:    "engines field returns it",
+			payload: &model.TaskPayload{Engines: []string{"fofa", "hunter"}},
 			key:     "engines",
 			def:     []string{},
 			want:    []string{"fofa", "hunter"},
 		},
 		{
-			name:    "value is []interface{} extracts strings",
-			payload: map[string]interface{}{"engines": []interface{}{"fofa", "hunter", 123}},
+			name:    "extra engines []interface{} extracts strings",
+			payload: &model.TaskPayload{Extra: map[string]any{"engines": []any{"fofa", "hunter", 123}}},
 			key:     "engines",
 			def:     []string{},
 			want:    []string{"fofa", "hunter"},
 		},
 		{
-			name:    "value is string returns single-element slice",
-			payload: map[string]interface{}{"engine": "fofa"},
+			name:    "extra string value returns single-element slice",
+			payload: &model.TaskPayload{Extra: map[string]any{"engine": "fofa"}},
 			key:     "engine",
 			def:     []string{},
 			want:    []string{"fofa"},
 		},
 		{
-			name:    "value is empty string returns default",
-			payload: map[string]interface{}{"engine": ""},
+			name:    "extra empty string returns default",
+			payload: &model.TaskPayload{Extra: map[string]any{"engine": ""}},
 			key:     "engine",
 			def:     []string{"default"},
 			want:    []string{"default"},
 		},
 		{
-			name:    "value is other type returns default",
-			payload: map[string]interface{}{"engines": 123},
+			name:    "extra non-string value returns default",
+			payload: &model.TaskPayload{Extra: map[string]any{"engines": 123}},
 			key:     "engines",
 			def:     []string{"default"},
 			want:    []string{"default"},
@@ -77,35 +79,35 @@ func TestExtractStrings(t *testing.T) {
 func TestExtractInt(t *testing.T) {
 	tests := []struct {
 		name    string
-		payload map[string]interface{}
+		payload *model.TaskPayload
 		key     string
 		def     int
 		want    int
 	}{
 		{
 			name:    "key not exists returns default",
-			payload: map[string]interface{}{},
+			payload: &model.TaskPayload{},
 			key:     "missing",
 			def:     100,
 			want:    100,
 		},
 		{
-			name:    "value is float64 returns int",
-			payload: map[string]interface{}{"page_size": 50.0},
+			name:    "page_size field returns it",
+			payload: &model.TaskPayload{PageSize: 50},
 			key:     "page_size",
 			def:     100,
 			want:    50,
 		},
 		{
-			name:    "value is int returns it",
-			payload: map[string]interface{}{"page_size": 200},
+			name:    "page_size 200 returns it",
+			payload: &model.TaskPayload{PageSize: 200},
 			key:     "page_size",
 			def:     100,
 			want:    200,
 		},
 		{
-			name:    "value is other type returns default",
-			payload: map[string]interface{}{"page_size": "not-a-number"},
+			name:    "extra non-numeric value returns default",
+			payload: &model.TaskPayload{Extra: map[string]any{"page_size": "not-a-number"}},
 			key:     "page_size",
 			def:     100,
 			want:    100,
@@ -126,29 +128,29 @@ func TestExtractInt(t *testing.T) {
 func TestExtractString(t *testing.T) {
 	tests := []struct {
 		name    string
-		payload map[string]interface{}
+		payload *model.TaskPayload
 		key     string
 		def     string
 		want    string
 	}{
 		{
 			name:    "key not exists returns default",
-			payload: map[string]interface{}{},
+			payload: &model.TaskPayload{},
 			key:     "missing",
 			def:     "default",
 			want:    "default",
 		},
 		{
-			name:    "value is string returns it",
-			payload: map[string]interface{}{"query": "domain=example.com"},
+			name:    "query field returns it",
+			payload: &model.TaskPayload{Query: "domain=example.com"},
 			key:     "query",
 			def:     "default",
 			want:    "domain=example.com",
 		},
 		{
-			name:    "value is other type returns default",
-			payload: map[string]interface{}{"query": 123},
-			key:     "query",
+			name:    "extra non-string value returns default",
+			payload: &model.TaskPayload{Extra: map[string]any{"custom": 123}},
+			key:     "custom",
 			def:     "default",
 			want:    "default",
 		},
@@ -213,7 +215,7 @@ func TestReadURLsFromFile(t *testing.T) {
 	// 测试空文件
 	t.Run("empty file", func(t *testing.T) {
 		r := NewURLImportRunner(importDir)
-		_, err := r.Execute(nil, map[string]interface{}{"file_pattern": "nonexistent.txt"})
+		_, err := r.Execute(nil, &model.TaskPayload{Extra: map[string]any{"file_pattern": "nonexistent.txt"}})
 		// 应该返回错误但不会panic
 		if err != nil {
 			t.Logf("Expected error for non-existent file: %v", err)

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/collection"
+	"github.com/unimap/project/internal/model"
 )
 
 func TestNewScreenshotRouter_Defaults(t *testing.T) {
@@ -244,12 +245,13 @@ func (l *loginWallBridgeClient) AwaitResult(ctx context.Context, requestID strin
 	return BridgeResult{
 		RequestID: requestID,
 		Success:   true,
-		StructuredCollectedData: map[string]interface{}{
-			"items":         []interface{}{},
-			"total":         float64(0),
-			"has_more":      false,
-			"title":         "Login Required",
-			"is_login_wall": true,
+		StructuredCollectedData: &model.BridgeCollectedData{
+			Total: 0,
+			Items: []model.CollectedDataItem{},
+			Extra: map[string]any{
+				"title":         "Login Required",
+				"is_login_wall": true,
+			},
 		},
 	}, nil
 }
@@ -295,11 +297,13 @@ func (l *loginWallFailBridgeClient) AwaitResult(ctx context.Context, requestID s
 		Success:   false,
 		Error:     "login wall detected on https://fofa.info/result",
 		ErrorCode: "login_required",
-		StructuredCollectedData: map[string]interface{}{
-			"items":         []interface{}{},
-			"total":         float64(0),
-			"is_login_wall": true,
-			"title":         "FOFA Login",
+		StructuredCollectedData: &model.BridgeCollectedData{
+			Total: 0,
+			Items: []model.CollectedDataItem{},
+			Extra: map[string]any{
+				"is_login_wall": true,
+				"title":         "FOFA Login",
+			},
 		},
 	}, nil
 }

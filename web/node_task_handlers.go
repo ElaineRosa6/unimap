@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/unimap/project/internal/distributed"
+	"github.com/unimap/project/internal/model"
 )
 
 func (s *Server) handleNodeTaskEnqueue(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +34,7 @@ func (s *Server) handleNodeTaskEnqueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "task": rec})
+	writeJSON(w, http.StatusOK, model.APIResponse{Success: true, Data: rec})
 }
 
 func (s *Server) handleNodeTaskClaim(w http.ResponseWriter, r *http.Request) {
@@ -67,11 +68,11 @@ func (s *Server) handleNodeTaskClaim(w http.ResponseWriter, r *http.Request) {
 				writeAPIError(w, http.StatusBadRequest, "node_task_claim_failed", "node task claim failed", err.Error())
 				return
 			}
-			if rec == nil {
-				writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "task": nil, "message": "no task available"})
+		if rec == nil {
+				writeJSON(w, http.StatusOK, model.APIResponse{Success: true, Message: "no task available"})
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "task": rec})
+			writeJSON(w, http.StatusOK, model.APIResponse{Success: true, Data: rec})
 			return
 		}
 	}
@@ -89,11 +90,11 @@ func (s *Server) handleNodeTaskClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rec == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "task": nil, "message": "no task available"})
+		writeJSON(w, http.StatusOK, model.APIResponse{Success: true, Message: "no task available"})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "task": rec})
+	writeJSON(w, http.StatusOK, model.APIResponse{Success: true, Data: rec})
 }
 
 func (s *Server) handleNodeTaskResult(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +127,7 @@ func (s *Server) handleNodeTaskResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "task": rec})
+	writeJSON(w, http.StatusOK, model.APIResponse{Success: true, Data: rec})
 }
 
 func (s *Server) handleNodeTaskStatus(w http.ResponseWriter, r *http.Request) {
@@ -145,10 +146,12 @@ func (s *Server) handleNodeTaskStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tasks := s.distributed.NodeTaskQueue.Snapshot()
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"summary": map[string]int{"total": len(tasks)},
-		"tasks":   tasks,
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"summary": map[string]int{"total": len(tasks)},
+			"tasks":   tasks,
+		},
 	})
 }
 
@@ -184,9 +187,9 @@ func (s *Server) handleNodeTaskGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"task":    rec,
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Data:    rec,
 	})
 }
 
@@ -217,8 +220,8 @@ func (s *Server) handleNodeTaskDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"task_id": taskID,
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Data:    map[string]string{"task_id": taskID},
 	})
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/collection"
+	"github.com/unimap/project/internal/model"
 )
 
 // ===== buildSearchEngineURL (router.go) =====
@@ -220,16 +221,15 @@ func TestExtensionProvider_CollectSearchEngineResult_BridgeStructuredData(t *tes
 	client := &mockBridgeClient{
 		awaitResult: BridgeResult{
 			Success: true,
-			StructuredCollectedData: map[string]interface{}{
-				"total":    float64(1),
-				"has_more": false,
-				"items": []interface{}{
-					map[string]interface{}{
-						"ip":       "1.2.3.4",
-						"port":     float64(443),
-						"protocol": "https",
-						"host":     "example.com",
-						"title":    "Example",
+			StructuredCollectedData: &model.BridgeCollectedData{
+				Total: 1,
+				Items: []model.CollectedDataItem{
+					{
+						IP:       "1.2.3.4",
+						Port:     443,
+						Protocol: "https",
+						Host:     "example.com",
+						Title:    "Example",
 					},
 				},
 			},

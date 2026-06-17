@@ -6,17 +6,19 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/unimap/project/internal/model"
 )
 
 // mockHandler is a controllable test handler.
 type mockHandler struct {
 	typ     TaskType
-	execute func(ctx context.Context, payload map[string]interface{}) (string, error)
+	execute func(ctx context.Context, payload *model.TaskPayload) (string, error)
 }
 
 func (h *mockHandler) Type() TaskType { return h.typ }
 
-func (h *mockHandler) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (h *mockHandler) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if h.execute != nil {
 		return h.execute(ctx, payload)
 	}
@@ -34,7 +36,7 @@ func TestSchedulerE2E_CreateTriggerAndHistory(t *testing.T) {
 
 	handler := &mockHandler{
 		typ: TaskType("e2e_query"),
-		execute: func(ctx context.Context, payload map[string]interface{}) (string, error) {
+		execute: func(ctx context.Context, payload *model.TaskPayload) (string, error) {
 			mu.Lock()
 			execCount++
 			mu.Unlock()
@@ -48,7 +50,7 @@ func TestSchedulerE2E_CreateTriggerAndHistory(t *testing.T) {
 		Type:     handler.Type(),
 		Enabled:  true,
 		CronExpr: "*/1 * * * * *", // every 1 second
-		Payload:  map[string]interface{}{"key": "value"},
+		Payload:  &model.TaskPayload{Extra: map[string]any{"key": "value"}},
 	}
 
 	if err := s.AddTask(task); err != nil {
@@ -91,7 +93,7 @@ func TestSchedulerE2E_EnableDisableControl(t *testing.T) {
 
 	handler := &mockHandler{
 		typ: TaskType("e2e_toggle"),
-		execute: func(ctx context.Context, payload map[string]interface{}) (string, error) {
+		execute: func(ctx context.Context, payload *model.TaskPayload) (string, error) {
 			mu.Lock()
 			execCount++
 			mu.Unlock()
@@ -189,7 +191,7 @@ func TestSchedulerE2E_Persistence(t *testing.T) {
 		Type:     handler.Type(),
 		Enabled:  true,
 		CronExpr: "0 */5 * * * *",
-		Payload:  map[string]interface{}{"persistent": true},
+		Payload:  &model.TaskPayload{Extra: map[string]any{"persistent": true}},
 	}
 
 	if err := s1.AddTask(task); err != nil {
@@ -227,7 +229,7 @@ func TestSchedulerE2E_Persistence(t *testing.T) {
 	if restored.CronExpr != "0 */5 * * * *" {
 		t.Errorf("expected cron '0 */5 * * * *', got '%s'", restored.CronExpr)
 	}
-	if restored.Payload["persistent"] != true {
+	if restored.Payload == nil || restored.Payload.Extra["persistent"] != true {
 		t.Error("expected payload 'persistent' to be true")
 	}
 }
@@ -242,7 +244,7 @@ func TestSchedulerE2E_RunTaskNow(t *testing.T) {
 
 	handler := &mockHandler{
 		typ: TaskType("e2e_run_now"),
-		execute: func(ctx context.Context, payload map[string]interface{}) (string, error) {
+		execute: func(ctx context.Context, payload *model.TaskPayload) (string, error) {
 			mu.Lock()
 			executed = true
 			mu.Unlock()
@@ -298,7 +300,7 @@ func TestSchedulerE2E_TaskFailureAndRetry(t *testing.T) {
 
 	handler := &mockHandler{
 		typ: TaskType("e2e_retry"),
-		execute: func(ctx context.Context, payload map[string]interface{}) (string, error) {
+		execute: func(ctx context.Context, payload *model.TaskPayload) (string, error) {
 			mu.Lock()
 			attemptCount++
 			current := attemptCount

@@ -60,21 +60,23 @@ func (p *ValidationProcessor) Type() plugin.PluginType {
 }
 
 // Initialize 初始化插件
-func (p *ValidationProcessor) Initialize(config map[string]interface{}) error {
-	if val, ok := config["strictMode"].(bool); ok {
-		p.strictMode = val
-	}
-	if val, ok := config["validateIP"].(bool); ok {
-		p.validateIP = val
-	}
-	if val, ok := config["validatePort"].(bool); ok {
-		p.validatePort = val
-	}
-	if val, ok := config["validateURL"].(bool); ok {
-		p.validateURL = val
-	}
-	if val, ok := config["allowPrivateIP"].(bool); ok {
-		p.allowPrivateIP = val
+func (p *ValidationProcessor) Initialize(config *model.PluginConfig) error {
+	if config != nil {
+		if val, ok := config.Extra["strictMode"].(bool); ok {
+			p.strictMode = val
+		}
+		if val, ok := config.Extra["validateIP"].(bool); ok {
+			p.validateIP = val
+		}
+		if val, ok := config.Extra["validatePort"].(bool); ok {
+			p.validatePort = val
+		}
+		if val, ok := config.Extra["validateURL"].(bool); ok {
+			p.validateURL = val
+		}
+		if val, ok := config.Extra["allowPrivateIP"].(bool); ok {
+			p.allowPrivateIP = val
+		}
 	}
 	return nil
 }
@@ -238,15 +240,17 @@ func (p *EnrichmentProcessor) Type() plugin.PluginType {
 }
 
 // Initialize 初始化插件
-func (p *EnrichmentProcessor) Initialize(config map[string]interface{}) error {
-	if val, ok := config["addTimestamp"].(bool); ok {
-		p.addTimestamp = val
-	}
-	if val, ok := config["addFingerprint"].(bool); ok {
-		p.addFingerprint = val
-	}
-	if val, ok := config["normalizeCountry"].(bool); ok {
-		p.normalizeCountry = val
+func (p *EnrichmentProcessor) Initialize(config *model.PluginConfig) error {
+	if config != nil {
+		if val, ok := config.Extra["addTimestamp"].(bool); ok {
+			p.addTimestamp = val
+		}
+		if val, ok := config.Extra["addFingerprint"].(bool); ok {
+			p.addFingerprint = val
+		}
+		if val, ok := config.Extra["normalizeCountry"].(bool); ok {
+			p.normalizeCountry = val
+		}
 	}
 	return nil
 }

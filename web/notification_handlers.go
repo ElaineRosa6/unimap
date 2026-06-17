@@ -1,7 +1,6 @@
 package web
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -9,6 +8,7 @@ import (
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/notify"
 	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/utils/urlguard"
@@ -24,22 +24,17 @@ func (s *Server) handleNotificationChannels(w http.ResponseWriter, r *http.Reque
 	channels := s.config.Notifications.Channels
 	s.configMutex.Unlock()
 
-	infos := make([]map[string]interface{}, len(channels))
+	infos := make([]model.NotificationChannelInfo, len(channels))
 	for i, ch := range channels {
-		infos[i] = map[string]interface{}{
-			"id":      ch.ID,
-			"type":    ch.Type,
-			"enabled": ch.Enabled,
-		}
-		if ch.Type == "feishu_app" {
-			infos[i]["app_id"] = ch.AppID
-			infos[i]["chat_id"] = ch.ChatID
+		infos[i] = model.NotificationChannelInfo{
+			ID:      ch.ID,
+			Type:    ch.Type,
+			Enabled: ch.Enabled,
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"channels": infos,
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Data: map[string]any{"channels": infos},
 	})
 }
 
@@ -56,9 +51,8 @@ func (s *Server) handleNotifyReload(w http.ResponseWriter, r *http.Request) {
 
 	s.reloadNotifyChannels()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status": "ok",
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Message: "channels reloaded",
 	})
 }
 
@@ -290,10 +284,10 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 
 	s.reloadNotifyChannels()
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"id":      req.ID,
-		"message": "channel saved",
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Message: "channel saved",
+		Data:    map[string]any{"id": req.ID},
 	})
 }
 
@@ -346,10 +340,10 @@ func (s *Server) handleNotifyChannelDelete(w http.ResponseWriter, r *http.Reques
 
 	s.reloadNotifyChannels()
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"id":      id,
-		"message": "channel deleted",
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Message: "channel deleted",
+		Data:    map[string]any{"id": id},
 	})
 }
 
@@ -472,8 +466,8 @@ func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"message": "test message sent successfully",
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Message: "test message sent successfully",
 	})
 }

@@ -17,7 +17,7 @@ type ExampleEnginePlugin struct {
 	author      string
 	started     atomic.Bool
 	initialized atomic.Bool
-	config      map[string]interface{}
+	config      *model.PluginConfig
 }
 
 // NewExampleEnginePlugin creates a new example engine plugin.
@@ -52,7 +52,7 @@ func (e *ExampleEnginePlugin) Type() PluginType {
 	return PluginTypeEngine
 }
 
-func (e *ExampleEnginePlugin) Initialize(config map[string]interface{}) error {
+func (e *ExampleEnginePlugin) Initialize(config *model.PluginConfig) error {
 	if e.initialized.Load() {
 		return fmt.Errorf("plugin %s already initialized", e.name)
 	}

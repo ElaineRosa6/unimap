@@ -64,17 +64,19 @@ func TestNodeRegisterHeartbeatStatus(t *testing.T) {
 
 	var statusResp struct {
 		Success bool `json:"success"`
-		Summary struct {
-			Total   int `json:"total"`
-			Online  int `json:"online"`
-			Offline int `json:"offline"`
-		} `json:"summary"`
-		Nodes []struct {
-			NodeID         string `json:"node_id"`
-			CurrentLoad    int    `json:"current_load"`
-			MaxConcurrency int    `json:"max_concurrency"`
-			Online         bool   `json:"online"`
-		} `json:"nodes"`
+		Data    struct {
+			Summary struct {
+				Total   int `json:"total"`
+				Online  int `json:"online"`
+				Offline int `json:"offline"`
+			} `json:"summary"`
+			Nodes []struct {
+				NodeID         string `json:"node_id"`
+				CurrentLoad    int    `json:"current_load"`
+				MaxConcurrency int    `json:"max_concurrency"`
+				Online         bool   `json:"online"`
+			} `json:"nodes"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(statusW.Body.Bytes(), &statusResp); err != nil {
 		t.Fatalf("unmarshal status failed: %v", err)
@@ -82,14 +84,14 @@ func TestNodeRegisterHeartbeatStatus(t *testing.T) {
 	if !statusResp.Success {
 		t.Fatalf("expected success=true")
 	}
-	if statusResp.Summary.Total != 1 || statusResp.Summary.Online != 1 {
-		t.Fatalf("unexpected summary: %+v", statusResp.Summary)
+	if statusResp.Data.Summary.Total != 1 || statusResp.Data.Summary.Online != 1 {
+		t.Fatalf("unexpected summary: %+v", statusResp.Data.Summary)
 	}
-	if len(statusResp.Nodes) != 1 || statusResp.Nodes[0].NodeID != "node-a" {
-		t.Fatalf("unexpected nodes: %+v", statusResp.Nodes)
+	if len(statusResp.Data.Nodes) != 1 || statusResp.Data.Nodes[0].NodeID != "node-a" {
+		t.Fatalf("unexpected nodes: %+v", statusResp.Data.Nodes)
 	}
-	if statusResp.Nodes[0].CurrentLoad != 1 || statusResp.Nodes[0].MaxConcurrency != 3 || !statusResp.Nodes[0].Online {
-		t.Fatalf("unexpected node state: %+v", statusResp.Nodes[0])
+	if statusResp.Data.Nodes[0].CurrentLoad != 1 || statusResp.Data.Nodes[0].MaxConcurrency != 3 || !statusResp.Data.Nodes[0].Online {
+		t.Fatalf("unexpected node state: %+v", statusResp.Data.Nodes[0])
 	}
 }
 
@@ -142,15 +144,17 @@ func TestNodeNetworkProfile(t *testing.T) {
 
 	var resp struct {
 		Success bool `json:"success"`
-		Summary struct {
-			Total int `json:"total"`
-		} `json:"summary"`
-		Profiles []map[string]interface{} `json:"profiles"`
+		Data    struct {
+			Summary struct {
+				Total int `json:"total"`
+			} `json:"summary"`
+			Profiles []map[string]interface{} `json:"profiles"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
-	if !resp.Success || resp.Summary.Total != 1 || len(resp.Profiles) != 1 {
+	if !resp.Success || resp.Data.Summary.Total != 1 || len(resp.Data.Profiles) != 1 {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/scheduler"
 )
 
@@ -106,7 +107,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		Type          string                        `json:"type"`
 		Enabled       bool                          `json:"enabled"`
 		CronExpr      string                        `json:"cron_expr"`
-		Payload       map[string]interface{}        `json:"payload"`
+		Payload       map[string]any                `json:"payload"`
 		TimeoutSec    int                           `json:"timeout_seconds"`
 		MaxRetries    int                           `json:"max_retries"`
 		Notifications *scheduler.NotificationConfig `json:"notifications,omitempty"`
@@ -125,12 +126,14 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	payload := mapToTaskPayload(req.Payload)
+
 	task := &scheduler.ScheduledTask{
 		Name:          strings.TrimSpace(req.Name),
 		Type:          scheduler.TaskType(req.Type),
 		Enabled:       req.Enabled,
 		CronExpr:      strings.TrimSpace(req.CronExpr),
-		Payload:       req.Payload,
+		Payload:       payload,
 		TimeoutSec:    req.TimeoutSec,
 		MaxRetries:    req.MaxRetries,
 		Notifications: req.Notifications,
@@ -223,7 +226,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		Type          string                        `json:"type"`
 		Enabled       bool                          `json:"enabled"`
 		CronExpr      string                        `json:"cron_expr"`
-		Payload       map[string]interface{}        `json:"payload"`
+		Payload       map[string]any                `json:"payload"`
 		TimeoutSec    int                           `json:"timeout_seconds"`
 		MaxRetries    int                           `json:"max_retries"`
 		Notifications *scheduler.NotificationConfig `json:"notifications,omitempty"`
@@ -260,7 +263,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		Type:          scheduler.TaskType(req.Type),
 		Enabled:       req.Enabled,
 		CronExpr:      strings.TrimSpace(req.CronExpr),
-		Payload:       req.Payload,
+		Payload:       mapToTaskPayload(req.Payload),
 		TimeoutSec:    req.TimeoutSec,
 		MaxRetries:    req.MaxRetries,
 		Notifications: req.Notifications,
@@ -444,4 +447,18 @@ func (s *Server) handleTaskHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, history)
+}
+
+// mapToTaskPayload converts a raw map (from JSON) to a typed TaskPayload.
+func mapToTaskPayload(m map[string]any) *model.TaskPayload {
+	if m == nil {
+		return &model.TaskPayload{}
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return &model.TaskPayload{}
+	}
+	var p model.TaskPayload
+	_ = json.Unmarshal(raw, &p)
+	return &p
 }

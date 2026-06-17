@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
 )
 
 const (
@@ -24,25 +25,25 @@ const (
 
 // TaskEnvelope is the controller-side task description used by node workers.
 type TaskEnvelope struct {
-	TaskID         string                 `json:"task_id"`
-	TaskType       string                 `json:"task_type"`
-	Payload        map[string]interface{} `json:"payload,omitempty"`
-	Priority       int                    `json:"priority,omitempty"`
-	TimeoutSeconds int                    `json:"timeout_seconds,omitempty"`
-	TraceID        string                 `json:"trace_id,omitempty"`
-	RequiredCaps   []string               `json:"required_caps,omitempty"`
-	MaxReassign    int                    `json:"max_reassign,omitempty"`
+	TaskID         string              `json:"task_id"`
+	TaskType       string              `json:"task_type"`
+	Payload        *model.TaskPayload  `json:"payload,omitempty"`
+	Priority       int                 `json:"priority,omitempty"`
+	TimeoutSeconds int                 `json:"timeout_seconds,omitempty"`
+	TraceID        string              `json:"trace_id,omitempty"`
+	RequiredCaps   []string            `json:"required_caps,omitempty"`
+	MaxReassign    int                 `json:"max_reassign,omitempty"`
 }
 
 // TaskResult is the node callback payload for task completion.
 type TaskResult struct {
-	TaskID     string                 `json:"task_id"`
-	NodeID     string                 `json:"node_id"`
-	Status     string                 `json:"status"`
-	DurationMS int64                  `json:"duration_ms,omitempty"`
-	Output     map[string]interface{} `json:"output,omitempty"`
-	Error      string                 `json:"error,omitempty"`
-	Retryable  bool                   `json:"retryable,omitempty"` // 是否可重试
+	TaskID     string             `json:"task_id"`
+	NodeID     string             `json:"node_id"`
+	Status     string             `json:"status"`
+	DurationMS int64              `json:"duration_ms,omitempty"`
+	Output     *model.TaskOutput  `json:"output,omitempty"`
+	Error      string             `json:"error,omitempty"`
+	Retryable  bool               `json:"retryable,omitempty"` // 是否可重试
 }
 
 // RetryRecord 重试记录
@@ -57,22 +58,22 @@ type RetryRecord struct {
 
 // TaskRecord is the queue-side task state.
 type TaskRecord struct {
-	TaskID         string                 `json:"task_id"`
-	TaskType       string                 `json:"task_type"`
-	Payload        map[string]interface{} `json:"payload,omitempty"`
-	Priority       int                    `json:"priority"`
-	TimeoutSeconds int                    `json:"timeout_seconds"`
-	TraceID        string                 `json:"trace_id,omitempty"`
-	RequiredCaps   []string               `json:"required_caps,omitempty"`
-	Status         string                 `json:"status"`
-	AssignedNode   string                 `json:"assigned_node,omitempty"`
-	Attempt        int                    `json:"attempt"`
-	MaxReassign    int                    `json:"max_reassign"`
-	LeaseUntil     time.Time              `json:"lease_until,omitempty"`
-	CreatedAt      time.Time              `json:"created_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
-	LastError      string                 `json:"last_error,omitempty"`
-	Result         map[string]interface{} `json:"result,omitempty"`
+	TaskID         string              `json:"task_id"`
+	TaskType       string              `json:"task_type"`
+	Payload        *model.TaskPayload  `json:"payload,omitempty"`
+	Priority       int                 `json:"priority"`
+	TimeoutSeconds int                 `json:"timeout_seconds"`
+	TraceID        string              `json:"trace_id,omitempty"`
+	RequiredCaps   []string            `json:"required_caps,omitempty"`
+	Status         string              `json:"status"`
+	AssignedNode   string              `json:"assigned_node,omitempty"`
+	Attempt        int                 `json:"attempt"`
+	MaxReassign    int                 `json:"max_reassign"`
+	LeaseUntil     time.Time           `json:"lease_until,omitempty"`
+	CreatedAt      time.Time           `json:"created_at"`
+	UpdatedAt      time.Time           `json:"updated_at"`
+	LastError      string              `json:"last_error,omitempty"`
+	Result         *model.TaskOutput   `json:"result,omitempty"`
 
 	// 重试相关字段
 	Retryable    bool          `json:"retryable"`               // 是否可重试
@@ -175,7 +176,7 @@ func (q *TaskQueue) Enqueue(env TaskEnvelope) (TaskRecord, error) {
 	rec := &TaskRecord{
 		TaskID:         taskID,
 		TaskType:       strings.TrimSpace(env.TaskType),
-		Payload:        cloneMap(env.Payload),
+		Payload:        cloneTaskPayload(env.Payload),
 		Priority:       env.Priority,
 		TimeoutSeconds: normalizedTimeoutSeconds(env.TimeoutSeconds),
 		TraceID:        strings.TrimSpace(env.TraceID),
@@ -375,7 +376,7 @@ func (q *TaskQueue) SubmitResult(res TaskResult) (TaskRecord, error) {
 	if status == TaskStatusCompleted {
 		// 任务成功完成
 		rec.Status = status
-		rec.Result = cloneMap(res.Output)
+		rec.Result = cloneTaskOutput(res.Output)
 		rec.UpdatedAt = now
 		rec.LeaseUntil = time.Time{}
 	} else if status == TaskStatusFailed {
@@ -686,22 +687,30 @@ func (q *TaskQueue) calculateRetryDelay(attempt int) time.Duration {
 	return delay
 }
 
-func cloneMap(in map[string]interface{}) map[string]interface{} {
-	if len(in) == 0 {
+func cloneTaskPayload(in *model.TaskPayload) *model.TaskPayload {
+	if in == nil {
 		return nil
 	}
-	out := make(map[string]interface{}, len(in))
-	for k, v := range in {
-		k = strings.TrimSpace(k)
-		if k == "" {
-			continue
-		}
-		out[k] = v
-	}
-	if len(out) == 0 {
+	raw, err := json.Marshal(in)
+	if err != nil {
 		return nil
 	}
-	return out
+	var out model.TaskPayload
+	_ = json.Unmarshal(raw, &out)
+	return &out
+}
+
+func cloneTaskOutput(in *model.TaskOutput) *model.TaskOutput {
+	if in == nil {
+		return nil
+	}
+	raw, err := json.Marshal(in)
+	if err != nil {
+		return nil
+	}
+	var out model.TaskOutput
+	_ = json.Unmarshal(raw, &out)
+	return &out
 }
 
 // saveSnapshot persists the current task queue state to disk.

@@ -12,6 +12,7 @@ import (
 
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/notify"
 	"github.com/unimap/project/internal/utils/urlguard"
 )
@@ -75,7 +76,7 @@ func (s *Scheduler) buildNotificationMessage(task *ScheduledTask, record Executi
 		Error:     sanitizeUTF8(record.Error),
 		Duration:  float64(record.DurationMs),
 		Timestamp: time.Now(),
-		Payload:   sanitizePayload(task.Payload),
+		Payload:   payloadToMap(task.Payload),
 	}
 	msg.ImagePaths = extractImagePaths(record.Result)
 	msg.Result = redactImagePaths(msg.Result, msg.ImagePaths)
@@ -205,19 +206,58 @@ func redactImagePaths(result string, paths []string) string {
 }
 
 // sanitizePayload creates a copy of payload with all string values passed through sanitizeUTF8.
-func sanitizePayload(payload map[string]interface{}) map[string]interface{} {
+func sanitizePayload(payload *model.TaskPayload) *model.TaskPayload {
 	if payload == nil {
 		return nil
 	}
-	out := make(map[string]interface{}, len(payload))
-	for k, v := range payload {
-		if s, ok := v.(string); ok {
-			out[k] = sanitizeUTF8(s)
-		} else {
-			out[k] = v
+	cp := *payload
+	cp.Query = sanitizeUTF8(cp.Query)
+	cp.Format = sanitizeUTF8(cp.Format)
+	cp.DetectMode = sanitizeUTF8(cp.DetectMode)
+	cp.Type = sanitizeUTF8(cp.Type)
+	cp.URL = sanitizeUTF8(cp.URL)
+	cp.CookieFile = sanitizeUTF8(cp.CookieFile)
+	if cp.Engines != nil {
+		for i, e := range cp.Engines {
+			cp.Engines[i] = sanitizeUTF8(e)
 		}
 	}
-	return out
+	if cp.Queries != nil {
+		for i, q := range cp.Queries {
+			cp.Queries[i] = sanitizeUTF8(q)
+		}
+	}
+	if cp.URLs != nil {
+		for i, u := range cp.URLs {
+			cp.URLs[i] = sanitizeUTF8(u)
+		}
+	}
+	if cp.Extra != nil {
+		extra := make(map[string]any, len(cp.Extra))
+		for k, v := range cp.Extra {
+			if s, ok := v.(string); ok {
+				extra[k] = sanitizeUTF8(s)
+			} else {
+				extra[k] = v
+			}
+		}
+		cp.Extra = extra
+	}
+	return &cp
+}
+
+// payloadToMap converts a TaskPayload to a map for notification serialization.
+func payloadToMap(payload *model.TaskPayload) map[string]interface{} {
+	if payload == nil {
+		return nil
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	var m map[string]interface{}
+	_ = json.Unmarshal(raw, &m)
+	return m
 }
 
 // migrateChannelIDs migrates legacy Channels[] to ChannelIDs[].

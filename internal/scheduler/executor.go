@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/unimap/project/internal/distributed"
 	"github.com/unimap/project/internal/exporter"
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 )
@@ -31,30 +33,32 @@ func NewQueryRunner(b *service.QueryAppService) *QueryRunner {
 
 func (r *QueryRunner) Type() TaskType { return TaskQuery }
 
-func (r *QueryRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.querySvc == nil {
 		return "", fmt.Errorf("query service not available")
 	}
 
-	query := extractString(payload, "query", "")
-	if query == "" {
+	if payload == nil || payload.Query == "" {
 		return "", fmt.Errorf("missing 'query' in payload")
 	}
 
-	engines := extractStrings(payload, "engines", []string{})
+	engines := payload.Engines
 	if len(engines) == 0 {
 		engines = extractStrings(payload, "engine", []string{})
 	}
-	pageSize := extractInt(payload, "page_size", 100)
+	pageSize := payload.PageSize
+	if pageSize == 0 {
+		pageSize = 100
+	}
 
-	resp, err := r.querySvc.ExecuteQuery(ctx, query, engines, pageSize)
+	resp, err := r.querySvc.ExecuteQuery(ctx, payload.Query, engines, pageSize)
 	if err != nil {
 		return "", fmt.Errorf("query execution failed: %w", err)
 	}
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "UQL 查询完成\n\n")
-	fmt.Fprintf(&b, "📋 查询: %s\n", query)
+	fmt.Fprintf(&b, "📋 查询: %s\n", payload.Query)
 	fmt.Fprintf(&b, "📋 引擎: %s\n", strings.Join(engines, ","))
 	fmt.Fprintf(&b, "📋 页大小: %d\n", pageSize)
 	fmt.Fprintf(&b, "📊 共返回 %d 条资产\n\n", resp.TotalCount)
@@ -82,13 +86,13 @@ func NewSearchScreenshotRunner(svc *service.ScreenshotAppService, mgr *screensho
 
 func (r *SearchScreenshotRunner) Type() TaskType { return TaskSearchScreenshot }
 
-func (r *SearchScreenshotRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *SearchScreenshotRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.screenshotSvc == nil {
 		return "", fmt.Errorf("screenshot service not available")
 	}
 
 	engine := extractString(payload, "engine", "")
-	query := extractString(payload, "query", "")
+	query := payload.Query
 	queryID := extractString(payload, "query_id", "")
 
 	if engine == "" || query == "" {
@@ -126,7 +130,7 @@ func NewBatchScreenshotRunner(svc *service.ScreenshotAppService, mgr *screenshot
 
 func (r *BatchScreenshotRunner) Type() TaskType { return TaskBatchScreenshot }
 
-func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.screenshotSvc == nil {
 		return "", fmt.Errorf("screenshot service not available")
 	}
@@ -178,7 +182,7 @@ func NewTamperCheckRunner(svc *service.TamperAppService, af service.TamperAlloca
 
 func (r *TamperCheckRunner) Type() TaskType { return TaskTamperCheck }
 
-func (r *TamperCheckRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *TamperCheckRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.tamperSvc == nil {
 		return "", fmt.Errorf("tamper service not available")
 	}
@@ -243,7 +247,7 @@ func NewURLReachabilityRunner(svc *service.MonitorAppService) *URLReachabilityRu
 
 func (r *URLReachabilityRunner) Type() TaskType { return TaskURLReachability }
 
-func (r *URLReachabilityRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *URLReachabilityRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.monitorSvc == nil {
 		return "", fmt.Errorf("monitor service not available")
 	}
@@ -296,7 +300,7 @@ func NewCookieVerifyRunner(svc *service.ScreenshotAppService, mgr *screenshot.Ma
 
 func (r *CookieVerifyRunner) Type() TaskType { return TaskCookieVerify }
 
-func (r *CookieVerifyRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *CookieVerifyRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.mgr == nil {
 		return "", fmt.Errorf("screenshot manager not available")
 	}
@@ -334,7 +338,7 @@ func NewLoginStatusCheckRunner(mgr *screenshot.Manager) *LoginStatusCheckRunner 
 
 func (r *LoginStatusCheckRunner) Type() TaskType { return TaskLoginStatusCheck }
 
-func (r *LoginStatusCheckRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *LoginStatusCheckRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.mgr == nil {
 		return "", fmt.Errorf("screenshot manager not available")
 	}
@@ -387,7 +391,7 @@ func NewDistributedSubmitRunner(q *distributed.TaskQueue) *DistributedSubmitRunn
 
 func (r *DistributedSubmitRunner) Type() TaskType { return TaskDistributedSubmit }
 
-func (r *DistributedSubmitRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *DistributedSubmitRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.taskQueue == nil {
 		return "", fmt.Errorf("task queue not available")
 	}
@@ -397,10 +401,12 @@ func (r *DistributedSubmitRunner) Execute(ctx context.Context, payload map[strin
 		return "", fmt.Errorf("missing 'task_type' in payload")
 	}
 
-	taskPayload := make(map[string]interface{})
-	if p, ok := payload["task_payload"]; ok {
-		if pm, ok := p.(map[string]interface{}); ok {
-			taskPayload = pm
+	taskPayload := make(map[string]any)
+	if payload.Extra != nil {
+		if p, ok := payload.Extra["task_payload"]; ok {
+			if pm, ok := p.(map[string]any); ok {
+				taskPayload = pm
+			}
 		}
 	}
 
@@ -408,11 +414,22 @@ func (r *DistributedSubmitRunner) Execute(ctx context.Context, payload map[strin
 	timeoutSec := extractInt(payload, "timeout_seconds", 300)
 	maxReassign := extractInt(payload, "max_reassign", 3)
 
+	// Convert taskPayload map to typed struct
+	var typedPayload *model.TaskPayload
+	if len(taskPayload) > 0 {
+		raw, err := json.Marshal(taskPayload)
+		if err == nil {
+			var p model.TaskPayload
+			_ = json.Unmarshal(raw, &p)
+			typedPayload = &p
+		}
+	}
+
 	// Build the envelope
 	envelope := distributed.TaskEnvelope{
 		TaskID:         generateDistributedTaskID(),
 		TaskType:       taskType,
-		Payload:        taskPayload,
+		Payload:        typedPayload,
 		Priority:       priority,
 		TimeoutSeconds: timeoutSec,
 		MaxReassign:    maxReassign,
@@ -456,7 +473,7 @@ func NewExportRunner(queryApp *service.QueryAppService, orchestrator *adapter.En
 
 func (r *ExportRunner) Type() TaskType { return TaskExport }
 
-func (r *ExportRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *ExportRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.queryApp == nil || r.orchestrator == nil {
 		return "", fmt.Errorf("query service or orchestrator not available")
 	}
@@ -532,7 +549,7 @@ func NewPortScanRunner(svc *service.MonitorAppService) *PortScanRunner {
 
 func (r *PortScanRunner) Type() TaskType { return TaskPortScan }
 
-func (r *PortScanRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.monitorSvc == nil {
 		return "", fmt.Errorf("monitor service not available")
 	}
@@ -547,7 +564,7 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload map[string]interfa
 
 	portNums := make([]int, 0, len(ports))
 	for _, p := range ports {
-		if n := extractInt(map[string]interface{}{"v": p}, "v", 0); n > 0 {
+		if n := extractIntFromMap(map[string]any{"v": p}, "v", 0); n > 0 {
 			portNums = append(portNums, n)
 		}
 	}
@@ -611,7 +628,7 @@ func NewScreenshotCleanupRunner(svc *service.ScreenshotAppService, maxAgeDays in
 
 func (r *ScreenshotCleanupRunner) Type() TaskType { return TaskScreenshotCleanup }
 
-func (r *ScreenshotCleanupRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *ScreenshotCleanupRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.screenshotSvc == nil {
 		return "", fmt.Errorf("screenshot service not available")
 	}
@@ -663,7 +680,7 @@ func NewTamperCleanupRunner(svc *service.TamperAppService, maxAgeDays int) *Tamp
 
 func (r *TamperCleanupRunner) Type() TaskType { return TaskTamperCleanup }
 
-func (r *TamperCleanupRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *TamperCleanupRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.tamperSvc == nil {
 		return "", fmt.Errorf("tamper service not available")
 	}
@@ -740,7 +757,7 @@ func NewQuotaMonitorRunner(orchestrator *adapter.EngineOrchestrator, lowThreshol
 
 func (r *QuotaMonitorRunner) Type() TaskType { return TaskQuotaMonitor }
 
-func (r *QuotaMonitorRunner) Execute(ctx context.Context, payload map[string]interface{}) (string, error) {
+func (r *QuotaMonitorRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
 	if r.orchestrator == nil {
 		return "", fmt.Errorf("orchestrator not available")
 	}

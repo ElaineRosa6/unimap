@@ -101,7 +101,7 @@ async function handleTask(task, token) {
     await waitForPageReady(tabId, waitStrategy, effectiveTimeout);
 
     // Extra render wait for collect action (SPA search results take time to render)
-    if (action === "collect") {
+    if (action === "collect" || action === "screenshot") {
       await new Promise((resolve) => setTimeout(resolve, 4000));
     }
 
@@ -168,6 +168,66 @@ async function handleTask(task, token) {
         }
 
         await reportResult(result);
+      }
+    } else if (action === "collect_and_capture") {
+      // Combined: collect structured data + take screenshot in one navigation
+      const assets = await extractEngineAssets(tabId);
+
+      // Handle login wall detection
+      if (assets.is_login_wall) {
+        const durationMs = Math.max(1, Date.now() - startedAt);
+        await reportResult({
+          request_id: requestId,
+          success: false,
+          image_path: "",
+          image_data: "",
+          duration_ms: durationMs,
+          error_code: "login_required",
+          error: `login wall detected on ${assets.engine || "unknown"}`,
+          collected_data: "",
+          structured_collected_data: {
+            title: assets.title || "",
+            items: [],
+            total: 0,
+            has_more: false,
+            is_login_wall: true,
+            engine: assets.engine
+          }
+        });
+      } else {
+        let captureDataUrl = null;
+        await waitForCaptureSlot();
+        const tab = await chrome.tabs.get(tabId);
+        try {
+          captureDataUrl = await captureWithFocus(tabId, tab.windowId);
+        } catch (captureErr) {
+          await waitForCaptureSlot();
+          captureDataUrl = await captureWithFocus(tabId, tab.windowId);
+        }
+
+        const collectResult = normalizeCollectPayload(
+          assets.items, assets.title, requestId, startedAt
+        );
+
+        if (captureDataUrl) {
+          const imagePayload = normalizeImagePayload(captureDataUrl, requestId, startedAt);
+          collectResult.image_path = imagePayload.image_path || "";
+          collectResult.image_data = imagePayload.image_data || "";
+        }
+
+        if (collectResult.structured_collected_data) {
+          collectResult.structured_collected_data.total = assets.total || assets.items.length;
+          collectResult.structured_collected_data.has_more = assets.has_more || false;
+          collectResult.structured_collected_data.engine = assets.engine || "unknown";
+          collectResult.structured_collected_data.extraction_method = assets.extraction_method || "unknown";
+          collectResult.structured_collected_data.row_selector_used = assets.row_selector_used || "";
+          collectResult.structured_collected_data.rows_found = assets.rows_found || 0;
+          if (assets.error) {
+            collectResult.structured_collected_data.extraction_error = assets.error;
+          }
+        }
+
+        await reportResult(collectResult);
       }
     } else {
       // "screenshot" or unknown action — capture screenshot
