@@ -45,7 +45,7 @@ func (p *ExtensionProvider) CaptureSearchEngineResult(ctx context.Context, engin
 		RequestID:    fmt.Sprintf("router_search_%d", time.Now().UnixNano()),
 		URL:          searchURL,
 		BatchID:      queryID,
-		WaitStrategy: "load",
+		WaitStrategy: "spa",
 	}
 	result, err := p.bridge.Submit(ctx, task)
 	if err != nil {
@@ -196,7 +196,7 @@ func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, 
 	task := BridgeTask{
 		RequestID:    fmt.Sprintf("router_open_%d", time.Now().UnixNano()),
 		URL:          searchURL,
-		WaitStrategy: "load",
+		WaitStrategy: "spa",
 		Timeout:      30 * time.Second,
 		Action:       "open",
 	}
@@ -262,7 +262,7 @@ func (p *ExtensionProvider) submitCollectTask(ctx context.Context, searchURL, qu
 		RequestID:    fmt.Sprintf("router_collect_%d", time.Now().UnixNano()),
 		URL:          searchURL,
 		BatchID:      queryID,
-		WaitStrategy: "load",
+		WaitStrategy: "spa",
 		Action:       "collect",
 	}
 	result, err := p.bridge.Submit(ctx, task)
@@ -272,10 +272,26 @@ func (p *ExtensionProvider) submitCollectTask(ctx context.Context, searchURL, qu
 	return result, nil
 }
 
+// submitCollectAndCaptureTask submits a combined collect+capture action to the bridge.
+func (p *ExtensionProvider) submitCollectAndCaptureTask(ctx context.Context, searchURL, queryID string) (BridgeResult, error) {
+	task := BridgeTask{
+		RequestID:    fmt.Sprintf("router_collect_capture_%d", time.Now().UnixNano()),
+		URL:          searchURL,
+		BatchID:      queryID,
+		WaitStrategy: "spa",
+		Action:       "collect_and_capture",
+	}
+	result, err := p.bridge.Submit(ctx, task)
+	if err != nil {
+		return result, fmt.Errorf("extension bridge collect+capture failed: %w", err)
+	}
+	return result, nil
+}
+
 // isLoginWallDetected checks if the bridge result indicates a login wall.
 func isLoginWallDetected(result BridgeResult) bool {
-	if len(result.StructuredCollectedData) > 0 {
-		if lw, ok := result.StructuredCollectedData["is_login_wall"].(bool); ok && lw {
+	if result.StructuredCollectedData != nil && result.StructuredCollectedData.Extra != nil {
+		if lw, ok := result.StructuredCollectedData.Extra["is_login_wall"].(bool); ok && lw {
 			return true
 		}
 	}
@@ -293,10 +309,15 @@ func (p *ExtensionProvider) handleLoginWallResult(cr collection.CollectResult, r
 	cr.IsLoginWall = true
 	cr.LoginRequired = true
 	metrics.IncBrowserLoginRequired(engine)
-	if len(result.StructuredCollectedData) > 0 {
-		cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedData(result.StructuredCollectedData, engine)
-		if title, ok := result.StructuredCollectedData["title"].(string); ok && title != "" {
-			cr.Title = title
+	if result.StructuredCollectedData != nil {
+		cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(result.StructuredCollectedData.Items, engine, result.StructuredCollectedData.HasMore)
+		if engine == "hunter" {
+			collection.CleanHunterFields(cr.Assets)
+		}
+		if result.StructuredCollectedData.Extra != nil {
+			if title, ok := result.StructuredCollectedData.Extra["title"].(string); ok && title != "" {
+				cr.Title = title
+			}
 		}
 	}
 	return []collection.CollectResult{cr}
@@ -316,32 +337,37 @@ func collectBridgeError(result BridgeResult) error {
 
 // populateCollectResultFromBridge fills a collection.CollectResult from bridge structured data.
 func (p *ExtensionProvider) populateCollectResultFromBridge(cr *collection.CollectResult, result BridgeResult, engine string) {
-	if len(result.StructuredCollectedData) == 0 {
+	if result.StructuredCollectedData == nil {
 		if result.CollectedData != "" {
 			cr.Title = result.CollectedData
 		}
 		return
 	}
 	data := result.StructuredCollectedData
-	cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedData(data, engine)
-	if title, ok := data["title"].(string); ok && title != "" {
-		cr.Title = title
+	cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(data.Items, engine, data.HasMore)
+	if engine == "hunter" {
+		collection.CleanHunterFields(cr.Assets)
 	}
-	if v, ok := data["extraction_method"].(string); ok {
-		cr.ExtractionMethod = v
-	}
-	if v, ok := data["row_selector_used"].(string); ok {
-		cr.RowSelectorUsed = v
-	}
-	if v, ok := data["rows_found"].(float64); ok {
-		cr.RowsFound = int(v)
-	}
-	if v, ok := data["extraction_error"].(string); ok {
-		cr.ExtractionError = v
-	}
-	if lr, ok := data["login_required"].(bool); ok && lr {
-		cr.LoginRequired = true
-		metrics.IncBrowserLoginRequired(engine)
+	if data.Extra != nil {
+		if title, ok := data.Extra["title"].(string); ok && title != "" {
+			cr.Title = title
+		}
+		if v, ok := data.Extra["extraction_method"].(string); ok {
+			cr.ExtractionMethod = v
+		}
+		if v, ok := data.Extra["row_selector_used"].(string); ok {
+			cr.RowSelectorUsed = v
+		}
+		if v, ok := data.Extra["rows_found"].(float64); ok {
+			cr.RowsFound = int(v)
+		}
+		if v, ok := data.Extra["extraction_error"].(string); ok {
+			cr.ExtractionError = v
+		}
+		if lr, ok := data.Extra["login_required"].(bool); ok && lr {
+			cr.LoginRequired = true
+			metrics.IncBrowserLoginRequired(engine)
+		}
 	}
 }
 

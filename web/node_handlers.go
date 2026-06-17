@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/unimap/project/internal/distributed"
+	"github.com/unimap/project/internal/model"
 )
 
 func (s *Server) isDistributedEnabled() bool {
@@ -53,9 +54,9 @@ func (s *Server) handleNodeRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"node":    record,
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Data:    record,
 	})
 }
 
@@ -85,9 +86,9 @@ func (s *Server) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"node":    record,
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Data:    record,
 	})
 }
 
@@ -107,14 +108,16 @@ func (s *Server) handleNodeStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	snapshot := s.distributed.NodeRegistry.Snapshot()
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"summary": map[string]int{
-			"total":   snapshot.Total,
-			"online":  snapshot.Online,
-			"offline": snapshot.Offline,
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Data: map[string]any{
+			"summary": map[string]int{
+				"total":   snapshot.Total,
+				"online":  snapshot.Online,
+				"offline": snapshot.Offline,
+			},
+			"nodes": snapshot.Nodes,
 		},
-		"nodes": snapshot.Nodes,
 	})
 }
 
@@ -134,14 +137,14 @@ func (s *Server) handleNodeNetworkProfile(w http.ResponseWriter, r *http.Request
 	}
 
 	snapshot := s.distributed.NodeRegistry.Snapshot()
-	profiles := make([]map[string]interface{}, 0, len(snapshot.Nodes))
+	profiles := make([]map[string]any, 0, len(snapshot.Nodes))
 	egressCount := make(map[string]int)
 	for _, node := range snapshot.Nodes {
 		egress := strings.TrimSpace(node.EgressIP)
 		if egress != "" {
 			egressCount[egress]++
 		}
-		profiles = append(profiles, map[string]interface{}{
+		profiles = append(profiles, map[string]any{
 			"node_id":           node.NodeID,
 			"online":            node.Online,
 			"egress_ip":         egress,
@@ -154,9 +157,9 @@ func (s *Server) handleNodeNetworkProfile(w http.ResponseWriter, r *http.Request
 		})
 	}
 
-	egressSummary := make([]map[string]interface{}, 0, len(egressCount))
+	egressSummary := make([]map[string]any, 0, len(egressCount))
 	for egress, count := range egressCount {
-		egressSummary = append(egressSummary, map[string]interface{}{"egress_ip": egress, "nodes": count})
+		egressSummary = append(egressSummary, map[string]any{"egress_ip": egress, "nodes": count})
 	}
 	sort.Slice(egressSummary, func(i, j int) bool {
 		a, aOk := egressSummary[i]["egress_ip"].(string)
@@ -172,15 +175,17 @@ func (s *Server) handleNodeNetworkProfile(w http.ResponseWriter, r *http.Request
 		return a < b
 	})
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"summary": map[string]int{
-			"total":   snapshot.Total,
-			"online":  snapshot.Online,
-			"offline": snapshot.Offline,
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Data: map[string]any{
+			"summary": map[string]int{
+				"total":   snapshot.Total,
+				"online":  snapshot.Online,
+				"offline": snapshot.Offline,
+			},
+			"egress_summary": egressSummary,
+			"profiles":       profiles,
 		},
-		"egress_summary": egressSummary,
-		"profiles":       profiles,
 	})
 }
 
@@ -213,9 +218,9 @@ func (s *Server) handleNodeDeregister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"node_id": nodeID,
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Data:    map[string]any{"node_id": nodeID},
 	})
 }
 
@@ -251,8 +256,8 @@ func (s *Server) handleNodeGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"node":    rec,
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Data:    rec,
 	})
 }

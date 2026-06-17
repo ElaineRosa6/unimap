@@ -21,6 +21,7 @@ import (
 	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/distributed"
+	historydb "github.com/unimap/project/internal/history"
 	icpdb "github.com/unimap/project/internal/icp/database"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
@@ -107,6 +108,8 @@ type Server struct {
 	apiAuth          *auth.AuthMiddleware
 	userDB           *auth.UserDB
 	userRepo         auth.UserRepository
+	historyDB        *historydb.Database
+	historyRepo      *historydb.Repository
 	shutdownCtx      context.Context
 	shutdownCancel   context.CancelFunc
 	revocationStore  *sessionRevocationStore
@@ -137,6 +140,7 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 		nodeRegistry, nodeTaskQueue, alertManager, shutdownCtx, shutdownCancel)
 
 	initICPDatabase(srv, cfg)
+	initHistoryDatabase(srv, cfg)
 	initUserDatabase(srv)
 
 	sched := initScheduler(srv, cfg, screenshotApp, screenshotMgr, alertManager, orchestrator, unifiedSvc, nodeTaskQueue)
@@ -417,6 +421,30 @@ func initICPDatabase(srv *Server, cfg *config.Config) {
 	}
 	srv.icpDB = db
 	srv.icpRepo = icpdb.NewICPResultRepository(db.DB())
+}
+
+// initHistoryDatabase initializes the operation history database on the server.
+func initHistoryDatabase(srv *Server, cfg *config.Config) {
+	if cfg == nil || !cfg.History.Enabled {
+		return
+	}
+	dbPath := cfg.History.DatabasePath
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		logger.Warnf("history DB dir create failed (%s): %v", dbPath, err)
+		return
+	}
+	db, err := historydb.NewDatabase(dbPath)
+	if err != nil {
+		logger.Warnf("history DB unavailable at %s: %v", dbPath, err)
+		return
+	}
+	if err := db.InitSchema(); err != nil {
+		logger.Warnf("history DB schema init failed: %v", err)
+		_ = db.Close()
+		return
+	}
+	srv.historyDB = db
+	srv.historyRepo = historydb.NewRepository(db.DB())
 }
 
 // initUserDatabase initializes the user database on the server.
@@ -974,11 +1002,16 @@ func (s *Server) shutdownBackgroundServices() {
 	}
 }
 
-// shutdownDatabases closes ICP and user databases.
+// shutdownDatabases closes ICP, history, and user databases.
 func (s *Server) shutdownDatabases() {
 	if s.icpDB != nil {
 		if err := s.icpDB.Close(); err != nil {
 			logger.Warnf("ICP result DB close error: %v", err)
+		}
+	}
+	if s.historyDB != nil {
+		if err := s.historyDB.Close(); err != nil {
+			logger.Warnf("history DB close error: %v", err)
 		}
 	}
 	if s.userDB != nil {

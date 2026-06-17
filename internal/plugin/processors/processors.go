@@ -57,9 +57,11 @@ func (p *DeduplicationProcessor) Type() plugin.PluginType {
 }
 
 // Initialize 初始化插件
-func (p *DeduplicationProcessor) Initialize(config map[string]interface{}) error {
-	if strategy, ok := config["strategy"].(string); ok {
-		p.strategy = DeduplicationStrategy(strategy)
+func (p *DeduplicationProcessor) Initialize(config *model.PluginConfig) error {
+	if config != nil {
+		if strategy, ok := config.Extra["strategy"].(string); ok {
+			p.strategy = DeduplicationStrategy(strategy)
+		}
 	}
 	return nil
 }
@@ -228,15 +230,17 @@ func (p *DataCleaningProcessor) Type() plugin.PluginType {
 }
 
 // Initialize 初始化插件
-func (p *DataCleaningProcessor) Initialize(config map[string]interface{}) error {
-	if val, ok := config["removeEmpty"].(bool); ok {
-		p.removeEmpty = val
-	}
-	if val, ok := config["normalizeURLs"].(bool); ok {
-		p.normalizeURLs = val
-	}
-	if val, ok := config["trimWhitespace"].(bool); ok {
-		p.trimWhitespace = val
+func (p *DataCleaningProcessor) Initialize(config *model.PluginConfig) error {
+	if config != nil {
+		if val, ok := config.Extra["removeEmpty"].(bool); ok {
+			p.removeEmpty = val
+		}
+		if val, ok := config.Extra["normalizeURLs"].(bool); ok {
+			p.normalizeURLs = val
+		}
+		if val, ok := config.Extra["trimWhitespace"].(bool); ok {
+			p.trimWhitespace = val
+		}
 	}
 	return nil
 }

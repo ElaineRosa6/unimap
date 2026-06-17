@@ -71,22 +71,24 @@ func TestNodeTaskFlow(t *testing.T) {
 
 	var resp struct {
 		Success bool `json:"success"`
-		Summary struct {
-			Total int `json:"total"`
-		} `json:"summary"`
-		Tasks []struct {
-			TaskID string `json:"task_id"`
-			Status string `json:"status"`
-		} `json:"tasks"`
+		Data    struct {
+			Summary struct {
+				Total int `json:"total"`
+			} `json:"summary"`
+			Tasks []struct {
+				TaskID string `json:"task_id"`
+				Status string `json:"status"`
+			} `json:"tasks"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(statusW.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
-	if !resp.Success || resp.Summary.Total != 1 {
+	if !resp.Success || resp.Data.Summary.Total != 1 {
 		t.Fatalf("unexpected status response: %+v", resp)
 	}
-	if len(resp.Tasks) != 1 || resp.Tasks[0].TaskID != "task-1" || resp.Tasks[0].Status != "completed" {
-		t.Fatalf("unexpected task snapshot: %+v", resp.Tasks)
+	if len(resp.Data.Tasks) != 1 || resp.Data.Tasks[0].TaskID != "task-1" || resp.Data.Tasks[0].Status != "completed" {
+		t.Fatalf("unexpected task snapshot: %+v", resp.Data.Tasks)
 	}
 }
 

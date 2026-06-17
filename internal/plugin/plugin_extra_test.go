@@ -55,7 +55,7 @@ func TestExampleEnginePlugin_Normalize(t *testing.T) {
 func TestHookRegistry_RegisterAndTrigger(t *testing.T) {
 	r := NewHookRegistry()
 	var called string
-	r.RegisterHook(HookBeforeLoad, func(name string, data map[string]interface{}) error {
+	r.RegisterHook(HookBeforeLoad, func(name string, data *model.HookData) error {
 		called = name
 		return nil
 	})
@@ -77,11 +77,11 @@ func TestHookRegistry_MultipleHooks(t *testing.T) {
 	r := NewHookRegistry()
 	callCount := 0
 
-	r.RegisterHook(HookBeforeLoad, func(name string, data map[string]interface{}) error {
+	r.RegisterHook(HookBeforeLoad, func(name string, data *model.HookData) error {
 		callCount++
 		return nil
 	})
-	r.RegisterHook(HookBeforeLoad, func(name string, data map[string]interface{}) error {
+	r.RegisterHook(HookBeforeLoad, func(name string, data *model.HookData) error {
 		callCount++
 		return nil
 	})
@@ -97,7 +97,7 @@ func TestHookRegistry_MultipleHooks(t *testing.T) {
 
 func TestHookRegistry_HookError(t *testing.T) {
 	r := NewHookRegistry()
-	r.RegisterHook(HookBeforeLoad, func(name string, data map[string]interface{}) error {
+	r.RegisterHook(HookBeforeLoad, func(name string, data *model.HookData) error {
 		return context.DeadlineExceeded
 	})
 
@@ -117,7 +117,7 @@ func TestHookRegistry_TriggerNonExistent(t *testing.T) {
 
 func TestHookRegistry_UnregisterHook(t *testing.T) {
 	r := NewHookRegistry()
-	r.RegisterHook(HookBeforeLoad, func(name string, data map[string]interface{}) error {
+	r.RegisterHook(HookBeforeLoad, func(name string, data *model.HookData) error {
 		return nil
 	})
 
@@ -137,8 +137,8 @@ func TestHookRegistry_ListHooks(t *testing.T) {
 		t.Error("expected empty hooks list initially")
 	}
 
-	r.RegisterHook(HookBeforeLoad, func(name string, data map[string]interface{}) error { return nil })
-	r.RegisterHook(HookAfterQuery, func(name string, data map[string]interface{}) error { return nil })
+	r.RegisterHook(HookBeforeLoad, func(name string, data *model.HookData) error { return nil })
+	r.RegisterHook(HookAfterQuery, func(name string, data *model.HookData) error { return nil })
 
 	types := r.ListHooks()
 	if len(types) != 2 {
@@ -287,7 +287,7 @@ func TestPluginManager_UnloadPlugin(t *testing.T) {
 	defer mgr.Shutdown()
 
 	p := NewExampleEnginePlugin()
-	if err := mgr.LoadPlugin(p, map[string]interface{}{}); err != nil {
+	if err := mgr.LoadPlugin(p, &model.PluginConfig{}); err != nil {
 		t.Fatalf("LoadPlugin failed: %v", err)
 	}
 	if err := mgr.StartPlugin("example-engine"); err != nil {
@@ -411,7 +411,7 @@ func (f *failingProcessor) Version() string                         { return "0.
 func (f *failingProcessor) Description() string                     { return "failing" }
 func (f *failingProcessor) Author() string                          { return "test" }
 func (f *failingProcessor) Type() PluginType                        { return PluginTypeProcessor }
-func (f *failingProcessor) Initialize(map[string]interface{}) error { return nil }
+func (f *failingProcessor) Initialize(*model.PluginConfig) error { return nil }
 func (f *failingProcessor) Start(context.Context) error             { return nil }
 func (f *failingProcessor) Stop() error                             { return nil }
 func (f *failingProcessor) Health() HealthStatus {

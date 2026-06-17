@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/unimap/project/internal/auth"
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -95,13 +97,14 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Infof("user registered: %s (role: %s)", user.Username, user.Role)
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"user": map[string]interface{}{
-			"id":         user.ID,
-			"username":   user.Username,
-			"role":       user.Role,
-			"status":     user.Status,
-			"created_at": user.CreatedAt,
+	writeJSON(w, http.StatusCreated, model.APIResponse{
+		Success: true,
+		Data: model.UserInfo{
+			ID:        strconv.FormatInt(user.ID, 10),
+			Username:  user.Username,
+			Role:      user.Role,
+			Status:    user.Status,
+			CreatedAt: user.CreatedAt.Format(time.RFC3339),
 		},
 	})
 }
@@ -128,21 +131,24 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := make([]map[string]interface{}, 0, len(users))
+	result := make([]model.UserInfo, 0, len(users))
 	for _, u := range users {
-		result = append(result, map[string]interface{}{
-			"id":         u.ID,
-			"username":   u.Username,
-			"role":       u.Role,
-			"status":     u.Status,
-			"created_at": u.CreatedAt,
-			"updated_at": u.UpdatedAt,
+		result = append(result, model.UserInfo{
+			ID:        strconv.FormatInt(u.ID, 10),
+			Username:  u.Username,
+			Role:      u.Role,
+			Status:    u.Status,
+			CreatedAt: u.CreatedAt.Format(time.RFC3339),
+			UpdatedAt: u.UpdatedAt.Format(time.RFC3339),
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"users": result,
-		"total": len(result),
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Data: model.UserListResponse{
+			Users: result,
+			Total: len(result),
+		},
 	})
 }
 
@@ -186,14 +192,15 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"user": map[string]interface{}{
-			"id":         user.ID,
-			"username":   user.Username,
-			"role":       user.Role,
-			"status":     user.Status,
-			"created_at": user.CreatedAt,
-			"updated_at": user.UpdatedAt,
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Data: model.UserInfo{
+			ID:        strconv.FormatInt(user.ID, 10),
+			Username:  user.Username,
+			Role:      user.Role,
+			Status:    user.Status,
+			CreatedAt: user.CreatedAt.Format(time.RFC3339),
+			UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
 		},
 	})
 }
@@ -219,10 +226,17 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if applyUserUpdateFields(w, user, req, currentUser, targetID, s) { return }
 	if err := s.userRepo.Update(user); err != nil { logger.Errorf("update user: %v", err); writeError(w, http.StatusInternalServerError, "failed to update user"); return }
 	logger.Infof("user updated: %s (id=%d)", user.Username, user.ID)
-	writeJSON(w, http.StatusOK, map[string]interface{}{"user": map[string]interface{}{
-		"id": user.ID, "username": user.Username, "role": user.Role, "status": user.Status,
-		"created_at": user.CreatedAt, "updated_at": user.UpdatedAt,
-	}})
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Data: model.UserInfo{
+			ID:        strconv.FormatInt(user.ID, 10),
+			Username:  user.Username,
+			Role:      user.Role,
+			Status:    user.Status,
+			CreatedAt: user.CreatedAt.Format(time.RFC3339),
+			UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
+		},
+	})
 }
 
 // applyUserUpdateFields 应用用户更新字段，有错误时写入 HTTP 响应并返回 true
@@ -301,8 +315,9 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Infof("user deleted: %s (id=%d)", user.Username, user.ID)
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"message": "user deleted",
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Message: "user deleted",
 	})
 }
 
@@ -385,8 +400,9 @@ func (s *Server) handleChangeUserPassword(w http.ResponseWriter, r *http.Request
 	}
 
 	logger.Infof("password changed for user: %s (id=%d)", user.Username, user.ID)
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"message": "password updated",
+	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
+		Message: "password updated",
 	})
 }
 
@@ -434,5 +450,5 @@ func (s *Server) requireAdmin(r *http.Request) (bool, string) {
 
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
+	writeJSON(w, status, model.APIResponse{Error: message})
 }

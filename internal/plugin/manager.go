@@ -34,7 +34,7 @@ func NewPluginManager() *PluginManager {
 }
 
 // LoadPlugin 加载插件
-func (m *PluginManager) LoadPlugin(plugin Plugin, config map[string]interface{}) error {
+func (m *PluginManager) LoadPlugin(plugin Plugin, config *model.PluginConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -187,10 +187,10 @@ func (m *PluginManager) StartHealthMonitor() {
 				for name, status := range results {
 					if !status.Healthy {
 						logger.Warnf("Plugin %s is unhealthy: %s", name, status.Message)
-						// 触发健康检查失败钩子
-						m.hooks.TriggerHook(HookHealthCheckFailed, name, map[string]interface{}{
-							"status": status,
-						})
+					// 触发健康检查失败钩子
+					m.hooks.TriggerHook(HookHealthCheckFailed, name, &model.HookData{
+						Extra: map[string]any{"status": status},
+					})
 					}
 				}
 			}

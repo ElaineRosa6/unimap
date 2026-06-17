@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 	"golang.org/x/image/webp"
 )
@@ -214,19 +215,30 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		return
 	}
 
+	// Convert raw map to typed struct
+	var structuredData *model.BridgeCollectedData
+	if req.StructuredCollectedData != nil {
+		raw, err := json.Marshal(req.StructuredCollectedData)
+		if err == nil {
+			var cd model.BridgeCollectedData
+			_ = json.Unmarshal(raw, &cd)
+			structuredData = &cd
+		}
+	}
+
+	logBridgeCollectedData(req.RequestID, structuredData)
+
 	resolvedPath, pathOK := s.resolveBridgeImagePath(w, &req)
 	if !pathOK {
 		return
 	}
-
-	logBridgeCollectedData(req.RequestID, req.StructuredCollectedData)
 
 	s.bridge.Mock.PushResult(screenshot.BridgeResult{
 		RequestID:               strings.TrimSpace(req.RequestID),
 		Success:                 req.Success,
 		ImagePath:               resolvedPath,
 		CollectedData:           strings.TrimSpace(req.CollectedData),
-		StructuredCollectedData: req.StructuredCollectedData,
+		StructuredCollectedData: structuredData,
 		ErrorCode:               strings.TrimSpace(req.ErrorCode),
 		Error:                   strings.TrimSpace(req.Error),
 		DurationMS:              1,
@@ -301,25 +313,19 @@ func (s *Server) resolveBridgeImagePath(w http.ResponseWriter, req *struct {
 }
 
 // logBridgeCollectedData logs diagnostic info about structured collect data.
-func logBridgeCollectedData(requestID string, data map[string]interface{}) {
+func logBridgeCollectedData(requestID string, data *model.BridgeCollectedData) {
 	requestID = strings.TrimSpace(requestID)
 	if data == nil {
 		logger.Warnf("[bridge-collect] request_id=%s has nil StructuredCollectedData", requestID)
 		return
 	}
-	itemsRaw := data["items"]
-	itemCount := 0
-	if items, ok := itemsRaw.([]interface{}); ok {
-		itemCount = len(items)
-	}
-	logger.Infof("[bridge-collect] request_id=%s items=%d total=%v has_more=%v engine=%v method=%v rows=%v row_sel=%q",
-		requestID, itemCount, data["total"], data["has_more"], data["engine"],
-		data["extraction_method"], data["rows_found"], data["row_selector_used"])
-	if items, ok := itemsRaw.([]interface{}); ok && len(items) > 0 {
-		for i := 0; i < len(items) && i < 3; i++ {
-			if m, ok := items[i].(map[string]interface{}); ok {
-				logger.Infof("[bridge-collect] item[%d]: ip=%v port=%v title=%v", i, m["ip"], m["port"], m["title"])
-			}
+	itemCount := len(data.Items)
+	logger.Infof("[bridge-collect] request_id=%s items=%d total=%d engine=%v",
+		requestID, itemCount, data.Total, data.Engine)
+	if len(data.Items) > 0 {
+		for i := 0; i < len(data.Items) && i < 3; i++ {
+			item := data.Items[i]
+			logger.Infof("[bridge-collect] item[%d]: ip=%v port=%v title=%v", i, item.IP, item.Port, item.Title)
 		}
 	} else {
 		logger.Warnf("[bridge-collect] request_id=%s has structured_collected_data but items is empty or missing", requestID)

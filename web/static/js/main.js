@@ -1664,6 +1664,9 @@ function showResults(data) {
 			browserQuery: browserQuery
 		};
 		
+		// 保存到服务端历史
+		saveQueryToServerHistory(data.query || '', data.engines || [], data);
+		
 		// 初始化结果表格功能
 		initResultsTable();
 		// 事件委托：资产详情/复制/截图按钮（避免翻页重复绑定）
@@ -1759,34 +1762,55 @@ function openQueryHistory() {
 	const historyList = document.getElementById('history-list');
 	
 	// 清空历史记录列表
-	historyList.innerHTML = '';
-	
-	// 从本地存储获取历史记录
-	const history = getQueryHistory();
-	
-	if (history.length === 0) {
-		historyList.innerHTML = '<li class="no-history">无查询历史</li>';
-	} else {
-		history.forEach(item => {
-			const li = document.createElement('li');
-			const codeEl = document.createElement('code');
-			codeEl.textContent = String(item.query || '');
-			const timeEl = document.createElement('small');
-			timeEl.textContent = new Date(item.timestamp).toLocaleString();
-			li.appendChild(codeEl);
-			li.appendChild(timeEl);
-			li.addEventListener('click', function() {
-				const queryInput = document.getElementById('query');
-				queryInput.value = item.query;
-				queryInput.focus();
-				closeQueryHistory();
-			});
-			historyList.appendChild(li);
-		});
-	}
+	historyList.innerHTML = '<li class="no-history">加载中...</li>';
 	
 	// 显示模态框
 	modal.style.display = 'block';
+	
+	// 从服务端获取历史记录
+	apiFetch('/api/v1/history?type=query&limit=50')
+		.then(parseJsonResponse)
+		.then(data => {
+			historyList.innerHTML = '';
+			const items = data.items || [];
+			
+			if (items.length === 0) {
+				historyList.innerHTML = '<li class="no-history">无查询历史</li>';
+			} else {
+				items.forEach(item => {
+					const li = document.createElement('li');
+					const codeEl = document.createElement('code');
+					// 解析 input JSON 获取查询语句
+					let queryText = '';
+					try {
+						const input = JSON.parse(item.input);
+						queryText = input.query || item.input;
+					} catch (e) {
+						queryText = item.input;
+					}
+					codeEl.textContent = queryText;
+					const timeEl = document.createElement('small');
+					timeEl.textContent = new Date(item.created_at).toLocaleString();
+					const statusEl = document.createElement('span');
+					statusEl.className = 'status-badge status-' + item.status;
+					statusEl.textContent = item.status === 'success' ? '成功' : item.status === 'partial' ? '部分' : '失败';
+					li.appendChild(codeEl);
+					li.appendChild(statusEl);
+					li.appendChild(timeEl);
+					li.addEventListener('click', function() {
+						const queryInput = document.getElementById('query');
+						queryInput.value = queryText;
+						queryInput.focus();
+						closeQueryHistory();
+					});
+					historyList.appendChild(li);
+				});
+			}
+		})
+		.catch(err => {
+			historyList.innerHTML = '<li class="no-history">加载失败</li>';
+			console.error('Failed to load history:', err);
+		});
 	
 	// 关闭按钮事件
 	const closeBtns = modal.querySelectorAll('.close-btn');
@@ -1799,8 +1823,11 @@ function openQueryHistory() {
 	if (clearBtn) {
 		clearBtn.addEventListener('click', function() {
 			if (confirm('确定要清空所有查询历史吗？')) {
-				clearQueryHistory();
-				historyList.innerHTML = '<li class="no-history">无查询历史</li>';
+				apiFetch('/api/v1/history?type=query', { method: 'DELETE' })
+					.then(() => {
+						historyList.innerHTML = '<li class="no-history">无查询历史</li>';
+					})
+					.catch(err => console.error('Failed to clear history:', err));
 			}
 		});
 	}
@@ -1855,6 +1882,43 @@ function getQueryHistory() {
 // 清空查询历史
 function clearQueryHistory() {
 	localStorage.removeItem('queryHistory');
+}
+
+// 保存查询到服务端历史
+function saveQueryToServerHistory(query, engines, data) {
+	if (!query || !query.trim()) return;
+	
+	const input = { query: query, engines: engines };
+	const summary = data.engineStats || data.EngineStats || {};
+	const assets = (data.assets || data.Assets || []);
+	const results = assets.slice(0, 1000).map(a => ({
+		ip: a.ip || a.IP || '',
+		port: a.port || a.Port || 0,
+		protocol: a.protocol || a.Protocol || '',
+		host: a.host || a.Host || '',
+		url: a.url || a.URL || '',
+		title: a.title || a.Title || '',
+		server: a.server || a.Server || '',
+		status_code: a.status_code || a.StatusCode || 0,
+		country_code: a.country_code || a.CountryCode || '',
+		source: a.source || a.Source || ''
+	}));
+	
+	const errors = data.errors || data.Errors || [];
+	const status = errors.length > 0 ? 'partial' : 'success';
+	
+	apiFetch('/api/v1/history/save', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			operation_type: 'query',
+			input: input,
+			status: status,
+			total_count: data.totalCount || data.TotalCount || 0,
+			summary: summary,
+			results: results
+		})
+	}).catch(err => console.error('Failed to save query history:', err));
 }
 
 // 保存查询

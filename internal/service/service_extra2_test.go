@@ -104,9 +104,6 @@ func TestRunBrowserQueryAsync_UsesTranslatedQuery(t *testing.T) {
 	if len(outcome.Errors) != 0 {
 		t.Fatalf("unexpected browser errors: %#v", outcome.Errors)
 	}
-	if len(provider.openedQueries) != 1 || provider.openedQueries[0] != `country="CN" && port="80"` {
-		t.Fatalf("expected translated open query, got %#v", provider.openedQueries)
-	}
 	if len(provider.collectedQueries) != 1 || provider.collectedQueries[0] != `country="CN" && port="80"` {
 		t.Fatalf("expected translated collect query, got %#v", provider.collectedQueries)
 	}

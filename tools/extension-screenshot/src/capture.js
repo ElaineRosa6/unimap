@@ -5,6 +5,21 @@ const TAB_REUSE_TIMEOUT_MS = 30000;
 let lastTabReuseTime = 0;
 
 /**
+ * Extract the origin (scheme + host) from a URL for same-domain matching.
+ * Returns "" for invalid/empty URLs.
+ * @param {string} url
+ * @returns {string}
+ */
+function extractOrigin(url) {
+  try {
+    const u = new URL(url);
+    return u.origin;
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Detect search engine type from the page URL.
  * @param {string} url - The page URL
  * @returns {string} Engine name or "unknown"
@@ -21,45 +36,121 @@ function detectEngine(url) {
   if (lower.includes("daydaymap.com")) return "daydaymap";
   if (lower.includes("onyphe.io")) return "onyphe";
   if (lower.includes("greynoise.io")) return "greynoise";
+  if (lower.includes("binaryedge.io") || lower.includes("binaryedge.com")) return "binaryedge";
   return "unknown";
+}
+
+// Known cookie names that indicate login state per engine.
+const LOGIN_COOKIE_NAMES = {
+  fofa: ["fofa_token", "fofa_user", "session", "fofasession"],
+  hunter: ["HSESSION", "hunter_token", "sessionid", "jwt"],
+  zoomeye: ["session", "jwt", "zmsession", "ctoken"],
+  quake: ["session", "jwt", "token", "QSESSIONID"],
+  shodan: ["session_id", "flash", "reveal", "token"]
+};
+
+/**
+ * Check login cookies for a domain and return diagnostic info.
+ * @param {string} url - Page URL to derive domain from
+ * @returns {Promise<{has_login_cookies: boolean, cookie_count: number, cookie_names: string[], engine: string}>}
+ */
+export async function checkLoginCookies(url) {
+  const engine = detectEngine(url);
+  let origin = "";
+  try {
+    origin = new URL(url).hostname;
+  } catch {
+    return { has_login_cookies: false, cookie_count: 0, cookie_names: [], engine };
+  }
+
+  try {
+    const cookies = await chrome.cookies.getAll({ domain: origin });
+    const names = cookies.map(c => c.name);
+    const knownLogin = LOGIN_COOKIE_NAMES[engine] || [];
+    const hasLogin = knownLogin.some(kn => names.some(n => n.toLowerCase().includes(kn.toLowerCase())));
+    return {
+      has_login_cookies: hasLogin,
+      cookie_count: cookies.length,
+      cookie_names: names,
+      engine
+    };
+  } catch {
+    return { has_login_cookies: false, cookie_count: 0, cookie_names: [], engine };
+  }
 }
 
 /**
  * Open or create a tab with the target URL.
+ * Prioritizes reusing same-domain tabs to preserve login cookies.
  * @param {string} targetUrl - URL to open
  * @returns {Promise<number>} Tab ID
  */
 export async function ensureTab(targetUrl) {
+  const targetOrigin = extractOrigin(targetUrl);
   const tabs = await chrome.tabs.query({});
 
-  // Check if we have a reusable tab in the pool
+  // 1. Pool reuse — prefer same-domain pooled tab (preserves cookies)
   const now = Date.now();
   if (tabPool.length > 0 && now - lastTabReuseTime < TAB_REUSE_TIMEOUT_MS) {
-    const reusableTab = tabPool.pop();
-    if (reusableTab && reusableTab.id) {
-      try {
-        await chrome.tabs.get(reusableTab.id);
-        await chrome.tabs.update(reusableTab.id, { url: targetUrl, active: true });
-        return reusableTab.id;
-      } catch (e) {
-        tabPool = tabPool.filter(t => t.id !== reusableTab.id);
+    let reused = false;
+    // First pass: same-domain match (best — keeps cookies alive)
+    for (let i = tabPool.length - 1; i >= 0; i--) {
+      const pooled = tabPool[i];
+      if (pooled && pooled.id && extractOrigin(pooled.url) === targetOrigin) {
+        try {
+          await chrome.tabs.get(pooled.id);
+          tabPool.splice(i, 1);
+          await chrome.tabs.update(pooled.id, { url: targetUrl, active: true });
+          reused = true;
+          return pooled.id;
+        } catch {
+          tabPool.splice(i, 1);
+        }
+      }
+    }
+    // Second pass: any pooled tab (cookies lost but tab exists)
+    if (!reused && tabPool.length > 0) {
+      const fallback = tabPool.pop();
+      if (fallback && fallback.id) {
+        try {
+          await chrome.tabs.get(fallback.id);
+          await chrome.tabs.update(fallback.id, { url: targetUrl, active: true });
+          return fallback.id;
+        } catch {
+          tabPool = tabPool.filter(t => t.id !== fallback.id);
+        }
       }
     }
   }
 
-  // Check for existing tab with the same URL
-  const existing = tabs.find((t) => t.url === targetUrl);
-  if (existing && existing.id) {
-    await chrome.tabs.update(existing.id, { active: true });
-    return existing.id;
+  // 2. Exact URL match
+  const exact = tabs.find((t) => t.url === targetUrl);
+  if (exact && exact.id) {
+    await chrome.tabs.update(exact.id, { active: true });
+    return exact.id;
   }
 
+  // 3. Same-domain tab — reuse it to keep cookies alive
+  if (targetOrigin) {
+    const sameDomain = tabs.find((t) => {
+      if (!t.url || t.url.startsWith("chrome://") || t.url.startsWith("about:")) return false;
+      return extractOrigin(t.url) === targetOrigin;
+    });
+    if (sameDomain && sameDomain.id) {
+      await chrome.tabs.update(sameDomain.id, { url: targetUrl, active: true });
+      return sameDomain.id;
+    }
+  }
+
+  // 4. Create fresh tab
   const created = await chrome.tabs.create({ url: targetUrl, active: true });
   return created.id;
 }
 
 /**
  * Return tab to pool for reuse, or close if pool is full.
+ * IMPORTANT: Do NOT navigate away from the current URL — that destroys cookies.
+ * The tab stays at its last URL so same-domain reuse preserves login state.
  * @param {number} tabId - Tab ID to release
  */
 export async function releaseTab(tabId) {
@@ -70,7 +161,8 @@ export async function releaseTab(tabId) {
     if (tabPool.length < MAX_TAB_POOL_SIZE) {
       tabPool.push({ id: tabId, url: tab.url });
       lastTabReuseTime = Date.now();
-      await chrome.tabs.update(tabId, { url: "about:blank" });
+      // Do NOT navigate to about:blank — it destroys session cookies.
+      // The tab stays at its last URL; ensureTab() picks it by origin match.
     } else {
       await chrome.tabs.remove(tabId);
     }
@@ -245,143 +337,160 @@ const ENGINE_SELECTORS = {
     nextPage: [".next", ".next-page", "[class*='next']", ".el-pagination__next"]
   },
   hunter: {
-    // Hunter uses Quasar UI framework (q-table, q-pagination, etc.)
-    // CDP verified (2026-06-03): .q-table tbody tr / .list-table tbody tr → 24-30 rows ✅
-    // Hunter table columns (CDP verified):
-    //   td:nth-child(1)=序号, td:nth-child(2)=IP, td:nth-child(3)=域名,
-    //   td:nth-child(4)=端口/服务, td:nth-child(5)=站点标题, td:nth-child(6)=状态码,
-    //   td:nth-child(7)=ICP备案企业, td:nth-child(8)=应用/组件
-    // Note: class-based selectors (.ip-address, .port) don't match Hunter DOM — use td:nth-child
+    // Hunter uses Quasar UI. Data stored in .q-tooltip spans inside <div class="cell"> wrappers.
+    // Columns: 1=序号, 2=IP, 3=域名, 4=端口/服务, 5=标题, 6=状态码, 7=ICP, 8=应用, 9=标签, 10=地区, 11=更新时间
     row: [
-      // Quasar table (primary — current layout)
       ".q-table tbody tr",
       ".q-table__body tr",
       ".list-table tbody tr",
       ".page-list-body_table tr",
-      // Quasar skeleton placeholders (loading)
-      ".skeleton-row",
-      // Card/list-based (alternative layouts)
       ".result-list > .result-item",
       ".result-item",
-      "[class*='result-list'] > [class*='item']",
       "div[class*='result-item']",
-      // Generic fallbacks
       "[class*='result-list'] > div",
       "[class*='result'] > div",
       ".page-list-body > div"
     ],
     cells: {
-      // td:nth-child indices match Hunter's 2026-06 column layout
-      ip: { selector: "td:nth-child(2) a, td:nth-child(2), .ip-address, [data-ip], [class*='ip']" },
-      host: { selector: "td:nth-child(3) a, td:nth-child(3), .domain, .hostname, [class*='domain']" },
-      port: { selector: "td:nth-child(4), .port, [data-port], [class*='port']" },
-      title: { selector: "td:nth-child(5), .web-title, .title, [class*='web-title']" },
+      ip: { selector: "td:nth-child(2)" },
+      host: { selector: "td:nth-child(3)" },
+      port: { selector: "td:nth-child(4)" },
+      protocol: { selector: "td:nth-child(4)" },
+      title: { selector: "td:nth-child(5)" },
       status_code: { selector: "td:nth-child(6)" },
-      org: { selector: "td:nth-child(7), [class*='enterprise'], [class*='company']" },
+      org: { selector: "td:nth-child(7)" },
+      product: { selector: "td:nth-child(8)" },
+      country_code: { selector: "td:nth-child(10)" },
     },
     total: [".total-count", ".total", "[class*='total-count']", "[class*='total']", ".page-list-body_statistic"],
     nextPage: [".next", ".q-pagination button", "[class*='next']", ".pagination-next", ".page-list-pagination button"]
   },
   zoomeye: {
-    // ZoomEye uses card-based layout (2026-06-03 CDP verified).
-    // .search-result-item → 10 elements (most specific row selector) ✅
-    // [class*='search-result-item'] → 40 elements (broader match)
-    // .ant-table tbody tr → 0 — ZoomEye NO LONGER uses Ant Design table!
+    // ZoomEye uses card-based layout (2026-06-15 verified, 2026-06-16 fixed hashed class).
+    // Container: div.search-result-item-container (each result block)
+    // Header: div.header-bar contains IP:Port in div.url-container
+    // Port/Protocol: div.protocol-port-box button elements
+    // IP: div.url-container span or div.ip-detail-box span (stable selectors)
+    // Pagination: ul.ant-pagination
     row: [
-      // Card-based (primary — current layout, CDP verified)
+      // Primary — card container (2026-06-15 verified)
+      ".search-result-item-container",
+      // Broader card matches
+      "[class*='search-result-item-container']",
       ".search-result-item",
       "[class*='search-result-item']",
-      ".result-list > .item",
-      // Generic fallbacks (card-based)
+      // Generic fallbacks
       "[class*='result-item']",
       "[class*='result-list'] > div",
       "[class*='result'] > div",
-      // Ant Design table — DEPRECATED (0 matches as of 2026-06-03), kept as fallback
+      // Ant Design table — DEPRECATED, kept as last fallback
       ".ant-table tbody tr",
-      ".ant-table-tbody tr",
-      ".main-content > div > div"
+      ".ant-table-tbody tr"
     ],
     cells: {
-      ip: { selector: ".ip, [data-ip], [class*='ip']" },
-      port: { selector: ".port, [data-port], [class*='port']" },
-      protocol: { selector: ".service, .protocol, [data-service]" },
-      host: { selector: ".domain, [class*='domain']" },
-      title: { selector: ".title, [class*='title']" },
-      country_code: { selector: ".location, [class*='location']" },
-      banner: { selector: ".banner, [class*='banner']" }
+      // IP: prefer div.url-container text (stable), fallback to div.ip-detail-box span
+      ip: { selector: "div.url-container span, div.ip-detail-box span, div.header-bar span" },
+      // Port is first button in div.protocol-port-box (e.g. "8888")
+      port: { selector: "div.protocol-port-box button:first-child, div.protocol-port-box button" },
+      // Protocol is second button's span in div.protocol-port-box (e.g. "http")
+      protocol: { selector: "div.protocol-port-box button:last-child span, div.protocol-box span" },
+      // Host/domain from header-bar link
+      host: { selector: "div.header-bar a[href], div.url-container a" },
+      // Banner from pre tab panels
+      banner: { selector: "div.ant-tabs-tabpane-active pre, pre" }
+      // NOTE: title/org/asn/isp/country_code/timestamp are extracted by the
+      // ZoomEye-specific router-container traversal below (not via cells selectors),
+      // because ZoomEye stores them as <span>label:</span> + url-container value blocks,
+      // and [class*='title'] matches unrelated elements (.search-result-item-tabs etc.).
     },
-    total: [".total", "[class*='total']", "[class*='count']", ".pagination-info"],
-    nextPage: [".next", ".pagination-next", "[class*='next']", ".el-pagination__next"]
+    total: ["li.ant-pagination-total-text span", ".total", "[class*='total']", "[class*='count']"],
+    nextPage: ["li.ant-pagination-next:not(.ant-pagination-disabled) a", ".ant-pagination-next a", ".next", "[class*='next']"]
   },
   quake: {
-    // Quake uses Element UI (el-table, el-row, el-pagination).
-    // CDP DOM inspection (2026-06-03) confirmed: .el-table, .search-wrapper
+    // Quake 360 search results (Vue SPA, Element UI).
+    // Result container: div.item-container
+    // IP: span.copy_btn with data-clipboard-text="IP:port"
+    // Port: span.port.common-tag
+    // Protocol: span.server-protocol.common-tag
+    // Country: span.country-container span.address
+    // Title: span.ellipse-text inside div.title-line
+    // ASN/Org/ISP: div.item span.label + span.ellipse-text
     row: [
-      // Element UI table (primary)
+      ".item-container",
+      "[class*='result-item']",
+      "[class*='result-card']",
       ".el-table tbody tr",
-      ".el-table__body tr",
-      // Card-based
-      ".result-list > .result-row",
-      ".result-row",
-      "[class*='result-list'] > [class*='row']",
-      "[class*='result-row']",
-      // Generic fallbacks
-      "[class*='result-list'] > div",
-      "[class*='result'] > div",
-      "table tbody tr"
+      ".el-table__body tr"
     ],
     cells: {
-      ip: { selector: ".ip, [class*='ip']" },
-      port: { selector: ".port, [class*='port']" },
-      protocol: { selector: ".transport, .protocol" },
-      host: { selector: ".hostname, [class*='hostname']" },
-      title: { selector: ".title, [class*='title']" },
-      server: { selector: ".server, [class*='server']" },
-      city: { selector: ".city, [class*='city']" },
-      isp: { selector: ".isp, [class*='isp']" }
+      ip: { selector: "div.ip span.copy_btn, [data-clipboard-text]" },
+      port: { selector: "span.port" },
+      protocol: { selector: "span.server-protocol" },
+      title: { selector: ".title-line span.ellipse-text, [class*='title']" },
+      country_code: { selector: ".country-container .address" },
+      asn: { selector: ".item .label + .ellipse-text" },
     },
     total: [".total-count", ".total", "[class*='total']", ".pagination-info"],
     nextPage: [".next", ".next-page", "[class*='next']", ".el-pagination__next"]
   },
   shodan: {
-    // CDP-verified (2026-06-04): Shodan uses div.row.l-search-results > div.nine.columns > div.result
-    // Each .result contains: div.heading > a.title[href="/host/X.X.X.X"] (IP),
-    //   div.result-details (org + location), div.banner-data (HTTP banner)
+    // Shodan search results (verified 2026-06-17).
+    // Result: div.result > div.heading + div.result-details + div.banner-data
+    // HTML structure:
+    //   <div class="heading">
+    //     <a href="/host/X.X.X.X" class="title text-dark">TITLE</a>
+    //     <a href="http://X.X.X.X:PORT" class="text-danger">
+    //     <div class="timestamp">...</div>
+    //   </div>
+    //   <div class="result-details">
+    //     <li><img class="flag"> <a>COUNTRY</a></li>
+    //     <a class="filter-link filter-org">ORG</a>
+    //     ...
+    //   </div>
+    //   <div class="banner-data"><pre>BANNER_CONTENT</pre></div>
+    // IP: first a.title href → extract IP from /host/IP path
+    // Port: second a.text-danger href → extract port from http://IP:PORT URL
+    // Title: a.title text content
+    // Timestamp: div.timestamp text (Shodan-specific)
+    // Org: a.filter-link.filter-org text
+    // Country: .flag img + sibling a text
+    // Banner: div.banner-data pre text
     row: [
-      // Primary: search result cards in the main results column
+      // Primary: most specific Shodan result container (INSIDE the search results area)
       ".row.l-search-results .result",
-      ".nine.columns .result",
-      // Legacy / alternative layouts
-      ".heading + div > div",
-      "div.search-results > div",
+      ".l-search-results .result",
+      // Main result div (narrow to avoid false positives)
+      "div.result",
+      // Card-based layout match
       "[class*='search-result']",
-      // Table-based (rare but possible)
-      "table.results tbody tr",
-      "table[class*='result'] tbody tr",
-      // Generic fallbacks
+      "[class*='result-item']",
+      "div[class*='host']",
+      // Fallback: any div that contains a heading with /host/ link
+      "div:has(a[href*='/host/'])",
+      // Generic fallback
       "[class*='result'] > div",
-      "div[class*='result']"
+      ".list-group-item"
     ],
     cells: {
-      // IP: extracted from /host/ link href (most reliable) or text fallback
-      ip: { selector: "a[href*='/host/']", attr: "href", extract: "ip_from_path", fallback: ".ip" },
-      // Port: look for /port/ links
-      port: { selector: "a[href*='/port/'], .port" },
-      // Hostname: /host/ link text or hostnames element
-      host: { selector: "a[href*='/host/'], .hostnames, a[href*='/domain/'], [class*='hostname']" },
-      // Title: the heading link text (may be IP or HTTP title)
-      title: { selector: "div.heading a, .heading a, a.title, h2, [class*='title']" },
-      // Country: from result-details or flag element
-      country_code: { selector: ".result-details, .country, [class*='country'], [class*='flag']" },
-      // Organization: first line of .result-details
-      org: { selector: ".result-details, .org, a[href*='/org/'], [class*='org']" },
-      // Banner: HTTP response banner
-      banner: { selector: ".banner-data, pre, [class*='banner']" },
-      // OS: from result metadata
-      os: { selector: ".os, [class*='os']" }
+      ip: {
+        selector: "div.heading a.title, a[href*='/host/'], div[class*='heading'] a[href*='/host/']",
+        attr: "href",
+        extract: "ip_from_path"
+      },
+      port: {
+        selector: "div.heading a.text-danger, div[class*='heading'] a[href^='http://'], a[href^='https://']",
+        attr: "href",
+        extract: "port_from_url"
+      },
+      title: { selector: "div.heading a.title, a[href*='/host/'], .host-title, [class*='title']" },
+      last_seen: { selector: "div.heading div.timestamp, .timestamp, [class*='timestamp'], time" },
+      org: { selector: ".result-details a.filter-link.filter-org, a.filter-org, .org, [class*='org']" },
+      country_code: { selector: "img.flag + a, .result-details img.flag + a, [class*='country']" },
+      banner: { selector: "div.banner-data pre, div[data-banner] pre, .banner pre, pre" },
+      server: { selector: "pre" },
     },
-    total: [".total", "[class*='total']", ".result-count", "[class*='result-count']"],
-    nextPage: [".next", ".pagination-next", "[class*='next']", "a[rel='next']"]
+    total: [".total", "[class*='total']", ".result-count", "[class*='result-count']", "div[class*='summary']"],
+    nextPage: [".next", ".pagination-next", "[class*='next']", "a[rel='next']", "nav ul li:last-child a"]
   },
   censys: {
     // Censys uses a modern SPA layout with result cards.
@@ -450,6 +559,25 @@ const ENGINE_SELECTORS = {
     },
     total: ["[class*='total']", "[class*='count']"],
     nextPage: ["[class*='next']", "a[rel='next']"]
+  },
+  binaryedge: {
+    // BinaryEdge uses a card-based SPA layout similar to FOFA.
+    row: [
+      "[class*='result-item']", "[class*='result-card']",
+      "[class*='result-list'] > div", "[class*='result'] > div",
+      "table tbody tr"
+    ],
+    cells: {
+      ip: { selector: "[class*='ip'], [class*='address'], [data-ip]" },
+      port: { selector: "[class*='port'], [data-port]" },
+      host: { selector: "[class*='domain'], [class*='host'], [class*='hostname']" },
+      title: { selector: "[class*='title'], h2, h3, [class*='name']" },
+      country_code: { selector: "[class*='country'], [class*='location'], [class*='flag']" },
+      org: { selector: "[class*='org'], [class*='company']" },
+      protocol: { selector: "[class*='protocol'], [class*='service']" }
+    },
+    total: ["[class*='total']", "[class*='count']", ".result-count"],
+    nextPage: ["[class*='next']", "a[rel='next']", "button[aria-label='next']"]
   }
 };
 
@@ -567,11 +695,20 @@ export async function extractEngineAssets(tabId) {
           // Support attribute extraction (e.g. href, src, data-*)
           if (cellConfig.attr) {
             const val = el.getAttribute(cellConfig.attr) || "";
-            // Post-process: extract IP from Shodan /host/X.X.X.X path
+            // Post-process: extract IP or port from URL paths
             if (cellConfig.extract) {
               if (cellConfig.extract === "ip_from_path") {
                 const m = val.match(/\/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
                 return m ? m[1] : val;
+              }
+              if (cellConfig.extract === "port_from_url") {
+                // Match port at end of URL: http://IP:PORT  OR  with path: http://IP:PORT/path
+                const m = val.match(/:(\d{1,5})(\/|$)/);
+                if (m) return m[1];
+                // Fallback: #PORT format (some engines use hash fragments)
+                const m2 = val.match(/#(\d{1,5})/);
+                if (m2) return m2[1];
+                return "";
               }
             }
             return val.trim();
@@ -580,7 +717,21 @@ export async function extractEngineAssets(tabId) {
           return el.textContent.trim();
         }
 
+        // Clean Hunter UI filter labels from text
+        function cleanHunterText(text) {
+          if (!text) return "";
+          text = text.replace(/只看该[^\s]*不看该[^\s]*/g, "");
+          text = text.replace(/只看空[^\s]*不看空[^\s]*/g, "");
+          text = text.replace(/看相似(网站|icon)/g, "");
+          text = text.replace(/访问[^\s]*/g, "");
+          text = text.replace(/复制/g, "");
+          text = text.replace(/云厂商/g, "");
+          text = text.replace(/\s+/g, " ").trim();
+          return text;
+        }
+
         // Extract data from each row/card
+        const seenKeys = new Set();
         rows.forEach((row) => {
           const cells = row.querySelectorAll("td");
           const item = {};
@@ -600,9 +751,113 @@ export async function extractEngineAssets(tabId) {
             });
           }
 
+          // Clean Hunter UI text from title/ip/host
+          if (typeof item.title === "string") item.title = cleanHunterText(item.title);
+          if (typeof item.ip === "string") item.ip = cleanHunterText(item.ip);
+          if (typeof item.host === "string") item.host = cleanHunterText(item.host);
+
+          // ZoomEye: extract title/org/asn/host/isp/country/timestamp from labelled
+          // router-container blocks inside search-result-item-info.
+          // ZoomEye cards store metadata as <span>label:</span> + <div class="url-container">value</div>,
+          // NOT as concatenated text. The generic cells title selector ([class*='title'])
+          // matches unrelated elements, so we override with precise DOM traversal.
+          if (eng === "zoomeye") {
+            const infoEl = row.querySelector("div.search-result-item-info");
+            if (infoEl) {
+              infoEl.querySelectorAll("div.router-container").forEach((rc) => {
+                const label = rc.querySelector("span.whitespace-nowrap");
+                const valueEl = rc.querySelector("div.url-container span");
+                if (!label || !valueEl) return;
+                const labelText = label.textContent.trim();
+                const value = valueEl.textContent.trim();
+                if (!value) return;
+                if (labelText.startsWith("标题:")) { if (!item.title) item.title = value; }
+                else if (labelText.startsWith("组织:")) { if (!item.org) item.org = value; }
+                else if (labelText.startsWith("ASN:")) { if (!item.asn) item.asn = value; }
+                else if (labelText.startsWith("主机名:")) { if (!item.host) item.host = value; }
+                else if (labelText.startsWith("ISP:")) { if (!item.isp) item.isp = value; }
+              });
+              // Country: extract from flag-XX class (e.g. flag-cn → CN)
+              if (!item.country_code) {
+                const flagEl = infoEl.querySelector("span.flag");
+                if (flagEl) {
+                  const fm = (flagEl.className || "").match(/flag-([a-z]{2})/i);
+                  if (fm) item.country_code = fm[1].toUpperCase();
+                }
+              }
+              // Timestamp: search-result-icon-time paragraph
+              if (!item.last_seen) {
+                const timeEl = infoEl.querySelector("p.search-result-icon-time");
+                if (timeEl) item.last_seen = timeEl.textContent.trim();
+              }
+            }
+          }
+
+          // Clean Shodan country/org: extract from multi-line result-details
+          if (typeof item.country_code === "string" && item.country_code.includes("\n")) {
+            const lines = item.country_code.split(/\n/).map(l => l.trim()).filter(l => l.length > 1);
+            // Country: look for "Country, City" pattern
+            for (const l of lines) {
+              if (/^[A-Z][a-z]+,\s*[A-Z]/.test(l)) {
+                item.country_code = l.trim();
+                break;
+              }
+              // Chinese locations
+              if (/^中国/.test(l) || /^[\u4e00-\u9fa5]{2,}省/.test(l)) {
+                item.country_code = l.trim();
+                break;
+              }
+            }
+            // Fallback: line after org
+            if (!item.country_code || item.country_code.includes("\n")) {
+              const orgIdx = lines.findIndex(l => /Cloud|Inc|Ltd|Corp|Company/.test(l));
+              if (orgIdx >= 0 && orgIdx + 1 < lines.length) {
+                item.country_code = lines[orgIdx + 1].trim();
+              }
+            }
+          }
+          if (typeof item.org === "string" && item.org.includes("\n")) {
+            const lines = item.org.split(/\n/).map(l => l.trim()).filter(l => l.length > 3 && !/^\d/.test(l));
+            const orgLine = lines.find(l => l !== item.ip && /Cloud|Inc|Ltd|Corp|Company|LLC|University/.test(l));
+            if (orgLine) item.org = orgLine.trim();
+          }
+
+          // Port: ensure number, fallback to protocol
+          if (typeof item.port === "string") item.port = parseInt(item.port, 10) || 0;
+          if (!item.port && item.protocol) {
+            const pm = String(item.protocol).match(/(\d{1,5})/);
+            if (pm) item.port = parseInt(pm[1], 10);
+          }
+
+          // Hunter-specific: protocol may contain port number (e.g. "8081 http")
+          // Extract only the known protocol name
+          if (eng === "hunter" && item.protocol) {
+            const protoMatch = String(item.protocol).match(/\b(http|https|tcp|udp|ssh|ftp|smtp|pop3|imap|mysql|rdp|smb|dns)\b/i);
+            if (protoMatch) {
+              item.protocol = protoMatch[1].toLowerCase();
+            } else if (/^\d+$/.test(String(item.protocol))) {
+              item.protocol = ""; // Pure port number, not a protocol
+            }
+          }
+
+          // Post-fix: if ip is empty but host contains IP, move it
+          if (!item.ip && item.host) {
+            const m = String(item.host).match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+            if (m) item.ip = m[1];
+          }
+
           // Skip completely empty rows
           const hasAnyValue = Object.values(item).some(v => v !== "" && v !== 0);
-          if (hasAnyValue) items.push(item);
+          if (!hasAnyValue) return;
+
+          // Deduplicate by ip:port (Hunter shows duplicate summary+detail rows)
+          if (item.ip && item.port > 0) {
+            const dedupKey = item.ip + ":" + item.port;
+            if (seenKeys.has(dedupKey)) return;
+            seenKeys.add(dedupKey);
+          }
+
+          items.push(item);
         });
 
         // Extract pagination info
@@ -643,34 +898,21 @@ export async function extractEngineAssets(tabId) {
         }
 
         function extractCellTextFromCells(cells, cfg) {
-          const el = cfg.selector.includes("td:nth-child")
-            ? (() => {
-                const match = cfg.selector.match(/td:nth-child\((\d+)\)/);
-                if (match) {
-                  const idx = parseInt(match[1], 10) - 1;
-                  if (idx >= 0 && idx < cells.length) {
-                    const target = cells[idx];
-                    if (cfg.selector.includes(" a")) {
-                      const a = target.querySelector("a");
-                      return a ? a.textContent.trim() : target.textContent.trim();
-                    }
-                    return target.textContent.trim();
-                  }
-                }
-                return "";
-              })()
-            : "";
-          if (el) return el;
-          if (cfg.fallback) {
-            const fbMatch = cfg.fallback.match(/td:nth-child\((\d+)\)/);
-            if (fbMatch) {
-              const idx = parseInt(fbMatch[1], 10) - 1;
-              if (idx >= 0 && idx < cells.length) {
-                return cells[idx].textContent.trim();
-              }
-            }
-          }
-          return "";
+          const match = cfg.selector.match(/td:nth-child\((\d+)\)/);
+          if (!match) return "";
+          const idx = parseInt(match[1], 10) - 1;
+          if (idx < 0 || idx >= cells.length) return "";
+          const target = cells[idx];
+          // Get raw cell text, remove UI artifacts
+          let text = target.textContent.trim();
+          text = text.replace(/只看该[^\s]*/g, "").replace(/不看该[^\s]*/g, "");
+          text = text.replace(/只看空[^\s]*/g, "").replace(/不看空[^\s]*/g, "");
+          text = text.replace(/看相似[^\s]*/g, "").replace(/访问[^\s]*/g, "");
+          text = text.replace(/复制[^\s]*/g, "").replace(/云厂商/g, "");
+          text = text.replace(/高危|中危|低危/g, "");
+          text = text.replace(/\s+/g, " ").trim();
+          if (text === "-" || text === "—") text = "";
+          return text;
         }
 
         function fallbackExtraction() {
@@ -691,13 +933,15 @@ export async function extractEngineAssets(tabId) {
             });
           });
 
-          // If tables found, return table extraction
           if (fallbackItems.length > 0) {
             return { items: fallbackItems, total: 0, has_more: false, title, engine: eng, is_login_wall: false, extraction_method: "table_fallback" };
           }
 
           // Try card-based extraction using link patterns
-          return cardBasedExtraction();
+          const cardResult = cardBasedExtraction();
+          if (cardResult.items.length > 0) return cardResult;
+
+          return { items: [], total: 0, has_more: false, title, engine: eng, is_login_wall: false, extraction_method: "no_match" };
         }
 
         function cardBasedExtraction() {
