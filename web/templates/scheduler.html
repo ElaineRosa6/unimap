@@ -813,7 +813,9 @@ document.getElementById('edit-modal-overlay').addEventListener('click', closeEdi
 		hintEl.textContent = PARAM_HINTS[type] || '';
 		const tmpl = TASK_TEMPLATES[type];
 		if (tmpl) {
-			fillBtn.style.display = '';
+			// btn-fill-template has class "hidden-init" (display:none);
+			// clearing inline display would let the class win, so use inline-block.
+			fillBtn.style.display = 'inline-block';
 			fillBtn.textContent = '从模板填充：' + tmpl.name;
 		} else {
 			fillBtn.style.display = 'none';

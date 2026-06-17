@@ -1018,7 +1018,17 @@ function showWSDisconnectedBanner() {
 		banner = document.createElement('div');
 		banner.id = 'ws-disconnected-banner';
 		banner.style.cssText = 'background:#f8d7da; border:1px solid #f5c6cb; color:#721c24; padding:10px 16px; border-radius:6px; margin-bottom:12px; font-size:14px; display:flex; justify-content:space-between; align-items:center;';
-		banner.innerHTML = '<span>⚠️ 实时连接已断开，查询进度不可用。</span><button onclick="this.parentNode.remove();initWebSocket();" class="btn btn-sm btn-primary">重新连接</button>';
+		const span = document.createElement('span');
+		span.textContent = '⚠️ 实时连接已断开，查询进度不可用。';
+		const btn = document.createElement('button');
+		btn.className = 'btn btn-sm btn-primary';
+		btn.textContent = '重新连接';
+		btn.addEventListener('click', function() {
+			banner.remove();
+			initWebSocket();
+		});
+		banner.appendChild(span);
+		banner.appendChild(btn);
 		const main = document.querySelector('main');
 		if (main && main.firstChild) {
 			main.insertBefore(banner, main.firstChild);
@@ -1057,7 +1067,7 @@ function startPingInterval() {
 	}, 30000);
 }
 
-// P2-16: 统一 fetch 包装器 — 自动处理 401/403
+// P2-16: 统一 fetch 包装器 — 自动处理 401/403/429
 function apiFetch(url, options) {
 	return fetch(url, options).then(function(resp) {
 		if (resp.status === 401) {
@@ -1068,6 +1078,13 @@ function apiFetch(url, options) {
 		if (resp.status === 403) {
 			showMessage('权限不足，无法执行此操作', 'error');
 			throw new Error('权限不足');
+		}
+		if (resp.status === 429) {
+			var retry = resp.headers.get('Retry-After');
+			var msg = '请求过于频繁，请稍后再试';
+			if (retry) msg += '（' + retry + ' 秒后可重试）';
+			showMessage(msg, 'error');
+			throw new Error('rate_limited');
 		}
 		return resp;
 	});
@@ -1319,13 +1336,24 @@ function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, 
 		removeLoadingIndicator();
 		const resultsContent = document.getElementById('results-content');
 		if (resultsContent) {
-			resultsContent.innerHTML = `
-				<div style="color:#856404; background:#fff3cd; padding:16px; border-radius:6px; border:1px solid #ffc107;">
-					<h4 style="margin:0 0 8px;">查询超时</h4>
-					<p style="margin:0;">查询已超过 90 秒未响应，可能是引擎响应缓慢或网络问题。</p>
-					<button onclick="location.reload()" class="btn btn-primary" style="margin-top:12px;">重新查询</button>
-				</div>
-			`;
+			const wrap = document.createElement('div');
+			wrap.style.cssText = 'color:#856404; background:#fff3cd; padding:16px; border-radius:6px; border:1px solid #ffc107;';
+			const h4 = document.createElement('h4');
+			h4.style.margin = '0 0 8px';
+			h4.textContent = '查询超时';
+			const p = document.createElement('p');
+			p.style.margin = '0';
+			p.textContent = '查询已超过 90 秒未响应，可能是引擎响应缓慢或网络问题。';
+			const btn = document.createElement('button');
+			btn.className = 'btn btn-primary';
+			btn.style.marginTop = '12px';
+			btn.textContent = '重新查询';
+			btn.addEventListener('click', function() { location.reload(); });
+			wrap.appendChild(h4);
+			wrap.appendChild(p);
+			wrap.appendChild(btn);
+			resultsContent.innerHTML = '';
+			resultsContent.appendChild(wrap);
 		}
 		// 恢复按钮状态
 		if (submitBtn) {
