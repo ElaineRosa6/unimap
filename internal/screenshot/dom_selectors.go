@@ -40,8 +40,8 @@ var selectorsByEngine = map[string]*engineSelectors{
 	"shodan": {
 		RowSelector:    ".row.l-search-results .result",
 		ExtractJS:      extractShodanJS,
-		PaginationNext: ".pagination .next a",
-		TotalSelector:  ".result-count",
+		PaginationNext: ".pagination .next:not(.disabled) a, a[rel='next'], nav ul li:last-child a",
+		TotalSelector:  ".result-count, [class*='total'], div[class*='summary']",
 	},
 	"censys": {
 		RowSelector:    "[class*='result-card']",
@@ -60,6 +60,11 @@ var selectorsByEngine = map[string]*engineSelectors{
 	},
 	"greynoise": {
 		RowSelector:    "table tbody tr",
+		PaginationNext: "[class*='next']",
+		TotalSelector:  "[class*='total']",
+	},
+	"binaryedge": {
+		RowSelector:    "[class*='result-item']",
 		PaginationNext: "[class*='next']",
 		TotalSelector:  "[class*='total']",
 	},
@@ -193,10 +198,16 @@ const extractZoomEyeJS = `
   var assets = [];
   containers.forEach(function(container) {
     var asset = {};
-    // Extract IP from ip-detail-box > span._public-hover_uxlu6_1
-    var ipEl = container.querySelector('span._public-hover_uxlu6_1');
+    // Extract IP: prefer url-container text (stable), fallback to ip-detail-box span
+    var ipEl = container.querySelector('div.url-container span, div.ip-detail-box span, div.header-bar span');
     if (ipEl) {
-      asset.ip = ipEl.textContent.trim();
+      var ipText = ipEl.textContent.trim();
+      var ipMatch = ipText.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+      if (ipMatch) {
+        asset.ip = ipMatch[1];
+      } else if (!asset.host) {
+        asset.host = ipText;
+      }
     }
     // Extract host:port from header-bar > div.url-container
     var urlContainer = container.querySelector('div.url-container');
@@ -229,6 +240,41 @@ const extractZoomEyeJS = `
     var preEl = container.querySelector('pre');
     if (preEl) {
       asset.banner = preEl.textContent.trim().substring(0, 500);
+    }
+    // Extract title/org/asn/host/isp/country/timestamp from labelled
+    // router-container blocks inside search-result-item-info.
+    // ZoomEye cards store metadata as <span>label:</span> + url-container value,
+    // NOT as concatenated text. The old [class*='title'] selector matched
+    // unrelated elements (.search-result-item-tabs etc.), so we use precise traversal.
+    var infoEl = container.querySelector('div.search-result-item-info');
+    if (infoEl) {
+      var rcNodes = infoEl.querySelectorAll('div.router-container');
+      for (var ri = 0; ri < rcNodes.length; ri++) {
+        var rcLabel = rcNodes[ri].querySelector('span.whitespace-nowrap');
+        var rcValue = rcNodes[ri].querySelector('div.url-container span');
+        if (!rcLabel || !rcValue) continue;
+        var lt = rcLabel.textContent.trim();
+        var lv = rcValue.textContent.trim();
+        if (!lv) continue;
+        if (lt.indexOf('标题:') === 0) { if (!asset.title) asset.title = lv; }
+        else if (lt.indexOf('组织:') === 0) { if (!asset.org) asset.org = lv; }
+        else if (lt.indexOf('ASN:') === 0) { if (!asset.asn) asset.asn = lv; }
+        else if (lt.indexOf('主机名:') === 0) { if (!asset.host) asset.host = lv; }
+        else if (lt.indexOf('ISP:') === 0) { if (!asset.isp) asset.isp = lv; }
+      }
+      // Country: extract from flag-XX class (e.g. flag-cn → CN)
+      if (!asset.country_code) {
+        var flagEl = infoEl.querySelector('span.flag');
+        if (flagEl) {
+          var fm = (flagEl.className || '').match(/flag-([a-z]{2})/i);
+          if (fm) asset.country_code = fm[1].toUpperCase();
+        }
+      }
+      // Timestamp: search-result-icon-time paragraph
+      if (!asset.last_seen) {
+        var timeEl = infoEl.querySelector('p.search-result-icon-time');
+        if (timeEl) asset.last_seen = timeEl.textContent.trim();
+      }
     }
     asset.source = 'zoomeye';
     if (asset.ip || asset.host) {
@@ -298,30 +344,140 @@ const extractQuakeJS = `
 
 const extractShodanJS = `
 (function() {
-  var results = document.querySelectorAll('.row.l-search-results .result');
+  // Try multiple row selectors, most specific first
+  var rowSelectors = [
+    '.row.l-search-results .result',
+    '.result',
+    '[class*="search-result"]',
+    '[class*="result-item"]',
+    'div:has(a[href*="/host/"])',
+    '.list-group-item'
+  ];
+
+  var results = [];
+  for (var selIdx = 0; selIdx < rowSelectors.length; selIdx++) {
+    try {
+      var nodes = document.querySelectorAll(rowSelectors[selIdx]);
+      if (nodes.length > 0) {
+        results = nodes;
+        break;
+      }
+    } catch(e) { /* skip invalid selector */ }
+  }
+
   var assets = [];
-  results.forEach(function(el) {
+  for (var i = 0; i < results.length; i++) {
+    var el = results[i];
     var asset = {};
-    var ipLink = el.querySelector("a[href*='/host/']");
-    if (ipLink) {
-      var m = ipLink.getAttribute('href').match(/\\/host\\/([^/?#]+)/);
-      if (m) asset.ip = m[1];
+
+    // IP + Title: try multiple selectors for /host/IP link
+    var ipSelectors = ["div.heading a.title", "a[href*='/host/']", "div[class*='heading'] a[href*='/host/']", ".host-title"];
+    for (var s = 0; s < ipSelectors.length; s++) {
+      var ipLink = el.querySelector(ipSelectors[s]);
+      if (ipLink) {
+        var href = ipLink.getAttribute('href') || '';
+        var m = href.match(/\\/host\\/([^/?#]+)/);
+        if (m) asset.ip = m[1];
+        if (!asset.title) asset.title = ipLink.textContent.trim();
+        break;
+      }
     }
-    var portLink = el.querySelector("a[href*='/port/']");
-    if (portLink) asset.port = parseInt(portLink.textContent.trim()) || 0;
-    var heading = el.querySelector('.heading a, a.title');
-    if (heading) asset.title = heading.textContent.trim();
-    var details = el.querySelector('.result-details');
-    if (details) asset.org = details.textContent.trim().split('\\n')[0];
-    var banner = el.querySelector('.banner-data, pre');
-    if (banner) asset.banner = banner.textContent.trim().substring(0, 200);
+
+    // Port: try multiple selectors, extract from http://IP:PORT URL
+    var portSelectors = ["div.heading a.text-danger", "div[class*='heading'] a[href^='http://']", "div[class*='heading'] a[href^='https://']", "a[href^='http']"];
+    for (var ps = 0; ps < portSelectors.length; ps++) {
+      var portLink = el.querySelector(portSelectors[ps]);
+      if (portLink) {
+        var portHref = portLink.getAttribute('href') || '';
+        var portMatch = portHref.match(/:(\\d+)(\\/|$)/);
+        if (portMatch) {
+          asset.port = parseInt(portMatch[1]) || 0;
+          break;
+        }
+      }
+    }
+
+    // Timestamp extraction
+    var tsSelectors = ["div.heading div.timestamp", ".timestamp", "[class*='timestamp']", "time"];
+    for (var ts = 0; ts < tsSelectors.length; ts++) {
+      var tsEl = el.querySelector(tsSelectors[ts]);
+      if (tsEl) {
+        asset.last_seen = tsEl.textContent.trim();
+        break;
+      }
+    }
+
+    // Org/ASN extraction
+    var orgSelectors = [".result-details a.filter-link.filter-org", "a.filter-org", ".org", "[class*='org']"];
+    for (var os = 0; os < orgSelectors.length; os++) {
+      var orgLink = el.querySelector(orgSelectors[os]);
+      if (orgLink) {
+        asset.org = orgLink.textContent.trim();
+        break;
+      }
+    }
+
+    // Country extraction (with try-catch for :has() selector)
+    var countrySelectors = ["img.flag + a", "[class*='country']"];
+    for (var cs = 0; cs < countrySelectors.length; cs++) {
+      try {
+        var countryEl = el.querySelector(countrySelectors[cs]);
+        if (countryEl) {
+          asset.country_code = countryEl.textContent.trim();
+          break;
+        }
+      } catch(e) { continue; }
+    }
+    // Try :has() selectors separately with try-catch
+    try {
+      if (!asset.country_code) {
+        var hasCountryEl = el.querySelector(".result-details li:has(.flag) a");
+        if (hasCountryEl) asset.country_code = hasCountryEl.textContent.trim();
+      }
+    } catch(e) {}
+
+    // Banner data extraction
+    var bannerSelectors = [".banner-data pre", "div[data-banner] pre", ".banner pre", "pre"];
+    for (var bs = 0; bs < bannerSelectors.length; bs++) {
+      var banner = el.querySelector(bannerSelectors[bs]);
+      if (banner) {
+        asset.banner = banner.textContent.trim().substring(0, 200);
+        break;
+      }
+    }
+
     asset.source = 'shodan';
     if (asset.ip) assets.push(asset);
-  });
+  }
+
+  // Total count extraction (with comma support)
   var total = 0;
-  var totalEl = document.querySelector('.result-count, [class*="total"]');
-  if (totalEl) { var m = totalEl.textContent.match(/(\\d+)/); if (m) total = parseInt(m[1]); }
-  var hasNext = !!document.querySelector('.pagination .next:not(.disabled) a, a[rel="next"]');
+  var totalSelectors = [".result-count", "[class*='total']", "div[class*='summary']"];
+  for (var t = 0; t < totalSelectors.length; t++) {
+    var totalEl = document.querySelector(totalSelectors[t]);
+    if (totalEl) {
+      var totalMatch = totalEl.textContent.match(/([\\d,]+)/);
+      if (totalMatch) {
+        total = parseInt(totalMatch[1].replace(/,/g, ''));
+        break;
+      }
+    }
+  }
+
+  // Pagination detection (with try-catch for :not())
+  var hasNext = false;
+  var nextSelectors = ['a[rel="next"]', 'nav ul li:last-child a', '.next-page', '[class*="next"]'];
+  for (var n = 0; n < nextSelectors.length; n++) {
+    try {
+      if (document.querySelector(nextSelectors[n])) {
+        hasNext = true;
+        break;
+      }
+    } catch(e) { continue; }
+  }
+  // Try :not() selector separately
+  try { if (!hasNext && document.querySelector('.pagination .next:not(.disabled) a')) hasNext = true; } catch(e) {}
+
   return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
 })()
 `

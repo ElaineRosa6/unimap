@@ -22,7 +22,11 @@ func TestExtractPortFromHost(t *testing.T) {
 		{"port 65535", "1.2.3.4:65535", 65535, "1.2.3.4"},
 		{"port too large", "1.2.3.4:70000", 0, "1.2.3.4:70000"},
 		{"non-numeric port", "1.2.3.4:abc", 0, "1.2.3.4:abc"},
-		{"multiple colons", "a:b:8080", 8080, "a:b"},
+		{"bracketed ipv6 with port", "[2001:db8::1]:443", 443, "2001:db8::1"},
+		{"bare ipv6 no port", "2001:db8::1", 0, "2001:db8::1"},
+		{"bare ipv6 ending with digits", "2001:db8::1:443", 0, "2001:db8::1:443"},
+		{"bracketed ipv6 non-numeric port", "[2001:db8::1]:abc", 0, "[2001:db8::1]:abc"},
+		{"multiple colons non-standard", "a:b:8080", 0, "a:b:8080"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -288,11 +292,41 @@ func TestParseAssetItem(t *testing.T) {
 		}
 	})
 
+	t.Run("shodan timestamp mapped to last_seen", func(t *testing.T) {
+		item := map[string]interface{}{
+			"ip":        "1.2.3.4",
+			"port":      float64(80),
+			"timestamp": "2026-06-14T17:33:27.232948",
+		}
+		asset := ParseAssetItem(item, "shodan")
+		if asset.LastSeen != "2026-06-14T17:33:27.232948" {
+			t.Errorf("LastSeen = %q, want 2026-06-14T17:33:27.232948", asset.LastSeen)
+		}
+		// timestamp is a known field, must NOT appear in Extra
+		if asset.Extra != nil {
+			if _, ok := asset.Extra["timestamp"]; ok {
+				t.Error("timestamp should not be in Extra (it is a known field mapped to LastSeen)")
+			}
+		}
+	})
+
+	t.Run("last_seen key preferred over timestamp", func(t *testing.T) {
+		item := map[string]interface{}{
+			"ip":        "1.2.3.4",
+			"last_seen": "2026-06-15T10:00:00",
+			"timestamp": "2026-06-14T17:33:27",
+		}
+		asset := ParseAssetItem(item, "shodan")
+		if asset.LastSeen != "2026-06-15T10:00:00" {
+			t.Errorf("LastSeen = %q, want 2026-06-15T10:00:00 (last_seen takes precedence)", asset.LastSeen)
+		}
+	})
+
 	t.Run("unknown fields go to extra", func(t *testing.T) {
 		item := map[string]interface{}{
-			"ip":       "1.2.3.4",
-			"custom1":  "val1",
-			"custom2":  float64(42),
+			"ip":      "1.2.3.4",
+			"custom1": "val1",
+			"custom2": float64(42),
 		}
 		asset := ParseAssetItem(item, "test")
 		if asset.Extra == nil {
@@ -340,8 +374,8 @@ func TestParseStructuredCollectedData(t *testing.T) {
 			"has_more": true,
 			"items": []interface{}{
 				map[string]interface{}{
-					"ip":   "1.1.1.1",
-					"port": float64(80),
+					"ip":    "1.1.1.1",
+					"port":  float64(80),
 					"title": "test",
 				},
 				map[string]interface{}{
@@ -507,6 +541,58 @@ func TestParseStructuredCollectedDataFromItems(t *testing.T) {
 			t.Error("hasMore should be true")
 		}
 	})
+
+	t.Run("last_seen from collected item", func(t *testing.T) {
+		items := []model.CollectedDataItem{
+			{IP: "1.2.3.4", Port: 80, LastSeen: "2026-06-14T17:33:27"},
+		}
+		assets, _, _ := ParseStructuredCollectedDataFromItems(items, "shodan", false)
+		if len(assets) != 1 {
+			t.Fatalf("expected 1 asset, got %d", len(assets))
+		}
+		if assets[0].LastSeen != "2026-06-14T17:33:27" {
+			t.Errorf("LastSeen = %q, want 2026-06-14T17:33:27", assets[0].LastSeen)
+		}
+		if assets[0].Source != "shodan" {
+			t.Errorf("Source = %q, want shodan", assets[0].Source)
+		}
+	})
+}
+
+func TestNormalizeAssets_Hunter(t *testing.T) {
+	assets := []model.UnifiedAsset{
+		{
+			CountryCode: "成都市",
+			Host:        "不看空域名 -",
+			Title:       "Dovecot imapd企业办公 邮件系统 开源 Dovecot imapd",
+		},
+	}
+
+	NormalizeAssets("hunter", assets)
+
+	if assets[0].CountryCode != "中国" {
+		t.Fatalf("CountryCode = %q, want 中国", assets[0].CountryCode)
+	}
+	if assets[0].Host != "" {
+		t.Fatalf("Host = %q, want empty", assets[0].Host)
+	}
+	if assets[0].Title != "Dovecot imapd" {
+		t.Fatalf("Title = %q, want Dovecot imapd", assets[0].Title)
+	}
+}
+
+func TestNormalizeAssets_NonHunterNoop(t *testing.T) {
+	assets := []model.UnifiedAsset{{
+		CountryCode: "成都市",
+		Host:        "不看空域名 -",
+		Title:       "Dovecot imapd企业办公 邮件系统 开源 Dovecot imapd",
+	}}
+
+	NormalizeAssets("fofa", assets)
+
+	if assets[0].CountryCode != "成都市" || assets[0].Host != "不看空域名 -" || assets[0].Title != "Dovecot imapd企业办公 邮件系统 开源 Dovecot imapd" {
+		t.Fatalf("expected non-hunter assets to remain unchanged, got %+v", assets[0])
+	}
 }
 
 func TestParseExtractedAssets(t *testing.T) {
@@ -580,13 +666,13 @@ func TestParseExtractedAssets(t *testing.T) {
 	t.Run("all geo fields", func(t *testing.T) {
 		raw := []map[string]interface{}{
 			{
-				"ip":       "1.1.1.1",
-				"region":   "TestRegion",
-				"city":     "TestCity",
-				"asn":      "AS999",
-				"org":      "TestOrg",
-				"isp":      "TestISP",
-				"source":   "override",
+				"ip":     "1.1.1.1",
+				"region": "TestRegion",
+				"city":   "TestCity",
+				"asn":    "AS999",
+				"org":    "TestOrg",
+				"isp":    "TestISP",
+				"source": "override",
 			},
 		}
 		assets := ParseExtractedAssets(raw, "test")
@@ -599,6 +685,43 @@ func TestParseExtractedAssets(t *testing.T) {
 		}
 		if a.Source != "override" {
 			t.Errorf("Source = %q, want override", a.Source)
+		}
+	})
+
+	t.Run("timestamp and banner mapped", func(t *testing.T) {
+		raw := []map[string]interface{}{
+			{
+				"ip":        "1.2.3.4",
+				"port":      float64(80),
+				"timestamp": "2026-06-14T17:33:27",
+				"banner":    "+OK Dovecot ready.",
+			},
+		}
+		assets := ParseExtractedAssets(raw, "shodan")
+		if len(assets) != 1 {
+			t.Fatalf("expected 1 asset, got %d", len(assets))
+		}
+		a := assets[0]
+		if a.LastSeen != "2026-06-14T17:33:27" {
+			t.Errorf("LastSeen = %q, want 2026-06-14T17:33:27", a.LastSeen)
+		}
+		if a.BodySnippet != "+OK Dovecot ready." {
+			t.Errorf("BodySnippet = %q, want +OK Dovecot ready.", a.BodySnippet)
+		}
+	})
+
+	t.Run("body_snippet preferred over banner", func(t *testing.T) {
+		raw := []map[string]interface{}{
+			{
+				"ip":           "1.2.3.4",
+				"port":         float64(80),
+				"body_snippet": "HTTP/1.1 200 OK",
+				"banner":       "fallback banner",
+			},
+		}
+		assets := ParseExtractedAssets(raw, "test")
+		if assets[0].BodySnippet != "HTTP/1.1 200 OK" {
+			t.Errorf("BodySnippet = %q, want HTTP/1.1 200 OK", assets[0].BodySnippet)
 		}
 	})
 }

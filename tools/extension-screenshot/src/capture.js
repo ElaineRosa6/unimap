@@ -5,6 +5,21 @@ const TAB_REUSE_TIMEOUT_MS = 30000;
 let lastTabReuseTime = 0;
 
 /**
+ * Extract the origin (scheme + host) from a URL for same-domain matching.
+ * Returns "" for invalid/empty URLs.
+ * @param {string} url
+ * @returns {string}
+ */
+function extractOrigin(url) {
+  try {
+    const u = new URL(url);
+    return u.origin;
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Detect search engine type from the page URL.
  * @param {string} url - The page URL
  * @returns {string} Engine name or "unknown"
@@ -21,45 +36,121 @@ function detectEngine(url) {
   if (lower.includes("daydaymap.com")) return "daydaymap";
   if (lower.includes("onyphe.io")) return "onyphe";
   if (lower.includes("greynoise.io")) return "greynoise";
+  if (lower.includes("binaryedge.io") || lower.includes("binaryedge.com")) return "binaryedge";
   return "unknown";
+}
+
+// Known cookie names that indicate login state per engine.
+const LOGIN_COOKIE_NAMES = {
+  fofa: ["fofa_token", "fofa_user", "session", "fofasession"],
+  hunter: ["HSESSION", "hunter_token", "sessionid", "jwt"],
+  zoomeye: ["session", "jwt", "zmsession", "ctoken"],
+  quake: ["session", "jwt", "token", "QSESSIONID"],
+  shodan: ["session_id", "flash", "reveal", "token"]
+};
+
+/**
+ * Check login cookies for a domain and return diagnostic info.
+ * @param {string} url - Page URL to derive domain from
+ * @returns {Promise<{has_login_cookies: boolean, cookie_count: number, cookie_names: string[], engine: string}>}
+ */
+export async function checkLoginCookies(url) {
+  const engine = detectEngine(url);
+  let origin = "";
+  try {
+    origin = new URL(url).hostname;
+  } catch {
+    return { has_login_cookies: false, cookie_count: 0, cookie_names: [], engine };
+  }
+
+  try {
+    const cookies = await chrome.cookies.getAll({ domain: origin });
+    const names = cookies.map(c => c.name);
+    const knownLogin = LOGIN_COOKIE_NAMES[engine] || [];
+    const hasLogin = knownLogin.some(kn => names.some(n => n.toLowerCase().includes(kn.toLowerCase())));
+    return {
+      has_login_cookies: hasLogin,
+      cookie_count: cookies.length,
+      cookie_names: names,
+      engine
+    };
+  } catch {
+    return { has_login_cookies: false, cookie_count: 0, cookie_names: [], engine };
+  }
 }
 
 /**
  * Open or create a tab with the target URL.
+ * Prioritizes reusing same-domain tabs to preserve login cookies.
  * @param {string} targetUrl - URL to open
  * @returns {Promise<number>} Tab ID
  */
 export async function ensureTab(targetUrl) {
+  const targetOrigin = extractOrigin(targetUrl);
   const tabs = await chrome.tabs.query({});
 
-  // Check if we have a reusable tab in the pool
+  // 1. Pool reuse — prefer same-domain pooled tab (preserves cookies)
   const now = Date.now();
   if (tabPool.length > 0 && now - lastTabReuseTime < TAB_REUSE_TIMEOUT_MS) {
-    const reusableTab = tabPool.pop();
-    if (reusableTab && reusableTab.id) {
-      try {
-        await chrome.tabs.get(reusableTab.id);
-        await chrome.tabs.update(reusableTab.id, { url: targetUrl, active: true });
-        return reusableTab.id;
-      } catch (e) {
-        tabPool = tabPool.filter(t => t.id !== reusableTab.id);
+    let reused = false;
+    // First pass: same-domain match (best — keeps cookies alive)
+    for (let i = tabPool.length - 1; i >= 0; i--) {
+      const pooled = tabPool[i];
+      if (pooled && pooled.id && extractOrigin(pooled.url) === targetOrigin) {
+        try {
+          await chrome.tabs.get(pooled.id);
+          tabPool.splice(i, 1);
+          await chrome.tabs.update(pooled.id, { url: targetUrl, active: true });
+          reused = true;
+          return pooled.id;
+        } catch {
+          tabPool.splice(i, 1);
+        }
+      }
+    }
+    // Second pass: any pooled tab (cookies lost but tab exists)
+    if (!reused && tabPool.length > 0) {
+      const fallback = tabPool.pop();
+      if (fallback && fallback.id) {
+        try {
+          await chrome.tabs.get(fallback.id);
+          await chrome.tabs.update(fallback.id, { url: targetUrl, active: true });
+          return fallback.id;
+        } catch {
+          tabPool = tabPool.filter(t => t.id !== fallback.id);
+        }
       }
     }
   }
 
-  // Check for existing tab with the same URL
-  const existing = tabs.find((t) => t.url === targetUrl);
-  if (existing && existing.id) {
-    await chrome.tabs.update(existing.id, { active: true });
-    return existing.id;
+  // 2. Exact URL match
+  const exact = tabs.find((t) => t.url === targetUrl);
+  if (exact && exact.id) {
+    await chrome.tabs.update(exact.id, { active: true });
+    return exact.id;
   }
 
+  // 3. Same-domain tab — reuse it to keep cookies alive
+  if (targetOrigin) {
+    const sameDomain = tabs.find((t) => {
+      if (!t.url || t.url.startsWith("chrome://") || t.url.startsWith("about:")) return false;
+      return extractOrigin(t.url) === targetOrigin;
+    });
+    if (sameDomain && sameDomain.id) {
+      await chrome.tabs.update(sameDomain.id, { url: targetUrl, active: true });
+      return sameDomain.id;
+    }
+  }
+
+  // 4. Create fresh tab
   const created = await chrome.tabs.create({ url: targetUrl, active: true });
   return created.id;
 }
 
 /**
  * Return tab to pool for reuse, or close if pool is full.
+ * IMPORTANT: Do NOT navigate away from the current URL — that destroys cookies.
+ * The tab stays at its last URL so same-domain reuse preserves login state.
  * @param {number} tabId - Tab ID to release
  */
 export async function releaseTab(tabId) {
@@ -70,7 +161,8 @@ export async function releaseTab(tabId) {
     if (tabPool.length < MAX_TAB_POOL_SIZE) {
       tabPool.push({ id: tabId, url: tab.url });
       lastTabReuseTime = Date.now();
-      await chrome.tabs.update(tabId, { url: "about:blank" });
+      // Do NOT navigate to about:blank — it destroys session cookies.
+      // The tab stays at its last URL; ensureTab() picks it by origin match.
     } else {
       await chrome.tabs.remove(tabId);
     }
@@ -274,11 +366,11 @@ const ENGINE_SELECTORS = {
     nextPage: [".next", ".q-pagination button", "[class*='next']", ".pagination-next", ".page-list-pagination button"]
   },
   zoomeye: {
-    // ZoomEye uses card-based layout (2026-06-15 verified from saved HTML).
+    // ZoomEye uses card-based layout (2026-06-15 verified, 2026-06-16 fixed hashed class).
     // Container: div.search-result-item-container (each result block)
     // Header: div.header-bar contains IP:Port in div.url-container
     // Port/Protocol: div.protocol-port-box button elements
-    // IP: span._public-hover_uxlu6_1 or div.ip-detail-box span
+    // IP: div.url-container span or div.ip-detail-box span (stable selectors)
     // Pagination: ul.ant-pagination
     row: [
       // Primary — card container (2026-06-15 verified)
@@ -296,20 +388,20 @@ const ENGINE_SELECTORS = {
       ".ant-table-tbody tr"
     ],
     cells: {
-      // IP is inside header-bar > div.url-container > span/a text (e.g. "132.232.231.41:8888")
-      // or inside ip-detail-box > span._public-hover_uxlu6_1
-      ip: { selector: "span._public-hover_uxlu6_1, div.url-container span, div.ip-detail-box span" },
+      // IP: prefer div.url-container text (stable), fallback to div.ip-detail-box span
+      ip: { selector: "div.url-container span, div.ip-detail-box span, div.header-bar span" },
       // Port is first button in div.protocol-port-box (e.g. "8888")
       port: { selector: "div.protocol-port-box button:first-child, div.protocol-port-box button" },
       // Protocol is second button's span in div.protocol-port-box (e.g. "http")
       protocol: { selector: "div.protocol-port-box button:last-child span, div.protocol-box span" },
       // Host/domain from header-bar link
       host: { selector: "div.header-bar a[href], div.url-container a" },
-      // Title from search-result-item body
-      title: { selector: ".title, [class*='title'], div.search-result-item-info" },
       // Banner from pre tab panels
-      banner: { selector: "div.ant-tabs-tabpane-active pre, pre" },
-      country_code: { selector: ".location, [class*='location'], [class*='country']" }
+      banner: { selector: "div.ant-tabs-tabpane-active pre, pre" }
+      // NOTE: title/org/asn/isp/country_code/timestamp are extracted by the
+      // ZoomEye-specific router-container traversal below (not via cells selectors),
+      // because ZoomEye stores them as <span>label:</span> + url-container value blocks,
+      // and [class*='title'] matches unrelated elements (.search-result-item-tabs etc.).
     },
     total: ["li.ant-pagination-total-text span", ".total", "[class*='total']", "[class*='count']"],
     nextPage: ["li.ant-pagination-next:not(.ant-pagination-disabled) a", ".ant-pagination-next a", ".next", "[class*='next']"]
@@ -342,28 +434,63 @@ const ENGINE_SELECTORS = {
     nextPage: [".next", ".next-page", "[class*='next']", ".el-pagination__next"]
   },
   shodan: {
-    // Shodan search results (verified from HTML).
+    // Shodan search results (verified 2026-06-17).
     // Result: div.result > div.heading + div.result-details + div.banner-data
-    // IP: a.title[href='/host/X.X.X.X'] href → extract IP
-    // Port: second a[href] in div.heading → extract port from URL
-    // Title: a.title.text-dark text content
+    // HTML structure:
+    //   <div class="heading">
+    //     <a href="/host/X.X.X.X" class="title text-dark">TITLE</a>
+    //     <a href="http://X.X.X.X:PORT" class="text-danger">
+    //     <div class="timestamp">...</div>
+    //   </div>
+    //   <div class="result-details">
+    //     <li><img class="flag"> <a>COUNTRY</a></li>
+    //     <a class="filter-link filter-org">ORG</a>
+    //     ...
+    //   </div>
+    //   <div class="banner-data"><pre>BANNER_CONTENT</pre></div>
+    // IP: first a.title href → extract IP from /host/IP path
+    // Port: second a.text-danger href → extract port from http://IP:PORT URL
+    // Title: a.title text content
+    // Timestamp: div.timestamp text (Shodan-specific)
     // Org: a.filter-link.filter-org text
-    // Country: a.filter-link.text-dark (first one with flag img)
+    // Country: .flag img + sibling a text
     // Banner: div.banner-data pre text
     row: [
-      ".result",
-      "[class*='result'] > div"
+      // Primary: most specific Shodan result container (INSIDE the search results area)
+      ".row.l-search-results .result",
+      ".l-search-results .result",
+      // Main result div (narrow to avoid false positives)
+      "div.result",
+      // Card-based layout match
+      "[class*='search-result']",
+      "[class*='result-item']",
+      "div[class*='host']",
+      // Fallback: any div that contains a heading with /host/ link
+      "div:has(a[href*='/host/'])",
+      // Generic fallback
+      "[class*='result'] > div",
+      ".list-group-item"
     ],
     cells: {
-      ip: { selector: "div.heading a.title", attr: "href", extract: "ip_from_path" },
-      port: { selector: "div.heading a[href^='http://'], a.bg-primary[href^='#']", attr: "href", extract: "port_from_url" },
-      title: { selector: "div.heading a.title" },
-      org: { selector: "a.filter-link.filter-org" },
-      country_code: { selector: ".result-details .flag + a, .result-details li:has(.flag) a" },
-      banner: { selector: "div.banner-data pre" },
+      ip: {
+        selector: "div.heading a.title, a[href*='/host/'], div[class*='heading'] a[href*='/host/']",
+        attr: "href",
+        extract: "ip_from_path"
+      },
+      port: {
+        selector: "div.heading a.text-danger, div[class*='heading'] a[href^='http://'], a[href^='https://']",
+        attr: "href",
+        extract: "port_from_url"
+      },
+      title: { selector: "div.heading a.title, a[href*='/host/'], .host-title, [class*='title']" },
+      last_seen: { selector: "div.heading div.timestamp, .timestamp, [class*='timestamp'], time" },
+      org: { selector: ".result-details a.filter-link.filter-org, a.filter-org, .org, [class*='org']" },
+      country_code: { selector: "img.flag + a, .result-details img.flag + a, [class*='country']" },
+      banner: { selector: "div.banner-data pre, div[data-banner] pre, .banner pre, pre" },
+      server: { selector: "pre" },
     },
-    total: [".total", "[class*='total']", ".result-count", "[class*='result-count']"],
-    nextPage: [".next", ".pagination-next", "[class*='next']", "a[rel='next']"]
+    total: [".total", "[class*='total']", ".result-count", "[class*='result-count']", "div[class*='summary']"],
+    nextPage: [".next", ".pagination-next", "[class*='next']", "a[rel='next']", "nav ul li:last-child a"]
   },
   censys: {
     // Censys uses a modern SPA layout with result cards.
@@ -432,6 +559,25 @@ const ENGINE_SELECTORS = {
     },
     total: ["[class*='total']", "[class*='count']"],
     nextPage: ["[class*='next']", "a[rel='next']"]
+  },
+  binaryedge: {
+    // BinaryEdge uses a card-based SPA layout similar to FOFA.
+    row: [
+      "[class*='result-item']", "[class*='result-card']",
+      "[class*='result-list'] > div", "[class*='result'] > div",
+      "table tbody tr"
+    ],
+    cells: {
+      ip: { selector: "[class*='ip'], [class*='address'], [data-ip]" },
+      port: { selector: "[class*='port'], [data-port]" },
+      host: { selector: "[class*='domain'], [class*='host'], [class*='hostname']" },
+      title: { selector: "[class*='title'], h2, h3, [class*='name']" },
+      country_code: { selector: "[class*='country'], [class*='location'], [class*='flag']" },
+      org: { selector: "[class*='org'], [class*='company']" },
+      protocol: { selector: "[class*='protocol'], [class*='service']" }
+    },
+    total: ["[class*='total']", "[class*='count']", ".result-count"],
+    nextPage: ["[class*='next']", "a[rel='next']", "button[aria-label='next']"]
   }
 };
 
@@ -556,8 +702,10 @@ export async function extractEngineAssets(tabId) {
                 return m ? m[1] : val;
               }
               if (cellConfig.extract === "port_from_url") {
-                const m = val.match(/:(\d{1,5})\//);
+                // Match port at end of URL: http://IP:PORT  OR  with path: http://IP:PORT/path
+                const m = val.match(/:(\d{1,5})(\/|$)/);
                 if (m) return m[1];
+                // Fallback: #PORT format (some engines use hash fragments)
                 const m2 = val.match(/#(\d{1,5})/);
                 if (m2) return m2[1];
                 return "";
@@ -607,6 +755,43 @@ export async function extractEngineAssets(tabId) {
           if (typeof item.title === "string") item.title = cleanHunterText(item.title);
           if (typeof item.ip === "string") item.ip = cleanHunterText(item.ip);
           if (typeof item.host === "string") item.host = cleanHunterText(item.host);
+
+          // ZoomEye: extract title/org/asn/host/isp/country/timestamp from labelled
+          // router-container blocks inside search-result-item-info.
+          // ZoomEye cards store metadata as <span>label:</span> + <div class="url-container">value</div>,
+          // NOT as concatenated text. The generic cells title selector ([class*='title'])
+          // matches unrelated elements, so we override with precise DOM traversal.
+          if (eng === "zoomeye") {
+            const infoEl = row.querySelector("div.search-result-item-info");
+            if (infoEl) {
+              infoEl.querySelectorAll("div.router-container").forEach((rc) => {
+                const label = rc.querySelector("span.whitespace-nowrap");
+                const valueEl = rc.querySelector("div.url-container span");
+                if (!label || !valueEl) return;
+                const labelText = label.textContent.trim();
+                const value = valueEl.textContent.trim();
+                if (!value) return;
+                if (labelText.startsWith("标题:")) { if (!item.title) item.title = value; }
+                else if (labelText.startsWith("组织:")) { if (!item.org) item.org = value; }
+                else if (labelText.startsWith("ASN:")) { if (!item.asn) item.asn = value; }
+                else if (labelText.startsWith("主机名:")) { if (!item.host) item.host = value; }
+                else if (labelText.startsWith("ISP:")) { if (!item.isp) item.isp = value; }
+              });
+              // Country: extract from flag-XX class (e.g. flag-cn → CN)
+              if (!item.country_code) {
+                const flagEl = infoEl.querySelector("span.flag");
+                if (flagEl) {
+                  const fm = (flagEl.className || "").match(/flag-([a-z]{2})/i);
+                  if (fm) item.country_code = fm[1].toUpperCase();
+                }
+              }
+              // Timestamp: search-result-icon-time paragraph
+              if (!item.last_seen) {
+                const timeEl = infoEl.querySelector("p.search-result-icon-time");
+                if (timeEl) item.last_seen = timeEl.textContent.trim();
+              }
+            }
+          }
 
           // Clean Shodan country/org: extract from multi-line result-details
           if (typeof item.country_code === "string" && item.country_code.includes("\n")) {

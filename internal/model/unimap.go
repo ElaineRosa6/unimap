@@ -55,6 +55,7 @@ type UnifiedAsset struct {
 	ASN         string                 `json:"asn"`
 	Org         string                 `json:"org"`
 	ISP         string                 `json:"isp"`
+	LastSeen    string                 `json:"last_seen"` // last probe/update time (e.g. Shodan timestamp, ZoomEye icon-time)
 	Source      string                 `json:"source"`
 	Extra       map[string]interface{} `json:"extra"`
 }
