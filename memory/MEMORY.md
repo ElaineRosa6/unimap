@@ -9,7 +9,7 @@
 - **Extension 模式是截图/采集的主力模式**：CDP headless 指纹暴露，Extension 使用真实浏览器会话
 - **ScreenshotRouter 双模式自动降级**：CDP↔Extension 自动切换
 - **三层采集架构（L1/L2/L3）**：L1 Network + L3 DOM 覆盖 5 引擎；L2 Hook 设计冻结
-- **SPA 引擎截图必须用 `"spa"` 策略**：搜索结果页异步渲染，需 ~8s 等待（5s 初始 + 3s 完成后），`"load"` 策略仅 ~3s 不够
+- **SPA 引擎截图统一15秒等待**：collect/screenshot/collect_and_capture 三种 action 统一等待 15 秒 + 滚动触发懒加载 + 2 秒稳定等待。不同引擎差异化等待不可靠，统一最长等待更简单（2026-06-18 从 4/6 秒统一为 15 秒）
 - **`collect_and_capture` 一次导航完成采集+截图**：避免分步调用导致页面重载丢失搜索结果
 - **CSP `unsafe-inline` 完全移除**：21 静态 style→CSS 类，28 JS inline style→CSS 类，动态颜色用 CSS 变量
 - **所有管理端点应启用限流**：即使有 admin auth 保护
@@ -31,6 +31,9 @@
 - **CSP 拦截 innerHTML 内联 handler**：`script-src 'self' 'nonce-xxx'`（无 `unsafe-inline`）不仅拦截 HTML 里的 `onclick=`，也拦截 innerHTML 字符串里的。动态元素必须用 `addEventListener`
 - **多用户模式**：`validateLoginCredentials` 是 DB 优先 → config 降级。要禁用 config 降级，清空 `config.yaml` 的 `web.auth.username`/`password_hash` 即可（代码无需改，字段为空时返回 "login not configured"）
 - **admin token 越权**：`handleGetAdminToken` 返回明文 token，多用户模式下必须 `requireAdmin` 校验。单用户模式（userID=0）和 admin-token 身份（-1）放行
+- **collect_and_capture 统一15秒等待**：所有 SPA 引擎（FOFA/Hunter/ZoomEye/Quake）搜索截图统一等待 15 秒+滚动触发懒加载+2 秒稳定等待，比差异化引擎策略更简单可靠。修改 background.js 后必须刷新 Chrome 扩展（2026-06-18）
+- **extractImagePaths 双格式识别**：同时支持 `→`（批量截图格式）和 `保存:`（搜索引擎截图格式）两种路径分隔符（2026-06-18）
+- **search_screenshot payload engine 在 extra 中**：定时任务搜索引擎截图的 `engine` 字段必须放在 `extra` 对象中：`{"query": "...", "extra": {"engine": "zoomeye"}}`
 
 ## 剩余长期项
 
@@ -142,6 +145,7 @@
 
 ## 当前活跃
 
+- [截图等待时间统一15秒 + 飞书应用图片推送修复 2026-06-18](project_screenshot_wait_timing_fix_2026-06-18.md) — ✅ 5引擎截图完整+飞书推送正常；collect_and_capture 统一15秒等待+滚动触发懒加载；extractImagePaths 双格式识别
 - [Extension 模式问题 2026-05-09](project_extension_mode_issues_2026-05-09.md) — ✅P0已修复(Shodan补齐+翻译路径验证)、✅P1进度已实现、P1登录状态部分解决
 - [Bridge 认证修复 2026-06-03](project_bridge_auth_fix_2026-06-03.md) — ✅截图超时根因(重启丢token→401)修复：admin token loopback 兜底+签名/pairing联动+5测试+真机curl E2E全绿
 - [定时任务优化进度 2026-06-02](project_scheduler_optimization_2026-06-02.md) — P3-P6完成详情+修复记录+后续计划
