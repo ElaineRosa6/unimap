@@ -109,8 +109,24 @@ async function handleTask(task, token) {
     await waitForPageReady(tabId, waitStrategy, effectiveTimeout);
 
     // Extra render wait for collect action (SPA search results take time to render)
-    if (action === "collect" || action === "screenshot") {
-      await new Promise((resolve) => setTimeout(resolve, 4000));
+    if (action === "collect" || action === "screenshot" || action === "collect_and_capture") {
+      // 固定15秒等待，确保所有引擎（尤其是Hunter）的登录态和页面内容完全加载
+      await new Promise((resolve) => setTimeout(resolve, 15000));
+
+      // 滚动到页面底部触发懒加载内容，再滚动回顶部
+      try {
+        await chrome.tabs.executeScript(tabId, {
+          code: `
+            window.scrollTo(0, document.body.scrollHeight);
+            setTimeout(() => window.scrollTo(0, 0), 500);
+          `
+        });
+      } catch (e) {
+        // 忽略滚动错误
+      }
+
+      // 滚动后再等待2秒，确保内容稳定
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     if (action === "open") {

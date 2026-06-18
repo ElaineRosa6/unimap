@@ -318,6 +318,11 @@ go run -tags gui ./cmd/unimap-gui
 
 **已知待修复**：ZoomEye `cleanZoomEyeTitle` JS 函数未生效（title 含元数据前缀），Shodan `timestamp` 选择器待调试。
 
+### 2026-06-18 截图等待时间统一 + 飞书应用图片推送修复
+- ✅ **collect_and_capture 统一15秒等待**：background.js 中 `collect`/`screenshot`/`collect_and_capture` 三种 action 统一 15 秒等待 + 滚动触发懒加载 + 2 秒稳定等待，确保所有 SPA 引擎（FOFA/Hunter/ZoomEye/Quake/Shodan）截图完整
+- ✅ **extractImagePaths 双格式识别**：scheduler_notify.go 新增 `保存:` 格式路径提取，搜索引擎截图和批量截图均可正确推送图片到飞书应用
+- ✅ **5 引擎截图+飞书推送验证通过**：ZoomEye/FOFA/Hunter/Quake/Shodan 全部截图完整、登录态正常、飞书图片推送正常
+
 ### 2026-06-17 前端收敛 + Shodan 选择器修复 + 飞书应用 UI 补齐
 
 #### 核心 5 引擎收敛

@@ -173,6 +173,17 @@ func extractImagePaths(result string) []string {
 			}
 		}
 
+		if strings.Contains(line, "保存:") {
+			parts := strings.SplitN(line, "保存:", 2)
+			if len(parts) == 2 {
+				path := strings.TrimSpace(parts[1])
+				if isImageFile(path) {
+					paths = append(paths, path)
+					continue
+				}
+			}
+		}
+
 		if strings.Contains(line, "截图保存:") || strings.Contains(line, "截图目录:") {
 			continue
 		}
