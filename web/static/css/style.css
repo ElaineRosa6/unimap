@@ -6,7 +6,7 @@
 
 /* --- Design tokens --- */
 :root {
-	/* Palette — slate + single accent */
+	/* Palette — slate + indigo accent (modern, friendly) */
 	--slate-50: #f8fafc;
 	--slate-100: #f1f5f9;
 	--slate-200: #e2e8f0;
@@ -18,10 +18,13 @@
 	--slate-800: #1e293b;
 	--slate-900: #0f172a;
 
-	--accent: #5b8c8e;
-	--accent-hover: #4a7476;
-	--accent-subtle: #e8f2f2;
-	--accent-border: #a8c8c8;
+	/* Accent — indigo→violet for a warmer, more modern feel */
+	--accent: #6366f1;
+	--accent-hover: #4f46e5;
+	--accent-light: #818cf8;
+	--accent-subtle: #eef2ff;
+	--accent-border: #c7d2fe;
+	--accent-glow: rgba(99, 102, 241, 0.35);
 
 	--success: #16a34a;
 	--success-bg: #f0fdf4;
@@ -41,10 +44,10 @@
 	--font-mono: 'JetBrains Mono', 'Courier New', monospace;
 
 	/* Surface */
-	--bg-body: var(--slate-50);
+	--bg-body: #f6f7fb;
 	--bg-surface: #ffffff;
 	--bg-elevated: var(--slate-100);
-	--bg-header: var(--slate-900);
+	--bg-header: #0f172a;
 
 	/* Text */
 	--text-primary: var(--slate-900);
@@ -58,8 +61,8 @@
 
 	/* Radius */
 	--radius-sm: 6px;
-	--radius-md: 8px;
-	--radius-lg: 12px;
+	--radius-md: 10px;
+	--radius-lg: 14px;
 
 	/* Spacing — 4px base */
 	--space-1: 0.25rem;
@@ -71,11 +74,13 @@
 	--space-8: 2rem;
 	--space-12: 3rem;
 
-	/* Shadows — subtle, not heavy */
-	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-	--shadow-md: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-	--shadow-lg: 0 4px 6px rgba(0, 0, 0, 0.04), 0 2px 4px rgba(0, 0, 0, 0.04);
-	--shadow-focus: 0 0 0 3px var(--accent-subtle);
+	/* Shadows — layered for depth */
+	--shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+	--shadow-md: 0 2px 4px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+	--shadow-lg: 0 8px 16px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+	--shadow-xl: 0 12px 28px rgba(15, 23, 42, 0.12), 0 4px 10px rgba(15, 23, 42, 0.06);
+	--shadow-focus: 0 0 0 3px var(--accent-glow);
+	--shadow-accent: 0 4px 14px var(--accent-glow);
 
 	/* Transitions */
 	--duration-fast: 150ms;
@@ -97,6 +102,9 @@ body {
 	line-height: 1.65;
 	color: var(--text-primary);
 	background-color: var(--bg-body);
+	background-image:
+		radial-gradient(circle at 1px 1px, rgba(99, 102, 241, 0.04) 1px, transparent 0);
+	background-size: 24px 24px;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 }
@@ -135,14 +143,15 @@ code {
    Header — minimal, compact, no description text
    ============================================================ */
 header {
-	background-color: var(--bg-header);
+	background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
 	color: var(--text-on-dark);
 	padding: var(--space-3) var(--space-6);
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: var(--space-4);
-	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+	box-shadow: 0 2px 12px rgba(15, 23, 42, 0.18);
+	border-bottom: 1px solid rgba(99, 102, 241, 0.2);
 	position: sticky;
 	top: 0;
 	z-index: 100;
@@ -160,7 +169,7 @@ header .logo {
 header .logo-mark {
 	width: 28px;
 	height: 28px;
-	background: var(--accent);
+	background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
 	border-radius: var(--radius-sm);
 	display: flex;
 	align-items: center;
@@ -169,6 +178,7 @@ header .logo-mark {
 	font-size: 14px;
 	color: #fff;
 	letter-spacing: -0.5px;
+	box-shadow: 0 2px 8px var(--accent-glow);
 }
 
 header .logo-text {
@@ -243,7 +253,12 @@ section {
 	border-radius: var(--radius-md);
 	padding: var(--space-8);
 	margin-bottom: var(--space-6);
-	box-shadow: var(--shadow-sm);
+	box-shadow: var(--shadow-md);
+	transition: box-shadow var(--duration-normal) var(--ease);
+}
+
+section:hover {
+	box-shadow: var(--shadow-lg);
 }
 
 section h2 {
@@ -356,14 +371,17 @@ footer {
 }
 
 .btn-primary {
-	background: var(--accent);
+	background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
 	color: #fff;
 	border-color: var(--accent);
+	box-shadow: 0 2px 8px var(--accent-glow);
 }
 
 .btn-primary:hover {
-	background: var(--accent-hover);
+	background: linear-gradient(135deg, var(--accent-hover) 0%, #4338ca 100%);
 	border-color: var(--accent-hover);
+	box-shadow: 0 4px 14px var(--accent-glow);
+	transform: translateY(-1px);
 }
 
 .btn-secondary {

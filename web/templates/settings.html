@@ -50,6 +50,7 @@
 		color: var(--accent);
 		background: var(--accent-subtle);
 		border-left-color: var(--accent);
+		font-weight: 600;
 	}
 
 	.ctrl-body {
@@ -81,9 +82,14 @@
 	.cfg-group {
 		background: var(--bg-surface);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
+		border-radius: var(--radius-md);
 		overflow: hidden;
 		margin-bottom: 20px;
+		box-shadow: var(--shadow-sm);
+		transition: box-shadow var(--duration-normal) var(--ease);
+	}
+	.cfg-group:hover {
+		box-shadow: var(--shadow-md);
 	}
 	.cfg-group-title {
 		padding: 14px 20px;
@@ -182,7 +188,7 @@
 		border-radius: 50%;
 		transition: 0.2s;
 	}
-	.cfg-switch input:checked + .cfg-slider { background: var(--success); }
+	.cfg-switch input:checked + .cfg-slider { background: var(--accent); }
 	.cfg-switch input:checked + .cfg-slider::before { transform: translateX(20px); }
 	.cfg-toggle-label {
 		font-size: 12px;
@@ -209,10 +215,19 @@
 		font-family: var(--font-sans);
 		transition: background var(--duration-fast);
 	}
-	.cfg-btn-save { background: var(--accent); color: #fff; }
-	.cfg-btn-save:hover { background: var(--accent-hover); }
-	.cfg-btn-test { background: transparent; color: var(--success); border: 1px solid var(--success); }
-	.cfg-btn-test:hover { background: var(--success-bg); }
+	.cfg-btn-save {
+		background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+		color: #fff;
+		box-shadow: 0 2px 8px var(--accent-glow);
+		transition: all var(--duration-fast) var(--ease);
+	}
+	.cfg-btn-save:hover {
+		background: linear-gradient(135deg, var(--accent-hover) 0%, #4338ca 100%);
+		box-shadow: 0 4px 14px var(--accent-glow);
+		transform: translateY(-1px);
+	}
+	.cfg-btn-test { background: transparent; color: var(--accent); border: 1px solid var(--accent-border); transition: all var(--duration-fast); }
+	.cfg-btn-test:hover { background: var(--accent-subtle); border-color: var(--accent); }
 
 	.cfg-result {
 		font-size: 12px;
