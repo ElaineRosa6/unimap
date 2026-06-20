@@ -37,9 +37,13 @@
 
 ## 剩余长期项
 
+> 在册引擎 7 个：核心 5（FOFA/Hunter/ZoomEye/Quake/Shodan，已验证）+ 新引擎 2（Censys/DayDayMap，待 API Key）。BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除（commit fb6dcdb）。
+
 1. **L2 Hook** — 设计冻结，仅当 L1/L3 telemetry 证明收益时启动
 2. 227 处 `map[string]interface{}` 剩余（Web 响应和测试文件）
-3. 新增引擎（Censys/DayDayMap/BinaryEdge/Onyphe/GreyNoise）API 查询端到端验证 — 代码基础设施已补齐（2026-06-17），⏳ 需各引擎 API Key
+3. 新增引擎（Censys/DayDayMap）API 查询端到端验证 — 代码基础设施已补齐（2026-06-17），⏳ 需各引擎 API Key
+4. **核心引擎字段完善** — ZoomEye `cleanZoomEyeTitle` JS 未在 Extension 生效（纯前端待修）；Shodan `timestamp` 选择器为空（需真机调试）
+5. **Extension 版本号待升** — 移除三引擎后 `manifest.json` 仍为 0.3.9，应升至 0.4.0
 
 ## Claude Code 记忆（2026-06-15 合并）
 
