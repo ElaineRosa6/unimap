@@ -23,9 +23,6 @@ func (m *Manager) applyEngineDefaults(config *Config) {
 	config.Engines.Shodan.Enabled = true
 	config.Engines.Censys.Enabled = true
 	config.Engines.Daydaymap.Enabled = true
-	config.Engines.Binaryedge.Enabled = true
-	config.Engines.Onyphe.Enabled = true
-	config.Engines.Greynoise.Enabled = true
 	config.Engines.Fofa.UseWebAPI = true
 
 	applyEngineDefaultsSimple(&config.Engines.Quake.BaseURL, &config.Engines.Quake.QPS, &config.Engines.Quake.Timeout,
@@ -40,12 +37,6 @@ func (m *Manager) applyEngineDefaults(config *Config) {
 		engineDefaults{"https://search.censys.io", 2, 30})
 	applyEngineDefaultsSimple(&config.Engines.Daydaymap.BaseURL, &config.Engines.Daydaymap.QPS, &config.Engines.Daydaymap.Timeout,
 		engineDefaults{"https://www.daydaymap.com", 3, 30})
-	applyEngineDefaultsSimple(&config.Engines.Binaryedge.BaseURL, &config.Engines.Binaryedge.QPS, &config.Engines.Binaryedge.Timeout,
-		engineDefaults{"https://api.binaryedge.io", 2, 30})
-	applyEngineDefaultsSimple(&config.Engines.Onyphe.BaseURL, &config.Engines.Onyphe.QPS, &config.Engines.Onyphe.Timeout,
-		engineDefaults{"https://www.onyphe.io", 1, 30})
-	applyEngineDefaultsSimple(&config.Engines.Greynoise.BaseURL, &config.Engines.Greynoise.QPS, &config.Engines.Greynoise.Timeout,
-		engineDefaults{"https://api.greynoise.io", 1, 30})
 
 	applyFofaDefaults(config)
 }
@@ -329,9 +320,6 @@ func (m *Manager) applyCacheDefaults(config *Config) {
 		"shodan":     {Enabled: true, TTL: 7200, MaxSize: 500},
 		"censys":     {Enabled: true, TTL: 7200, MaxSize: 500},
 		"daydaymap":  {Enabled: true, TTL: 3600, MaxSize: 500},
-		"binaryedge": {Enabled: false, TTL: 7200, MaxSize: 500},  // ⚠️ BinaryEdge 服务已于 2025-03-31 停止
-		"onyphe":     {Enabled: true, TTL: 7200, MaxSize: 500},
-		"greynoise":  {Enabled: true, TTL: 7200, MaxSize: 500},
 	}
 
 	for engine, defaultCfg := range engineDefaults {

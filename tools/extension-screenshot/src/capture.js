@@ -34,9 +34,6 @@ function detectEngine(url) {
   if (lower.includes("shodan.io")) return "shodan";
   if (lower.includes("censys.io")) return "censys";
   if (lower.includes("daydaymap.com")) return "daydaymap";
-  if (lower.includes("onyphe.io")) return "onyphe";
-  if (lower.includes("greynoise.io")) return "greynoise";
-  if (lower.includes("binaryedge.io") || lower.includes("binaryedge.com")) return "binaryedge";
   return "unknown";
 }
 
@@ -527,57 +524,6 @@ const ENGINE_SELECTORS = {
     },
     total: ["[class*='total']", "[class*='count']"],
     nextPage: ["[class*='next']", ".el-pagination__next"]
-  },
-  onyphe: {
-    // Onyphe uses a table-based layout.
-    row: [
-      "table tbody tr", "[class*='result-row']",
-      "[class*='result-list'] > div", "[class*='result'] > div"
-    ],
-    cells: {
-      ip: { selector: "[class*='ip'], [data-ip]" },
-      port: { selector: "[class*='port'], [data-port]" },
-      host: { selector: "[class*='hostname'], [class*='domain']" },
-      title: { selector: "[class*='title']" },
-      country_code: { selector: "[class*='country'], [class*='location']" },
-      org: { selector: "[class*='org'], [class*='organization']" }
-    },
-    total: ["[class*='total']", "[class*='count']"],
-    nextPage: ["[class*='next']", "a[rel='next']"]
-  },
-  greynoise: {
-    // GreyNoise uses a table-based layout for IP intelligence.
-    row: [
-      "table tbody tr", "[class*='result-row']",
-      "[class*='result-list'] > div", "[class*='result'] > div"
-    ],
-    cells: {
-      ip: { selector: "[class*='ip'], [data-ip]" },
-      classification: { selector: "[class*='classification'], [class*='status']" },
-      org: { selector: "[class*='org'], [class*='organization']" },
-      country_code: { selector: "[class*='country'], [class*='location']" }
-    },
-    total: ["[class*='total']", "[class*='count']"],
-    nextPage: ["[class*='next']", "a[rel='next']"]
-  },
-  binaryedge: {
-    // BinaryEdge uses a card-based SPA layout similar to FOFA.
-    row: [
-      "[class*='result-item']", "[class*='result-card']",
-      "[class*='result-list'] > div", "[class*='result'] > div",
-      "table tbody tr"
-    ],
-    cells: {
-      ip: { selector: "[class*='ip'], [class*='address'], [data-ip]" },
-      port: { selector: "[class*='port'], [data-port]" },
-      host: { selector: "[class*='domain'], [class*='host'], [class*='hostname']" },
-      title: { selector: "[class*='title'], h2, h3, [class*='name']" },
-      country_code: { selector: "[class*='country'], [class*='location'], [class*='flag']" },
-      org: { selector: "[class*='org'], [class*='company']" },
-      protocol: { selector: "[class*='protocol'], [class*='service']" }
-    },
-    total: ["[class*='total']", "[class*='count']", ".result-count"],
-    nextPage: ["[class*='next']", "a[rel='next']", "button[aria-label='next']"]
   }
 };
 

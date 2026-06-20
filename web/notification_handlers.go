@@ -124,12 +124,9 @@ func (s *Server) registerCoreEngineAdapters() {
 		{cfg.Engines.Shodan.Enabled, cfg.Engines.Shodan.APIKey,
 			func() { s.orchestrator.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second)) },
 			func() { s.orchestrator.RegisterAdapter(adapter.NewShodanAdapterWebOnly()) }, "Shodan"},
-		// 以下 5 个新引擎代码保留，待 API Key 验证通过后启用
+		// 以下 2 个新引擎代码保留，待 API Key 验证通过后启用
 		// {cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID, ...},
 		// {cfg.Engines.Daydaymap.Enabled, cfg.Engines.Daydaymap.APIKey, ...},
-		// {cfg.Engines.Binaryedge.Enabled, cfg.Engines.Binaryedge.APIKey, ...}, // 服务已停止
-		// {cfg.Engines.Onyphe.Enabled, cfg.Engines.Onyphe.APIKey, ...},
-		// {cfg.Engines.Greynoise.Enabled, cfg.Engines.Greynoise.APIKey, ...},
 	}
 	for _, e := range engines {
 		if !e.enabled {

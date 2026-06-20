@@ -80,10 +80,6 @@ func (m *Manager) GetEngineConfig(name string) (interface{}, error) {
 		return &m.config.Engines.Censys, nil
 	case "daydaymap":
 		return &m.config.Engines.Daydaymap, nil
-	case "binaryedge":
-		return &m.config.Engines.Binaryedge, nil
-	case "onyphe":
-		return &m.config.Engines.Onyphe, nil
 	default:
 		return nil, fmt.Errorf("unknown engine: %s", name)
 	}
