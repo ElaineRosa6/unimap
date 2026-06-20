@@ -16,7 +16,7 @@ import (
 	"github.com/unimap/project/internal/service"
 )
 
-// stableEngines 前端展示的稳定引擎列表。新引擎（censys/daydaymap/binaryedge/onyphe/greynoise）代码保留，API Key 验证通过后补充到此列表即可启用。
+// stableEngines 前端展示的稳定引擎列表。新引擎（censys/daydaymap）代码保留，API Key 验证通过后补充到此列表即可启用。
 var stableEngines = map[string]bool{
 	"fofa": true, "hunter": true, "zoomeye": true, "quake": true, "shodan": true,
 }

@@ -144,15 +144,6 @@ func getEnabledEngines(cfg *config.Config) []string {
 	if cfg.Engines.Daydaymap.Enabled {
 		list = append(list, "daydaymap")
 	}
-	if cfg.Engines.Binaryedge.Enabled {
-		list = append(list, "binaryedge")
-	}
-	if cfg.Engines.Onyphe.Enabled {
-		list = append(list, "onyphe")
-	}
-	if cfg.Engines.Greynoise.Enabled {
-		list = append(list, "greynoise")
-	}
 	return list
 }
 
@@ -169,9 +160,6 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 		{cfg.Engines.Shodan.Enabled, func() { svc.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second)) }},
 		{cfg.Engines.Censys.Enabled, func() { svc.RegisterAdapter(adapter.NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second)) }},
 		{cfg.Engines.Daydaymap.Enabled, func() { svc.RegisterAdapter(adapter.NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second)) }},
-		{cfg.Engines.Binaryedge.Enabled, func() { svc.RegisterAdapter(adapter.NewBinaryEdgeAdapter(cfg.Engines.Binaryedge.BaseURL, cfg.Engines.Binaryedge.APIKey, cfg.Engines.Binaryedge.QPS, time.Duration(cfg.Engines.Binaryedge.Timeout)*time.Second)) }},
-		{cfg.Engines.Onyphe.Enabled, func() { svc.RegisterAdapter(adapter.NewOnypheAdapter(cfg.Engines.Onyphe.BaseURL, cfg.Engines.Onyphe.APIKey, cfg.Engines.Onyphe.QPS, time.Duration(cfg.Engines.Onyphe.Timeout)*time.Second)) }},
-		{cfg.Engines.Greynoise.Enabled, func() { svc.RegisterAdapter(adapter.NewGreyNoiseAdapter(cfg.Engines.Greynoise.BaseURL, cfg.Engines.Greynoise.APIKey, cfg.Engines.Greynoise.QPS, time.Duration(cfg.Engines.Greynoise.Timeout)*time.Second)) }},
 	}
 	for _, r := range regs {
 		if r.enabled {

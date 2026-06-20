@@ -62,27 +62,6 @@ type Config struct {
 			QPS     int    `yaml:"qps"`
 			Timeout int    `yaml:"timeout"`
 		} `yaml:"daydaymap"`
-		Binaryedge struct {
-			Enabled bool   `yaml:"enabled"`
-			APIKey  string `yaml:"api_key"`
-			BaseURL string `yaml:"base_url"`
-			QPS     int    `yaml:"qps"`
-			Timeout int    `yaml:"timeout"`
-		} `yaml:"binaryedge"`
-		Onyphe struct {
-			Enabled bool   `yaml:"enabled"`
-			APIKey  string `yaml:"api_key"`
-			BaseURL string `yaml:"base_url"`
-			QPS     int    `yaml:"qps"`
-			Timeout int    `yaml:"timeout"`
-		} `yaml:"onyphe"`
-		Greynoise struct {
-			Enabled bool   `yaml:"enabled"`
-			APIKey  string `yaml:"api_key"`
-			BaseURL string `yaml:"base_url"`
-			QPS     int    `yaml:"qps"`
-			Timeout int    `yaml:"timeout"`
-		} `yaml:"greynoise"`
 	} `yaml:"engines"`
 
 	// 系统配置
@@ -342,9 +321,6 @@ func (c *Config) Clone() *Config {
 	clone.Engines.Shodan = c.Engines.Shodan
 	clone.Engines.Censys = c.Engines.Censys
 	clone.Engines.Daydaymap = c.Engines.Daydaymap
-	clone.Engines.Binaryedge = c.Engines.Binaryedge
-	clone.Engines.Onyphe = c.Engines.Onyphe
-	clone.Engines.Greynoise = c.Engines.Greynoise
 
 	// System, Log are all primitives — safe to copy directly
 	clone.System = c.System

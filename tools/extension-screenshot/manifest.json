@@ -37,8 +37,6 @@
     "*://*.shodan.io/*",
     "*://*.censys.io/*",
     "*://*.daydaymap.com/*",
-    "*://*.onyphe.io/*",
-    "*://*.greynoise.io/*",
     "http://127.0.0.1:*/*",
     "http://localhost:*/*"
   ],

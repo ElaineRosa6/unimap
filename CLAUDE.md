@@ -1,6 +1,6 @@
 # UniMap — 多引擎网络空间资产查询与网页监控工具
 
-> 当前分支：`release/major-upgrade-vNEXT` | Go 1.26 | 主链路：`go build ./...`、`go test ./...`、`go test -race ./...` 均通过
+> 当前分支：`develop` | Go 1.26 | 主链路：`go build ./...`、`go test ./...`、`go test -race ./...` 均通过
 
 ## 项目概述
 
@@ -225,7 +225,7 @@ go run -tags gui ./cmd/unimap-gui
 
 #### 长期项（2 项，需架构级改造，按需启动）
 - **L2 Hook** — 设计冻结。仅当 L1/L3 telemetry 证明收益时启动。
-- **新引擎端到端闭环** — Censys/DayDayMap/BinaryEdge/Onyphe/GreyNoise 适配器代码存在。✅ 代码基础设施已补齐（2026-06-17），⏳ 仍需各引擎 API Key 进行真机 API 查询验证。
+- **新引擎端到端闭环** — Censys/DayDayMap 适配器代码存在。✅ 代码基础设施已补齐（2026-06-17），⏳ 仍需各引擎 API Key 进行真机 API 查询验证。（BinaryEdge 因服务已于 2025-03-31 停止、Onyphe/GreyNoise 因 API 不可用，均已于 2026-06-20 彻底移除）
 
 #### Low（3 项）
 11. ~~**countGoroutines() 空桩** — `router_test.go:400` 硬编码 `return 0`。~~ ✅ 已修复（2026-06-17，改用 `runtime.NumGoroutine()`，goroutine leak 检测增加 5 协程容差，20 次 `-race` 运行均通过）
@@ -298,9 +298,6 @@ go run -tags gui ./cmd/unimap-gui
 | **Shodan** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **已验证（2026-06-17）** | ✅ **已验证** | ⚠️ timestamp 为空 |
 | Censys | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ⏳ 需 API Key | ⏳ 需 API Key + 登录 | ⏳ | ⏳ |
 | DayDayMap | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ⏳ 需 API Key | ⏳ 需 API Key + 登录 | ⏳ | ⏳ |
-| BinaryEdge | ✅ | ⚠️ **默认禁用** | ✅ | ✅ **新** | ✅ **新** | ✅ **新** | ⚠️ **服务已停止**（2025-03-31） | ⚠️ 服务已停止 | ⚠️ | ⚠️ |
-| Onyphe | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ⏳ 需 API Key | ⏳ 需 API Key + 登录 | ⏳ | ⏳ |
-| GreyNoise | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ **新** | ✅ | ⏳ 需 API Key | ⏳ 需 API Key + 登录 | ⏳ | ⏳ |
 
 **验证**：`go build ./...` / `go vet ./...` / `go test -race ./...` 全部通过（33/33 包）
 
@@ -368,8 +365,8 @@ go run -tags gui ./cmd/unimap-gui
 
 ### 📋 剩余工作汇总
 1. **核心引擎完善**：ZoomEye title 字段拆分 + Shodan timestamp 选择器修复
-2. **新引擎真机验证**：Censys/DayDayMap/Onyphe/GreyNoise（需 API Key）
-3. **归档**：BinaryEdge 服务已停止（2025-03-31），代码保留默认禁用
+2. **新引擎真机验证**：Censys/DayDayMap（需 API Key）
+3. **BinaryEdge/Onyphe/GreyNoise 已移除**：BinaryEdge 服务已于 2025-03-31 停止；Onyphe/GreyNoise 因 API 不可用（GreyNoise 实测免费 key 不支持 GNQL 批量搜索端点）。三者适配器代码及全部集成引用（config/cmd/web/extension/manifest/dom_selectors/文档）均于 2026-06-20 彻底移除
 
 ### 2026-06-16 shutdown panic 修复
 - ✅ **sessionRevocationStore.Stop() double-close panic** — `web/session.go` 添加 `sync.Once` 保护，`Stop()` 现在可安全多次调用。`session_test.go` 更新测试验证幂等性。
@@ -521,7 +518,7 @@ gosec ./...
 
 ## Git 工作流
 
-- 分支策略：`master` (稳定) ← `release/major-upgrade-vNEXT` (开发)
+- 分支策略：`master` (稳定) ← `develop` (开发)
 - 提交格式：`<type>: <description>` (feat/fix/refactor/docs/test/chore)
 - PR 前要求：`go test -race ./...` 通过，覆盖率达标，code review 完成
 

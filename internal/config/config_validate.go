@@ -51,11 +51,8 @@ func validateEngines(config *Config) error {
 		{config.Engines.Zoomeye.Enabled, config.Engines.Zoomeye.BaseURL, config.Engines.Zoomeye.QPS, config.Engines.Zoomeye.Timeout, "zoomeye", nil},
 		{config.Engines.Hunter.Enabled, config.Engines.Hunter.BaseURL, config.Engines.Hunter.QPS, config.Engines.Hunter.Timeout, "hunter", nil},
 		{config.Engines.Daydaymap.Enabled, config.Engines.Daydaymap.BaseURL, config.Engines.Daydaymap.QPS, config.Engines.Daydaymap.Timeout, "daydaymap", nil},
-		{config.Engines.Binaryedge.Enabled, config.Engines.Binaryedge.BaseURL, config.Engines.Binaryedge.QPS, config.Engines.Binaryedge.Timeout, "binaryedge", nil},
-		{config.Engines.Onyphe.Enabled, config.Engines.Onyphe.BaseURL, config.Engines.Onyphe.QPS, config.Engines.Onyphe.Timeout, "onyphe", nil},
 		{config.Engines.Shodan.Enabled, config.Engines.Shodan.BaseURL, config.Engines.Shodan.QPS, config.Engines.Shodan.Timeout, "shodan", nil},
 		{config.Engines.Censys.Enabled, config.Engines.Censys.BaseURL, config.Engines.Censys.QPS, config.Engines.Censys.Timeout, "censys", nil},
-		{config.Engines.Greynoise.Enabled, config.Engines.Greynoise.BaseURL, config.Engines.Greynoise.QPS, config.Engines.Greynoise.Timeout, "greynoise", nil},
 	}
 	for _, c := range checks {
 		if !c.enabled {
@@ -240,7 +237,7 @@ func validateCacheConfig(config *Config) error {
 func validateBrowserFallbackConfig(config *Config) error {
 	validEngines := map[string]bool{
 		"fofa": true, "zoomeye": true, "shodan": true, "hunter": true,
-		"quake": true, "censys": true, "daydaymap": true, "binaryedge": true, "onyphe": true,
+		"quake": true, "censys": true, "daydaymap": true,
 	}
 	for _, e := range config.Query.BrowserFallback.Engines {
 		if !validEngines[strings.ToLower(e)] {

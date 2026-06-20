@@ -140,21 +140,6 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 				svc.RegisterAdapter(adapter.NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second))
 			},
 			func() { svc.RegisterAdapter(adapter.NewDayDayMapAdapterWebOnly()) }, "DayDayMap"},
-		{cfg.Engines.Binaryedge.Enabled, cfg.Engines.Binaryedge.APIKey != "",
-			func() {
-				svc.RegisterAdapter(adapter.NewBinaryEdgeAdapter(cfg.Engines.Binaryedge.BaseURL, cfg.Engines.Binaryedge.APIKey, cfg.Engines.Binaryedge.QPS, time.Duration(cfg.Engines.Binaryedge.Timeout)*time.Second))
-			},
-			func() { svc.RegisterAdapter(adapter.NewBinaryEdgeAdapterWebOnly()) }, "BinaryEdge"},
-		{cfg.Engines.Onyphe.Enabled, cfg.Engines.Onyphe.APIKey != "",
-			func() {
-				svc.RegisterAdapter(adapter.NewOnypheAdapter(cfg.Engines.Onyphe.BaseURL, cfg.Engines.Onyphe.APIKey, cfg.Engines.Onyphe.QPS, time.Duration(cfg.Engines.Onyphe.Timeout)*time.Second))
-			},
-			func() { svc.RegisterAdapter(adapter.NewOnypheAdapterWebOnly()) }, "Onyphe"},
-		{cfg.Engines.Greynoise.Enabled, cfg.Engines.Greynoise.APIKey != "",
-			func() {
-				svc.RegisterAdapter(adapter.NewGreyNoiseAdapter(cfg.Engines.Greynoise.BaseURL, cfg.Engines.Greynoise.APIKey, cfg.Engines.Greynoise.QPS, time.Duration(cfg.Engines.Greynoise.Timeout)*time.Second))
-			},
-			func() { svc.RegisterAdapter(adapter.NewGreyNoiseAdapterWebOnly()) }, "GreyNoise"},
 	}
 	for _, e := range engines {
 		if !e.enabled {
