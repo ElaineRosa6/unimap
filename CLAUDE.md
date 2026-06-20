@@ -364,9 +364,31 @@ go run -tags gui ./cmd/unimap-gui
 - **scheduler.html `tasks.forEach` 报错**：添加非数组响应容错
 
 ### 📋 剩余工作汇总
-1. **核心引擎完善**：ZoomEye title 字段拆分 + Shodan timestamp 选择器修复
+
+> 在册引擎 7 个：核心 5（FOFA/Hunter/ZoomEye/Quake/Shodan，已验证）+ 新引擎 2（Censys/DayDayMap，待 API Key）
+
+1. **核心引擎字段完善**：
+   - ZoomEye `cleanZoomEyeTitle` JS 未生效 — Go 侧已实现并验证，但 Extension `capture.js` 未调用，title 含元数据前缀（纯前端改动）
+   - Shodan `timestamp` 字段为空 — DOM 选择器未命中，需真机抓包调试
 2. **新引擎真机验证**：Censys/DayDayMap（需 API Key）
-3. **BinaryEdge/Onyphe/GreyNoise 已移除**：BinaryEdge 服务已于 2025-03-31 停止；Onyphe/GreyNoise 因 API 不可用（GreyNoise 实测免费 key 不支持 GNQL 批量搜索端点）。三者适配器代码及全部集成引用（config/cmd/web/extension/manifest/dom_selectors/文档）均于 2026-06-20 彻底移除
+3. **Extension 版本号待升**：2026-06-20 移除三引擎改了 `capture.js` + `manifest.json` host permission，但版本号未从 0.3.9 升级，应升至 0.4.0 以便 Chrome 重载识别
+
+### 2026-06-20 移除 BinaryEdge/Onyphe/GreyNoise 三引擎（commit fb6dcdb）
+
+**移除原因**：
+- **BinaryEdge** — 服务已于 2025-03-31 停止，代码此前默认禁用
+- **Onyphe/GreyNoise** — 威胁情报类引擎，API 不可用于资产批量搜索。GreyNoise 实测 API key（`808ea0f4-...`）为 Community/免费 plan：
+  - ✅ `/v3/community/{ip}` 单 IP 查询可用（noise IP 返回 `{ip,noise,riot,classification,name,link,last_seen}`）
+  - ❌ GNQL 批量搜索端点 `/v3/experimental/gnql`（adapter `Search()` 使用）→ 404
+  - ❌ 配额端点 `/v3/user/quota`（adapter `GetQuota()` 使用）→ 404
+  - Community 扁平返回结构与 adapter `Normalize()` 期望的 GNQL 嵌套结构（`metadata.*`/`raw_data.scan.*`/`tags[]`）不兼容
+
+**移除范围**（全链路，6 adapter 文件 + 16 引用文件 + 2 配置文件 + 2 文档）：
+adapter（git rm）/ config（struct·clone·load·defaults·validate·GetEngine）/ cmd（cli·web·gui 注册）/ extension（capture.js detectEngine+选择器·manifest.json host permission）/ dom_selectors.go / config.yaml + config.yaml.example / web 注释（stableEngines·registerCoreEngineAdapters）/ CLAUDE.md + SEARCH_ENGINE_SYNTAX_REFERENCE.md
+
+**结果**：在册引擎 10 → 7。新引擎真机验证仅剩 Censys/DayDayMap。
+
+**保留（历史快照）**：`docs/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md`、`docs/REPAIR_PLAN_2026-06-16.md`、本文件 2026-06-17 Phase5 历史段。
 
 ### 2026-06-16 shutdown panic 修复
 - ✅ **sessionRevocationStore.Stop() double-close panic** — `web/session.go` 添加 `sync.Once` 保护，`Stop()` 现在可安全多次调用。`session_test.go` 更新测试验证幂等性。
