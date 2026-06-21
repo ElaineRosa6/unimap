@@ -298,14 +298,64 @@ func (z *ZoomEyeAdapter) parseZoomEyePortAndService(data map[string]interface{},
 }
 
 // parseZoomEyeTitle 解析标题（支持数组和字符串格式）
+// ZoomEye API 返回的 title 可能包含元数据前缀（如 "CN 北京 公司名 AS12345 真正标题"），
+// 需要清理掉国家/城市/ASN/组织等前缀。
 func (z *ZoomEyeAdapter) parseZoomEyeTitle(data map[string]interface{}, asset *model.UnifiedAsset) {
+	var titleStr string
 	if title, ok := data["title"].([]interface{}); ok && len(title) > 0 {
-		if titleStr, ok := title[0].(string); ok {
-			asset.Title = titleStr
+		if s, ok := title[0].(string); ok {
+			titleStr = s
 		}
 	} else if title, ok := data["title"].(string); ok {
-		asset.Title = title
+		titleStr = title
 	}
+	asset.Title = cleanZoomEyeTitle(titleStr)
+}
+
+// cleanZoomEyeTitle 清理 ZoomEye title 中的元数据前缀。
+// ZoomEye 的 title 字段可能包含国家代码、城市名、ASN、组织名等前缀，
+// 这些信息已经在其他字段（country_code/region/org/asn）中提取，需要从 title 中移除。
+func cleanZoomEyeTitle(title string) string {
+	if title == "" {
+		return ""
+	}
+	// 移除开头的 2 位国家代码（如 CN、US）
+	if len(title) >= 3 && title[0] >= 'A' && title[0] <= 'Z' && title[1] >= 'A' && title[1] <= 'Z' && title[2] == ' ' {
+		title = title[3:]
+	}
+	// 移除常见中文城市名前缀
+	cities := []string{"北京", "上海", "广州", "深圳", "杭州", "成都", "武汉", "南京", "西安", "重庆", "天津", "苏州", "长沙", "郑州", "青岛", "大连", "厦门", "宁波", "东莞", "无锡", "佛山"}
+	for _, city := range cities {
+		if strings.HasPrefix(title, city+" ") {
+			title = title[len(city)+1:]
+			break
+		}
+	}
+	// 移除 ASN 前缀（如 AS12345）
+	if strings.HasPrefix(title, "AS") {
+		for i := 2; i < len(title); i++ {
+			if title[i] < '0' || title[i] > '9' {
+				if title[i] == ' ' {
+					title = title[i+1:]
+				}
+				break
+			}
+		}
+	}
+	// 移除组织名前缀（包含公司/集团/科技等关键词）
+	orgKeywords := []string{"公司", "集团", "有限", "股份", "科技", "网络", "信息", "技术", "企业", "机构", "组织"}
+	for _, keyword := range orgKeywords {
+		idx := strings.Index(title, keyword)
+		if idx > 0 && idx < 20 {
+			// 找到关键词后的空格
+			afterOrg := title[idx+len(keyword):]
+			if len(afterOrg) > 0 && afterOrg[0] == ' ' {
+				title = afterOrg[1:]
+			}
+			break
+		}
+	}
+	return strings.TrimSpace(title)
 }
 
 // parseZoomEyeBasicFields 解析 banner、server、url、domain 等基础字段

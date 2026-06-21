@@ -676,6 +676,21 @@ export async function extractEngineAssets(tabId) {
           return text;
         }
 
+        // Clean ZoomEye title: remove metadata prefixes like "CN 北京 公司名 AS12345 "
+        // The title field from ZoomEye DOM may contain country/city/org/asn before the actual title.
+        function cleanZoomEyeTitle(text) {
+          if (!text) return "";
+          // Remove patterns like: CN, US (2-letter country codes at start)
+          text = text.replace(/^[A-Z]{2}\s+/, "");
+          // Remove city names (common Chinese cities)
+          text = text.replace(/^(北京|上海|广州|深圳|杭州|成都|武汉|南京|西安|重庆|天津|苏州|长沙|郑州|青岛|大连|厦门|宁波|东莞|无锡|佛山)\s+/, "");
+          // Remove ASN pattern (AS followed by digits)
+          text = text.replace(/^AS\d+\s+/, "");
+          // Remove organization patterns (ending with company/org keywords)
+          text = text.replace(/^[^\s]+(公司|集团|有限|股份|科技|网络|信息|技术|企业|机构|组织)\s+/, "");
+          return text.trim();
+        }
+
         // Extract data from each row/card
         const seenKeys = new Set();
         rows.forEach((row) => {
@@ -717,7 +732,7 @@ export async function extractEngineAssets(tabId) {
                 const labelText = label.textContent.trim();
                 const value = valueEl.textContent.trim();
                 if (!value) return;
-                if (labelText.startsWith("标题:")) { if (!item.title) item.title = value; }
+                if (labelText.startsWith("标题:")) { if (!item.title) item.title = cleanZoomEyeTitle(value); }
                 else if (labelText.startsWith("组织:")) { if (!item.org) item.org = value; }
                 else if (labelText.startsWith("ASN:")) { if (!item.asn) item.asn = value; }
                 else if (labelText.startsWith("主机名:")) { if (!item.host) item.host = value; }
