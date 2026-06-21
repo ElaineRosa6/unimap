@@ -450,7 +450,9 @@
 				btn.disabled = false;
 				btn.textContent = '查询';
 				if (env.status !== 200 || !env.body.success) {
-					var errMsg = (env.body && (env.body.message || env.body.error)) || ('HTTP ' + env.status);
+					var b = env.body || {};
+					var errMsg = (b.error && typeof b.error === 'object' && b.error.message) ? b.error.message
+						: (typeof b.error === 'string' ? b.error : (b.message || ('HTTP ' + env.status)));
 					showMsg('error', 'ICP 查询失败: ' + errMsg);
 					listBody.innerHTML = '<div class="icp-empty">查询失败</div>';
 					return;
