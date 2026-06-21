@@ -196,9 +196,9 @@ func (q *QuakeAdapter) Search(ctx context.Context, query string, page, pageSize 
 
 		// 解析Quake响应
 		var result struct {
-			Code    interface{}   `json:"code"` // Can be int or string depending on version/error
-			Message string        `json:"message"`
-			Data    []interface{} `json:"data"`
+			Code    interface{} `json:"code"` // Can be int or string depending on version/error
+			Message string      `json:"message"`
+			Data    interface{} `json:"data"` // May be array or object depending on API version
 			Meta    struct {
 				Pagination struct {
 					Total int `json:"total"`
@@ -215,9 +215,38 @@ func (q *QuakeAdapter) Search(ctx context.Context, query string, page, pageSize 
 			return fmt.Errorf("quake API error (code=%v): %s", result.Code, result.Message)
 		}
 
+		// 提取资产列表：Quake API 不同版本返回的 data 结构可能不同
+		// - 直接返回数组: [{"ip":"x",...}, ...]
+		// - 返回对象: {"list": [...], "meta": {...}} 或其他嵌套结构
+		var assets []interface{}
+		switch d := result.Data.(type) {
+		case []interface{}:
+			assets = d
+		case map[string]interface{}:
+			// 记录实际结构便于调试
+			logger.Infof("Quake response data is object, keys: %v", mapKeys(d))
+			// 尝试常见的嵌套字段名
+			found := false
+			for _, key := range []string{"list", "service_list", "data", "items", "records", "services"} {
+				if arr, ok := d[key].([]interface{}); ok {
+					assets = arr
+					found = true
+					logger.Infof("Quake found assets in data.%s, count=%d", key, len(arr))
+					break
+				}
+			}
+			if !found {
+				// 未找到已知数组字段
+				logger.Warnf("Quake response data object has no known array field, keys: %v", mapKeys(d))
+				assets = []interface{}{d}
+			}
+		default:
+			logger.Warnf("Quake response data has unexpected type: %T", result.Data)
+		}
+
 		engineResult = &model.EngineResult{
 			EngineName: q.Name(),
-			RawData:    result.Data,
+			RawData:    assets,
 			Total:      result.Meta.Pagination.Total,
 			Page:       page,
 			HasMore:    (result.Meta.Pagination.Total > page*pageSize),
@@ -423,4 +452,13 @@ func NewQuakeAdapterWebOnly() *QuakeAdapterWebOnly {
 	return &QuakeAdapterWebOnly{
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "quake"),
 	}
+}
+
+// mapKeys returns the keys of a map for logging purposes.
+func mapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
