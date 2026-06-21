@@ -371,7 +371,10 @@ go run -tags gui ./cmd/unimap-gui
    - ZoomEye `cleanZoomEyeTitle` JS 未生效 — Go 侧已实现并验证，但 Extension `capture.js` 未调用，title 含元数据前缀（纯前端改动）
    - Shodan `timestamp` 字段为空 — DOM 选择器未命中，需真机抓包调试
 2. **新引擎真机验证**：Censys/DayDayMap（需 API Key）
-3. **Extension 版本号待升**：2026-06-20 移除三引擎改了 `capture.js` + `manifest.json` host permission，但版本号未从 0.3.9 升级，应升至 0.4.0 以便 Chrome 重载识别
+3. ~~**Extension 版本号待升**~~ ✅ 已升级（2026-06-21，`manifest.json` 0.4.0 → 0.4.1，反映 06-20 移除三引擎 host permission 的变更，便于 Chrome 重载识别）
+4. ~~**Quake 响应解析**~~ ✅ 已修复（2026-06-21，`data` 字段从 `[]interface{}` 改为 `interface{}` 兼容对象/数组格式）
+5. ~~**前端 API 错误显示**~~ ✅ 已修复（2026-06-21，10 项 error envelope 二义性问题）
+6. ~~**查询结果表格不渲染**~~ ✅ 已修复（2026-06-21，`renderCollectionMethodBadge` 作用域 bug + 错误展开失效）
 
 ### 2026-06-20 移除 BinaryEdge/Onyphe/GreyNoise 三引擎（commit fb6dcdb）
 
@@ -389,6 +392,43 @@ adapter（git rm）/ config（struct·clone·load·defaults·validate·GetEngine
 **结果**：在册引擎 10 → 7。新引擎真机验证仅剩 Censys/DayDayMap。
 
 **保留（历史快照）**：`docs/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md`、`docs/REPAIR_PLAN_2026-06-16.md`、本文件 2026-06-17 Phase5 历史段。
+
+### 2026-06-21 前端 API 显示修复 + 表格渲染修复 + Quake 适配器修复
+
+#### 前端 API 错误显示修复（commit fe30cbd，10 项）
+
+审计发现后端 error envelope 二义性（`writeError` 返回字符串 vs `writeAPIError` 返回对象 `{code,message}`）及部分前端缺少 `resp.ok` 检查，导致错误提示显示 `[object Object]` 或误判成功。
+
+| # | 文件 | 问题 | 修复 |
+|---|------|------|------|
+| 1 | `monitor.html` | `btn-refresh-history` 重复绑定错误监听器会清空历史 | 删除重复监听器 |
+| 2 | `settings.html` | Cookie 登录状态面板永远"未知"（数组当对象读） | 改为数组遍历建 map |
+| 3 | `monitor.html` | 基线结果列表恒显示"✅ 已保存" | 改用 `r.status` 判断 |
+| 4 | `settings.html` | 切换截图模式失败也显示成功 | 改用 `resp.ok` 判断 |
+| 5 | `account.html` | 非管理员复制 Token 显示 `[object Object]` | 兼容对象型 error |
+| 6 | `scheduler.html` | 5 处基础设施错误显示 `[object Object]` | 引入 `extractErr` 统一提取 |
+| 7 | `scheduler.html` | loadTasks 永远显示"服务暂不可用" | `extractErr` 兼容字符串 error |
+| 8 | `icp.html` | 查询失败显示 `[object Object]` | 兼容对象型 error |
+| 9 | `monitor.html` | 篡改检测/基线请求失败静默显示"完成" | 增加 `resp.ok` 检查 |
+| 10 | `settings.html` | 5 处 config 保存丢失具体错误原因 | 失败分支用 `extractErrorMsg` |
+
+#### 修改密码修复（commit fe30cbd）
+- ✅ 多用户模式下 `account.html` 改为调用 `/api/v1/users/{id}/password`（字段 `old_password`），兼容单用户旧端点
+
+#### 查询结果表格不渲染 + 错误展开失效（commit 5bf4ab1）
+
+两个根因 bug：
+
+1. **`renderCollectionMethodBadge` 作用域 bug** — 定义在 `showResults` 闭包内（局部函数），但被顶层 `assetToRowHTML` 调用 → `ReferenceError` → 整张表格行不渲染（一直是静默 bug，只是之前异常被吞掉没暴露）。修复：移到顶层函数。
+
+2. **错误块"点击展开"失效** — 依赖容器级委托 `initResultsActionDelegation`，但该委托在 `showResults` 末尾才绑定，中间任一 init 抛异常会中断绑定。修复：新增 `bindErrorToggles()` 直接绑定到每个 `.errors-header`，放在 innerHTML 之后、其他 init 之前。
+
+辅助防御：init 三连和 `renderAssetRows` 用 try/catch 包裹，异常不再静默吞掉。
+
+#### Quake 适配器响应解析修复（commit 0a6adeb）
+- ✅ Quake API 不同版本返回的 `data` 字段结构不一致：可能是数组直接包含资产列表，也可能是对象（如 `{"list": [...]}`）嵌套。
+- 修复：`Data` 字段从 `[]interface{}` 改为 `interface{}`，新增类型判断逻辑（数组直接用，对象自动搜索常见嵌套字段名）。
+- 添加调试日志记录实际 keys，便于后续优化。
 
 ### 2026-06-16 shutdown panic 修复
 - ✅ **sessionRevocationStore.Stop() double-close panic** — `web/session.go` 添加 `sync.Once` 保护，`Stop()` 现在可安全多次调用。`session_test.go` 更新测试验证幂等性。
