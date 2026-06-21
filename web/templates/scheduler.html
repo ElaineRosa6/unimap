@@ -357,6 +357,16 @@
 		setTimeout(() => t.style.display = 'none', 3000);
 	}
 
+	// Backend error envelope is ambiguous: writeSchedulerJSONError returns a
+	// string error, writeAPIError returns {code, message}. Handle both.
+	function extractErr(data) {
+		if (!data) return '未知错误';
+		if (data.error && typeof data.error === 'object' && data.error.message) return data.error.message;
+		if (typeof data.error === 'string') return data.error;
+		if (data.message) return data.message;
+		return '未知错误';
+	}
+
 	async function loadTasks() {
 		try {
 			const res = await fetch('/api/v1/scheduler/tasks' );
@@ -367,7 +377,7 @@
 			// Handle wrapped/error responses
 			if (!Array.isArray(tasks)) {
 				if (tasks && tasks.error) {
-					tbody.innerHTML = '<tr><td colspan="7" class="empty-state">加载失败: ' + escHtml(tasks.error.message || '服务暂不可用') + '</td></tr>';
+					tbody.innerHTML = '<tr><td colspan="7" class="empty-state">加载失败: ' + escHtml(extractErr(tasks)) + '</td></tr>';
 					return;
 				}
 				if (tasks && Array.isArray(tasks.data)) { tasks = tasks.data; }
@@ -520,7 +530,7 @@
 
 		const data = await res.json();
 		if (!res.ok) {
-			showToast('创建失败: ' + (data.error || '未知错误'), 'error');
+			showToast('创建失败: ' + extractErr(data), 'error');
 			return;
 		}
 
@@ -542,7 +552,7 @@
 		});
 		const data = await res.json();
 		if (!res.ok) {
-			showToast('删除失败: ' + (data.error || '未知错误'), 'error');
+			showToast('删除失败: ' + extractErr(data), 'error');
 			return;
 		}
 		showToast('任务已删除', 'success');
@@ -557,7 +567,7 @@
 		});
 		const data = await res.json();
 		if (!res.ok) {
-			showToast('执行失败: ' + (data.error || '未知错误'), 'error');
+			showToast('执行失败: ' + extractErr(data), 'error');
 			return;
 		}
 		showToast('任务已提交执行', 'success');
@@ -572,7 +582,7 @@
 		});
 		const data = await res.json();
 		if (!res.ok) {
-			showToast('操作失败: ' + (data.error || '未知错误'), 'error');
+			showToast('操作失败: ' + extractErr(data), 'error');
 			return;
 		}
 		showToast(enable ? '任务已启用' : '任务已禁用', 'success');
@@ -752,7 +762,7 @@ async function saveTask() {
 
 	const data = await res.json();
 	if (!res.ok) {
-		showToast('保存失败: ' + (data.error || '未知错误'), 'error');
+		showToast('保存失败: ' + extractErr(data), 'error');
 		return;
 	}
 

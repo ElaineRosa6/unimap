@@ -104,6 +104,9 @@
 			</main>
 
 			<script nonce="{{.CSPNonce}}">
+			const isMultiUser = {{.isMultiUser}};
+			const currentUserId = '{{.userID}}';
+
 			function showToast(msg, type) {
 				const t = document.getElementById('toast');
 				t.textContent = msg;
@@ -135,7 +138,9 @@
 					const res = await fetch('/api/v1/account/admin-token');
 					const data = await res.json();
 					if (!res.ok || !data.token) {
-						showToast(data.error || '未配置 Admin Token', 'error');
+						let msg = '未配置 Admin Token';
+						if (data && data.error) msg = (typeof data.error === 'object' && data.error.message) ? data.error.message : data.error;
+						showToast(msg, 'error');
 						return;
 					}
 					await navigator.clipboard.writeText(data.token);
@@ -167,14 +172,22 @@
 				}
 
 				try {
-					const res = await fetch('/api/v1/account/change-password', {
+					let url, body;
+					if (isMultiUser && currentUserId && currentUserId !== '0') {
+						url = '/api/v1/users/' + currentUserId + '/password';
+						body = JSON.stringify({old_password: current, new_password: newPwd});
+					} else {
+						url = '/api/v1/account/change-password';
+						body = JSON.stringify({current_password: current, new_password: newPwd});
+					}
+					const res = await fetch(url, {
 						method: 'POST',
 						headers: {'Content-Type': 'application/json'},
-						body: JSON.stringify({current_password: current, new_password: newPwd})
+						body: body
 					});
 					const data = await res.json();
 					if (!res.ok) {
-						showToast(data.error || '修改失败', 'error');
+						showToast(data.error || data.message || '修改失败', 'error');
 						return;
 					}
 					showToast('密码已更新', 'success');

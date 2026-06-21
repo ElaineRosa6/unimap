@@ -698,7 +698,7 @@
 					body: JSON.stringify({ section: "notifications", data: data })
 				});
 				var result = await resp.json();
-				showResult("feishu-app-result", result.success ? "ok" : "fail", result.message || (result.success ? "已保存，重启后生效" : ""));
+				showResult("feishu-app-result", result.success ? "ok" : "fail", result.success ? (result.message || "已保存，重启后生效") : extractErrorMsg(result));
 				if (result.success) loadConfig();
 			} catch (e) { showResult("feishu-app-result", "fail", "保存失败: " + e.message); }
 		};
@@ -736,7 +736,7 @@
 				body: JSON.stringify({ section: 'engines', data: data })
 			});
 			var result = await resp.json();
-			showResult('engines-result', result.success ? 'ok' : 'fail', result.message || (result.success ? '全部保存成功' : '保存失败'));
+			showResult('engines-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '全部保存成功') : extractErrorMsg(result));
 			Object.keys(data).forEach(function(eng) {
 				var d = document.getElementById(eng + '-dot');
 				if (d) d.className = 'dot ' + (data[eng].enabled ? 'on' : 'off');
@@ -760,7 +760,7 @@
 				}})
 			});
 			var result = await resp.json();
-			showResult('icp-result', result.success ? 'ok' : 'fail', result.message || (result.success ? '保存成功' : '保存失败'));
+			showResult('icp-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '保存成功') : extractErrorMsg(result));
 		} catch (e) { showResult('icp-result', 'fail', '保存失败: ' + e.message); }
 	};
 
@@ -798,7 +798,7 @@
 				}})
 			});
 			var result = await resp.json();
-			showResult('screenshot-result', result.success ? 'ok' : 'fail', result.message || (result.success ? '保存成功' : '保存失败'));
+			showResult('screenshot-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '保存成功') : extractErrorMsg(result));
 		} catch (e) { showResult('screenshot-result', 'fail', '保存失败: ' + e.message); }
 	};
 
@@ -814,7 +814,7 @@
 				}})
 			});
 			var result = await resp.json();
-			showResult('system-result', result.success ? 'ok' : 'fail', result.message || (result.success ? '保存成功' : '保存失败'));
+			showResult('system-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '保存成功') : extractErrorMsg(result));
 		} catch (e) { showResult('system-result', 'fail', '保存失败: ' + e.message); }
 	};
 
@@ -875,11 +875,14 @@
 		try {
 			var resp = await fetch('/api/v1/cookies/login-status');
 			var data = await resp.json();
-			var engines = (data && data.engines) || {};
+			// Backend returns engines as an array: [{engine, logged_in, ...}, ...]
+			var arr = (data && data.engines) || [];
+			var map = {};
+			arr.forEach(function(it) { if (it && it.engine) map[it.engine] = it; });
 			Object.keys(ckIds).forEach(function(eng) {
 				var el = document.getElementById('ck-status-' + eng);
 				if (!el) return;
-				var st = engines[eng];
+				var st = map[eng];
 				if (!st) { el.textContent = '未知'; return; }
 				el.textContent = st.logged_in ? '已登录' : '未登录';
 			});
@@ -980,8 +983,9 @@
 				body: JSON.stringify({ mode: mode })
 			});
 			var data = await resp.json();
-			showResult('session-result', data.success !== false ? 'ok' : 'fail',
-				data.success !== false ? ('模式已切换到 ' + (data.mode || mode)) : (extractErrorMsg(data)));
+			var ok = resp.ok && data.success !== false;
+			showResult('session-result', ok ? 'ok' : 'fail',
+				ok ? ('模式已切换到 ' + (data.mode || mode)) : (extractErrorMsg(data)));
 		} catch (e) { showResult('session-result', 'fail', '切换失败: ' + e.message); }
 	}
 
