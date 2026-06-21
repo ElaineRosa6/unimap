@@ -368,7 +368,7 @@ go run -tags gui ./cmd/unimap-gui
 > 在册引擎 7 个：核心 5（FOFA/Hunter/ZoomEye/Quake/Shodan，已验证）+ 新引擎 2（Censys/DayDayMap，待 API Key）
 
 1. **核心引擎字段完善**：
-   - ZoomEye `cleanZoomEyeTitle` JS 未生效 — Go 侧已实现并验证，但 Extension `capture.js` 未调用，title 含元数据前缀（纯前端改动）
+   - ~~ZoomEye `cleanZoomEyeTitle` JS 未生效~~ ✅ 已修复（2026-06-21，commit 7e619f8，Go 侧 + Extension 侧均添加清理逻辑）
    - Shodan `timestamp` 字段为空 — DOM 选择器未命中，需真机抓包调试
 2. **新引擎真机验证**：Censys/DayDayMap（需 API Key）
 3. ~~**Extension 版本号待升**~~ ✅ 已升级（2026-06-21，`manifest.json` 0.4.0 → 0.4.1，反映 06-20 移除三引擎 host permission 的变更，便于 Chrome 重载识别）
