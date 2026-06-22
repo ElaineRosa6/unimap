@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -263,20 +264,22 @@ func TestDayDayMapAdapter_Search(t *testing.T) {
 
 	t.Run("successful search", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Verify apikey param
-			if r.URL.Query().Get("apikey") != "testkey" {
+			// Verify api-key header (POST, not query param)
+			if r.Header.Get("api-key") != "testkey" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{
-				"code": 0,
-				"message": "success",
-				"data": [
-					{"ip": "1.2.3.4", "port": 80, "protocol": "http", "domain": "example.com", "title": "Test", "country": "US"},
-					{"ip": "5.6.7.8", "port": 443, "protocol": "https", "domain": "test.com", "title": "Secure", "country": "CN"}
-				],
-				"total": 2
+				"code": 200,
+				"msg": "success",
+				"data": {
+					"list": [
+						{"ip": "1.2.3.4", "port": 80, "protocol": "http", "domain": "example.com", "title": "Test", "country": "US"},
+						{"ip": "5.6.7.8", "port": 443, "protocol": "https", "domain": "test.com", "title": "Secure", "country": "CN"}
+					],
+					"total": 2
+				}
 			}`))
 		}))
 		defer server.Close()
@@ -304,10 +307,12 @@ func TestDayDayMapAdapter_Search(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{
-				"code": 0,
-				"message": "success",
-				"data": [{"ip": "1.2.3.4", "port": 80}],
-				"total": 100
+				"code": 200,
+				"msg": "success",
+				"data": {
+					"list": [{"ip": "1.2.3.4", "port": 80}],
+					"total": 100
+				}
 			}`))
 		}))
 		defer server.Close()
@@ -325,7 +330,7 @@ func TestDayDayMapAdapter_Search(t *testing.T) {
 	t.Run("API error code", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"code": 1001, "message": "Invalid API key", "data": [], "total": 0}`))
+			w.Write([]byte(`{"code": 1001, "msg": "Invalid API key", "data": {"list": [], "total": 0}}`))
 		}))
 		defer server.Close()
 
@@ -374,21 +379,11 @@ func TestDayDayMapAdapter_Normalize(t *testing.T) {
 
 	t.Run("full fields", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":          "1.2.3.4",
-				"port":        float64(80),
-				"protocol":    "http",
-				"domain":      "example.com",
-				"title":       "Example",
-				"server":      "nginx",
-				"body":        "hello world",
-				"status_code": float64(200),
-				"country":     "US",
-				"province":    "California",
-				"city":        "San Francisco",
-				"asn":         "AS13335",
-				"org":         "Cloudflare",
-				"isp":         "Cloudflare",
+			&DayDayMapItem{
+				IP: "1.2.3.4", Port: 80, Protocol: "http", Domain: "example.com",
+				Title: "Example", Server: "nginx", Body: "hello world",
+				StatusCode: 200, Country: "US", Province: "California",
+				City: "San Francisco", ASN: "AS13335", Org: "Cloudflare", ISP: "Cloudflare",
 			},
 		}}
 		assets, err := a.Normalize(result)
@@ -449,10 +444,7 @@ func TestDayDayMapAdapter_Normalize(t *testing.T) {
 
 	t.Run("no IP skipped", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"port": float64(80),
-				"host": "example.com",
-			},
+			&DayDayMapItem{Port: 80, Domain: "example.com"},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -464,16 +456,9 @@ func TestDayDayMapAdapter_Normalize(t *testing.T) {
 	})
 
 	t.Run("body truncated to 200 chars", func(t *testing.T) {
-		longBody := ""
-		for i := 0; i < 500; i++ {
-			longBody += "a"
-		}
+		longBody := strings.Repeat("a", 500)
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":   "1.2.3.4",
-				"port": float64(80),
-				"body": longBody,
-			},
+			&DayDayMapItem{IP: "1.2.3.4", Port: 80, Body: longBody},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -489,10 +474,7 @@ func TestDayDayMapAdapter_Normalize(t *testing.T) {
 
 	t.Run("port as int type", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":   "1.2.3.4",
-				"port": int(443),
-			},
+			&DayDayMapItem{IP: "1.2.3.4", Port: 443},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -505,12 +487,7 @@ func TestDayDayMapAdapter_Normalize(t *testing.T) {
 
 	t.Run("URL construction with host", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":       "1.2.3.4",
-				"port":     float64(443),
-				"protocol": "https",
-				"domain":   "example.com",
-			},
+			&DayDayMapItem{IP: "1.2.3.4", Port: 443, Protocol: "https", Domain: "example.com"},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -526,11 +503,7 @@ func TestDayDayMapAdapter_Normalize(t *testing.T) {
 
 	t.Run("URL construction without host uses IP", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":       "1.2.3.4",
-				"port":     float64(80),
-				"protocol": "http",
-			},
+			&DayDayMapItem{IP: "1.2.3.4", Port: 80, Protocol: "http"},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -543,10 +516,7 @@ func TestDayDayMapAdapter_Normalize(t *testing.T) {
 
 	t.Run("default protocol for port 443", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":   "1.2.3.4",
-				"port": float64(443),
-			},
+			&DayDayMapItem{IP: "1.2.3.4", Port: 443},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -559,10 +529,7 @@ func TestDayDayMapAdapter_Normalize(t *testing.T) {
 
 	t.Run("default protocol for other ports", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":   "1.2.3.4",
-				"port": float64(8080),
-			},
+			&DayDayMapItem{IP: "1.2.3.4", Port: 8080},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -575,10 +542,7 @@ func TestDayDayMapAdapter_Normalize(t *testing.T) {
 
 	t.Run("only host no port", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":     "1.2.3.4",
-				"domain": "example.com",
-			},
+			&DayDayMapItem{IP: "1.2.3.4", Domain: "example.com"},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -594,9 +558,7 @@ func TestDayDayMapAdapter_Normalize(t *testing.T) {
 
 	t.Run("only IP no port no host", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip": "1.2.3.4",
-			},
+			&DayDayMapItem{IP: "1.2.3.4"},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -612,11 +574,7 @@ func TestDayDayMapAdapter_Normalize(t *testing.T) {
 
 	t.Run("status_code as int type", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":          "1.2.3.4",
-				"port":        float64(80),
-				"status_code": int(404),
-			},
+			&DayDayMapItem{IP: "1.2.3.4", Port: 80, StatusCode: 404},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -649,58 +607,11 @@ func TestDayDayMapAdapter_GetQuota(t *testing.T) {
 		}
 	})
 
-	t.Run("successful quota", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Query().Get("apikey") != "testkey" {
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{
-				"code": 0,
-				"message": "success",
-				"data": {
-					"remain_quota": 500,
-					"total_quota": 1000,
-					"used_quota": 500
-				}
-			}`))
-		}))
-		defer server.Close()
-
-		a := NewDayDayMapAdapter(server.URL, "testkey", 3, 30*time.Second)
-		quota, err := a.GetQuota()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if quota == nil {
-			t.Fatal("expected quota info, got nil")
-		}
-		if quota.Total != 1000 {
-			t.Errorf("Total = %d, want 1000", quota.Total)
-		}
-		if quota.Remaining != 500 {
-			t.Errorf("Remaining = %d, want 500", quota.Remaining)
-		}
-		if quota.Used != 500 {
-			t.Errorf("Used = %d, want 500", quota.Used)
-		}
-		if quota.Unit != "queries" {
-			t.Errorf("Unit = %q, want %q", quota.Unit, "queries")
-		}
-	})
-
-	t.Run("API error", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"code": 1001, "message": "Invalid API key", "data": {}}`))
-		}))
-		defer server.Close()
-
-		a := NewDayDayMapAdapter(server.URL, "testkey", 3, 30*time.Second)
+	t.Run("quota API not available", func(t *testing.T) {
+		a := NewDayDayMapAdapter("https://www.daydaymap.com", "testkey", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
-			t.Error("expected error for API error")
+			t.Error("expected error (quota API not available)")
 		}
 	})
 }
