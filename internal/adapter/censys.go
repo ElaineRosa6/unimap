@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/utils"
 )
@@ -182,14 +182,14 @@ type CensysSearchResult struct {
 	} `json:"result"`
 }
 
-// Search 执行Censys搜索
+// Search 执行Censys搜索（v3 API, Bearer token）
 func (c *CensysAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
-	if c.apiID == "" || c.apiSecret == "" {
-		return &model.EngineResult{EngineName: c.Name(), Error: "Censys API credentials not configured"}, nil
+	if c.apiID == "" {
+		return &model.EngineResult{EngineName: c.Name(), Error: "Censys API key not configured"}, nil
 	}
 	var engineResult *model.EngineResult
 	err := utils.Retry(c.searchRetryConfig(), func() error {
-		return c.executeCensysSearch(query, page, pageSize, &engineResult)
+		return c.executeCensysSearch(ctx, query, page, pageSize, &engineResult)
 	})
 	if err != nil {
 		return &model.EngineResult{EngineName: c.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
@@ -204,18 +204,23 @@ func (c *CensysAdapter) searchRetryConfig() utils.RetryConfig {
 	}
 }
 
-// executeCensysSearch 执行单次 Censys API 调用
-func (c *CensysAdapter) executeCensysSearch(query string, page, pageSize int, result **model.EngineResult) error {
-	searchURL := fmt.Sprintf("%s/api/v2/hosts/search", c.baseURL)
-	params := map[string]string{
-		"q": query, "per_page": fmt.Sprintf("%d", pageSize),
+// executeCensysSearch 执行 Censys v3 单 IP 查询
+// Free tier supports GET /v3/global/asset/host/{ip} with Bearer token.
+// Keyword/bulk search requires API ID+Secret (v2) or paid plan (v3).
+func (c *CensysAdapter) executeCensysSearch(ctx context.Context, query string, page, pageSize int, result **model.EngineResult) error {
+	// Extract IP from query — v3 free tier only supports single-host lookups
+	ip := extractIP(query)
+	if ip == "" {
+		// Try as a bare IP
+		ip = strings.TrimSpace(query)
+		if net.ParseIP(ip) == nil {
+			return fmt.Errorf("Censys free tier only supports IP-based queries (host lookup)")
+		}
 	}
-	if page > 1 {
-		logger.Warnf("Censys adapter: cursor-based pagination does not support arbitrary page jumps; attempting per_page*page offset for page %d", page)
-		params["per_page"] = fmt.Sprintf("%d", pageSize*page)
-	}
+
+	searchURL := fmt.Sprintf("%s/v3/global/asset/host/%s", c.baseURL, ip)
 	resp, err := c.setAuth(c.client.R()).
-		SetQueryParams(params).
+		SetHeader("Accept", "application/json").
 		Get(searchURL)
 	if err != nil {
 		return err
@@ -223,31 +228,77 @@ func (c *CensysAdapter) executeCensysSearch(query string, page, pageSize int, re
 	if resp.StatusCode() != 200 {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
 	}
-	return parseCensysSearchResponse(resp.Body(), page, pageSize, c.Name(), result)
+	return parseCensysV3HostResponse(resp.Body(), page, pageSize, c.Name(), result)
 }
 
-// parseCensysSearchResponse 解析 Censys 搜索响应
-func parseCensysSearchResponse(body []byte, page, pageSize int, engineName string, result **model.EngineResult) error {
-	var resp CensysSearchResult
+// extractIP tries to extract an IPv4 or IPv6 address from a Censys query string.
+func extractIP(query string) string {
+	// Common patterns: "ip:8.8.8.8", "ip=8.8.8.8", bare "8.8.8.8"
+	candidates := strings.FieldsFunc(query, func(r rune) bool {
+		return r == ':' || r == '=' || r == ' ' || r == '"' || r == '\''
+	})
+	for _, c := range candidates {
+		if ip := net.ParseIP(c); ip != nil {
+			return c
+		}
+	}
+	return ""
+}
+
+// parseCensysV3HostResponse parses the v3 single-host lookup response
+// Response: {"result":{"resource":{"ip":"8.8.8.8", "services":[...], ...}}}
+func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName string, result **model.EngineResult) error {
+	var resp struct {
+		Result struct {
+			Resource struct {
+				IP                string                     `json:"ip"`
+				Location          map[string]interface{}     `json:"location"`
+				AutonomousSystem  map[string]interface{}     `json:"autonomous_system"`
+				Services          []map[string]interface{}   `json:"services"`
+				LastUpdatedAt     string                     `json:"last_updated_at"`
+			} `json:"resource"`
+		} `json:"result"`
+	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return err
 	}
-	hits := resp.Result.Hits
-	if page > 1 && len(hits) > pageSize {
-		hits = hits[len(hits)-pageSize:]
+
+	resource := resp.Result.Resource
+	if resource.IP == "" {
+		return fmt.Errorf("Censys v3 host response missing IP")
 	}
-	rawData := make([]interface{}, 0, len(hits))
-	for _, hit := range hits {
-		var data map[string]interface{}
-		if err := json.Unmarshal(hit, &data); err != nil {
-			logger.Warnf("Censys adapter: failed to parse hit: %v", err)
-			continue
+
+	// Build raw data: each service becomes an entry with the host info merged
+	rawData := make([]interface{}, 0, len(resource.Services)+1)
+	for _, svc := range resource.Services {
+		entry := map[string]interface{}{
+			"ip": resource.IP,
 		}
-		rawData = append(rawData, data)
+		for k, v := range svc {
+			entry[k] = v
+		}
+		if resource.Location != nil {
+			entry["location"] = resource.Location
+		}
+		if resource.AutonomousSystem != nil {
+			entry["autonomous_system"] = resource.AutonomousSystem
+		}
+		rawData = append(rawData, entry)
 	}
+	// If no services, still return the host itself
+	if len(rawData) == 0 {
+		rawData = append(rawData, map[string]interface{}{
+			"ip":                 resource.IP,
+			"location":           resource.Location,
+			"autonomous_system":  resource.AutonomousSystem,
+			"last_updated_at":    resource.LastUpdatedAt,
+		})
+	}
+
+	total := len(rawData)
 	*result = &model.EngineResult{
-		EngineName: engineName, RawData: rawData, Total: resp.Result.Total,
-		Page: page, HasMore: resp.Result.Links.Next != "",
+		EngineName: engineName, RawData: rawData, Total: total,
+		Page: page, HasMore: false,
 	}
 	return nil
 }
@@ -434,65 +485,9 @@ func buildCensysURL(asset *model.UnifiedAsset) {
 	asset.URL = u.String()
 }
 
-// GetQuota 获取Censys配额信息
+// GetQuota 获取Censys配额信息（v3 免费版无独立配额端点）
 func (c *CensysAdapter) GetQuota() (*model.QuotaInfo, error) {
-	if c.useBearer {
-		if c.apiID == "" {
-			return nil, fmt.Errorf("Censys API key not configured")
-		}
-	} else if c.apiID == "" || c.apiSecret == "" {
-		return nil, fmt.Errorf("Censys API credentials not configured")
-	}
-
-	quotaURL := fmt.Sprintf("%s/api/v1/account", c.baseURL)
-
-	resp, err := c.setAuth(c.client.R()).
-		Get(quotaURL)
-
-	if err != nil {
-		return nil, fmt.Errorf("request error: %w", err)
-	}
-
-	if resp.StatusCode() != 200 {
-		var apiErr struct {
-			Error string `json:"error"`
-		}
-		if err := json.Unmarshal(resp.Body(), &apiErr); err == nil && strings.TrimSpace(apiErr.Error) != "" {
-			return nil, fmt.Errorf("Censys API error: %s", strings.TrimSpace(apiErr.Error))
-		}
-		return nil, fmt.Errorf("Censys API HTTP %d", resp.StatusCode())
-	}
-
-	var result struct {
-		Quota struct {
-			Used  int `json:"used"`
-			Total int `json:"total"`
-			Remaining int `json:"remaining"`
-		} `json:"quota"`
-		Error string `json:"error,omitempty"`
-	}
-
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("parse error: %w", err)
-	}
-	if strings.TrimSpace(result.Error) != "" {
-		return nil, fmt.Errorf("Censys API error: %s", strings.TrimSpace(result.Error))
-	}
-
-	remaining := result.Quota.Remaining
-	total := result.Quota.Total
-	used := result.Quota.Used
-	if total <= 0 && remaining > 0 {
-		total = remaining + used
-	}
-
-	return &model.QuotaInfo{
-		Remaining: remaining,
-		Total:     total,
-		Used:      used,
-		Unit:      "queries",
-		Expiry:    "",
-	}, nil
+	return nil, fmt.Errorf("Censys free tier: quota API not available")
 }
 
 // CensysAdapterWebOnly Censys Web-only模式适配器
