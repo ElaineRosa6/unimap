@@ -37,13 +37,15 @@
 - **map→struct 迁移级联模式**：1) 定义类型化 struct → 2) 改 `parse*Response` 的 JSON unmarshal target + rawData 赋值 → 3) 改 `Normalize` 的 type assertion → 4) 改 `normalize*Item` 签名，移除 getStr/getInt 闭包 → 5) 改为包级函数（减少闭包开销）→ 6) 移除 `asset.Extra = data`（旧 map 透传）。每步都需同步更新测试的 RawData 构造。（2026-06-23）
 - **行→结构体映射模式**（Fofa）：API 返回 `[][]interface{}` 时，定义 `fofaRowToItem(row, fieldNames)` 用 switch 按字段名映射列索引到 struct 字段。避免 map 中转。
 - **反规范化条目模式**（Censys）：API 返回嵌套 services 数组时，在 `parse*Response` 中将每个 service 拆分为独立 RawData 条目并合并 host-level 元数据（location/AS/DNS）。Normalize 不再需要二次迭代嵌套数组。
+- **json.Number 处理数值/字符串双态字段**（ZoomEye）：API 可能返回 `"asn": 15169`（数值）或 `"asn": "15169"`（字符串）。struct 字段用 `json.Number`，读取时调用 `.String()` 统一为字符串。避免 `string` 字段因 JSON 数值而静默为空。
+- **json.RawMessage 处理变体响应**（Quake）：API data 可能是 `[]QuakeItem` 或 `{"list": [...]}`。用 `json.RawMessage` 先存原始 JSON，再尝试两种格式反序列化。避免 `interface{}` 类型断言链。
 
 ## 剩余长期项
 
 > 在册引擎 7 个：核心 5（FOFA/Hunter/ZoomEye/Quake/Shodan，已验证）+ 新引擎 2（Censys/DayDayMap，✅ API 验证已通过 2026-06-23）。BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除。
 
 1. **L2 Hook** — 设计冻结，仅当 L1/L3 telemetry 证明收益时启动
-2. ~170 处 `map[string]interface{}` 剩余（Web 响应负载、ZoomEye/Quake 适配器、测试文件）— 核心引擎适配器已全部类型化
+2. ~~`map[string]interface{}` 强类型迁移~~ ✅ **Phase 7 完结**（799→~170，adapter 层 ~100→18，-82%）。7 引擎全部完成，剩余为 Web 响应/配额解析/变量嵌套
 3. ~~**新增引擎（Censys/DayDayMap）API 查询端到端验证**~~ ✅ DayDayMap curl 200 OK + Censys v3 单 IP 200 OK（2026-06-23）
 4. ~~**ZoomEye `cleanZoomEyeTitle`**~~ ✅ 已修（commit 7e619f8），title 中的元数据前缀已清理
 5. ~~**Shodan `timestamp` 选择器为空** — 需真机调试（commit 50dc187 已修复 timestamp 字段流，待真机验证）~~ ✅ 已修复（`9debb8f`：`capture.js` `div.heading div.timestamp` 选择器 + `dom_selectors.go` 同步 + Go `LastSeen` 字段映射）
@@ -90,17 +92,19 @@
 - [Shodan调试 2026-06-07](claude-code-memory/project_develop_commits_shodan_debug_2026-06-07.md) — Shodan 0 assets根因修复
 - [SEC-1 token轮换 2026-06-08](claude-code-memory/project_sec1_token_rotation_2026-06-08.md) — token轮换+docs打码+gitignore
 
-### 2026-06-22/23 引擎适配器 map→struct 强类型迁移（Phase 7）
+### 2026-06-22/23 引擎适配器 map→struct 强类型迁移（Phase 7 完结）
 
-- ✅ **5 个核心引擎全部迁移**：
+- ✅ **7 个引擎全部迁移**：
   - **Shodan** (`7fb4998`): `ShodanSearchResponse` + `ShodanMatch` 结构体，`normalizeShodanMatch` 替代 `normalizeShodanItem`
   - **Hunter** (`7fb4998`): `HunterItem` 结构体（含 `Web`/`Location` `map[string]interface{}` 降级字段），`normalizeHunterMatch` + 包级 `parseHunterLegacyFields`
   - **Fofa** (`7fb4998`): `FofaItem` 结构体 + `fofaRowToItem` 行→结构体映射函数，`normalizeFofaItem` 包级化
-  - **DayDayMap** (`a2a6beb`): `DayDayMapItem` + `dayDayMapSearchRequest` 结构体，修复 3 个使用旧 GET API 格式的测试（`code:0→200`, `message→msg`, `apikey` query param→`api-key` header）
-  - **Censys** (`4b8de2b`): 14 个类型化结构体（`CensysRawEntry`/`CensysService`/`CensysHTTP`/`CensysTLS` 等），25→0 map，服务拆分从 Normalize 移至 parse
-- 📊 adapter 包 map[string]interface{}: ~100 → ~19（减少 80%+）
-- 🔒 跳过：ZoomEye (17，类型多变) / Quake (12，嵌套复杂) / Hunter Web+Location (2，降级字段有意保留)
-- ✅ 33/33 包测试通过，0 回归
+  - **DayDayMap** (`a2a6beb`): `DayDayMapItem` + `dayDayMapSearchRequest` 结构体，修复 3 个使用旧 GET API 格式的测试
+  - **Censys** (`4b8de2b`): 14 个类型化结构体（`CensysRawEntry`/`CensysService`/`CensysHTTP`/`CensysTLS` 等），25→0 map
+  - **ZoomEye** (`1476490`): `ZoomEyeItem` 扩展点号字段 + `json.Number` for ASN + `zoomEyeSearchRequest`，17→5 map
+  - **Quake** (`1476490`): `QuakeItem`/`QuakeService`/`QuakeHTTP`/`QuakeLocation` + `quakeSearchRequest`，12→6 map
+- 📊 **adapter 层 map[string]interface{}: ~100 → 18（减少 82%）**
+- 🔒 剩余 18 处均为有意保留：Hunter Web/Location (2) | ICP Extra (2) | orchestrator_circuit API (3) | Quake 配额解析 (6) | ZoomEye PortInfo/GeoInfo (5)
+- 🏆 **map→struct 迁移正式完结**
 
 ### 架构与采集（2026-06-05 ~ 2026-06-09）
 
