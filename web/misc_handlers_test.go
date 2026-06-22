@@ -178,8 +178,10 @@ func TestCORSMiddleware_BridgePathBypass(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204 for bridge preflight, got %d", rec.Code)
 	}
-	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
-		t.Fatalf("expected * origin for bridge, got %q", rec.Header().Get("Access-Control-Allow-Origin"))
+	// FINDING-004: bridge no longer uses wildcard "*"; echoes allowed origin.
+	acao := rec.Header().Get("Access-Control-Allow-Origin")
+	if acao != "chrome-extension://abc123" {
+		t.Fatalf("expected echoed extension origin for bridge preflight, got %q", acao)
 	}
 
 	// Non-bridge path with non-matching origin should be denied
@@ -208,8 +210,11 @@ func TestCORSMiddleware_BridgeNormalRequest(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for bridge GET, got %d and body: %s", rec.Code, rec.Body.String())
 	}
-	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
-		t.Fatalf("expected * origin for bridge, got %q", rec.Header().Get("Access-Control-Allow-Origin"))
+	// FINDING-004: bridge no longer uses wildcard "*"; it echoes the allowed
+	// origin (chrome-extension:// is allowed when extension IDs not configured).
+	acao := rec.Header().Get("Access-Control-Allow-Origin")
+	if acao != "chrome-extension://abc123" {
+		t.Fatalf("expected echoed extension origin for bridge, got %q", acao)
 	}
 }
 

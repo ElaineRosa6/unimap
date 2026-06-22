@@ -43,7 +43,29 @@
 2. 227 处 `map[string]interface{}` 剩余（Web 响应和测试文件）
 3. 新增引擎（Censys/DayDayMap）API 查询端到端验证 — 代码基础设施已补齐（2026-06-17），⏳ 需各引擎 API Key
 4. **核心引擎字段完善** — ZoomEye `cleanZoomEyeTitle` JS 未在 Extension 生效（纯前端待修）；Shodan `timestamp` 选择器为空（需真机调试）
-5. **Extension 版本号待升** — 移除三引擎后 `manifest.json` 仍为 0.3.9，应升至 0.4.0
+5. ~~**Extension 版本号待升** — 移除三引擎后 `manifest.json` 仍为 0.3.9，应升至 0.4.0~~ ✅ 已升至 0.4.1
+
+### 安全审计遗留（2026-06-18 审计，2026-06-22 核实）
+
+> 来源：`.audit-results/audit_report.md`。以下为 2026-06-22 代码核实结果。
+
+| ID | 问题 | 核实状态 |
+|----|------|----------|
+| FINDING-002 | bridge health/status 端点无认证暴露内部拓扑 | ⏳ 未修（handler 仍无 isLoopbackRequest） |
+| FINDING-003 | SSRF 校验 DNS rebinding/TOCTOU 窗口 | ⏳ 未修（无 custom Dialer） |
+| FINDING-004 | CORS bridge 路径通配 `ACAO: *` | ⏳ 未修（http_helpers.go:351 仍 `*`） |
+| FINDING-005 | 根目录残留运行时产物 | ✅ `*.log` 已加 gitignore；⏳ `*.exe` 未加，磁盘文件仍在 |
+| FINDING-006 | admin token 日志泄露掩码片段 | ⏳ 未修（middleware_auth.go:204 仍输出 maskTokenForLog） |
+| FINDING-008 | 前端 main.js innerHTML XSS | ✅ 已修（innerHTML onclick 已全部改为 addEventListener） |
+
+### 运维项（2026-06-22 核实）
+
+| 项 | 核实状态 |
+|----|----------|
+| 优雅关闭 | ✅ 已实现（main.go ShutdownManager + server.go Shutdown） |
+| Extension 版本号 | ✅ 已升至 0.4.1 |
+| `*.log` gitignore | ✅ 已加 |
+| `*.exe` gitignore | ⏳ 未加（unimap-cli.exe/unimap-gui.exe/unimap-web.exe 不应进库） |
 
 ## Claude Code 记忆（2026-06-15 合并）
 

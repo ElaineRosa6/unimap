@@ -262,7 +262,33 @@ go run -tags gui ./cmd/unimap-gui
 #### 关键教训（写入记忆）
 - `style.display=''` 只在元素**无**隐藏 class 时才显示；有 `hidden-init` 等 class 时必须用 `display='block'/'inline-block'`
 - `sync.Once.Do` 无论变量是否已赋值都会执行闭包，会覆盖之前的 `SetXxx` 配置
-- CSP `script-src 'self' 'nonce-xxx'`（无 `unsafe-inline`）会拦截所有内联 `onclick=`，包括 innerHTML 注入的
+- CSP `script-src 'self' 'nonce-xxx'`（无 `unsafe-inline'`）会拦截所有内联 `onclick=`，包括 innerHTML 注入的
+
+### 2026-06-22 审计遗留项核实 + UI 优化
+
+#### 审计遗留项核实（代码逐项验证）
+
+| ID | 问题 | 核实结果 |
+|----|------|----------|
+| FINDING-002 | bridge health/status 无认证 | ⏳ 未修（handler 仍无 isLoopbackRequest） |
+| FINDING-003 | SSRF DNS rebinding | ⏳ 未修（无 custom Dialer，需架构改动） |
+| FINDING-004 | CORS bridge 通配 `*` | ⏳ 未修（http_helpers.go:351） |
+| FINDING-005 | 根目录残留运行时产物 | ✅ `*.log` 已加 gitignore；⏳ `*.exe` 未加 |
+| FINDING-006 | admin token 日志泄露掩码 | ⏳ 未修（middleware_auth.go:204） |
+| FINDING-008 | main.js innerHTML XSS | ✅ 已修（onclick 已全部改 addEventListener） |
+
+#### 运维项核实（纠正过时文档）
+
+| 项 | 之前文档 | 核实结果 |
+|----|----------|----------|
+| 优雅关闭 | "未见" | ✅ 已实现（main.go ShutdownManager 30s + server.go Shutdown） |
+| Extension 版本号 | "0.3.9 待升" | ✅ 已升至 0.4.1 |
+| `*.log` gitignore | "未加" | ✅ 已加 |
+
+#### UI 视觉优化（commit d013932）
+- accent 青绿→靛蓝（`#6366f1`），全站变量层改造
+- header 渐变、卡片层次阴影、按钮渐变+悬浮、body 微纹理
+- settings cfg-* 按钮渐变、toggle 统一 accent、卡片 hover 浮升
 
 ### 2026-06-17 新引擎代码基础设施全量补齐 + countGoroutines 空桩修复
 
