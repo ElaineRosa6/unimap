@@ -286,6 +286,12 @@ func (s *ShodanAdapter) normalizeShodanItem(data map[string]interface{}) *model.
 	asset.ASN = getStr("asn")
 	asset.Org = getStr("org")
 	asset.ISP = getStr("isp")
+	// Timestamp from Extension DOM extraction (last_seen) or API response (timestamp)
+	if ls := getStr("last_seen"); ls != "" {
+		asset.LastSeen = ls
+	} else if ts := getStr("timestamp"); ts != "" {
+		asset.LastSeen = ts
+	}
 
 	if asset.IP != "" && asset.Port > 0 {
 		buildShodanURL(asset)
