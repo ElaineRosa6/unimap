@@ -432,6 +432,12 @@ func (z *ZoomEyeAdapter) parseZoomEyeNetwork(data map[string]interface{}, asset 
 	} else if isp, ok := data["isp"].(string); ok {
 		asset.ISP = isp
 	}
+	// Timestamp from Extension DOM extraction (last_seen) or API response (timestamp/icon-time)
+	if ls, ok := data["last_seen"].(string); ok && ls != "" {
+		asset.LastSeen = ls
+	} else if ts, ok := data["timestamp"].(string); ok && ts != "" {
+		asset.LastSeen = ts
+	}
 }
 
 // parseZoomEyeExtra 解析 os/product/app/version/device/body/header 等扩展字段
