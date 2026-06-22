@@ -34,6 +34,9 @@
 - **collect_and_capture 统一15秒等待**：所有 SPA 引擎（FOFA/Hunter/ZoomEye/Quake）搜索截图统一等待 15 秒+滚动触发懒加载+2 秒稳定等待，比差异化引擎策略更简单可靠。修改 background.js 后必须刷新 Chrome 扩展（2026-06-18）
 - **extractImagePaths 双格式识别**：同时支持 `→`（批量截图格式）和 `保存:`（搜索引擎截图格式）两种路径分隔符（2026-06-18）
 - **search_screenshot payload engine 在 extra 中**：定时任务搜索引擎截图的 `engine` 字段必须放在 `extra` 对象中：`{"query": "...", "extra": {"engine": "zoomeye"}}`
+- **map→struct 迁移级联模式**：1) 定义类型化 struct → 2) 改 `parse*Response` 的 JSON unmarshal target + rawData 赋值 → 3) 改 `Normalize` 的 type assertion → 4) 改 `normalize*Item` 签名，移除 getStr/getInt 闭包 → 5) 改为包级函数（减少闭包开销）→ 6) 移除 `asset.Extra = data`（旧 map 透传）。每步都需同步更新测试的 RawData 构造。（2026-06-23）
+- **行→结构体映射模式**（Fofa）：API 返回 `[][]interface{}` 时，定义 `fofaRowToItem(row, fieldNames)` 用 switch 按字段名映射列索引到 struct 字段。避免 map 中转。
+- **反规范化条目模式**（Censys）：API 返回嵌套 services 数组时，在 `parse*Response` 中将每个 service 拆分为独立 RawData 条目并合并 host-level 元数据（location/AS/DNS）。Normalize 不再需要二次迭代嵌套数组。
 
 ## 剩余长期项
 
@@ -86,6 +89,18 @@
 - [阶段二引擎+语法核查 2026-06-08](claude-code-memory/project_engine_adapter_phase2_2026-06-08.md) — 5引擎语法全量核查+10个适配器完成
 - [Shodan调试 2026-06-07](claude-code-memory/project_develop_commits_shodan_debug_2026-06-07.md) — Shodan 0 assets根因修复
 - [SEC-1 token轮换 2026-06-08](claude-code-memory/project_sec1_token_rotation_2026-06-08.md) — token轮换+docs打码+gitignore
+
+### 2026-06-22/23 引擎适配器 map→struct 强类型迁移（Phase 7）
+
+- ✅ **5 个核心引擎全部迁移**：
+  - **Shodan** (`7fb4998`): `ShodanSearchResponse` + `ShodanMatch` 结构体，`normalizeShodanMatch` 替代 `normalizeShodanItem`
+  - **Hunter** (`7fb4998`): `HunterItem` 结构体（含 `Web`/`Location` `map[string]interface{}` 降级字段），`normalizeHunterMatch` + 包级 `parseHunterLegacyFields`
+  - **Fofa** (`7fb4998`): `FofaItem` 结构体 + `fofaRowToItem` 行→结构体映射函数，`normalizeFofaItem` 包级化
+  - **DayDayMap** (`a2a6beb`): `DayDayMapItem` + `dayDayMapSearchRequest` 结构体，修复 3 个使用旧 GET API 格式的测试（`code:0→200`, `message→msg`, `apikey` query param→`api-key` header）
+  - **Censys** (`4b8de2b`): 14 个类型化结构体（`CensysRawEntry`/`CensysService`/`CensysHTTP`/`CensysTLS` 等），25→0 map，服务拆分从 Normalize 移至 parse
+- 📊 adapter 包 map[string]interface{}: ~100 → ~19（减少 80%+）
+- 🔒 跳过：ZoomEye (17，类型多变) / Quake (12，嵌套复杂) / Hunter Web+Location (2，降级字段有意保留)
+- ✅ 33/33 包测试通过，0 回归
 
 ### 架构与采集（2026-06-05 ~ 2026-06-09）
 
@@ -147,7 +162,7 @@
 5. ~~**CleanHunterFields 调用链断裂**~~ ✅ 已修复（2026-06-16，parser / fallback / web payload 全链路调用）
 
 **Medium（5 项）**
-6. **~170 处 `map[string]interface{}`** — 含 Web 响应（~100）、ZoomEye/Quake 适配器（29）、collection/parser 等。核心引擎适配器已全部迁移为强类型 struct。
+6. ~~**653 处 `map[string]interface{}`**~~ ✅ Phase 1-7 完成（799→~170，减少 79%）。核心引擎适配器全部类型化，剩余为 Web 响应负载、ZoomEye/Quake 适配器、测试文件。
 7. **新引擎端到端未闭环** — Censys/DayDayMap/Onyphe/GreyNoise 适配器代码存在（有 `Search` 方法），但 Extension DOM 选择器缺失、UI 未暴露这些引擎。
 8. **L2 Hook 设计冻结** — 仅当 L1/L3 telemetry 证明收益时启动。
 9. ~~**web/ flaky test**~~ ✅ 已修复（2026-06-16，稳定输入+`-race` 复核通过）
