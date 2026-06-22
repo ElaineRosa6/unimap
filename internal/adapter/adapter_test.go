@@ -334,16 +334,10 @@ func TestFofaAdapter_Normalize(t *testing.T) {
 
 	t.Run("full fields", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":     "1.2.3.4",
-				"port":   float64(80),
-				"server": "http",
-				"domain": "example.com",
-				"title":  "Example",
-				"header": "Server: nginx",
-				"region": "Beijing",
-				"city":   "Beijing",
-				"isp":    "China Telecom",
+			&FofaItem{
+				IP: "1.2.3.4", Port: 80, Server: "http", Domain: "example.com",
+				Title: "Example", Header: "Server: nginx", Region: "Beijing",
+				City: "Beijing", ISP: "China Telecom",
 			},
 		}}
 		assets, err := a.Normalize(result)
@@ -372,10 +366,7 @@ func TestFofaAdapter_Normalize(t *testing.T) {
 
 	t.Run("port as int", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":   "1.2.3.4",
-				"port": int(443),
-			},
+			&FofaItem{IP: "1.2.3.4", Port: 443},
 		}}
 		results, err := a.Normalize(result)
 		if err != nil {
@@ -388,9 +379,7 @@ func TestFofaAdapter_Normalize(t *testing.T) {
 
 	t.Run("no ip skipped", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"port": float64(80),
-			},
+			&FofaItem{Port: 80},
 		}}
 		results, err := a.Normalize(result)
 		if err != nil {
@@ -404,11 +393,7 @@ func TestFofaAdapter_Normalize(t *testing.T) {
 	t.Run("body truncation", func(t *testing.T) {
 		body := strings.Repeat("x", 500)
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":   "1.2.3.4",
-				"port": float64(80),
-				"body": body,
-			},
+			&FofaItem{IP: "1.2.3.4", Port: 80, Body: body},
 		}}
 		results, err := a.Normalize(result)
 		if err != nil {
@@ -706,17 +691,7 @@ func TestHunterAdapter_Normalize(t *testing.T) {
 
 	t.Run("flat data format", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":       "1.2.3.4",
-				"port":     float64(80),
-				"protocol": "http",
-				"domain":   "example.com",
-				"title":    "Example",
-				"country":  "CN",
-				"province": "Beijing",
-				"city":     "Beijing",
-				"isp":      "China Telecom",
-			},
+			&HunterItem{IP: "1.2.3.4", Port: 80, Protocol: "http", Domain: "example.com", WebTitle: "Example", Country: "CN", Province: "Beijing", City: "Beijing", ISP: "China Telecom"},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -735,15 +710,7 @@ func TestHunterAdapter_Normalize(t *testing.T) {
 
 	t.Run("nested data format", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":        "5.6.7.8",
-				"port":      float64(443),
-				"protocol":  "https",
-				"web_title": "Secure Site",
-				"country":   "China",
-				"province":  "Shanghai",
-				"city":      "Shanghai",
-			},
+			&HunterItem{IP: "5.6.7.8", Port: 443, Protocol: "https", WebTitle: "Secure Site", Country: "China", Province: "Shanghai", City: "Shanghai"},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -1113,17 +1080,7 @@ func TestShodanAdapter_Normalize(t *testing.T) {
 
 	t.Run("full fields", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":           "1.2.3.4",
-				"port":         float64(80),
-				"transport":    "tcp",
-				"product":      "nginx",
-				"title":        "Example",
-				"country_name": "United States",
-				"city":         "San Francisco",
-				"org":          "Cloudflare",
-				"hostnames":    []interface{}{"example.com"},
-			},
+			&ShodanMatch{IP: "1.2.3.4", Port: 80, Transport: "tcp", Product: "nginx", Title: "Example", Country: "United States", City: "San Francisco", Org: "Cloudflare", Hostnames: []string{"example.com"}},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {

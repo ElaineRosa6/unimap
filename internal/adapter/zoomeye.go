@@ -24,6 +24,46 @@ type ZoomEyeAdapter struct {
 	timeout time.Duration
 }
 
+// ZoomEyeItem is a single result item from ZoomEye v2 search API.
+type ZoomEyeItem struct {
+	IP       string                 `json:"ip"`
+	Port     float64                `json:"port"`     // float64 in JSON, may be number or string
+	Service  string                 `json:"service"`  // e.g. "http", "ssh"
+	Banner   string                 `json:"banner"`
+	Title    string                 `json:"title"`
+	Server   string                 `json:"server"`
+	ASN      string                 `json:"asn"`
+	Org      string                 `json:"org"`
+	ISP      string                 `json:"isp"`
+	OS       string                 `json:"os"`
+	Product  string                 `json:"product"`
+	Version  string                 `json:"version"`
+	Device   string                 `json:"device"`
+	App      string                 `json:"app"`
+	Body     string                 `json:"body"`
+	Header   string                 `json:"header"`
+	Country  string                 `json:"country"`
+	City     string                 `json:"city"`
+	Timezone string                 `json:"timezone"`
+	Hostname string                 `json:"hostname"`
+	Domain   string                 `json:"domain"`
+	LastSeen string                 `json:"last_seen"`
+	// Nested objects — parsed separately
+	PortInfo  map[string]interface{} `json:"portinfo"`
+	GeoInfo   map[string]interface{} `json:"geoinfo"`
+	Extra     map[string]interface{} `json:"-"`
+}
+
+// ZoomEyeSearchResponse is the ZoomEye v2 search API response.
+type ZoomEyeSearchResponse struct {
+	Code    int    `json:"code"`
+	Error   string `json:"error"`
+	Message string `json:"message"`
+	Total   int    `json:"total"`
+	Query   string `json:"query"`
+	Data    []json.RawMessage `json:"data"`
+}
+
 // NewZoomEyeAdapter 创建ZoomEye适配器
 func NewZoomEyeAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *ZoomEyeAdapter {
 	client := resty.New().
