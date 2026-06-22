@@ -37,35 +37,24 @@
 
 ## 剩余长期项
 
-> 在册引擎 7 个：核心 5（FOFA/Hunter/ZoomEye/Quake/Shodan，已验证）+ 新引擎 2（Censys/DayDayMap，待 API Key）。BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除（commit fb6dcdb）。
+> 在册引擎 7 个：核心 5（FOFA/Hunter/ZoomEye/Quake/Shodan，已验证）+ 新引擎 2（Censys/DayDayMap，✅ API 验证已通过 2026-06-23）。BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除。
 
 1. **L2 Hook** — 设计冻结，仅当 L1/L3 telemetry 证明收益时启动
 2. 227 处 `map[string]interface{}` 剩余（Web 响应和测试文件）
-3. 新增引擎（Censys/DayDayMap）API 查询端到端验证 — 代码基础设施已补齐（2026-06-17），⏳ 需各引擎 API Key
-4. **核心引擎字段完善** — ZoomEye `cleanZoomEyeTitle` JS 未在 Extension 生效（纯前端待修）；Shodan `timestamp` 选择器为空（需真机调试）
-5. ~~**Extension 版本号待升** — 移除三引擎后 `manifest.json` 仍为 0.3.9，应升至 0.4.0~~ ✅ 已升至 0.4.1
+3. ~~**新增引擎（Censys/DayDayMap）API 查询端到端验证**~~ ✅ DayDayMap curl 200 OK + Censys v3 单 IP 200 OK（2026-06-23）
+4. ~~**ZoomEye `cleanZoomEyeTitle`**~~ ✅ 已修（commit 7e619f8），title 中的元数据前缀已清理
+5. **Shodan `timestamp` 选择器为空** — 需真机调试（commit 50dc187 已修复 timestamp 字段流，待真机验证）
+6. ~~**Extension 版本号待升**~~ ✅ 已升至 0.4.1
+7. ~~**审计项 FINDING-002~008**~~ ✅ 6 项全部闭环（2026-06-22）
 
-### 安全审计遗留（2026-06-18 审计，2026-06-22 核实）
-
-> 来源：`.audit-results/audit_report.md`。以下为 2026-06-22 代码核实结果。
-
-| ID | 问题 | 核实状态 |
-|----|------|----------|
-| FINDING-002 | bridge health/status 端点无认证暴露内部拓扑 | ✅ 已修（非 loopback 返回 minimal 响应） |
-| FINDING-003 | SSRF 校验 DNS rebinding/TOCTOU 窗口 | ✅ 已修（`urlguard.SafeHTTPClient` dial-time + redirect 校验） |
-| FINDING-004 | CORS bridge 路径通配 `ACAO: *` | ✅ 已修（改为回显允许的 origin） |
-| FINDING-005 | 根目录残留运行时产物 | ✅ `*.log`/`*.exe` 已 gitignore；`performance_benchmark.go` 已移除 |
-| FINDING-006 | admin token 日志泄露掩码片段 | ✅ 已修（不再输出 token 片段） |
-| FINDING-008 | 前端 main.js innerHTML XSS | ✅ 已修（innerHTML onclick 已全部改为 addEventListener） |
-
-### 运维项（2026-06-22 核实）
+### 运维项（2026-06-23 核实）
 
 | 项 | 核实状态 |
 |----|----------|
 | 优雅关闭 | ✅ 已实现（main.go ShutdownManager + server.go Shutdown） |
 | Extension 版本号 | ✅ 已升至 0.4.1 |
 | `*.log` gitignore | ✅ 已加 |
-| `*.exe` gitignore | ⏳ 未加（unimap-cli.exe/unimap-gui.exe/unimap-web.exe 不应进库） |
+| `*.exe` gitignore | ✅ 已加（`.gitignore` 第 2 行，无 exe 被 git 跟踪） |
 
 ## Claude Code 记忆（2026-06-15 合并）
 
