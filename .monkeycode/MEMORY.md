@@ -161,3 +161,53 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
   - 禁用 config 降级：清空 `config.yaml` 的 `web.auth.username`/`password_hash`，代码无需改（字段为空时返回 "login not configured"）
   - 首个用户通过 `/api/v1/users/register` 创建（0 用户时 public），创建后注册自动关闭
   - `handleGetAdminToken` 多用户模式（userID>0）下必须 `requireAdmin`，否则普通用户越权拿 admin token
+
+### map→struct 强类型迁移级联模式（引擎适配器）
+- Date: 2026-06-23
+- Context: Agent 在对 Shodan/Hunter/Fofa/DayDayMap/Censys 5 个引擎适配器进行 map[string]interface{} → typed struct 迁移时总结
+- Category: 代码模式
+- Instructions:
+  - 迁移步骤（级联，每步必须同步更新测试）：
+    1) 定义类型化 struct（字段与 API JSON 响应一致，`float64` for JSON numbers）
+    2) 改 `parse*Response` 的 JSON unmarshal target（匿名 struct → 命名 struct）+ rawData 赋值（`map[string]interface{}` → `&Struct{}` 指针）
+    3) 改 `Normalize` 的 type assertion（`item.(map[string]interface{})` → `item.(*Struct)`）
+    4) 改 `normalize*Item` 签名，移除 getStr/getInt 闭包（直接读 struct 字段），改为包级函数
+    5) 移除 `asset.Extra = data`（旧 map 透传 — 除非有意保留）
+  - 测试同步更新：RawData 构造从 `map[string]interface{}{"ip": ..., "port": float64(80)}` → `&Struct{IP: ..., Port: 80}`
+  - 遵循该模式的引擎：Shodan (ShodanMatch), Hunter (HunterItem), DayDayMap (DayDayMapItem)
+  - 所有 `Source` 字段从 `h.Name()`/`s.Name()` 改为硬编码字符串（包级函数无 receiver）
+
+### 行数组→结构体映射模式（Fofa 特殊模式）
+- Date: 2026-06-23
+- Context: Fofa API 返回 `[][]interface{}` 行数组而非 JSON 对象数组，需要列映射
+- Category: 代码模式
+- Instructions:
+  - API 返回行为 `[["1.2.3.4", 80, "http", ...], [...]]`，字段顺序由 `fields` query param 决定
+  - 定义 `fofaRowToItem(row []interface{}, fieldNames []string) *FofaItem` 函数
+  - 用 switch 按 fieldNames[j] 映射 row[j] → struct 字段
+  - `parseFofaSearchResponse` 中调用 `fofaRowToItem(row, fieldNames)` 替代 `map[string]interface{}` 逐列赋值
+  - 数字字段（port/status_code）用 `v.(float64)` 断言（JSON 统一 decode 为 float64）
+  - 字符串字段用 `v.(string)` 断言，nil 值跳过
+
+### 反规范化条目模式（Censys 特殊模式）
+- Date: 2026-06-23
+- Context: Censys v3 API 返回嵌套 services 数组，旧代码在 Normalize 中二次迭代
+- Category: 代码模式
+- Instructions:
+  - API 返回单 host 含多个 services：`{result: {resource: {ip, services: [{port, http}, ...], location, autonomous_system}}}`
+  - 旧模式：rawData 存一份带嵌套 services 的 map → Normalize 中二次迭代 `data["services"]`
+  - 新模式：在 `parse*Response` 中将每个 service 拆分为独立 `CensysRawEntry`（合并 host-level 元数据：location/AS/DNS/ip）
+  - Normalize 不再需要二次迭代嵌套数组，每个 entry 直接生成 1 个 UnifiedAsset
+  - 入口结构体 `CensysRawEntry` 包含全部字段（service 字段 + host 元数据），为"反规范化"视图
+  - 14 个辅助 struct：CensysLocation/CensysAS/CensysDNS/CensysHTTP/CensysTLS/CensysSoftware 等
+  - 所有 extract/parse 辅助函数从 `map[string]interface{}` 改为 `*CensysRawEntry`
+
+### DayDayMap POST API 测试修复
+- Date: 2026-06-23
+- Context: DayDayMap 适配器从 GET+query params 改为 POST+header auth 后，测试 mock 未同步更新导致 3 个测试失败
+- Category: 测试方法
+- Instructions:
+  - 旧 mock：检查 `r.URL.Query().Get("apikey")` → 新 mock：检查 `r.Header.Get("api-key")`
+  - 旧响应格式：`{"code": 0, "message": "success", "data": [...], "total": N}` → 新格式：`{"code": 200, "msg": "success", "data": {"list": [...], "total": N}}`
+  - `GetQuota()` 改为直接返回 error（API 不提供配额端点），测试从期望成功改为期望 error
+  - 修复后 27 个 DayDayMap 测试全部通过
