@@ -46,7 +46,7 @@
 2. ~170 处 `map[string]interface{}` 剩余（Web 响应负载、ZoomEye/Quake 适配器、测试文件）— 核心引擎适配器已全部类型化
 3. ~~**新增引擎（Censys/DayDayMap）API 查询端到端验证**~~ ✅ DayDayMap curl 200 OK + Censys v3 单 IP 200 OK（2026-06-23）
 4. ~~**ZoomEye `cleanZoomEyeTitle`**~~ ✅ 已修（commit 7e619f8），title 中的元数据前缀已清理
-5. **Shodan `timestamp` 选择器为空** — 需真机调试（commit 50dc187 已修复 timestamp 字段流，待真机验证）
+5. ~~**Shodan `timestamp` 选择器为空** — 需真机调试（commit 50dc187 已修复 timestamp 字段流，待真机验证）~~ ✅ 已修复（`9debb8f`：`capture.js` `div.heading div.timestamp` 选择器 + `dom_selectors.go` 同步 + Go `LastSeen` 字段映射）
 6. ~~**Extension 版本号待升**~~ ✅ 已升至 0.4.1
 7. ~~**审计项 FINDING-002~008**~~ ✅ 6 项全部闭环（2026-06-22）
 

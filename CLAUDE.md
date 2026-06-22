@@ -339,7 +339,8 @@ go run -tags gui ./cmd/unimap-gui
 | ORG 为空 | 选择器不精确 | → `.result-details a.filter-link.filter-org` |
 | Country 为空 | 无此字段选择器 | → 新增 `img.flag + a` |
 
-**已知待修复**：ZoomEye `cleanZoomEyeTitle` JS 函数未生效（title 含元数据前缀），Shodan `timestamp` 选择器待调试。
+~~**已知待修复**：ZoomEye `cleanZoomEyeTitle` JS 函数未生效（title 含元数据前缀），Shodan `timestamp` 选择器待调试。~~
+✅ ZoomEye title 已修复（`50dc187`，`cleanZoomEyeTitle()` 提取 title + 元数据）；Shodan timestamp 已修复（`9debb8f`，`capture.js` 选择器 `div.heading div.timestamp` + `dom_selectors.go` 同步 + Go `LastSeen` 映射）
 
 ### 2026-06-18 截图等待时间统一 + 飞书应用图片推送修复
 - ✅ **collect_and_capture 统一15秒等待**：background.js 中 `collect`/`screenshot`/`collect_and_capture` 三种 action 统一 15 秒等待 + 滚动触发懒加载 + 2 秒稳定等待，确保所有 SPA 引擎（FOFA/Hunter/ZoomEye/Quake/Shodan）截图完整
