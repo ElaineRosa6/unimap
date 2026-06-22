@@ -198,7 +198,7 @@ go run -tags gui ./cmd/unimap-gui
 
 ### Low (后续迭代修复)
 7. ~~**L-01** 错误消息大写~~ ✅ 已修复（2 处非缩写词改为小写，其余 21 处为 HTTP/API/ICP 等缩写词可接受）
-8. ~~**L-05** `map[string]interface{}` 强类型~~ ✅ 已完成 Phase 1-5（799→227，减少 72%），剩余为低优先级 Web 响应负载和测试文件
+8. ~~**L-05** `map[string]interface{}` 强类型~~ ✅ Phase 1-7 完成（799→~170，减少 79%），核心引擎适配器已全部类型化。剩余为 ZoomEye/Quake（类型多变）、Web 响应负载（JSON 序列化惯用模式）、测试文件。
 
 ### 2026-06-16 全量问题核实（13 项）
 
@@ -512,6 +512,17 @@ adapter（git rm）/ config（struct·clone·load·defaults·validate·GetEngine
   - Phase 5: BridgeResult.StructuredCollectedData → *model.BridgeCollectedData
   - Phase 6: Web API handlers (user/notification/node) → model.APIResponse
 - ✅ **BUG FIX** PageSizeICP JSON tag 冲突（`json:"page_size"` → `json:"icp_page_size"`），修复 ICP 默认 page_size=40 被静默丢弃
+
+### 2026-06-22/23 map→struct 引擎适配器强类型迁移（Phase 7）
+- ✅ **引擎适配器 map[string]interface{} → typed structs**：5 个核心引擎全部迁移完成
+  - **Shodan** (`7fb4998`): ShodanSearchResponse + ShodanMatch 结构体，normalizeShodanMatch
+  - **Hunter** (`7fb4998`): HunterItem 结构体（含 Web/Location 降级字段），normalizeHunterMatch，parseHunterLegacyFields 包级函数
+  - **Fofa** (`7fb4998`): FofaItem 结构体 + fofaRowToItem 行映射，normalizeFofaItem 包级函数
+  - **DayDayMap** (`a2a6beb`): DayDayMapItem + dayDayMapSearchRequest 结构体，修复 3 个 API 格式错误的测试
+  - **Censys** (`4b8de2b`): 14 个类型化结构体（CensysRawEntry/CensysService/CensysHTTP/CensysTLS 等），25→0 map
+- 📊 消除 adapter 包中 ~80 处 map[string]interface{}（从 ~100 降至 ~19，减少 80%+）
+- 🔒 剩余：ZoomEye (17)、Quake (12) — 类型多变嵌套复杂，暂缓；Hunter Web/Location (2) — 有意保留的降级字段
+- ✅ 所有 33 个包测试通过，0 回归
 - ✅ **UQL 查询历史服务端持久化**：新增 `internal/history/` 包，SQLite 存储操作历史+结果
   - 支持多类型查询：query/icp_query/port_scan/screenshot/tamper_check
   - API: POST/GET/DELETE `/api/v1/history`

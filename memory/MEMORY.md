@@ -40,7 +40,7 @@
 > 在册引擎 7 个：核心 5（FOFA/Hunter/ZoomEye/Quake/Shodan，已验证）+ 新引擎 2（Censys/DayDayMap，✅ API 验证已通过 2026-06-23）。BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除。
 
 1. **L2 Hook** — 设计冻结，仅当 L1/L3 telemetry 证明收益时启动
-2. 227 处 `map[string]interface{}` 剩余（Web 响应和测试文件）
+2. ~170 处 `map[string]interface{}` 剩余（Web 响应负载、ZoomEye/Quake 适配器、测试文件）— 核心引擎适配器已全部类型化
 3. ~~**新增引擎（Censys/DayDayMap）API 查询端到端验证**~~ ✅ DayDayMap curl 200 OK + Censys v3 单 IP 200 OK（2026-06-23）
 4. ~~**ZoomEye `cleanZoomEyeTitle`**~~ ✅ 已修（commit 7e619f8），title 中的元数据前缀已清理
 5. **Shodan `timestamp` 选择器为空** — 需真机调试（commit 50dc187 已修复 timestamp 字段流，待真机验证）
@@ -147,7 +147,7 @@
 5. ~~**CleanHunterFields 调用链断裂**~~ ✅ 已修复（2026-06-16，parser / fallback / web payload 全链路调用）
 
 **Medium（5 项）**
-6. **653 处 `map[string]interface{}`** — 含测试文件（~293）、Web 响应（~80）、collection/parser（~80）等。核心逻辑已迁移，剩余为系统边界。
+6. **~170 处 `map[string]interface{}`** — 含 Web 响应（~100）、ZoomEye/Quake 适配器（29）、collection/parser 等。核心引擎适配器已全部迁移为强类型 struct。
 7. **新引擎端到端未闭环** — Censys/DayDayMap/Onyphe/GreyNoise 适配器代码存在（有 `Search` 方法），但 Extension DOM 选择器缺失、UI 未暴露这些引擎。
 8. **L2 Hook 设计冻结** — 仅当 L1/L3 telemetry 证明收益时启动。
 9. ~~**web/ flaky test**~~ ✅ 已修复（2026-06-16，稳定输入+`-race` 复核通过）
