@@ -225,7 +225,7 @@ go run -tags gui ./cmd/unimap-gui
 
 #### 长期项（2 项，需架构级改造，按需启动）
 - **L2 Hook** — 设计冻结。仅当 L1/L3 telemetry 证明收益时启动。
-- **新引擎端到端闭环** — Censys/DayDayMap 适配器代码存在。✅ 代码基础设施已补齐（2026-06-17），⏳ 仍需各引擎 API Key 进行真机 API 查询验证。（BinaryEdge 因服务已于 2025-03-31 停止、Onyphe/GreyNoise 因 API 不可用，均已于 2026-06-20 彻底移除）
+- **新引擎端到端闭环** — Censys/DayDayMap 适配器代码存在。✅ API Key 已配置并验证通过（2026-06-23，commit fa314ed）：DayDayMap curl 200 OK（关键字搜索），Censys v3 单 IP 查询 200 OK（免费版限制）。（BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除）
 
 #### Low（3 项）
 11. ~~**countGoroutines() 空桩** — `router_test.go:400` 硬编码 `return 0`。~~ ✅ 已修复（2026-06-17，改用 `runtime.NumGoroutine()`，goroutine leak 检测增加 5 协程容差，20 次 `-race` 运行均通过）
@@ -319,11 +319,11 @@ go run -tags gui ./cmd/unimap-gui
 |------|------------|--------|-----|--------|------------|---------------|--------------|-------------------|---------|---------|
 | FOFA | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Hunter | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **ZoomEye** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（选择器已更新） | ✅ | ✅ **已验证（2026-06-17）** | ✅ **已验证** | ⚠️ title 字段待拆分 |
+| **ZoomEye** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（选择器已更新） | ✅ | ✅ **已验证（2026-06-17）** | ✅ **已验证** | ✅ title 清理已修（commit 7e619f8） |
 | Quake | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Shodan** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **已验证（2026-06-17）** | ✅ **已验证** | ⚠️ timestamp 为空 |
-| Censys | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ⏳ 需 API Key | ⏳ 需 API Key + 登录 | ⏳ | ⏳ |
-| DayDayMap | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ⏳ 需 API Key | ⏳ 需 API Key + 登录 | ⏳ | ⏳ |
+| **Shodan** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **已验证（2026-06-17）** | ✅ **已验证** | ⚠️ timestamp 选择器为空（需真机调试，commit 50dc187 已修字段流） |
+| Censys | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ✅ **通过（2026-06-23, v3 单 IP）** | ⏳ 需真机采集 | ⏳ | ⏳ |
+| DayDayMap | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ✅ **通过（2026-06-23, 关键字搜索）** | ⏳ 需真机采集 | ⏳ | ⏳ |
 
 **验证**：`go build ./...` / `go vet ./...` / `go test -race ./...` 全部通过（33/33 包）
 
@@ -391,16 +391,16 @@ go run -tags gui ./cmd/unimap-gui
 
 ### 📋 剩余工作汇总
 
-> 在册引擎 7 个：核心 5（FOFA/Hunter/ZoomEye/Quake/Shodan，已验证）+ 新引擎 2（Censys/DayDayMap，待 API Key）
+> 在册引擎 7 个：核心 5（FOFA/Hunter/ZoomEye/Quake/Shodan，已验证）+ 新引擎 2（Censys/DayDayMap，✅ API 验证已通过 2026-06-23）
 
 1. **核心引擎字段完善**：
-   - ~~ZoomEye `cleanZoomEyeTitle` JS 未生效~~ ✅ 已修复（2026-06-21，commit 7e619f8，Go 侧 + Extension 侧均添加清理逻辑）
+   - ~~ZoomEye `cleanZoomEyeTitle` JS 未生效~~ ✅ 已修复（2026-06-21，commit 7e619f8）
    - Shodan `timestamp` 字段为空 — DOM 选择器未命中，需真机抓包调试
-2. **新引擎真机验证**：Censys/DayDayMap（需 API Key）
-3. ~~**Extension 版本号待升**~~ ✅ 已升级（2026-06-21，`manifest.json` 0.4.0 → 0.4.1，反映 06-20 移除三引擎 host permission 的变更，便于 Chrome 重载识别）
-4. ~~**Quake 响应解析**~~ ✅ 已修复（2026-06-21，`data` 字段从 `[]interface{}` 改为 `interface{}` 兼容对象/数组格式）
-5. ~~**前端 API 错误显示**~~ ✅ 已修复（2026-06-21，10 项 error envelope 二义性问题）
-6. ~~**查询结果表格不渲染**~~ ✅ 已修复（2026-06-21，`renderCollectionMethodBadge` 作用域 bug + 错误展开失效）
+2. ~~**新引擎真机验证**：Censys/DayDayMap（需 API Key）~~ ✅ DayDayMap 关键字搜索 + Censys v3 单 IP 查询均通过（2026-06-23）
+3. ~~**Extension 版本号待升**~~ ✅ 已升级（0.4.1）
+4. ~~**Quake 响应解析**~~ ✅ 已修复（2026-06-21）
+5. ~~**前端 API 错误显示**~~ ✅ 已修复（2026-06-21，10 项）
+6. ~~**查询结果表格不渲染**~~ ✅ 已修复（2026-06-21）
 
 ### 2026-06-20 移除 BinaryEdge/Onyphe/GreyNoise 三引擎（commit fb6dcdb）
 
