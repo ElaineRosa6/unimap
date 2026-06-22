@@ -211,3 +211,45 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
   - 旧响应格式：`{"code": 0, "message": "success", "data": [...], "total": N}` → 新格式：`{"code": 200, "msg": "success", "data": {"list": [...], "total": N}}`
   - `GetQuota()` 改为直接返回 error（API 不提供配额端点），测试从期望成功改为期望 error
   - 修复后 27 个 DayDayMap 测试全部通过
+
+### json.Number 处理数值/字符串双态字段（ZoomEye ASN）
+- Date: 2026-06-23
+- Context: ZoomEye API 的 `asn` 字段可能返回数值 `15169` 或字符串 `"15169"`，string 字段遇上 JSON number 会静默为空
+- Category: 代码模式
+- Instructions:
+  - struct 字段用 `json.Number` 类型：`ASN json.Number \`json:"asn"\``
+  - `json.Number` 同时接受 JSON number 和 string，底层都是字符串存储
+  - 读取时调用 `.String()` 统一为字符串：`asset.ASN = it.ASN.String()`
+  - 适用于 API 返回类型不一致的字段（如某些引擎 ASN 有时是 int 有时是 string）
+  - 替代方案：`interface{}` + 类型 switch，但会破坏 struct 的纯类型化
+
+### json.RawMessage 处理变体响应结构（Quake data 字段）
+- Date: 2026-06-23
+- Context: Quake API 的 `data` 字段可能是 `[{...}]`（数组）或 `{"list": [...]}` （对象），需要先探测再解析
+- Category: 代码模式
+- Instructions:
+  - 响应 struct 中 `Data` 字段用 `json.RawMessage`：`Data json.RawMessage \`json:"data"\``
+  - 先尝试 `json.Unmarshal(data, &[]QuakeItem)`（直接数组格式）
+  - 失败则尝试 `json.Unmarshal(data, &struct{List []QuakeItem})`（对象包裹格式）
+  - 还失败则 fallback 到 `map[string]interface{}` + marshal/unmarshal 常见键名（`list`/`service_list`/`items` 等）
+  - 最后将 `[]QuakeItem` 转为 `[]interface{}`（`&item` 指针）放入 RawData
+  - 避免使用 `interface{}` + 类型 switch（`case []interface{}` / `case map[string]interface{}`）的旧模式
+
+### ZoomEye 点号字段映射（country.name / country.code 等）
+- Date: 2026-06-23
+- Context: ZoomEye v2 API 新格式返回 `"country.name": "China"` 而非嵌套对象
+- Category: 代码结构
+- Instructions:
+  - struct 中 JSON tag 支持点号：`CountryName string \`json:"country.name"\``
+  - Go JSON decoder 天然支持点号 key（`encoding/json` 将 `country.name` 作为整体 key 匹配）
+  - 新旧格式可共存：struct 同时定义 `CountryName`（新）和 `GeoInfo`（旧），解析函数优先新格式再 fallback 旧格式
+
+### ZoomEye 适配器 parseZoomEyeNetwork LastSeen 映射
+- Date: 2026-06-23
+- Context: 迁移后删除了旧的 `timestamp`→`last_seen` 映射分支，ZoomEye API 本身返回 `last_seen`
+- Category: 代码结构
+- Instructions:
+  - ZoomEye v2 API 的 JSON 字段是 `last_seen`（非 `timestamp`）
+  - Extension DOM 提取也使用 `last_seen` 字段名（`capture.js` 选择器 `div.heading div.timestamp` 提取后放入 `last_seen`）
+  - 迁移后 `parseZoomEyeNetwork` 直接读 `it.LastSeen`（JSON 自动映射），无需类型断言
+  - Shodan 同理：API v1 无 timestamp，LastSeen 由 Extension DOM 路径填充
