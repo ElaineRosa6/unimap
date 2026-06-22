@@ -524,6 +524,14 @@ adapter（git rm）/ config（struct·clone·load·defaults·validate·GetEngine
 - 📊 消除 adapter 包中 ~80 处 map[string]interface{}（从 ~100 降至 ~19，减少 80%+）
 - 🔒 剩余：ZoomEye (17)、Quake (12) — 类型多变嵌套复杂，暂缓；Hunter Web/Location (2) — 有意保留的降级字段
 - ✅ 所有 33 个包测试通过，0 回归
+
+### 2026-06-23 ZoomEye + Quake map→struct 收尾（Phase 7 完结）
+- ✅ **ZoomEye** (`1476490`): `ZoomEyeItem` 扩展点号字段 + `json.Number` for ASN + `zoomEyeSearchRequest` 结构体，17→5 map
+- ✅ **Quake** (`1476490`): `QuakeItem`/`QuakeService`/`QuakeHTTP`/`QuakeLocation` + `quakeSearchRequest`，12→6 map
+- 📊 **adapter 层 map[string]interface{} 全貌**：~100 → **18**（减少 82%），剩余均为有意保留
+  - Shodan 0 / Fofa 0 / DayDayMap 0 / Censys 0 ✅
+  - Hunter 2（Web/Location 降级）| ICP 2（Extra）| orchestrator_circuit 3（API）| Quake 6（配额解析）| ZoomEye 5（PortInfo/GeoInfo）
+- 🏆 **7 个引擎全部完成**，map→struct 迁移正式完结
 - ✅ **UQL 查询历史服务端持久化**：新增 `internal/history/` 包，SQLite 存储操作历史+结果
   - 支持多类型查询：query/icp_query/port_scan/screenshot/tamper_check
   - API: POST/GET/DELETE `/api/v1/history`
