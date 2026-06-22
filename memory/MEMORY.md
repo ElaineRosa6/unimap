@@ -51,11 +51,11 @@
 
 | ID | 问题 | 核实状态 |
 |----|------|----------|
-| FINDING-002 | bridge health/status 端点无认证暴露内部拓扑 | ⏳ 未修（handler 仍无 isLoopbackRequest） |
-| FINDING-003 | SSRF 校验 DNS rebinding/TOCTOU 窗口 | ⏳ 未修（无 custom Dialer） |
-| FINDING-004 | CORS bridge 路径通配 `ACAO: *` | ⏳ 未修（http_helpers.go:351 仍 `*`） |
-| FINDING-005 | 根目录残留运行时产物 | ✅ `*.log` 已加 gitignore；⏳ `*.exe` 未加，磁盘文件仍在 |
-| FINDING-006 | admin token 日志泄露掩码片段 | ⏳ 未修（middleware_auth.go:204 仍输出 maskTokenForLog） |
+| FINDING-002 | bridge health/status 端点无认证暴露内部拓扑 | ✅ 已修（非 loopback 返回 minimal 响应） |
+| FINDING-003 | SSRF 校验 DNS rebinding/TOCTOU 窗口 | ✅ 已修（`urlguard.SafeHTTPClient` dial-time + redirect 校验） |
+| FINDING-004 | CORS bridge 路径通配 `ACAO: *` | ✅ 已修（改为回显允许的 origin） |
+| FINDING-005 | 根目录残留运行时产物 | ✅ `*.log`/`*.exe` 已 gitignore；`performance_benchmark.go` 已移除 |
+| FINDING-006 | admin token 日志泄露掩码片段 | ✅ 已修（不再输出 token 片段） |
 | FINDING-008 | 前端 main.js innerHTML XSS | ✅ 已修（innerHTML onclick 已全部改为 addEventListener） |
 
 ### 运维项（2026-06-22 核实）
