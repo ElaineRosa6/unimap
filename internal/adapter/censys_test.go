@@ -524,47 +524,25 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 	})
 
 	t.Run("host with multiple services produces multiple assets", func(t *testing.T) {
+		loc := &CensysLocation{CountryCode: "US", Province: "California", City: "San Francisco"}
+		asn := &CensysAS{ASN: "AS13335", Name: "Cloudflare"}
+		dns := &CensysDNS{Names: []string{"example.com", "www.example.com"}}
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip": "1.2.3.4",
-				"location": map[string]interface{}{
-					"country_code": "US",
-					"province":     "California",
-					"city":         "San Francisco",
-				},
-				"autonomous_system": map[string]interface{}{
-					"asn":  "AS13335",
-					"name": "Cloudflare",
-				},
-				"dns": map[string]interface{}{
-					"names": []interface{}{"example.com", "www.example.com"},
-				},
-				"services": []interface{}{
-					map[string]interface{}{
-						"port":         float64(80),
-						"service_name": "HTTP",
-						"http": map[string]interface{}{
-							"response": map[string]interface{}{
-								"html_title":  "Example",
-								"status_code": float64(200),
-								"body":        strings.Repeat("x", 500),
-								"headers": map[string]interface{}{
-									"Server": "nginx",
-								},
-							},
-						},
-					},
-					map[string]interface{}{
-						"port":         float64(443),
-						"service_name": "HTTPS",
-						"http": map[string]interface{}{
-							"response": map[string]interface{}{
-								"html_title":  "Secure Example",
-								"status_code": float64(200),
-							},
-						},
-					},
-				},
+			&CensysRawEntry{
+				IP: "1.2.3.4", Port: 80, ServiceName: "HTTP",
+				HTTP: &CensysHTTP{Response: CensysHTTPResponseBody{
+					HTMLTitle: "Example", StatusCode: 200,
+					Body: strings.Repeat("x", 500),
+					Headers: CensysHTTPHeaders{Server: "nginx"},
+				}},
+				Location: loc, AutonomousSystem: asn, DNS: dns,
+			},
+			&CensysRawEntry{
+				IP: "1.2.3.4", Port: 443, ServiceName: "HTTPS",
+				HTTP: &CensysHTTP{Response: CensysHTTPResponseBody{
+					HTMLTitle: "Secure Example", StatusCode: 200,
+				}},
+				Location: loc, AutonomousSystem: asn, DNS: dns,
 			},
 		}}
 		assets, err := a.Normalize(result)
@@ -630,11 +608,9 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 	t.Run("no services emits one asset with host info only", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip": "10.0.0.1",
-				"location": map[string]interface{}{
-					"country_code": "CN",
-				},
+			&CensysRawEntry{
+				IP:       "10.0.0.1",
+				Location: &CensysLocation{CountryCode: "CN"},
 			},
 		}}
 		assets, err := a.Normalize(result)
@@ -654,11 +630,7 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 	t.Run("no ip skipped", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"services": []interface{}{
-					map[string]interface{}{"port": float64(80)},
-				},
-			},
+			&CensysRawEntry{Port: 80},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -671,12 +643,7 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 	t.Run("port as int type", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip": "1.2.3.4",
-				"services": []interface{}{
-					map[string]interface{}{"port": int(443)},
-				},
-			},
+			&CensysRawEntry{IP: "1.2.3.4", Port: 443},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -689,17 +656,9 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 	t.Run("URL construction with host", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip": "1.2.3.4",
-				"dns": map[string]interface{}{
-					"names": []interface{}{"example.com"},
-				},
-				"services": []interface{}{
-					map[string]interface{}{
-						"port":         float64(443),
-						"service_name": "HTTPS",
-					},
-				},
+			&CensysRawEntry{
+				IP: "1.2.3.4", Port: 443, ServiceName: "HTTPS",
+				DNS: &CensysDNS{Names: []string{"example.com"}},
 			},
 		}}
 		assets, err := a.Normalize(result)
@@ -720,15 +679,7 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 	t.Run("URL construction without host uses IP", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip": "1.2.3.4",
-				"services": []interface{}{
-					map[string]interface{}{
-						"port":         float64(80),
-						"service_name": "HTTP",
-					},
-				},
-			},
+			&CensysRawEntry{IP: "1.2.3.4", Port: 80, ServiceName: "HTTP"},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -741,10 +692,7 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 	t.Run("empty services slice behaves like no services", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":       "1.2.3.4",
-				"services": []interface{}{},
-			},
+			&CensysRawEntry{IP: "1.2.3.4"},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {

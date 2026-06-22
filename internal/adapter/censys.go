@@ -25,6 +25,106 @@ type CensysAdapter struct {
 	timeout    time.Duration
 }
 
+// --- Censys v3 API response structs ---
+
+// CensysLocation holds geographic location info from the Censys v3 host resource.
+type CensysLocation struct {
+	CountryCode string `json:"country_code"`
+	Province    string `json:"province"`
+	City        string `json:"city"`
+}
+
+// CensysAS holds autonomous system info from the Censys v3 host resource.
+type CensysAS struct {
+	ASN  interface{} `json:"asn"` // string or float64
+	Name string      `json:"name"`
+}
+
+// CensysDNS holds DNS names for the host.
+type CensysDNS struct {
+	Names []string `json:"names"`
+}
+
+// CensysHTTPHeaders holds key HTTP response headers.
+type CensysHTTPHeaders struct {
+	Server string `json:"Server"`
+}
+
+// CensysHTTPResponseBody holds the HTTP response fields from a Censys service.
+type CensysHTTPResponseBody struct {
+	HTMLTitle  string            `json:"html_title"`
+	StatusCode float64           `json:"status_code"`
+	Body       string            `json:"body"`
+	Headers    CensysHTTPHeaders `json:"headers"`
+}
+
+// CensysHTTP holds HTTP info from a Censys service.
+type CensysHTTP struct {
+	Response CensysHTTPResponseBody `json:"response"`
+}
+
+// CensysTLSCertLeaf holds the leaf certificate subject.
+type CensysTLSCertLeaf struct {
+	Subject string `json:"subject"`
+}
+
+// CensysTLSCerts holds the certificates block from TLS info.
+type CensysTLSCerts struct {
+	Leaf CensysTLSCertLeaf `json:"leaf"`
+}
+
+// CensysTLS holds TLS info from a Censys service.
+type CensysTLS struct {
+	Certificates CensysTLSCerts `json:"certificates"`
+}
+
+// CensysSoftware holds software identification from a Censys service.
+type CensysSoftware struct {
+	Product string `json:"product"`
+}
+
+// CensysService is a single service entry in the Censys v3 host resource.
+type CensysService struct {
+	Port        float64          `json:"port"`
+	ServiceName string           `json:"service_name"`
+	HTTP        *CensysHTTP      `json:"http,omitempty"`
+	TLS         *CensysTLS       `json:"tls,omitempty"`
+	Software    []CensysSoftware `json:"software,omitempty"`
+}
+
+// CensysHostResource is the top-level resource from a Censys v3 host lookup.
+type CensysHostResource struct {
+	IP               string          `json:"ip"`
+	Location         *CensysLocation `json:"location,omitempty"`
+	AutonomousSystem *CensysAS       `json:"autonomous_system,omitempty"`
+	DNS              *CensysDNS      `json:"dns,omitempty"`
+	Services         []CensysService `json:"services,omitempty"`
+	LastUpdatedAt    string          `json:"last_updated_at,omitempty"`
+}
+
+// CensysV3HostResponse is the full Censys v3 single-host lookup response.
+type CensysV3HostResponse struct {
+	Result struct {
+		Resource CensysHostResource `json:"resource"`
+	} `json:"result"`
+}
+
+// CensysRawEntry is the denormalized entry stored in EngineResult.RawData.
+// Each entry merges one service with host-level metadata (location, AS, DNS).
+// When a host has no services, a single entry is created with just host metadata.
+type CensysRawEntry struct {
+	IP               string          `json:"ip"`
+	Port             float64         `json:"port"`
+	ServiceName      string          `json:"service_name"`
+	HTTP             *CensysHTTP     `json:"http,omitempty"`
+	TLS              *CensysTLS      `json:"tls,omitempty"`
+	Software         []CensysSoftware `json:"software,omitempty"`
+	Location         *CensysLocation `json:"location,omitempty"`
+	AutonomousSystem *CensysAS       `json:"autonomous_system,omitempty"`
+	DNS              *CensysDNS      `json:"dns,omitempty"`
+	LastUpdatedAt    string          `json:"last_updated_at,omitempty"`
+}
+
 // NewCensysAdapter 创建Censys适配器
 func NewCensysAdapter(baseURL, apiID, apiSecret string, qps int, timeout time.Duration) *CensysAdapter {
 	client := resty.New().
@@ -248,17 +348,7 @@ func extractIP(query string) string {
 // parseCensysV3HostResponse parses the v3 single-host lookup response
 // Response: {"result":{"resource":{"ip":"8.8.8.8", "services":[...], ...}}}
 func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName string, result **model.EngineResult) error {
-	var resp struct {
-		Result struct {
-			Resource struct {
-				IP                string                     `json:"ip"`
-				Location          map[string]interface{}     `json:"location"`
-				AutonomousSystem  map[string]interface{}     `json:"autonomous_system"`
-				Services          []map[string]interface{}   `json:"services"`
-				LastUpdatedAt     string                     `json:"last_updated_at"`
-			} `json:"resource"`
-		} `json:"result"`
-	}
+	var resp CensysV3HostResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return err
 	}
@@ -271,27 +361,28 @@ func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName strin
 	// Build raw data: each service becomes an entry with the host info merged
 	rawData := make([]interface{}, 0, len(resource.Services)+1)
 	for _, svc := range resource.Services {
-		entry := map[string]interface{}{
-			"ip": resource.IP,
-		}
-		for k, v := range svc {
-			entry[k] = v
-		}
-		if resource.Location != nil {
-			entry["location"] = resource.Location
-		}
-		if resource.AutonomousSystem != nil {
-			entry["autonomous_system"] = resource.AutonomousSystem
+		entry := &CensysRawEntry{
+			IP:               resource.IP,
+			Port:             svc.Port,
+			ServiceName:      svc.ServiceName,
+			HTTP:             svc.HTTP,
+			TLS:              svc.TLS,
+			Software:         svc.Software,
+			Location:         resource.Location,
+			AutonomousSystem: resource.AutonomousSystem,
+			DNS:              resource.DNS,
+			LastUpdatedAt:    resource.LastUpdatedAt,
 		}
 		rawData = append(rawData, entry)
 	}
 	// If no services, still return the host itself
 	if len(rawData) == 0 {
-		rawData = append(rawData, map[string]interface{}{
-			"ip":                 resource.IP,
-			"location":           resource.Location,
-			"autonomous_system":  resource.AutonomousSystem,
-			"last_updated_at":    resource.LastUpdatedAt,
+		rawData = append(rawData, &CensysRawEntry{
+			IP:               resource.IP,
+			Location:         resource.Location,
+			AutonomousSystem: resource.AutonomousSystem,
+			DNS:              resource.DNS,
+			LastUpdatedAt:    resource.LastUpdatedAt,
 		})
 	}
 
@@ -311,160 +402,124 @@ func (c *CensysAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset
 		return assets, nil
 	}
 	for _, item := range raw.RawData {
-		data, ok := item.(map[string]interface{})
+		entry, ok := item.(*CensysRawEntry)
 		if !ok {
 			continue
 		}
-		ip, _ := data["ip"].(string)
-		if ip == "" {
+		if entry.IP == "" {
 			continue
 		}
-		assets = append(assets, c.normalizeCensysHost(data, ip)...)
+		assets = append(assets, normalizeCensysEntry(entry, c.Name())...)
 	}
 	return assets, nil
 }
 
-// normalizeCensysHost 解析单个 Censys 主机（可能产生多个资产，每个 service 一个）
-func (c *CensysAdapter) normalizeCensysHost(data map[string]interface{}, ip string) []model.UnifiedAsset {
-	cc, region, city := extractCensysLocation(data)
-	asn, org := extractCensysNetwork(data)
-	host := extractCensysHost(data)
+// normalizeCensysEntry converts a single CensysRawEntry (one service) to a UnifiedAsset.
+func normalizeCensysEntry(entry *CensysRawEntry, source string) []model.UnifiedAsset {
+	if entry == nil || entry.IP == "" {
+		return nil
+	}
+	cc, region, city := extractCensysLocation(entry)
+	asn, org := extractCensysNetwork(entry)
+	host := extractCensysHost(entry)
 
-	base := model.UnifiedAsset{
-		IP: ip, Source: c.Name(), CountryCode: cc, Region: region, City: city,
-		ASN: asn, Org: org, ISP: org, Host: host, Extra: data,
+	asset := model.UnifiedAsset{
+		IP: entry.IP, Source: source, CountryCode: cc, Region: region, City: city,
+		ASN: asn, Org: org, ISP: org, Host: host,
 	}
 
-	services, _ := data["services"].([]interface{})
-	if len(services) == 0 {
-		return []model.UnifiedAsset{base}
-	}
-
-	assets := make([]model.UnifiedAsset, 0, len(services))
-	for _, svc := range services {
-		svcData, ok := svc.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		asset := base // copy base fields
-		c.applyCensysServiceFields(svcData, &asset)
-		assets = append(assets, asset)
-	}
-	return assets
+	applyCensysServiceFields(entry, &asset)
+	buildCensysURL(&asset)
+	return []model.UnifiedAsset{asset}
 }
 
 // extractCensysLocation 从主机数据提取地理位置
-func extractCensysLocation(data map[string]interface{}) (countryCode, region, city string) {
-	if loc, ok := data["location"].(map[string]interface{}); ok {
-		countryCode, _ = loc["country_code"].(string)
-		region, _ = loc["province"].(string)
-		city, _ = loc["city"].(string)
+func extractCensysLocation(entry *CensysRawEntry) (countryCode, region, city string) {
+	if entry.Location != nil {
+		countryCode = entry.Location.CountryCode
+		region = entry.Location.Province
+		city = entry.Location.City
 	}
 	return
 }
 
 // extractCensysNetwork 从主机数据提取 ASN 和组织
-func extractCensysNetwork(data map[string]interface{}) (asn, org string) {
-	if as, ok := data["autonomous_system"].(map[string]interface{}); ok {
-		if v, ok := as["asn"].(string); ok {
+func extractCensysNetwork(entry *CensysRawEntry) (asn, org string) {
+	if entry.AutonomousSystem != nil {
+		switch v := entry.AutonomousSystem.ASN.(type) {
+		case string:
 			asn = v
-		} else if v, ok := as["asn"].(float64); ok {
+		case float64:
 			asn = fmt.Sprintf("AS%d", int(v))
 		}
-		org, _ = as["name"].(string)
+		org = entry.AutonomousSystem.Name
 	}
 	return
 }
 
 // extractCensysHost 从 DNS 数据提取主机名
-func extractCensysHost(data map[string]interface{}) string {
-	if dns, ok := data["dns"].(map[string]interface{}); ok {
-		if names, ok := dns["names"].([]interface{}); ok && len(names) > 0 {
-			if name, ok := names[0].(string); ok {
-				return name
-			}
-		}
+func extractCensysHost(entry *CensysRawEntry) string {
+	if entry.DNS != nil && len(entry.DNS.Names) > 0 {
+		return entry.DNS.Names[0]
 	}
 	return ""
 }
 
-// applyCensysServiceFields 将单个 service 的字段应用到资产
-func (c *CensysAdapter) applyCensysServiceFields(svcData map[string]interface{}, asset *model.UnifiedAsset) {
-	if port, ok := svcData["port"].(float64); ok {
-		asset.Port = int(port)
-	} else if port, ok := svcData["port"].(int); ok {
-		asset.Port = port
+// applyCensysServiceFields 将 entry 的服务字段应用到资产
+func applyCensysServiceFields(entry *CensysRawEntry, asset *model.UnifiedAsset) {
+	if entry.Port > 0 {
+		asset.Port = int(entry.Port)
 	}
-	if proto, ok := svcData["service_name"].(string); ok {
-		asset.Protocol = proto
+	if entry.ServiceName != "" {
+		asset.Protocol = entry.ServiceName
 	}
-	c.parseCensysHTTPResponse(svcData, asset)
-	c.parseCensysTLS(svcData, asset)
-	c.parseCensysSoftware(svcData, asset)
-	buildCensysURL(asset)
+	parseCensysHTTPResponse(entry, asset)
+	parseCensysTLS(entry, asset)
+	parseCensysSoftware(entry, asset)
 }
 
 // parseCensysHTTPResponse 解析 HTTP 响应字段
-func (c *CensysAdapter) parseCensysHTTPResponse(svcData map[string]interface{}, asset *model.UnifiedAsset) {
-	httpResp, ok := svcData["http"].(map[string]interface{})
-	if !ok {
+func parseCensysHTTPResponse(entry *CensysRawEntry, asset *model.UnifiedAsset) {
+	if entry.HTTP == nil {
 		return
 	}
-	resp, ok := httpResp["response"].(map[string]interface{})
-	if !ok {
-		return
+	resp := entry.HTTP.Response
+	if resp.HTMLTitle != "" {
+		asset.Title = resp.HTMLTitle
 	}
-	if title, ok := resp["html_title"].(string); ok {
-		asset.Title = title
+	if resp.StatusCode > 0 {
+		asset.StatusCode = int(resp.StatusCode)
 	}
-	if status, ok := resp["status_code"].(float64); ok {
-		asset.StatusCode = int(status)
-	} else if status, ok := resp["status_code"].(int); ok {
-		asset.StatusCode = status
-	}
-	if body, ok := resp["body"].(string); ok {
-		if len(body) > 200 {
-			asset.BodySnippet = body[:200]
+	if resp.Body != "" {
+		if len(resp.Body) > 200 {
+			asset.BodySnippet = resp.Body[:200]
 		} else {
-			asset.BodySnippet = body
+			asset.BodySnippet = resp.Body
 		}
 	}
-	if headers, ok := resp["headers"].(map[string]interface{}); ok {
-		if server, ok := headers["Server"].(string); ok {
-			asset.Server = server
-		}
+	if resp.Headers.Server != "" {
+		asset.Server = resp.Headers.Server
 	}
 }
 
 // parseCensysTLS 解析 TLS 证书信息
-func (c *CensysAdapter) parseCensysTLS(svcData map[string]interface{}, asset *model.UnifiedAsset) {
-	tls, ok := svcData["tls"].(map[string]interface{})
-	if !ok {
+func parseCensysTLS(entry *CensysRawEntry, asset *model.UnifiedAsset) {
+	if entry.TLS == nil {
 		return
 	}
-	certs, ok := tls["certificates"].(map[string]interface{})
-	if !ok {
-		return
-	}
-	leaf, ok := certs["leaf"].(map[string]interface{})
-	if !ok {
-		return
-	}
-	if subject, ok := leaf["subject"].(string); ok && asset.Host == "" {
+	subject := entry.TLS.Certificates.Leaf.Subject
+	if subject != "" && asset.Host == "" {
 		asset.Host = subject
 	}
 }
 
 // parseCensysSoftware 解析软件信息
-func (c *CensysAdapter) parseCensysSoftware(svcData map[string]interface{}, asset *model.UnifiedAsset) {
-	sw, ok := svcData["software"].([]interface{})
-	if !ok || len(sw) == 0 {
+func parseCensysSoftware(entry *CensysRawEntry, asset *model.UnifiedAsset) {
+	if len(entry.Software) == 0 {
 		return
 	}
-	if prod, ok := sw[0].(map[string]interface{}); ok {
-		if name, ok := prod["product"].(string); ok {
-			asset.Title = name
-		}
+	if entry.Software[0].Product != "" {
+		asset.Title = entry.Software[0].Product
 	}
 }
 
