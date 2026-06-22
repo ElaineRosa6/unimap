@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,32 +25,40 @@ type ZoomEyeAdapter struct {
 
 // ZoomEyeItem is a single result item from ZoomEye v2 search API.
 type ZoomEyeItem struct {
-	IP       string                 `json:"ip"`
-	Port     float64                `json:"port"`     // float64 in JSON, may be number or string
-	Service  string                 `json:"service"`  // e.g. "http", "ssh"
-	Banner   string                 `json:"banner"`
-	Title    string                 `json:"title"`
-	Server   string                 `json:"server"`
-	ASN      string                 `json:"asn"`
-	Org      string                 `json:"org"`
-	ISP      string                 `json:"isp"`
-	OS       string                 `json:"os"`
-	Product  string                 `json:"product"`
-	Version  string                 `json:"version"`
-	Device   string                 `json:"device"`
-	App      string                 `json:"app"`
-	Body     string                 `json:"body"`
-	Header   string                 `json:"header"`
-	Country  string                 `json:"country"`
-	City     string                 `json:"city"`
-	Timezone string                 `json:"timezone"`
-	Hostname string                 `json:"hostname"`
-	Domain   string                 `json:"domain"`
-	LastSeen string                 `json:"last_seen"`
-	// Nested objects — parsed separately
-	PortInfo  map[string]interface{} `json:"portinfo"`
-	GeoInfo   map[string]interface{} `json:"geoinfo"`
-	Extra     map[string]interface{} `json:"-"`
+	IP       string      `json:"ip"`
+	Port     float64     `json:"port"`    // float64 in JSON, may be number or string
+	Service  string      `json:"service"` // e.g. "http", "ssh"
+	Banner   string      `json:"banner"`
+	Title    string      `json:"title"`
+	Server   string      `json:"server"`
+	ASN      json.Number `json:"asn"` // numeric in ZoomEye API, json.Number handles both
+	Org      string      `json:"org"`
+	ISP      string      `json:"isp"`
+	OS       string      `json:"os"`
+	Product  string      `json:"product"`
+	Version  string      `json:"version"`
+	Device   string      `json:"device"`
+	App      string      `json:"app"`
+	Body     string      `json:"body"`
+	Header   string      `json:"header"`
+	Country  string      `json:"country"`
+	City     string      `json:"city"`
+	Timezone string      `json:"timezone"`
+	Hostname string      `json:"hostname"`
+	Domain   string      `json:"domain"`
+	LastSeen string      `json:"last_seen"`
+	URL      string      `json:"url"`
+	// Dot-notation fields (newer API format)
+	CountryName  string `json:"country.name"`
+	CountryCode  string `json:"country.code"`
+	ProvinceName string `json:"province.name"`
+	CityName     string `json:"city.name"`
+	OrgName      string `json:"organization.name"`
+	ISPName      string `json:"isp.name"`
+	ServerName   string `json:"header.server.name"`
+	// Nested objects — variable structure, kept as map for flexibility
+	PortInfo map[string]interface{} `json:"portinfo"`
+	GeoInfo  map[string]interface{} `json:"geoinfo"`
 }
 
 // ZoomEyeSearchResponse is the ZoomEye v2 search API response.
@@ -62,6 +69,13 @@ type ZoomEyeSearchResponse struct {
 	Total   int    `json:"total"`
 	Query   string `json:"query"`
 	Data    []json.RawMessage `json:"data"`
+}
+
+// zoomEyeSearchRequest is the JSON body for POST /v2/search.
+type zoomEyeSearchRequest struct {
+	QBase64  string `json:"qbase64"`
+	Page     int    `json:"page"`
+	PageSize int    `json:"pagesize"`
 }
 
 // NewZoomEyeAdapter 创建ZoomEye适配器
@@ -213,17 +227,17 @@ func (z *ZoomEyeAdapter) executeZoomEyeSearch(query string, page, pageSize int, 
 	encodedQuery = strings.ReplaceAll(encodedQuery, "/", "_")
 	encodedQuery = strings.TrimRight(encodedQuery, "=")
 
-	requestBody := map[string]interface{}{
-		"qbase64":  encodedQuery,
-		"page":     page,
-		"pagesize": pageSize,
+	reqBody := zoomEyeSearchRequest{
+		QBase64:  encodedQuery,
+		Page:     page,
+		PageSize: pageSize,
 	}
 
 	logger.Debugf("ZoomEye search request: URL=%s, Query=%s, EncodedQuery=%s, Page=%d, PageSize=%d", url, query, encodedQuery, page, pageSize)
 
 	resp, err := z.client.R().
 		SetHeader("Content-Type", "application/json").
-		SetBody(requestBody).
+		SetBody(reqBody).
 		Post(url)
 	if err != nil {
 		return err
@@ -245,7 +259,7 @@ func parseZoomEyeSearchResponse(body []byte, page, pageSize int, engineName stri
 		Message string        `json:"message"`
 		Total   int           `json:"total"`
 		Query   string        `json:"query"`
-		Data    []interface{} `json:"data"`
+		Data    []ZoomEyeItem `json:"data"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return err
@@ -257,8 +271,12 @@ func parseZoomEyeSearchResponse(body []byte, page, pageSize int, engineName stri
 		}
 		return fmt.Errorf("%s", errorMsg)
 	}
+	rawData := make([]interface{}, len(resp.Data))
+	for i := range resp.Data {
+		rawData[i] = &resp.Data[i]
+	}
 	*result = &model.EngineResult{
-		EngineName: engineName, RawData: resp.Data, Total: resp.Total,
+		EngineName: engineName, RawData: rawData, Total: resp.Total,
 		Page: page, HasMore: (page * pageSize) < resp.Total,
 	}
 	return nil
@@ -271,11 +289,11 @@ func (z *ZoomEyeAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsse
 		return assets, nil
 	}
 	for _, item := range raw.RawData {
-		data, ok := item.(map[string]interface{})
+		it, ok := item.(*ZoomEyeItem)
 		if !ok {
 			continue
 		}
-		if asset := z.normalizeZoomEyeItem(data); asset != nil {
+		if asset := normalizeZoomEyeItem(it, z.Name()); asset != nil {
 			assets = append(assets, *asset)
 		}
 	}
@@ -283,73 +301,60 @@ func (z *ZoomEyeAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsse
 }
 
 // normalizeZoomEyeItem 解析单条 ZoomEye 数据为资产对象
-func (z *ZoomEyeAdapter) normalizeZoomEyeItem(data map[string]interface{}) *model.UnifiedAsset {
-	asset := &model.UnifiedAsset{Source: z.Name()}
-
-	if ip, ok := data["ip"].(string); ok {
-		asset.IP = ip
+func normalizeZoomEyeItem(it *ZoomEyeItem, source string) *model.UnifiedAsset {
+	if it == nil || (it.IP == "" && it.URL == "" && it.Hostname == "" && it.Domain == "") {
+		return nil
 	}
-	z.parseZoomEyePortAndService(data, asset)
-	z.parseZoomEyeTitle(data, asset)
-	z.parseZoomEyeBasicFields(data, asset)
-	z.parseZoomEyeGeo(data, asset)
-	z.parseZoomEyeNetwork(data, asset)
-	z.parseZoomEyeExtra(data, asset)
+	asset := &model.UnifiedAsset{Source: source, IP: it.IP}
 
-	if asset.IP != "" || asset.URL != "" || asset.Host != "" {
-		return asset
-	}
-	return nil
+	parseZoomEyePortAndService(it, asset)
+	parseZoomEyeTitle(it, asset)
+	parseZoomEyeBasicFields(it, asset)
+	parseZoomEyeGeo(it, asset)
+	parseZoomEyeNetwork(it, asset)
+	parseZoomEyeExtra(it, asset)
+
+	return asset
 }
 
 // parseZoomEyePortAndService 解析端口和服务（支持顶层和 portinfo 两种格式）
-func (z *ZoomEyeAdapter) parseZoomEyePortAndService(data map[string]interface{}, asset *model.UnifiedAsset) {
-	if port, ok := data["port"].(float64); ok {
-		asset.Port = int(port)
-	} else if port, ok := data["port"].(int); ok {
-		asset.Port = port
+func parseZoomEyePortAndService(it *ZoomEyeItem, asset *model.UnifiedAsset) {
+	if it.Port > 0 {
+		asset.Port = int(it.Port)
 	}
-	if service, ok := data["service"].(string); ok {
-		asset.Protocol = service
+	if it.Service != "" {
+		asset.Protocol = it.Service
 	}
 	// 旧格式：在 portinfo 中
-	if portinfo, ok := data["portinfo"].(map[string]interface{}); ok {
+	if it.PortInfo != nil {
 		if asset.Port == 0 {
-			if port, ok := portinfo["port"].(float64); ok {
+			if port, ok := it.PortInfo["port"].(float64); ok {
 				asset.Port = int(port)
 			}
 		}
 		if asset.Protocol == "" {
-			if service, ok := portinfo["service"].(string); ok {
+			if service, ok := it.PortInfo["service"].(string); ok {
 				asset.Protocol = service
 			}
 		}
 		if asset.Title == "" {
-			if title, ok := portinfo["title"].(string); ok {
+			if title, ok := it.PortInfo["title"].(string); ok {
 				asset.Title = title
 			}
 		}
 		if asset.BodySnippet == "" {
-			if banner, ok := portinfo["banner"].(string); ok {
+			if banner, ok := it.PortInfo["banner"].(string); ok {
 				asset.BodySnippet = banner
 			}
 		}
 	}
 }
 
-// parseZoomEyeTitle 解析标题（支持数组和字符串格式）
+// parseZoomEyeTitle 解析标题。
 // ZoomEye API 返回的 title 可能包含元数据前缀（如 "CN 北京 公司名 AS12345 真正标题"），
 // 需要清理掉国家/城市/ASN/组织等前缀。
-func (z *ZoomEyeAdapter) parseZoomEyeTitle(data map[string]interface{}, asset *model.UnifiedAsset) {
-	var titleStr string
-	if title, ok := data["title"].([]interface{}); ok && len(title) > 0 {
-		if s, ok := title[0].(string); ok {
-			titleStr = s
-		}
-	} else if title, ok := data["title"].(string); ok {
-		titleStr = title
-	}
-	asset.Title = cleanZoomEyeTitle(titleStr)
+func parseZoomEyeTitle(it *ZoomEyeItem, asset *model.UnifiedAsset) {
+	asset.Title = cleanZoomEyeTitle(it.Title)
 }
 
 // cleanZoomEyeTitle 清理 ZoomEye title 中的元数据前缀。
@@ -399,54 +404,54 @@ func cleanZoomEyeTitle(title string) string {
 }
 
 // parseZoomEyeBasicFields 解析 banner、server、url、domain 等基础字段
-func (z *ZoomEyeAdapter) parseZoomEyeBasicFields(data map[string]interface{}, asset *model.UnifiedAsset) {
-	if banner, ok := data["banner"].(string); ok {
-		asset.BodySnippet = banner
+func parseZoomEyeBasicFields(it *ZoomEyeItem, asset *model.UnifiedAsset) {
+	if it.Banner != "" {
+		asset.BodySnippet = it.Banner
 	}
-	if server, ok := data["header.server.name"].(string); ok {
-		asset.Server = server
+	if it.ServerName != "" {
+		asset.Server = it.ServerName
 	}
-	if url, ok := data["url"].(string); ok {
-		asset.URL = url
+	if it.URL != "" {
+		asset.URL = it.URL
 	}
-	if domain, ok := data["domain"].(string); ok {
-		asset.Host = domain
-	} else if hostname, ok := data["hostname"].(string); ok {
-		asset.Host = hostname
+	if it.Domain != "" {
+		asset.Host = it.Domain
+	} else if it.Hostname != "" {
+		asset.Host = it.Hostname
 	}
 }
 
 // parseZoomEyeGeo 解析地理位置信息（支持新格式点号字段和旧格式 geoinfo）
-func (z *ZoomEyeAdapter) parseZoomEyeGeo(data map[string]interface{}, asset *model.UnifiedAsset) {
+func parseZoomEyeGeo(it *ZoomEyeItem, asset *model.UnifiedAsset) {
 	// 新格式：点号分隔字段
-	if countryName, ok := data["country.name"].(string); ok {
-		ensureZoomEyeExtra(asset)["country"] = countryName
+	if it.CountryName != "" {
+		ensureZoomEyeExtra(asset)["country"] = it.CountryName
 	}
-	if code, ok := data["country.code"].(string); ok {
-		asset.CountryCode = code
+	if it.CountryCode != "" {
+		asset.CountryCode = it.CountryCode
 	}
-	if provinceName, ok := data["province.name"].(string); ok {
-		asset.Region = provinceName
+	if it.ProvinceName != "" {
+		asset.Region = it.ProvinceName
 	}
-	if cityName, ok := data["city.name"].(string); ok {
-		asset.City = cityName
+	if it.CityName != "" {
+		asset.City = it.CityName
 	}
 	// 旧格式：geoinfo 结构
-	if geoinfo, ok := data["geoinfo"].(map[string]interface{}); ok {
+	if it.GeoInfo != nil {
 		if asset.CountryCode == "" {
-			if country, ok := geoinfo["country"].(map[string]interface{}); ok {
+			if country, ok := it.GeoInfo["country"].(map[string]interface{}); ok {
 				if code, ok := country["code"].(string); ok {
 					asset.CountryCode = code
 				}
 			}
 		}
 		if asset.City == "" {
-			if city, ok := geoinfo["city"].(string); ok {
+			if city, ok := it.GeoInfo["city"].(string); ok {
 				asset.City = city
 			}
 		}
 		if asset.Region == "" {
-			if subdivisions, ok := geoinfo["subdivisions"].(string); ok {
+			if subdivisions, ok := it.GeoInfo["subdivisions"].(string); ok {
 				asset.Region = subdivisions
 			}
 		}
@@ -454,44 +459,43 @@ func (z *ZoomEyeAdapter) parseZoomEyeGeo(data map[string]interface{}, asset *mod
 }
 
 // parseZoomEyeNetwork 解析 ASN、组织和 ISP 信息
-func (z *ZoomEyeAdapter) parseZoomEyeNetwork(data map[string]interface{}, asset *model.UnifiedAsset) {
-	if asn, ok := data["asn"].(float64); ok {
-		asset.ASN = strconv.Itoa(int(asn))
-	} else if asn, ok := data["asn"].(int); ok {
-		asset.ASN = strconv.Itoa(asn)
-	} else if asn, ok := data["asn"].(string); ok {
+func parseZoomEyeNetwork(it *ZoomEyeItem, asset *model.UnifiedAsset) {
+	// ASN: ZoomEye API returns numeric, json.Number handles both number and string
+	if asn := it.ASN.String(); asn != "" {
 		asset.ASN = asn
 	}
-	if org, ok := data["organization.name"].(string); ok {
-		asset.Org = org
-	} else if org, ok := data["org"].(string); ok {
-		asset.Org = org
+	// Organization
+	if it.OrgName != "" {
+		asset.Org = it.OrgName
+	} else if it.Org != "" {
+		asset.Org = it.Org
 	}
-	if isp, ok := data["isp.name"].(string); ok {
-		asset.ISP = isp
-	} else if isp, ok := data["isp"].(string); ok {
-		asset.ISP = isp
+	// ISP
+	if it.ISPName != "" {
+		asset.ISP = it.ISPName
+	} else if it.ISP != "" {
+		asset.ISP = it.ISP
 	}
 	// Timestamp from Extension DOM extraction (last_seen) or API response (timestamp/icon-time)
-	if ls, ok := data["last_seen"].(string); ok && ls != "" {
-		asset.LastSeen = ls
-	} else if ts, ok := data["timestamp"].(string); ok && ts != "" {
-		asset.LastSeen = ts
+	if it.LastSeen != "" {
+		asset.LastSeen = it.LastSeen
 	}
 }
 
 // parseZoomEyeExtra 解析 os/product/app/version/device/body/header 等扩展字段
-func (z *ZoomEyeAdapter) parseZoomEyeExtra(data map[string]interface{}, asset *model.UnifiedAsset) {
-	extraFields := map[string]string{
-		"os": "os", "product": "product", "app": "app",
-		"version": "version", "device": "device",
-		"body": "body", "header": "header",
-	}
-	for dataKey, extraKey := range extraFields {
-		if val, ok := data[dataKey].(string); ok {
-			ensureZoomEyeExtra(asset)[extraKey] = val
+func parseZoomEyeExtra(it *ZoomEyeItem, asset *model.UnifiedAsset) {
+	setExtra := func(key, val string) {
+		if val != "" {
+			ensureZoomEyeExtra(asset)[key] = val
 		}
 	}
+	setExtra("os", it.OS)
+	setExtra("product", it.Product)
+	setExtra("app", it.App)
+	setExtra("version", it.Version)
+	setExtra("device", it.Device)
+	setExtra("body", it.Body)
+	setExtra("header", it.Header)
 }
 
 // ensureZoomEyeExtra 确保 Extra map 已初始化

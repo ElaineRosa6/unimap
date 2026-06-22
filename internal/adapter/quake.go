@@ -22,6 +22,45 @@ type QuakeAdapter struct {
 	timeout time.Duration
 }
 
+// QuakeItem is a single result item from the Quake v3 search API.
+type QuakeItem struct {
+	IP       string        `json:"ip"`
+	Port     float64       `json:"port"`
+	Hostname string        `json:"hostname"`
+	Domain   string        `json:"domain"`
+	URL      string        `json:"url"`
+	Service  *QuakeService `json:"service,omitempty"`
+	Location *QuakeLocation `json:"location,omitempty"`
+}
+
+// QuakeService holds the nested service info in a Quake result.
+type QuakeService struct {
+	Name       string     `json:"name"`
+	HTTP       *QuakeHTTP `json:"http,omitempty"`
+	StatusCode float64    `json:"status_code"`
+}
+
+// QuakeHTTP holds the HTTP response info inside a Quake service.
+type QuakeHTTP struct {
+	Title      string  `json:"title"`
+	Server     string  `json:"server"`
+	StatusCode float64 `json:"status_code"`
+}
+
+// QuakeLocation holds geographic location info from a Quake result.
+type QuakeLocation struct {
+	CountryCode string `json:"country_code"`
+	CityCN      string `json:"city_cn"`
+	ProvinceCN  string `json:"province_cn"`
+}
+
+// quakeSearchRequest is the JSON body for POST /v3/search/quake_service.
+type quakeSearchRequest struct {
+	Query string `json:"query"`
+	Start int    `json:"start"`
+	Size  int    `json:"size"`
+}
+
 func quakeIsSuccessCode(code interface{}) bool {
 	switch v := code.(type) {
 	case nil:
@@ -167,19 +206,17 @@ func (q *QuakeAdapter) Search(ctx context.Context, query string, page, pageSize 
 		Exponential: true,
 		Jitter:      true,
 		RetryableFunc: func(err error) bool {
-			// 网络错误可重试
 			return true
 		},
 	}
 
 	err := utils.Retry(retryConfig, func() error {
-		// Quake API endpoint: /v3/search/quake_service
 		url := fmt.Sprintf("%s/v3/search/quake_service", q.baseURL)
 
-		reqBody := map[string]interface{}{
-			"query": query,
-			"start": (page - 1) * pageSize,
-			"size":  pageSize,
+		reqBody := quakeSearchRequest{
+			Query: query,
+			Start: (page - 1) * pageSize,
+			Size:  pageSize,
 		}
 
 		resp, err := q.client.R().
@@ -194,11 +231,11 @@ func (q *QuakeAdapter) Search(ctx context.Context, query string, page, pageSize 
 			return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
 		}
 
-		// 解析Quake响应
+		// Parse Quake response — data can be array or object depending on API version
 		var result struct {
-			Code    interface{} `json:"code"` // Can be int or string depending on version/error
-			Message string      `json:"message"`
-			Data    interface{} `json:"data"` // May be array or object depending on API version
+			Code    interface{}     `json:"code"`
+			Message string          `json:"message"`
+			Data    json.RawMessage `json:"data"`
 			Meta    struct {
 				Pagination struct {
 					Total int `json:"total"`
@@ -215,38 +252,43 @@ func (q *QuakeAdapter) Search(ctx context.Context, query string, page, pageSize 
 			return fmt.Errorf("quake API error (code=%v): %s", result.Code, result.Message)
 		}
 
-		// 提取资产列表：Quake API 不同版本返回的 data 结构可能不同
-		// - 直接返回数组: [{"ip":"x",...}, ...]
-		// - 返回对象: {"list": [...], "meta": {...}} 或其他嵌套结构
-		var assets []interface{}
-		switch d := result.Data.(type) {
-		case []interface{}:
-			assets = d
-		case map[string]interface{}:
-			// 记录实际结构便于调试
-			logger.Infof("Quake response data is object, keys: %v", mapKeys(d))
-			// 尝试常见的嵌套字段名
-			found := false
-			for _, key := range []string{"list", "service_list", "data", "items", "records", "services"} {
-				if arr, ok := d[key].([]interface{}); ok {
-					assets = arr
-					found = true
-					logger.Infof("Quake found assets in data.%s, count=%d", key, len(arr))
-					break
+		// Try to unmarshal data as []QuakeItem first
+		var typedAssets []QuakeItem
+		if err := json.Unmarshal(result.Data, &typedAssets); err != nil {
+			// Retry: data might be an object wrapping a list
+			var obj struct {
+				List []QuakeItem `json:"list"`
+			}
+			if err2 := json.Unmarshal(result.Data, &obj); err2 == nil && len(obj.List) > 0 {
+				typedAssets = obj.List
+			} else {
+				// Try other common keys
+				var raw map[string]interface{}
+				if json.Unmarshal(result.Data, &raw) == nil {
+					for _, key := range []string{"list", "service_list", "data", "items", "records", "services"} {
+						if arrJSON, err3 := json.Marshal(raw[key]); err3 == nil {
+							var arr []QuakeItem
+							if json.Unmarshal(arrJSON, &arr) == nil && len(arr) > 0 {
+								typedAssets = arr
+								break
+							}
+						}
+					}
+				}
+				if len(typedAssets) == 0 {
+					logger.Warnf("Quake response data could not be parsed as item array")
 				}
 			}
-			if !found {
-				// 未找到已知数组字段
-				logger.Warnf("Quake response data object has no known array field, keys: %v", mapKeys(d))
-				assets = []interface{}{d}
-			}
-		default:
-			logger.Warnf("Quake response data has unexpected type: %T", result.Data)
+		}
+
+		rawData := make([]interface{}, len(typedAssets))
+		for i := range typedAssets {
+			rawData[i] = &typedAssets[i]
 		}
 
 		engineResult = &model.EngineResult{
 			EngineName: q.Name(),
-			RawData:    assets,
+			RawData:    rawData,
 			Total:      result.Meta.Pagination.Total,
 			Page:       page,
 			HasMore:    (result.Meta.Pagination.Total > page*pageSize),
@@ -274,58 +316,67 @@ func (q *QuakeAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset,
 	}
 
 	for _, item := range raw.RawData {
-		data, ok := item.(map[string]interface{})
+		qi, ok := item.(*QuakeItem)
 		if !ok {
 			continue
 		}
-
-		// 创建新的资产对象
-		asset := &model.UnifiedAsset{
-			Source: q.Name(),
-		}
-
-		if ip, ok := data["ip"].(string); ok {
-			asset.IP = ip
-		}
-		if port, ok := data["port"].(float64); ok {
-			asset.Port = int(port)
-		}
-
-		if service, ok := data["service"].(map[string]interface{}); ok {
-			if name, ok := service["name"].(string); ok {
-				asset.Protocol = name
-			}
-			if http, ok := service["http"].(map[string]interface{}); ok {
-				if title, ok := http["title"].(string); ok {
-					asset.Title = title
-				}
-				if server, ok := http["server"].(string); ok {
-					asset.Server = server
-				}
-				if statusCode, ok := http["status_code"].(float64); ok {
-					asset.StatusCode = int(statusCode)
-				}
-			}
-		}
-
-		if location, ok := data["location"].(map[string]interface{}); ok {
-			if country, ok := location["country_code"].(string); ok {
-				asset.CountryCode = country
-			}
-			if city, ok := location["city_cn"].(string); ok {
-				asset.City = city
-			}
-			if province, ok := location["province_cn"].(string); ok {
-				asset.Region = province
-			}
-		}
-
-		if asset.IP != "" || asset.Host != "" {
+		if asset := normalizeQuakeItem(qi, q.Name()); asset != nil {
 			assets = append(assets, *asset)
 		}
 	}
 
 	return assets, nil
+}
+
+// normalizeQuakeItem converts a parsed QuakeItem to a UnifiedAsset.
+func normalizeQuakeItem(qi *QuakeItem, source string) *model.UnifiedAsset {
+	if qi == nil || qi.IP == "" {
+		return nil
+	}
+	asset := &model.UnifiedAsset{
+		Source: source,
+		IP:     qi.IP,
+		Port:   int(qi.Port),
+		Host:   firstNonEmpty(qi.Hostname, qi.Domain),
+	}
+	// Service info
+	if qi.Service != nil {
+		if qi.Service.Name != "" {
+			asset.Protocol = qi.Service.Name
+		}
+		if qi.Service.HTTP != nil {
+			h := qi.Service.HTTP
+			asset.Title = h.Title
+			asset.Server = h.Server
+			if h.StatusCode > 0 {
+				asset.StatusCode = int(h.StatusCode)
+			}
+		}
+		if qi.Service.StatusCode > 0 && asset.StatusCode == 0 {
+			asset.StatusCode = int(qi.Service.StatusCode)
+		}
+	}
+	// Location
+	if qi.Location != nil {
+		asset.CountryCode = qi.Location.CountryCode
+		asset.City = qi.Location.CityCN
+		asset.Region = qi.Location.ProvinceCN
+	}
+
+	if asset.IP != "" || asset.Host != "" {
+		return asset
+	}
+	return nil
+}
+
+// firstNonEmpty returns the first non-empty string from the given options.
+func firstNonEmpty(opts ...string) string {
+	for _, s := range opts {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // GetQuota 获取Quake配额信息
@@ -452,13 +503,4 @@ func NewQuakeAdapterWebOnly() *QuakeAdapterWebOnly {
 	return &QuakeAdapterWebOnly{
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "quake"),
 	}
-}
-
-// mapKeys returns the keys of a map for logging purposes.
-func mapKeys(m map[string]interface{}) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
 }

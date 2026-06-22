@@ -1315,22 +1315,13 @@ func TestQuakeAdapter_Normalize(t *testing.T) {
 
 	t.Run("full fields", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":   "1.2.3.4",
-				"port": float64(80),
-				"service": map[string]interface{}{
-					"name": "http",
-					"http": map[string]interface{}{
-						"title":       "Example",
-						"server":      "nginx",
-						"status_code": float64(200),
-					},
+			&QuakeItem{
+				IP: "1.2.3.4", Port: 80,
+				Service: &QuakeService{
+					Name: "http",
+					HTTP: &QuakeHTTP{Title: "Example", Server: "nginx", StatusCode: 200},
 				},
-				"location": map[string]interface{}{
-					"country_code": "CN",
-					"city_cn":      "Beijing",
-					"province_cn":  "Beijing",
-				},
+				Location: &QuakeLocation{CountryCode: "CN", CityCN: "Beijing", ProvinceCN: "Beijing"},
 			},
 		}}
 		assets, err := a.Normalize(result)
@@ -1365,7 +1356,7 @@ func TestQuakeAdapter_Normalize(t *testing.T) {
 
 	t.Run("no ip skipped", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{"port": float64(80)},
+			&QuakeItem{Port: 80},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -1648,17 +1639,14 @@ func TestZoomEyeAdapter_Normalize(t *testing.T) {
 
 	t.Run("full fields", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":   "1.2.3.4",
-				"port": float64(80),
-				"service": map[string]interface{}{
-					"name": "http",
-				},
-				"geoinfo": map[string]interface{}{
+			&ZoomEyeItem{
+				IP: "1.2.3.4", Port: 80,
+				Service:  "http",
+				LastSeen: "2026-01-01",
+				GeoInfo: map[string]interface{}{
 					"country": map[string]interface{}{"names": map[string]interface{}{"en": "China"}},
 					"city":    map[string]interface{}{"names": map[string]interface{}{"en": "Beijing"}},
 				},
-				"timestamp": "2026-01-01",
 			},
 		}}
 		assets, err := a.Normalize(result)
@@ -1678,11 +1666,7 @@ func TestZoomEyeAdapter_Normalize(t *testing.T) {
 
 	t.Run("title as string", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":    "1.2.3.4",
-				"port":  float64(80),
-				"title": "Example Site",
-			},
+			&ZoomEyeItem{IP: "1.2.3.4", Port: 80, Title: "Example Site"},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -1693,20 +1677,16 @@ func TestZoomEyeAdapter_Normalize(t *testing.T) {
 		}
 	})
 
-	t.Run("title as array", func(t *testing.T) {
+	t.Run("no ip skipped", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":    "1.2.3.4",
-				"port":  float64(80),
-				"title": []interface{}{"Title1", "Title2"},
-			},
+			&ZoomEyeItem{Port: 80},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(assets) != 1 || assets[0].Title != "Title1" {
-			t.Errorf("Title = %q, want %q", assets[0].Title, "Title1")
+		if len(assets) != 0 {
+			t.Errorf("expected 0 assets (no ip/no url/no host), got %d", len(assets))
 		}
 	})
 }
