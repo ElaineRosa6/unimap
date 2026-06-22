@@ -345,10 +345,15 @@ func corsMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeade
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Bridge routes have their own auth (loopback + bearer token),
-			// skip CORS restrictions for them (needed for browser extensions).
+			// FINDING-004: bridge routes previously set ACAO:* unconditionally.
+			// Now echo the request origin only if it's an allowed chrome-extension
+			// or same-host, narrowing the cross-origin read surface.
 			if isScreenshotBridgePath(r.URL.Path) {
-				w.Header().Set("Access-Control-Allow-Origin", "*")
+				bridgeOrigin := strings.TrimSpace(r.Header.Get("Origin"))
+				if bridgeOrigin != "" && (isSameHostURL(bridgeOrigin, r.Host) || isChromeExtensionAllowed(bridgeOrigin)) {
+					w.Header().Set("Access-Control-Allow-Origin", bridgeOrigin)
+					w.Header().Set("Vary", "Origin")
+				}
 				w.Header().Set("Access-Control-Allow-Methods", methodHeader)
 				w.Header().Set("Access-Control-Allow-Headers", headerHeader)
 				if r.Method == http.MethodOptions {

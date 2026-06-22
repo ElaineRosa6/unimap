@@ -47,6 +47,7 @@ tmp/
 # Export files (for testing)
 *.xlsx
 # *.json  # Commented out to allow examples/*.json
+performance_benchmark.go
 
 # Debug / test-capture output (engine collection snapshots)
 test_hunter*.json
