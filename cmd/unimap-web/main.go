@@ -130,7 +130,7 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 				svc.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second))
 			},
 			func() { svc.RegisterAdapter(adapter.NewShodanAdapterWebOnly()) }, "Shodan"},
-		{cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID != "" && cfg.Engines.Censys.APISecret != "",
+		{cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID != "",
 			func() {
 				svc.RegisterAdapter(adapter.NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second))
 			},

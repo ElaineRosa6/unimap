@@ -124,9 +124,12 @@ func (s *Server) registerCoreEngineAdapters() {
 		{cfg.Engines.Shodan.Enabled, cfg.Engines.Shodan.APIKey,
 			func() { s.orchestrator.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second)) },
 			func() { s.orchestrator.RegisterAdapter(adapter.NewShodanAdapterWebOnly()) }, "Shodan"},
-		// 以下 2 个新引擎代码保留，待 API Key 验证通过后启用
-		// {cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID, ...},
-		// {cfg.Engines.Daydaymap.Enabled, cfg.Engines.Daydaymap.APIKey, ...},
+		{cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID,
+			func() { s.orchestrator.RegisterAdapter(adapter.NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second)) },
+			func() { s.orchestrator.RegisterAdapter(adapter.NewCensysAdapterWebOnly()) }, "Censys"},
+		{cfg.Engines.Daydaymap.Enabled, cfg.Engines.Daydaymap.APIKey,
+			func() { s.orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second)) },
+			func() { s.orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapterWebOnly()) }, "DayDayMap"},
 	}
 	for _, e := range engines {
 		if !e.enabled {
