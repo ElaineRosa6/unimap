@@ -16,12 +16,13 @@ import (
 
 // CensysAdapter Censys引擎适配器
 type CensysAdapter struct {
-	client    *resty.Client
-	baseURL   string
-	apiID     string
-	apiSecret string
-	qps       int
-	timeout   time.Duration
+	client     *resty.Client
+	baseURL    string
+	apiID      string
+	apiSecret  string
+	useBearer  bool // true when using new-format personal API key (Bearer auth)
+	qps        int
+	timeout    time.Duration
 }
 
 // NewCensysAdapter 创建Censys适配器
@@ -30,14 +31,27 @@ func NewCensysAdapter(baseURL, apiID, apiSecret string, qps int, timeout time.Du
 		SetTimeout(timeout).
 		SetHeader("User-Agent", "unimap/1.0")
 
+	// New-format Censys personal API keys start with "censys_" and use Bearer
+	// auth instead of the legacy API_ID:API_Secret Basic Auth.
+	useBearer := apiSecret == "" && strings.HasPrefix(apiID, "censys_")
+
 	return &CensysAdapter{
-		client:    client,
-		baseURL:   baseURL,
-		apiID:     apiID,
-		apiSecret: apiSecret,
-		qps:       qps,
-		timeout:   timeout,
+		client:     client,
+		baseURL:    baseURL,
+		apiID:      apiID,
+		apiSecret:  apiSecret,
+		useBearer:  useBearer,
+		qps:        qps,
+		timeout:    timeout,
 	}
+}
+
+// setAuth applies the appropriate authentication to a resty request.
+func (c *CensysAdapter) setAuth(r *resty.Request) *resty.Request {
+	if c.useBearer {
+		return r.SetAuthToken(c.apiID)
+	}
+	return r.SetBasicAuth(c.apiID, c.apiSecret)
 }
 
 // Name 返回引擎名称
@@ -200,8 +214,7 @@ func (c *CensysAdapter) executeCensysSearch(query string, page, pageSize int, re
 		logger.Warnf("Censys adapter: cursor-based pagination does not support arbitrary page jumps; attempting per_page*page offset for page %d", page)
 		params["per_page"] = fmt.Sprintf("%d", pageSize*page)
 	}
-	resp, err := c.client.R().
-		SetBasicAuth(c.apiID, c.apiSecret).
+	resp, err := c.setAuth(c.client.R()).
 		SetQueryParams(params).
 		Get(searchURL)
 	if err != nil {
@@ -423,14 +436,17 @@ func buildCensysURL(asset *model.UnifiedAsset) {
 
 // GetQuota 获取Censys配额信息
 func (c *CensysAdapter) GetQuota() (*model.QuotaInfo, error) {
-	if c.apiID == "" || c.apiSecret == "" {
+	if c.useBearer {
+		if c.apiID == "" {
+			return nil, fmt.Errorf("Censys API key not configured")
+		}
+	} else if c.apiID == "" || c.apiSecret == "" {
 		return nil, fmt.Errorf("Censys API credentials not configured")
 	}
 
 	quotaURL := fmt.Sprintf("%s/api/v1/account", c.baseURL)
 
-	resp, err := c.client.R().
-		SetBasicAuth(c.apiID, c.apiSecret).
+	resp, err := c.setAuth(c.client.R()).
 		Get(quotaURL)
 
 	if err != nil {
