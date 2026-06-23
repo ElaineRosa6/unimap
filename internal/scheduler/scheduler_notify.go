@@ -173,6 +173,17 @@ func extractImagePaths(result string) []string {
 			}
 		}
 
+		if strings.Contains(line, "保存:") {
+			parts := strings.SplitN(line, "保存:", 2)
+			if len(parts) == 2 {
+				path := strings.TrimSpace(parts[1])
+				if isImageFile(path) {
+					paths = append(paths, path)
+					continue
+				}
+			}
+		}
+
 		if strings.Contains(line, "截图保存:") || strings.Contains(line, "截图目录:") {
 			continue
 		}
@@ -247,6 +258,9 @@ func sanitizePayload(payload *model.TaskPayload) *model.TaskPayload {
 }
 
 // payloadToMap converts a TaskPayload to a map for notification serialization.
+// Sensitive fields are redacted (see redactPayloadMap) before the map leaves
+// the scheduler, so credentials/cookie paths are never forwarded to webhook /
+// IM channels or recorded by the log channel.
 func payloadToMap(payload *model.TaskPayload) map[string]interface{} {
 	if payload == nil {
 		return nil
@@ -257,7 +271,70 @@ func payloadToMap(payload *model.TaskPayload) map[string]interface{} {
 	}
 	var m map[string]interface{}
 	_ = json.Unmarshal(raw, &m)
-	return m
+	return redactPayloadMap(m)
+}
+
+// sensitivePayloadKeys are top-level payload fields that carry credentials or
+// filesystem paths to credential files and must not be forwarded in
+// notifications. They are replaced with a fixed placeholder.
+var sensitivePayloadKeys = map[string]bool{
+	"cookie_file": true,
+}
+
+// sensitiveExtraKeyFragments match substrings within Extra map keys that
+// indicate a credential-bearing field. Matching is case-insensitive.
+var sensitiveExtraKeyFragments = []string{
+	"cookie", "token", "secret", "password", "passwd", "api_key", "apikey",
+	"credential", "private_key", "access_key",
+}
+
+const redactedPlaceholder = "[REDACTED]"
+
+// redactPayloadMap returns a copy of m with sensitive top-level keys removed
+// and sensitive entries inside the nested "extra" map masked. The input map
+// is not mutated.
+func redactPayloadMap(m map[string]interface{}) map[string]interface{} {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		if sensitivePayloadKeys[k] {
+			out[k] = redactedPlaceholder
+			continue
+		}
+		if k == "extra" {
+			if extra, ok := v.(map[string]interface{}); ok {
+				out[k] = redactExtraMap(extra)
+				continue
+			}
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// redactExtraMap masks any entry whose key contains a sensitive fragment.
+func redactExtraMap(extra map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(extra))
+	for k, v := range extra {
+		if isSensitiveExtraKey(k) {
+			out[k] = redactedPlaceholder
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func isSensitiveExtraKey(key string) bool {
+	lower := strings.ToLower(key)
+	for _, frag := range sensitiveExtraKeyFragments {
+		if strings.Contains(lower, frag) {
+			return true
+		}
+	}
+	return false
 }
 
 // migrateChannelIDs migrates legacy Channels[] to ChannelIDs[].

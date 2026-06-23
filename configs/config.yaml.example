@@ -39,24 +39,6 @@ engines:
         base_url: https://www.daydaymap.com
         qps: 3
         timeout: 30
-    binaryedge:
-        enabled: true
-        api_key: "${BINARYEDGE_API_KEY}"
-        base_url: https://api.binaryedge.io
-        qps: 2
-        timeout: 30
-    onyphe:
-        enabled: true
-        api_key: "${ONYPHE_API_KEY}"
-        base_url: https://www.onyphe.io
-        qps: 1
-        timeout: 30
-    greynoise:
-        enabled: true
-        api_key: "${GREYNOISE_API_KEY}"
-        base_url: https://api.greynoise.io
-        qps: 1
-        timeout: 30
 system:
     max_concurrent: 10
     cache_ttl: 3600

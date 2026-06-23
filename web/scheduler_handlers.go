@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
@@ -111,6 +112,9 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		TimeoutSec    int                           `json:"timeout_seconds"`
 		MaxRetries    int                           `json:"max_retries"`
 		Notifications *scheduler.NotificationConfig `json:"notifications,omitempty"`
+		ScheduleType  string                        `json:"schedule_type,omitempty"`
+		RunAt         *time.Time                    `json:"run_at,omitempty"`
+		DelaySeconds  int                           `json:"delay_seconds,omitempty"`
 	}
 
 	if !decodeJSONBody(w, r, &req) {
@@ -121,8 +125,32 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		writeSchedulerJSONError(w, http.StatusBadRequest, "task name is required")
 		return
 	}
-	if strings.TrimSpace(req.CronExpr) == "" {
-		writeSchedulerJSONError(w, http.StatusBadRequest, "cron expression is required")
+
+	// Normalize schedule type
+	scheduleType := strings.TrimSpace(req.ScheduleType)
+	if scheduleType == "" {
+		scheduleType = "cron"
+	}
+
+	// Validate schedule-specific requirements
+	switch scheduleType {
+	case "cron":
+		if strings.TrimSpace(req.CronExpr) == "" {
+			writeSchedulerJSONError(w, http.StatusBadRequest, "cron expression is required for cron schedule type")
+			return
+		}
+	case "once":
+		if req.RunAt == nil {
+			writeSchedulerJSONError(w, http.StatusBadRequest, "run_at is required for once schedule type")
+			return
+		}
+	case "delay":
+		if req.DelaySeconds <= 0 {
+			writeSchedulerJSONError(w, http.StatusBadRequest, "delay_seconds must be positive for delay schedule type")
+			return
+		}
+	default:
+		writeSchedulerJSONError(w, http.StatusBadRequest, "unknown schedule type: "+scheduleType+" (valid: cron, once, delay)")
 		return
 	}
 
@@ -137,6 +165,9 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		TimeoutSec:    req.TimeoutSec,
 		MaxRetries:    req.MaxRetries,
 		Notifications: req.Notifications,
+		ScheduleType:  scheduleType,
+		RunAt:         req.RunAt,
+		DelaySeconds:  req.DelaySeconds,
 	}
 
 	if req.Notifications != nil && len(req.Notifications.ChannelIDs) > 0 {
@@ -230,6 +261,9 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		TimeoutSec    int                           `json:"timeout_seconds"`
 		MaxRetries    int                           `json:"max_retries"`
 		Notifications *scheduler.NotificationConfig `json:"notifications,omitempty"`
+		ScheduleType  string                        `json:"schedule_type,omitempty"`
+		RunAt         *time.Time                    `json:"run_at,omitempty"`
+		DelaySeconds  int                           `json:"delay_seconds,omitempty"`
 	}
 
 	if !decodeJSONBody(w, r, &req) {
@@ -267,6 +301,9 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		TimeoutSec:    req.TimeoutSec,
 		MaxRetries:    req.MaxRetries,
 		Notifications: req.Notifications,
+		ScheduleType:  strings.TrimSpace(req.ScheduleType),
+		RunAt:         req.RunAt,
+		DelaySeconds:  req.DelaySeconds,
 	}
 
 	if err := validateTaskPayload(req.Payload); err != nil {

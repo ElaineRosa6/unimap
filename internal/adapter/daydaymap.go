@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -18,6 +19,25 @@ const (
 	// DayDayMapDefaultQPS DayDayMap默认QPS
 	DayDayMapDefaultQPS = 3
 )
+
+// DayDayMapItem is a single result item from the DayDayMap API.
+// API returns list items as JSON objects with snake_case keys.
+type DayDayMapItem struct {
+	IP         string  `json:"ip"`
+	Port       float64 `json:"port"`
+	Protocol   string  `json:"protocol"`
+	Domain     string  `json:"domain"`
+	Title      string  `json:"title"`
+	Server     string  `json:"server"`
+	Body       string  `json:"body"`
+	StatusCode float64 `json:"status_code"`
+	Country    string  `json:"country"`
+	Province   string  `json:"province"`
+	City       string  `json:"city"`
+	ASN        string  `json:"asn"`
+	Org        string  `json:"org"`
+	ISP        string  `json:"isp"`
+}
 
 // DayDayMapAdapter DayDayMap引擎适配器
 type DayDayMapAdapter struct {
@@ -177,17 +197,28 @@ func (d *DayDayMapAdapter) searchRetryConfig() utils.RetryConfig {
 	}
 }
 
+// dayDayMapSearchRequest is the JSON body for POST /api/v1/raymap/search/all.
+type dayDayMapSearchRequest struct {
+	Page     int    `json:"page"`
+	PageSize int    `json:"page_size"`
+	Keyword  string `json:"keyword"`
+}
+
 // executeDayDayMapSearch 执行单次 DayDayMap API 调用
+// API: POST /api/v1/raymap/search/all, header api-key, JSON body with base64 keyword
 func (d *DayDayMapAdapter) executeDayDayMapSearch(query string, page, pageSize int, result **model.EngineResult) error {
-	searchURL := fmt.Sprintf("%s/api/v1/search", d.baseURL)
+	searchURL := fmt.Sprintf("%s/api/v1/raymap/search/all", d.baseURL)
+	// DayDayMap requires the search keyword to be base64-encoded
+	keyword := base64.StdEncoding.EncodeToString([]byte(query))
 	resp, err := d.client.R().
-		SetQueryParams(map[string]string{
-			"apikey":   d.apiKey,
-			"query":    query,
-			"page":     fmt.Sprintf("%d", page),
-			"pagesize": fmt.Sprintf("%d", pageSize),
+		SetHeader("api-key", d.apiKey).
+		SetHeader("Content-Type", "application/json").
+		SetBody(dayDayMapSearchRequest{
+			Page:     page,
+			PageSize: pageSize,
+			Keyword:  keyword,
 		}).
-		Get(searchURL)
+		Post(searchURL)
 	if err != nil {
 		return err
 	}
@@ -198,34 +229,33 @@ func (d *DayDayMapAdapter) executeDayDayMapSearch(query string, page, pageSize i
 }
 
 // parseDayDayMapSearchResponse 解析 DayDayMap 搜索响应
+// Response: {"code":200, "data":{"list":[...], "total":N, "page":1, "page_size":10}, "msg":"检索成功"}
 func parseDayDayMapSearchResponse(body []byte, page, pageSize int, engineName string, result **model.EngineResult) error {
 	var resp struct {
-		Code    int             `json:"code"`
-		Message string          `json:"message"`
-		Data    json.RawMessage `json:"data"`
-		Total   int             `json:"total"`
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			List  []DayDayMapItem `json:"list"`
+			Total int             `json:"total"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return err
 	}
-	if resp.Code != 0 && resp.Code != 200 {
-		errMsg := resp.Message
+	if resp.Code != 200 {
+		errMsg := resp.Msg
 		if errMsg == "" {
 			errMsg = "DayDayMap API reported an error (unknown cause)"
 		}
 		return fmt.Errorf("DayDayMap API error: %s", errMsg)
 	}
-	var dataItems []map[string]interface{}
-	if err := json.Unmarshal(resp.Data, &dataItems); err != nil {
-		return fmt.Errorf("parse data error: %w", err)
-	}
-	rawData := make([]interface{}, 0, len(dataItems))
-	for _, item := range dataItems {
-		rawData = append(rawData, item)
+	rawData := make([]interface{}, len(resp.Data.List))
+	for i := range resp.Data.List {
+		rawData[i] = &resp.Data.List[i]
 	}
 	*result = &model.EngineResult{
-		EngineName: engineName, RawData: rawData, Total: resp.Total,
-		Page: page, HasMore: (page * pageSize) < resp.Total,
+		EngineName: engineName, RawData: rawData, Total: resp.Data.Total,
+		Page: page, HasMore: (page * pageSize) < resp.Data.Total,
 	}
 	return nil
 }
@@ -237,11 +267,11 @@ func (d *DayDayMapAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAs
 	}
 	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	for _, item := range raw.RawData {
-		data, ok := item.(map[string]interface{})
+		data, ok := item.(*DayDayMapItem)
 		if !ok {
 			continue
 		}
-		if asset := d.normalizeDayDayMapItem(data); asset != nil {
+		if asset := normalizeDayDayMapItem(data, d.Name()); asset != nil {
 			assets = append(assets, *asset)
 		}
 	}
@@ -249,103 +279,47 @@ func (d *DayDayMapAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAs
 }
 
 // normalizeDayDayMapItem 解析单条 DayDayMap 数据
-func (d *DayDayMapAdapter) normalizeDayDayMapItem(data map[string]interface{}) *model.UnifiedAsset {
-	ip, _ := data["ip"].(string)
-	if ip == "" {
+func normalizeDayDayMapItem(item *DayDayMapItem, source string) *model.UnifiedAsset {
+	if item == nil || item.IP == "" {
 		return nil
 	}
-	asset := &model.UnifiedAsset{IP: ip, Source: d.Name()}
-	getStr := func(k string) string { v, _ := data[k].(string); return v }
-	getInt := func(k string) int {
-		if v, ok := data[k].(float64); ok { return int(v) }
-		if v, ok := data[k].(int); ok { return v }
-		return 0
+	asset := &model.UnifiedAsset{
+		Source:      source,
+		IP:          item.IP,
+		Port:        int(item.Port),
+		Protocol:    item.Protocol,
+		Host:        item.Domain,
+		Title:       item.Title,
+		Server:      item.Server,
+		StatusCode:  int(item.StatusCode),
+		CountryCode: item.Country,
+		Region:      item.Province,
+		City:        item.City,
+		ASN:         item.ASN,
+		Org:         item.Org,
+		ISP:         item.ISP,
 	}
-
-	asset.Port = getInt("port")
-	asset.Protocol = getStr("protocol")
-	asset.Host = getStr("domain")
-	asset.Title = getStr("title")
-	asset.Server = getStr("server")
-	if body := getStr("body"); len(body) > 200 {
-		asset.BodySnippet = body[:200]
+	// Body snippet
+	if len(item.Body) > 200 {
+		asset.BodySnippet = item.Body[:200]
 	} else {
-		asset.BodySnippet = body
+		asset.BodySnippet = item.Body
 	}
-	asset.StatusCode = getInt("status_code")
-	asset.CountryCode = getStr("country")
-	asset.Region = getStr("province")
-	asset.City = getStr("city")
-	asset.ASN = getStr("asn")
-	asset.Org = getStr("org")
-	asset.ISP = getStr("isp")
 
 	if asset.IP != "" && asset.Port > 0 {
 		buildAssetURL(asset)
-		asset.Extra = data
 		return asset
 	}
 	if asset.Host != "" || asset.IP != "" {
-		asset.Extra = data
 		return asset
 	}
 	return nil
 }
 
 // GetQuota 获取DayDayMap配额信息
+// DayDayMap API 不提供独立的配额查询端点；返回不可用。
 func (d *DayDayMapAdapter) GetQuota() (*model.QuotaInfo, error) {
-	if d.apiKey == "" {
-		return nil, fmt.Errorf("DayDayMap API key not configured")
-	}
-
-	quotaURL := fmt.Sprintf("%s/api/v1/user/info", d.baseURL)
-
-	resp, err := d.client.R().
-		SetQueryParams(map[string]string{
-			"apikey": d.apiKey,
-		}).
-		Get(quotaURL)
-
-	if err != nil {
-		return nil, fmt.Errorf("request error: %w", err)
-	}
-
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
-	}
-
-	var result struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-		Data    struct {
-			RemainQuota int `json:"remain_quota"`
-			TotalQuota  int `json:"total_quota"`
-			UsedQuota   int `json:"used_quota"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("parse error: %w", err)
-	}
-
-	if result.Code != 0 && result.Code != 200 {
-		return nil, fmt.Errorf("DayDayMap API error: %s", result.Message)
-	}
-
-	remaining := result.Data.RemainQuota
-	total := result.Data.TotalQuota
-	used := result.Data.UsedQuota
-	if total <= 0 && remaining > 0 {
-		total = remaining + used
-	}
-
-	return &model.QuotaInfo{
-		Remaining: remaining,
-		Total:     total,
-		Used:      used,
-		Unit:      "queries",
-		Expiry:    "",
-	}, nil
+	return nil, fmt.Errorf("DayDayMap quota API not available")
 }
 
 // DayDayMapAdapterWebOnly DayDayMap Web-only模式适配器

@@ -34,9 +34,6 @@ function detectEngine(url) {
   if (lower.includes("shodan.io")) return "shodan";
   if (lower.includes("censys.io")) return "censys";
   if (lower.includes("daydaymap.com")) return "daydaymap";
-  if (lower.includes("onyphe.io")) return "onyphe";
-  if (lower.includes("greynoise.io")) return "greynoise";
-  if (lower.includes("binaryedge.io") || lower.includes("binaryedge.com")) return "binaryedge";
   return "unknown";
 }
 
@@ -527,57 +524,6 @@ const ENGINE_SELECTORS = {
     },
     total: ["[class*='total']", "[class*='count']"],
     nextPage: ["[class*='next']", ".el-pagination__next"]
-  },
-  onyphe: {
-    // Onyphe uses a table-based layout.
-    row: [
-      "table tbody tr", "[class*='result-row']",
-      "[class*='result-list'] > div", "[class*='result'] > div"
-    ],
-    cells: {
-      ip: { selector: "[class*='ip'], [data-ip]" },
-      port: { selector: "[class*='port'], [data-port]" },
-      host: { selector: "[class*='hostname'], [class*='domain']" },
-      title: { selector: "[class*='title']" },
-      country_code: { selector: "[class*='country'], [class*='location']" },
-      org: { selector: "[class*='org'], [class*='organization']" }
-    },
-    total: ["[class*='total']", "[class*='count']"],
-    nextPage: ["[class*='next']", "a[rel='next']"]
-  },
-  greynoise: {
-    // GreyNoise uses a table-based layout for IP intelligence.
-    row: [
-      "table tbody tr", "[class*='result-row']",
-      "[class*='result-list'] > div", "[class*='result'] > div"
-    ],
-    cells: {
-      ip: { selector: "[class*='ip'], [data-ip]" },
-      classification: { selector: "[class*='classification'], [class*='status']" },
-      org: { selector: "[class*='org'], [class*='organization']" },
-      country_code: { selector: "[class*='country'], [class*='location']" }
-    },
-    total: ["[class*='total']", "[class*='count']"],
-    nextPage: ["[class*='next']", "a[rel='next']"]
-  },
-  binaryedge: {
-    // BinaryEdge uses a card-based SPA layout similar to FOFA.
-    row: [
-      "[class*='result-item']", "[class*='result-card']",
-      "[class*='result-list'] > div", "[class*='result'] > div",
-      "table tbody tr"
-    ],
-    cells: {
-      ip: { selector: "[class*='ip'], [class*='address'], [data-ip]" },
-      port: { selector: "[class*='port'], [data-port]" },
-      host: { selector: "[class*='domain'], [class*='host'], [class*='hostname']" },
-      title: { selector: "[class*='title'], h2, h3, [class*='name']" },
-      country_code: { selector: "[class*='country'], [class*='location'], [class*='flag']" },
-      org: { selector: "[class*='org'], [class*='company']" },
-      protocol: { selector: "[class*='protocol'], [class*='service']" }
-    },
-    total: ["[class*='total']", "[class*='count']", ".result-count"],
-    nextPage: ["[class*='next']", "a[rel='next']", "button[aria-label='next']"]
   }
 };
 
@@ -730,6 +676,21 @@ export async function extractEngineAssets(tabId) {
           return text;
         }
 
+        // Clean ZoomEye title: remove metadata prefixes like "CN 北京 公司名 AS12345 "
+        // The title field from ZoomEye DOM may contain country/city/org/asn before the actual title.
+        function cleanZoomEyeTitle(text) {
+          if (!text) return "";
+          // Remove patterns like: CN, US (2-letter country codes at start)
+          text = text.replace(/^[A-Z]{2}\s+/, "");
+          // Remove city names (common Chinese cities)
+          text = text.replace(/^(北京|上海|广州|深圳|杭州|成都|武汉|南京|西安|重庆|天津|苏州|长沙|郑州|青岛|大连|厦门|宁波|东莞|无锡|佛山)\s+/, "");
+          // Remove ASN pattern (AS followed by digits)
+          text = text.replace(/^AS\d+\s+/, "");
+          // Remove organization patterns (ending with company/org keywords)
+          text = text.replace(/^[^\s]+(公司|集团|有限|股份|科技|网络|信息|技术|企业|机构|组织)\s+/, "");
+          return text.trim();
+        }
+
         // Extract data from each row/card
         const seenKeys = new Set();
         rows.forEach((row) => {
@@ -771,7 +732,7 @@ export async function extractEngineAssets(tabId) {
                 const labelText = label.textContent.trim();
                 const value = valueEl.textContent.trim();
                 if (!value) return;
-                if (labelText.startsWith("标题:")) { if (!item.title) item.title = value; }
+                if (labelText.startsWith("标题:")) { if (!item.title) item.title = cleanZoomEyeTitle(value); }
                 else if (labelText.startsWith("组织:")) { if (!item.org) item.org = value; }
                 else if (labelText.startsWith("ASN:")) { if (!item.asn) item.asn = value; }
                 else if (labelText.startsWith("主机名:")) { if (!item.host) item.host = value; }

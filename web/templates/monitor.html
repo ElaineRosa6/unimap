@@ -156,6 +156,15 @@ function escapeHtml(value) {
 	const str = value === null || value === undefined ? '' : String(value);
 	return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+// Backend error envelope is ambiguous: writeError returns a string error,
+// writeAPIError returns {code, message}. Handle both.
+function extractErr(data) {
+	if (!data) return '未知错误';
+	if (data.error && typeof data.error === 'object' && data.error.message) return data.error.message;
+	if (typeof data.error === 'string') return data.error;
+	if (data.message) return data.message;
+	return '未知错误';
+}
 document.addEventListener('DOMContentLoaded', function() {
 	const urlList = document.getElementById('url-list');
 	const concurrency = document.getElementById('concurrency');
@@ -242,6 +251,11 @@ document.addEventListener('DOMContentLoaded', function() {
 				body: JSON.stringify({ urls, concurrency: parseInt(concurrency.value)||5, mode: tamperMode.value })
 			});
 			const data = await resp.json();
+			if (!resp.ok || data.success === false) {
+				progressText.textContent = '检测失败: ' + extractErr(data);
+				btn.disabled = false; btn.textContent = '篡改检测';
+				return;
+			}
 			progressBarFill.style.width = '100%';
 			progressText.textContent = '检测完成';
 			resultsSection.classList.remove('hidden');
@@ -335,6 +349,11 @@ document.addEventListener('DOMContentLoaded', function() {
 				body: JSON.stringify({ urls, concurrency: parseInt(concurrency.value)||5 })
 			});
 			const data = await resp.json();
+			if (!resp.ok || data.success === false) {
+				progressText.textContent = '设置失败: ' + extractErr(data);
+				btn.disabled = false; btn.textContent = '设置基线';
+				return;
+			}
 			progressBarFill.style.width = '100%';
 			progressText.textContent = '基线设置完成';
 			resultsSection.classList.remove('hidden');
@@ -355,8 +374,9 @@ document.addEventListener('DOMContentLoaded', function() {
 			(data.results || []).forEach(r => {
 				const div = document.createElement('div');
 				div.className = 'result-item';
-				const ok = r.success !== false && !r.error;
-				div.innerHTML = `<strong>${escapeHtml(r.url || r.target_url)}</strong> — ${ok ? '✅ 基线已保存' : '❌ ' + escapeHtml(r.error || '失败')}`;
+				// PageHashResult fields: url, title, status (e.g. "success", "failed to load page")
+				const ok = !r.status || r.status === 'success';
+				div.innerHTML = `<strong>${escapeHtml(r.url || r.target_url)}</strong> — ${ok ? '✅ 基线已保存' : '❌ ' + escapeHtml(r.status || '失败')}`;
 				container.appendChild(div);
 			});
 			if (!data.results || data.results.length === 0) {
@@ -548,24 +568,6 @@ document.addEventListener('DOMContentLoaded', function() {
 		} catch(e) {
 			progressText.textContent = '截图失败: ' + e.message;
 			btn.disabled = false; btn.textContent = '批量截图';
-		}
-	});
-
-	// 刷新历史
-	document.getElementById('btn-refresh-history').addEventListener('click', async function() {
-		try {
-			const resp = await fetch('/api/v1/tamper/history');
-			const data = await resp.json();
-			const container = document.getElementById('history-results');
-			container.innerHTML = '';
-			(data.history || data.results || []).forEach(r => {
-				const div = document.createElement('div');
-				div.className = 'result-item';
-				div.innerHTML = `<strong>${r.url || r.target_url}</strong> — ${r.type || r.status} — ${r.created_at || r.timestamp || ''}`;
-				container.appendChild(div);
-			});
-		} catch(e) {
-			alert('加载历史失败: ' + e.message);
 		}
 	});
 

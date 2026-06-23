@@ -53,21 +53,6 @@ var selectorsByEngine = map[string]*engineSelectors{
 		PaginationNext: ".el-pagination__next",
 		TotalSelector:  "[class*='total']",
 	},
-	"onyphe": {
-		RowSelector:    "table tbody tr",
-		PaginationNext: "[class*='next']",
-		TotalSelector:  "[class*='total']",
-	},
-	"greynoise": {
-		RowSelector:    "table tbody tr",
-		PaginationNext: "[class*='next']",
-		TotalSelector:  "[class*='total']",
-	},
-	"binaryedge": {
-		RowSelector:    "[class*='result-item']",
-		PaginationNext: "[class*='next']",
-		TotalSelector:  "[class*='total']",
-	},
 }
 
 func getSelectors(engine string) *engineSelectors {

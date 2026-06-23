@@ -89,7 +89,7 @@ func (s *Store) saveTasks(tasks []*ScheduledTask) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.taskPath, data, 0600)
+	return atomicWriteFile(s.taskPath, data)
 }
 
 func (s *Store) loadHistory() ([]ExecutionRecord, error) {
@@ -112,5 +112,44 @@ func (s *Store) saveHistory(history []ExecutionRecord) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.historyPath, data, 0600)
+	return atomicWriteFile(s.historyPath, data)
+}
+
+// atomicWriteFile writes data to path atomically by first writing to a
+// temporary sibling file and then renaming it over the target. A crash or
+// power loss mid-write leaves the original file intact, preventing a
+// truncated JSON file from corrupting all persisted tasks/history on the
+// next load. os.Rename is atomic on the same filesystem (same directory).
+func atomicWriteFile(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := func() {
+		tmp.Close()
+		os.Remove(tmpName)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Chmod(tmpName, 0600); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return nil
 }

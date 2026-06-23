@@ -86,7 +86,13 @@ func (s *Scheduler) Load() error {
 	return nil
 }
 
-// Save persists current tasks and history to disk.
+// Save persists current tasks and history to disk. It takes a read lock
+// (RLock) because saveLocked performs a full deep copy of every task before
+// serialization: the s.tasks map structure is protected by RLock, and each
+// task's Payload is replaced immutably (AddTask/UpdateTask swap in a new
+// *TaskPayload via sanitizePayload rather than mutating in place), so reading
+// payload fields under the read lock is race-free. Pointer fields (LastRunAt,
+// NextRunAt) are value-copied. This is why a read lock suffices.
 func (s *Scheduler) Save() error {
 	if s.store == nil {
 		return nil
@@ -139,6 +145,41 @@ func (s *Scheduler) RegisterHandler(h TaskHandler) {
 	metrics.SetSchedulerTasksRegistered(string(h.Type()), 1)
 }
 
+// validateScheduleTypeLocked validates the schedule-type-specific fields of a
+// task against the same rules AddTask enforces. It is shared by AddTask and
+// UpdateTask so that the update path cannot bypass creation-time validation.
+//
+// All arguments are the *effective* (post-merge) values to be persisted; the
+// caller is responsible for merging incoming updates onto the existing task
+// before calling this. Must be called with s.mu held (reads s.handlers only
+// indirectly via callers; no mutation here, but kept consistent with locked
+// convention).
+func (s *Scheduler) validateScheduleTypeLocked(scheduleType, cronExpr string, runAt *time.Time, delaySeconds int) error {
+	switch scheduleType {
+	case "cron":
+		parser := cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+		if _, err := parser.Parse(cronExpr); err != nil {
+			return fmt.Errorf("invalid cron expression: %w", err)
+		}
+	case "once":
+		if runAt == nil {
+			return fmt.Errorf("run_at is required for once schedule type")
+		}
+		if runAt.Before(time.Now()) {
+			return fmt.Errorf("run_at must be in the future")
+		}
+	case "delay":
+		// A delay task may already have RunAt set (computed from a previous
+		// scheduling). When RunAt is absent, DelaySeconds must be positive.
+		if runAt == nil && delaySeconds <= 0 {
+			return fmt.Errorf("delay_seconds must be positive for delay schedule type")
+		}
+	default:
+		return fmt.Errorf("unknown schedule type: %s (valid: cron, once, delay)", scheduleType)
+	}
+	return nil
+}
+
 // AddTask adds a new scheduled task and schedules it in cron.
 func (s *Scheduler) AddTask(task *ScheduledTask) error {
 	s.mu.Lock()
@@ -159,11 +200,14 @@ func (s *Scheduler) AddTask(task *ScheduledTask) error {
 		task.TimeoutSec = 300
 	}
 
-	// Validate cron expression (5 or 6 fields)
-	parser := cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
-	_, err := parser.Parse(task.CronExpr)
-	if err != nil {
-		return fmt.Errorf("invalid cron expression: %w", err)
+	// Normalize schedule type
+	if task.ScheduleType == "" {
+		task.ScheduleType = "cron"
+	}
+
+	// Validate schedule type (mirrors UpdateTask — see validateScheduleTypeLocked)
+	if err := s.validateScheduleTypeLocked(task.ScheduleType, task.CronExpr, task.RunAt, task.DelaySeconds); err != nil {
+		return err
 	}
 
 	// Validate task type
@@ -206,7 +250,8 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 	task.Name = sanitizeUTF8(task.Name)
 	task.Payload = sanitizePayload(task.Payload)
 
-	// Validate cron if changed
+	// Validate cron if changed (kept for a clear early-failure error before
+	// the full schedule-type validation below, which also covers cron).
 	if task.CronExpr != "" && task.CronExpr != existing.CronExpr {
 		parser := cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 		_, err := parser.Parse(task.CronExpr)
@@ -241,6 +286,11 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 		s.cron.Remove(entryID)
 		delete(s.cronIDs, task.ID)
 	}
+	// Stop old timer for one-time tasks
+	if existing.timer != nil {
+		existing.timer.Stop()
+		existing.timer = nil
+	}
 
 	// Update fields
 	existing.Name = task.Name
@@ -253,6 +303,25 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 	existing.Notifications = task.Notifications
 	existing.DependsOn = task.DependsOn
 	existing.ExecutionWindow = task.ExecutionWindow
+
+	// Update schedule type fields — merge incoming updates onto existing,
+	// then validate the *effective* values. This closes the gap where
+	// UpdateTask previously accepted arbitrary schedule_type / past RunAt /
+	// non-positive DelaySeconds that AddTask rejects.
+	if task.ScheduleType != "" {
+		existing.ScheduleType = task.ScheduleType
+	} else if existing.ScheduleType == "" {
+		existing.ScheduleType = "cron"
+	}
+	if task.RunAt != nil {
+		existing.RunAt = task.RunAt
+	}
+	if task.DelaySeconds > 0 {
+		existing.DelaySeconds = task.DelaySeconds
+	}
+	if err := s.validateScheduleTypeLocked(existing.ScheduleType, existing.CronExpr, existing.RunAt, existing.DelaySeconds); err != nil {
+		return err
+	}
 
 	if existing.Enabled {
 		if err := s.scheduleTask(existing); err != nil {
@@ -272,8 +341,14 @@ func (s *Scheduler) DeleteTask(id string) error {
 		s.cron.Remove(entryID)
 		delete(s.cronIDs, id)
 	}
-	if _, ok := s.tasks[id]; !ok {
+	task, ok := s.tasks[id]
+	if !ok {
 		return fmt.Errorf("task %s not found", id)
+	}
+	// Stop timer for one-time tasks
+	if task.timer != nil {
+		task.timer.Stop()
+		task.timer = nil
 	}
 	delete(s.tasks, id)
 	return s.saveLocked()
@@ -287,6 +362,17 @@ func (s *Scheduler) EnableTask(id string) error {
 	if !ok {
 		return fmt.Errorf("task %s not found", id)
 	}
+
+	// Prevent re-enabling expired one-time tasks. This applies to BOTH
+	// already-run tasks (LastRunAt != nil) and never-run tasks whose RunAt
+	// is in the past (e.g. process restarted before the once task fired).
+	// The latter previously fell through and scheduleOneTimeTask executed
+	// them immediately because delay <= 0, contradicting AddTask's "run_at
+	// must be in the future" rule. Now we reject consistently.
+	if (task.ScheduleType == "once" || task.ScheduleType == "delay") && task.RunAt != nil && task.RunAt.Before(time.Now()) {
+		return fmt.Errorf("cannot re-enable expired one-time task %s (was scheduled for %s)", id, task.RunAt.Format(time.RFC3339))
+	}
+
 	task.Enabled = true
 	if err := s.scheduleTask(task); err != nil {
 		task.Enabled = false
@@ -307,6 +393,11 @@ func (s *Scheduler) DisableTask(id string) error {
 	if entryID, ok := s.cronIDs[id]; ok {
 		s.cron.Remove(entryID)
 		delete(s.cronIDs, id)
+	}
+	// Stop timer for one-time tasks
+	if task.timer != nil {
+		task.timer.Stop()
+		task.timer = nil
 	}
 	return s.saveLocked()
 }
@@ -478,6 +569,13 @@ func normalizeCronExpr(expr string) string {
 
 // scheduleTask registers a task in the cron scheduler. Returns error if the
 // task cannot be added to cron (caller can then remove the task or retry).
+//
+// Lock contract: the caller MUST hold s.mu (write lock). AddTask, UpdateTask,
+// EnableTask all hold the write lock. Load calls this during start-up before
+// Start() opens the door to concurrent access, so it is single-threaded there;
+// if Load is ever invoked at runtime, it must take the write lock first.
+// scheduleOneTimeTask mutates task.timer / task.NextRunAt / task.RunAt, which
+// must not race with concurrent readers — hence the write-lock requirement.
 func (s *Scheduler) scheduleTask(task *ScheduledTask) error {
 	if !task.Enabled {
 		return nil
@@ -488,6 +586,16 @@ func (s *Scheduler) scheduleTask(task *ScheduledTask) error {
 		return nil
 	}
 
+	switch task.ScheduleType {
+	case "once", "delay":
+		return s.scheduleOneTimeTask(task, handler)
+	default: // "cron"
+		return s.scheduleCronTask(task, handler)
+	}
+}
+
+// scheduleCronTask schedules a recurring task via cron.
+func (s *Scheduler) scheduleCronTask(task *ScheduledTask, handler TaskHandler) error {
 	schedule := func() {
 		s.executeTask(task, handler, task.TimeoutSec, task.MaxRetries)
 	}
@@ -506,6 +614,70 @@ func (s *Scheduler) scheduleTask(task *ScheduledTask) error {
 		task.NextRunAt = &next
 	}
 	return nil
+}
+
+// scheduleOneTimeTask schedules a one-time or delayed task using a timer.
+func (s *Scheduler) scheduleOneTimeTask(task *ScheduledTask, handler TaskHandler) error {
+	var delay time.Duration
+	switch task.ScheduleType {
+	case "once":
+		if task.RunAt == nil {
+			return fmt.Errorf("run_at is nil for once task %s", task.ID)
+		}
+		delay = time.Until(*task.RunAt)
+	case "delay":
+		// Prefer persisted RunAt (survives restart correctly), fall back to DelaySeconds
+		if task.RunAt != nil {
+			delay = time.Until(*task.RunAt)
+		} else if task.DelaySeconds > 0 {
+			delay = time.Duration(task.DelaySeconds) * time.Second
+			runAt := time.Now().Add(delay)
+			task.RunAt = &runAt
+		} else {
+			return fmt.Errorf("delay task %s has no run_at or delay_seconds", task.ID)
+		}
+	}
+
+	if delay <= 0 {
+		// Past due — execute immediately
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Errorf("[scheduler] panic in one-time task %s: %v", task.ID, r)
+				}
+			}()
+			s.executeTask(task, handler, task.TimeoutSec, task.MaxRetries)
+			s.disableOneTimeTask(task.ID)
+		}()
+		return nil
+	}
+
+	task.timer = time.AfterFunc(delay, func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf("[scheduler] panic in one-time task %s: %v", task.ID, r)
+			}
+		}()
+		s.executeTask(task, handler, task.TimeoutSec, task.MaxRetries)
+		s.disableOneTimeTask(task.ID)
+	})
+
+	// Set NextRunAt for display
+	next := time.Now().Add(delay)
+	task.NextRunAt = &next
+	return nil
+}
+
+// disableOneTimeTask disables a one-time task after execution.
+func (s *Scheduler) disableOneTimeTask(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if task, ok := s.tasks[id]; ok {
+		task.Enabled = false
+		task.timer = nil
+		task.NextRunAt = nil // one-time task won't run again
+		_ = s.saveLocked()
+	}
 }
 
 // executeTask runs a single task execution with optional retries.
@@ -737,6 +909,13 @@ func (s *Scheduler) Stop() {
 	s.stopping = true
 	s.stopped = true
 	close(s.stopCh)
+	// Stop all one-time task timers
+	for _, task := range s.tasks {
+		if task.timer != nil {
+			task.timer.Stop()
+			task.timer = nil
+		}
+	}
 	s.mu.Unlock()
 
 	// 取消所有进行中的任务（context 派生自 s.ctx 的任务将收到取消信号）

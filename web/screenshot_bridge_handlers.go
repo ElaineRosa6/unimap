@@ -35,6 +35,13 @@ func (s *Server) handleScreenshotBridgeHealth(w http.ResponseWriter, r *http.Req
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
+	// FINDING-002: health/status expose internal diagnostics (engine, paired
+	// clients, queue depth, errors). Restrict to loopback like other bridge
+	// endpoints; remote callers get a minimal ok response only.
+	if !isLoopbackRequest(r) {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "message": "bridge health ok"})
+		return
+	}
 	snap := s.buildBridgeDiagnosticSnapshot()
 	snap["success"] = true
 	snap["message"] = "bridge diagnostic ready"
@@ -43,6 +50,10 @@ func (s *Server) handleScreenshotBridgeHealth(w http.ResponseWriter, r *http.Req
 
 func (s *Server) handleScreenshotBridgeStatus(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if !isLoopbackRequest(r) {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "message": "bridge status ok"})
 		return
 	}
 	snap := s.buildBridgeDiagnosticSnapshot()
@@ -204,9 +215,9 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		ErrorCode               string                 `json:"error_code"`
 		DurationMs              int64                  `json:"duration_ms"`
 	}
-	if err := decodeJSONReader(bytes.NewReader(rawBody), &req); err != nil {
+	if err := json.Unmarshal(rawBody, &req); err != nil {
 		s.setBridgeLastError("invalid_bridge_result: invalid bridge result payload")
-		writeAPIError(w, http.StatusBadRequest, "invalid_bridge_result", "invalid bridge result payload", nil)
+		writeAPIError(w, http.StatusBadRequest, "invalid_bridge_result", "invalid bridge result payload", err.Error())
 		return
 	}
 	if strings.TrimSpace(req.RequestID) == "" {

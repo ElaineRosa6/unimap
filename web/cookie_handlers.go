@@ -100,7 +100,7 @@ func (s *Server) handleVerifyCookies(w http.ResponseWriter, r *http.Request) {
 
 	engines := parseEnginesParam(r)
 	if len(engines) == 0 {
-		engines = s.orchestrator.ListAdapters()
+		engines = filterStableEngines(s.orchestrator.ListAdapters())
 	}
 	if len(engines) == 0 {
 		writeAPIError(w, http.StatusServiceUnavailable, "no_engines_available", "no engines configured or registered", nil)
@@ -556,7 +556,7 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 	}
 
 	cdpConnected, extPaired := s.detectSessionChannels(r.Context())
-	engines := []string{"fofa", "hunter", "zoomeye", "quake", "shodan"}
+	engines := []string{"fofa", "hunter", "zoomeye", "quake", "shodan"} // 核心 5 引擎，新引擎待 API Key 后补充
 	results := s.checkEngineLoginStatuses(r.Context(), engines, cdpConnected, extPaired)
 
 	w.Header().Set("Content-Type", "application/json")

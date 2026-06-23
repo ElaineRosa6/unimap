@@ -114,7 +114,7 @@ func TestHandleBatchScreenshotProgress_NilStore(t *testing.T) {
 }
 
 func TestClassifyBatchURLsPreservesOriginalIndices(t *testing.T) {
-	urls := []string{"https://example.com", "://invalid", "http://127.0.0.1", "https://example.org"}
+	urls := []string{"https://8.8.8.8", "://invalid", "http://127.0.0.1", "https://1.1.1.1"}
 
 	valid, invalid := classifyBatchURLs(urls)
 

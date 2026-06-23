@@ -65,3 +65,61 @@
 
 /* --- Quota progress (server-computed width via nonce style) --- */
 .quota-progress-bar { transition: width 0.3s ease; }
+
+/* ============================================================
+   UQL Syntax Reference — right-side drawer
+   ============================================================ */
+/* Floating trigger button — bottom-right */
+.syntax-drawer-btn {
+	position: fixed; bottom: 28px; right: 28px; z-index: 999;
+	width: 44px; height: 44px; border-radius: 50%;
+	background: var(--accent, #2c3e50); color: #fff; border: none;
+	cursor: pointer; display: flex; align-items: center; justify-content: center;
+	box-shadow: 0 4px 14px rgba(0,0,0,.18); transition: transform .2s, box-shadow .2s;
+}
+.syntax-drawer-btn:hover { transform: scale(1.08); box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+
+/* Dark overlay backdrop */
+.syntax-overlay {
+	position: fixed; inset: 0; z-index: 1000;
+	background: rgba(0,0,0,.35); backdrop-filter: blur(2px);
+}
+.syntax-overlay[hidden] { display: none; }
+
+/* Drawer panel */
+.syntax-drawer {
+	position: fixed; top: 0; right: 0; z-index: 1001;
+	width: min(680px, 92vw); height: 100vh;
+	background: var(--surface, #fff); box-shadow: -4px 0 24px rgba(0,0,0,.15);
+	display: flex; flex-direction: column;
+	animation: syntaxSlideIn .25s ease;
+}
+.syntax-drawer[hidden] { display: none; }
+@keyframes syntaxSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+.syntax-drawer-header {
+	display: flex; align-items: center; justify-content: space-between;
+	padding: 16px 22px; border-bottom: 1px solid var(--border-subtle, #e0e0e0);
+	flex-shrink: 0;
+}
+.syntax-drawer-header h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.syntax-drawer-close {
+	width: 32px; height: 32px; border-radius: 50%; border: none; background: transparent;
+	font-size: 22px; cursor: pointer; color: var(--text-muted, #999);
+	display: flex; align-items: center; justify-content: center; transition: background .2s;
+}
+.syntax-drawer-close:hover { background: var(--surface-hover, #f0f0f0); }
+
+.syntax-drawer-body { flex: 1; overflow-y: auto; padding: 22px; }
+
+/* Table styles inside drawer */
+.syntax-card { margin-bottom: 22px; }
+.syntax-card h4 { font-size: 13px; font-weight: 600; color: var(--text-secondary, #555); margin: 0 0 10px; }
+.syntax-scroll { overflow-x: auto; }
+.syntax-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.syntax-table th,
+.syntax-table td { padding: 5px 8px; text-align: left; border-bottom: 1px solid var(--border-subtle, #eee); white-space: nowrap; }
+.syntax-table th { background: var(--surface-secondary, #f8f9fa); font-weight: 600; color: var(--text-muted, #777); font-size: 11px; letter-spacing: 0.3px; }
+.syntax-table code { font-family: 'JetBrains Mono', 'Consolas', monospace; font-size: 11px; background: var(--code-bg, #f0f0f0); padding: 1px 5px; border-radius: 3px; color: #c7254e; }
+.syntax-table--mapping td:first-child code { font-weight: 600; color: var(--text-primary, #2c3e50); background: transparent; }
+.syntax-table--mapping td:not(:first-child) code { font-size: 10px; background: transparent; color: var(--text-secondary, #555); }

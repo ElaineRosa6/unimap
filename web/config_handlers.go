@@ -82,12 +82,25 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"cache_max_entries": s.config.System.CacheMaxSize,
 	}
 
+	notifyCfg := map[string]interface{}{
+		"enabled":  s.config.Notifications.Enabled,
+		"channels": s.config.Notifications.Channels,
+	}
+	if s.config.Notifications.FeishuApp != nil {
+		notifyCfg["feishu_app"] = map[string]interface{}{
+			"app_id":     s.config.Notifications.FeishuApp.AppID,
+			"app_secret": maskAPIKey(s.config.Notifications.FeishuApp.AppSecret),
+			"chat_id":    s.config.Notifications.FeishuApp.ChatID,
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":    true,
-		"engines":    engines,
-		"icp":        icp,
-		"screenshot": screenshot,
-		"system":     system,
+		"success":       true,
+		"engines":       engines,
+		"icp":           icp,
+		"screenshot":    screenshot,
+		"system":        system,
+		"notifications": notifyCfg,
 	})
 }
 
@@ -133,6 +146,8 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		applyScreenshotSection(s.config, req.Data)
 	case "system":
 		applySystemSection(s.config, req.Data)
+	case "notifications":
+		applyNotificationsSection(s.config, req.Data)
 	default:
 		s.configMutex.Unlock()
 		writeAPIError(w, http.StatusBadRequest, "unsupported_section",
@@ -421,4 +436,25 @@ func isMaskedSecret(s string) bool {
 		}
 	}
 	return true
+}
+
+
+// applyNotificationsSection applies notification config from the settings page.
+func applyNotificationsSection(c *config.Config, data map[string]interface{}) {
+	if c == nil { return }
+	if v, ok := boolField(data, "enabled"); ok { c.Notifications.Enabled = v }
+	fa, ok := data["feishu_app"]
+	if !ok { return }
+	fam, ok := fa.(map[string]interface{})
+	if !ok { return }
+	if c.Notifications.FeishuApp == nil {
+		c.Notifications.FeishuApp = new(struct {
+			AppID     string `yaml:"app_id"`
+			AppSecret string `yaml:"app_secret"`
+			ChatID    string `yaml:"chat_id"`
+		})
+	}
+	if v, ok := stringField(fam, "app_id"); ok && v != "" { c.Notifications.FeishuApp.AppID = v }
+	if v, ok := stringField(fam, "app_secret"); ok && v != "" && v != "********" { c.Notifications.FeishuApp.AppSecret = v }
+	if v, ok := stringField(fam, "chat_id"); ok && v != "" { c.Notifications.FeishuApp.ChatID = v }
 }

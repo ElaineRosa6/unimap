@@ -398,29 +398,31 @@ func TestCensysAdapter_Search(t *testing.T) {
 	})
 
 	t.Run("successful search", func(t *testing.T) {
+		// v3 free tier: GET /v3/global/asset/host/{ip}
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Verify Basic Auth
-			user, pass, ok := r.BasicAuth()
-			if !ok || user != "testid" || pass != "testsecret" {
-				w.WriteHeader(http.StatusUnauthorized)
+			if !strings.Contains(r.URL.Path, "/v3/global/asset/host/") {
+				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{
 				"result": {
-					"hits": [
-						{"ip": "1.2.3.4", "services": [{"port": 80, "service_name": "HTTP"}], "location": {"country_code": "US"}},
-						{"ip": "5.6.7.8", "services": [{"port": 443, "service_name": "HTTPS"}], "location": {"country_code": "CN"}}
-					],
-					"total": 2,
-					"links": {"next": "cursor123"}
+					"resource": {
+						"ip": "1.2.3.4",
+						"location": {"country": "US", "country_code": "US"},
+						"autonomous_system": {"asn": 15169},
+						"services": [
+							{"port": 80, "protocol": "HTTP", "transport_protocol": "tcp"},
+							{"port": 443, "protocol": "HTTPS", "transport_protocol": "tcp"}
+						]
+					}
 				}
 			}`))
 		}))
 		defer server.Close()
 
-		a := NewCensysAdapter(server.URL, "testid", "testsecret", 3, 30*time.Second)
-		result, err := a.Search(context.Background(), "services.port:80", 1, 10)
+		a := NewCensysAdapter(server.URL, "testtoken", "", 3, 30*time.Second)
+		result, err := a.Search(context.Background(), "1.2.3.4", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -428,48 +430,49 @@ func TestCensysAdapter_Search(t *testing.T) {
 			t.Fatalf("expected success, got: %s", result.Error)
 		}
 		if len(result.RawData) != 2 {
-			t.Fatalf("expected 2 results, got %d", len(result.RawData))
+			t.Fatalf("expected 2 results (2 services), got %d", len(result.RawData))
 		}
+		// v3 free tier single-host: HasMore always false
 		if result.Total != 2 {
 			t.Errorf("Total = %d, want 2", result.Total)
-		}
-		if !result.HasMore {
-			t.Error("expected HasMore = true (cursor present)")
 		}
 	})
 
 	t.Run("no cursor means no more results", func(t *testing.T) {
+		// v3 free tier: single-host lookup, HasMore always false
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{
 				"result": {
-					"hits": [{"ip": "1.2.3.4", "services": []}],
-					"total": 1,
-					"links": {}
+					"resource": {
+						"ip": "1.2.3.4",
+						"services": [{"port": 80, "protocol": "HTTP", "transport_protocol": "tcp"}]
+					}
 				}
 			}`))
 		}))
 		defer server.Close()
 
-		a := NewCensysAdapter(server.URL, "id", "secret", 3, 30*time.Second)
-		result, err := a.Search(context.Background(), "test", 1, 10)
+		a := NewCensysAdapter(server.URL, "testtoken", "", 3, 30*time.Second)
+		result, err := a.Search(context.Background(), "1.2.3.4", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if result.HasMore {
-			t.Error("expected HasMore = false (no cursor)")
+			t.Error("expected HasMore = false (single host, no pagination)")
 		}
 	})
 
 	t.Run("HTTP error", func(t *testing.T) {
+		// v3 free tier mock returning HTTP 500
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("Internal Server Error"))
 		}))
 		defer server.Close()
 
-		a := NewCensysAdapter(server.URL, "id", "secret", 3, 30*time.Second)
-		result, err := a.Search(context.Background(), "test", 1, 10)
+		a := NewCensysAdapter(server.URL, "testtoken", "", 3, 30*time.Second)
+		result, err := a.Search(context.Background(), "8.8.8.8", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -479,27 +482,23 @@ func TestCensysAdapter_Search(t *testing.T) {
 	})
 
 	t.Run("page > 1 uses per_page*page approximation", func(t *testing.T) {
+		// v3 free tier single-host lookup — pagination not applicable,
+		// but the adapter should still handle it gracefully
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			perPage := r.URL.Query().Get("per_page")
-			if perPage != "20" {
-				t.Errorf("expected per_page=20 for page 2 with pageSize 10, got %s", perPage)
-			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{
 				"result": {
-					"hits": [
-						{"ip": "1.2.3.4", "services": []},
-						{"ip": "5.6.7.8", "services": []}
-					],
-					"total": 2,
-					"links": {}
+					"resource": {
+						"ip": "5.6.7.8",
+						"services": [{"port": 80, "protocol": "HTTP", "transport_protocol": "tcp"}]
+					}
 				}
 			}`))
 		}))
 		defer server.Close()
 
-		a := NewCensysAdapter(server.URL, "id", "secret", 3, 30*time.Second)
-		result, err := a.Search(context.Background(), "test", 2, 10)
+		a := NewCensysAdapter(server.URL, "testtoken", "", 3, 30*time.Second)
+		result, err := a.Search(context.Background(), "5.6.7.8", 2, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -525,47 +524,25 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 	})
 
 	t.Run("host with multiple services produces multiple assets", func(t *testing.T) {
+		loc := &CensysLocation{CountryCode: "US", Province: "California", City: "San Francisco"}
+		asn := &CensysAS{ASN: "AS13335", Name: "Cloudflare"}
+		dns := &CensysDNS{Names: []string{"example.com", "www.example.com"}}
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip": "1.2.3.4",
-				"location": map[string]interface{}{
-					"country_code": "US",
-					"province":     "California",
-					"city":         "San Francisco",
-				},
-				"autonomous_system": map[string]interface{}{
-					"asn":  "AS13335",
-					"name": "Cloudflare",
-				},
-				"dns": map[string]interface{}{
-					"names": []interface{}{"example.com", "www.example.com"},
-				},
-				"services": []interface{}{
-					map[string]interface{}{
-						"port":         float64(80),
-						"service_name": "HTTP",
-						"http": map[string]interface{}{
-							"response": map[string]interface{}{
-								"html_title":  "Example",
-								"status_code": float64(200),
-								"body":        strings.Repeat("x", 500),
-								"headers": map[string]interface{}{
-									"Server": "nginx",
-								},
-							},
-						},
-					},
-					map[string]interface{}{
-						"port":         float64(443),
-						"service_name": "HTTPS",
-						"http": map[string]interface{}{
-							"response": map[string]interface{}{
-								"html_title":  "Secure Example",
-								"status_code": float64(200),
-							},
-						},
-					},
-				},
+			&CensysRawEntry{
+				IP: "1.2.3.4", Port: 80, ServiceName: "HTTP",
+				HTTP: &CensysHTTP{Response: CensysHTTPResponseBody{
+					HTMLTitle: "Example", StatusCode: 200,
+					Body: strings.Repeat("x", 500),
+					Headers: CensysHTTPHeaders{Server: "nginx"},
+				}},
+				Location: loc, AutonomousSystem: asn, DNS: dns,
+			},
+			&CensysRawEntry{
+				IP: "1.2.3.4", Port: 443, ServiceName: "HTTPS",
+				HTTP: &CensysHTTP{Response: CensysHTTPResponseBody{
+					HTMLTitle: "Secure Example", StatusCode: 200,
+				}},
+				Location: loc, AutonomousSystem: asn, DNS: dns,
 			},
 		}}
 		assets, err := a.Normalize(result)
@@ -631,11 +608,9 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 	t.Run("no services emits one asset with host info only", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip": "10.0.0.1",
-				"location": map[string]interface{}{
-					"country_code": "CN",
-				},
+			&CensysRawEntry{
+				IP:       "10.0.0.1",
+				Location: &CensysLocation{CountryCode: "CN"},
 			},
 		}}
 		assets, err := a.Normalize(result)
@@ -655,11 +630,7 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 	t.Run("no ip skipped", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"services": []interface{}{
-					map[string]interface{}{"port": float64(80)},
-				},
-			},
+			&CensysRawEntry{Port: 80},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -672,12 +643,7 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 	t.Run("port as int type", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip": "1.2.3.4",
-				"services": []interface{}{
-					map[string]interface{}{"port": int(443)},
-				},
-			},
+			&CensysRawEntry{IP: "1.2.3.4", Port: 443},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -690,17 +656,9 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 	t.Run("URL construction with host", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip": "1.2.3.4",
-				"dns": map[string]interface{}{
-					"names": []interface{}{"example.com"},
-				},
-				"services": []interface{}{
-					map[string]interface{}{
-						"port":         float64(443),
-						"service_name": "HTTPS",
-					},
-				},
+			&CensysRawEntry{
+				IP: "1.2.3.4", Port: 443, ServiceName: "HTTPS",
+				DNS: &CensysDNS{Names: []string{"example.com"}},
 			},
 		}}
 		assets, err := a.Normalize(result)
@@ -721,15 +679,7 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 	t.Run("URL construction without host uses IP", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip": "1.2.3.4",
-				"services": []interface{}{
-					map[string]interface{}{
-						"port":         float64(80),
-						"service_name": "HTTP",
-					},
-				},
-			},
+			&CensysRawEntry{IP: "1.2.3.4", Port: 80, ServiceName: "HTTP"},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -742,10 +692,7 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 	t.Run("empty services slice behaves like no services", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
-			map[string]interface{}{
-				"ip":       "1.2.3.4",
-				"services": []interface{}{},
-			},
+			&CensysRawEntry{IP: "1.2.3.4"},
 		}}
 		assets, err := a.Normalize(result)
 		if err != nil {
@@ -769,51 +716,28 @@ func TestCensysAdapter_GetQuota(t *testing.T) {
 	})
 
 	t.Run("successful quota", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Verify Basic Auth
-			user, pass, ok := r.BasicAuth()
-			if !ok || user != "testid" || pass != "testsecret" {
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"quota": {"used": 50, "total": 100, "remaining": 50}}`))
-		}))
-		defer server.Close()
-
-		a := NewCensysAdapter(server.URL, "testid", "testsecret", 3, 30*time.Second)
-		quota, err := a.GetQuota()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if quota == nil {
-			t.Fatal("expected quota info, got nil")
-		}
-		if quota.Total != 100 {
-			t.Errorf("Total = %d, want 100", quota.Total)
-		}
-		if quota.Remaining != 50 {
-			t.Errorf("Remaining = %d, want 50", quota.Remaining)
-		}
-		if quota.Used != 50 {
-			t.Errorf("Used = %d, want 50", quota.Used)
-		}
-		if quota.Unit != "queries" {
-			t.Errorf("Unit = %q, want %q", quota.Unit, "queries")
+		// v3 free tier: GetQuota returns "not available" — no separate
+		// quota endpoint for free tier users.
+		a := NewCensysAdapter("https://api.platform.censys.io", "testkey", "", 3, 30*time.Second)
+		_, err := a.GetQuota()
+		if err == nil {
+			t.Error("expected error for free tier quota")
 		}
 	})
 
 	t.Run("json api error", func(t *testing.T) {
+		// v3 free tier: quota endpoint is never called, always returns
+		// "not available" regardless of server response.
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(`{"error":"Invalid API credentials"}`))
 		}))
 		defer server.Close()
 
-		a := NewCensysAdapter(server.URL, "id", "secret", 3, 30*time.Second)
+		a := NewCensysAdapter(server.URL, "testkey", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
-		if err == nil || !strings.Contains(err.Error(), "Invalid API credentials") {
-			t.Fatalf("expected Censys API error, got %v", err)
+		if err == nil {
+			t.Error("expected error for free tier quota")
 		}
 	})
 }

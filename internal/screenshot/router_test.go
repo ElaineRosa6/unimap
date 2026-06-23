@@ -2,6 +2,7 @@ package screenshot
 
 import (
 	"context"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -131,8 +132,10 @@ func TestRouterStartStop_NoGoroutineLeak(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	after := countGoroutines()
-	if after > before {
-		t.Fatalf("possible goroutine leak: before=%d, after=%d", before, after)
+	// Allow up to 5 extra goroutines for runtime fluctuation (GC, timers, etc.)
+	const margin = 5
+	if after > before+margin {
+		t.Fatalf("possible goroutine leak: before=%d, after=%d (margin=%d)", before, after, margin)
 	}
 }
 
@@ -395,9 +398,7 @@ func (m *mockProvider) CollectSearchEngineResult(ctx context.Context, engine, qu
 
 // countGoroutines returns the current number of goroutines.
 func countGoroutines() int {
-	// Simple approach: use runtime.NumGoroutine
-	// We import runtime implicitly
-	return 0 // placeholder, real count below
+	return runtime.NumGoroutine()
 }
 
 func TestParseStructuredCollectedData_EmptyItems(t *testing.T) {
