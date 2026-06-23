@@ -1,5 +1,5 @@
 import { apiGet, apiPostBridgeSigned, bridgeRotateToken } from "./api.js";
-import { ensureTab, waitForPageReady, captureVisible, normalizeImagePayload, releaseTab, cleanupTabPool, normalizeCollectPayload, extractEngineAssets } from "./capture.js";
+import { ensureTab, waitForPageReady, captureVisible, normalizeImagePayload, releaseTab, cleanupTabPool, normalizeCollectPayload, extractEngineAssets, checkLoginCookies } from "./capture.js";
 import { loadSessionToken, isTokenExpired, saveSessionToken, saveRuntimeState, saveLastError, loadAdminToken } from "./storage.js";
 import { pairAndStore } from "./pairing.js";
 
@@ -91,6 +91,14 @@ async function handleTask(task, token) {
 
     tabId = await ensureTab(task.url);
 
+    // Check login cookies AFTER navigation (preserved by same-domain reuse)
+    let loginDiagnostics = null;
+    try {
+      loginDiagnostics = await checkLoginCookies(task.url);
+    } catch {
+      // Diagnostics are non-fatal
+    }
+
     // Choose wait strategy based on action type
     let waitStrategy = task.wait_strategy || "load";
     // Use longer timeout for collect action (SPA rendering)
@@ -101,8 +109,24 @@ async function handleTask(task, token) {
     await waitForPageReady(tabId, waitStrategy, effectiveTimeout);
 
     // Extra render wait for collect action (SPA search results take time to render)
-    if (action === "collect" || action === "screenshot") {
-      await new Promise((resolve) => setTimeout(resolve, 4000));
+    if (action === "collect" || action === "screenshot" || action === "collect_and_capture") {
+      // 固定15秒等待，确保所有引擎（尤其是Hunter）的登录态和页面内容完全加载
+      await new Promise((resolve) => setTimeout(resolve, 15000));
+
+      // 滚动到页面底部触发懒加载内容，再滚动回顶部
+      try {
+        await chrome.tabs.executeScript(tabId, {
+          code: `
+            window.scrollTo(0, document.body.scrollHeight);
+            setTimeout(() => window.scrollTo(0, 0), 500);
+          `
+        });
+      } catch (e) {
+        // 忽略滚动错误
+      }
+
+      // 滚动后再等待2秒，确保内容稳定
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     if (action === "open") {
@@ -122,7 +146,7 @@ async function handleTask(task, token) {
       // Handle login wall detection
       if (assets.is_login_wall) {
         const durationMs = Math.max(1, Date.now() - startedAt);
-        await reportResult({
+        const wallResult = {
           request_id: requestId,
           success: false,
           image_path: "",
@@ -139,7 +163,15 @@ async function handleTask(task, token) {
             is_login_wall: true,
             engine: assets.engine
           }
-        });
+        };
+        if (loginDiagnostics) {
+          wallResult.structured_collected_data.login_diagnostics = {
+            has_login_cookies: loginDiagnostics.has_login_cookies,
+            cookie_count: loginDiagnostics.cookie_count,
+            engine: loginDiagnostics.engine
+          };
+        }
+        await reportResult(wallResult);
       } else {
         const result = normalizeCollectPayload(
           assets.items,
@@ -167,6 +199,15 @@ async function handleTask(task, token) {
           result.structured_collected_data.extraction_error = assets.error;
         }
 
+        // Attach login diagnostics
+        if (loginDiagnostics && result.structured_collected_data) {
+          result.structured_collected_data.login_diagnostics = {
+            has_login_cookies: loginDiagnostics.has_login_cookies,
+            cookie_count: loginDiagnostics.cookie_count,
+            engine: loginDiagnostics.engine
+          };
+        }
+
         await reportResult(result);
       }
     } else if (action === "collect_and_capture") {
@@ -176,7 +217,7 @@ async function handleTask(task, token) {
       // Handle login wall detection
       if (assets.is_login_wall) {
         const durationMs = Math.max(1, Date.now() - startedAt);
-        await reportResult({
+        const wallResult2 = {
           request_id: requestId,
           success: false,
           image_path: "",
@@ -193,7 +234,15 @@ async function handleTask(task, token) {
             is_login_wall: true,
             engine: assets.engine
           }
-        });
+        };
+        if (loginDiagnostics) {
+          wallResult2.structured_collected_data.login_diagnostics = {
+            has_login_cookies: loginDiagnostics.has_login_cookies,
+            cookie_count: loginDiagnostics.cookie_count,
+            engine: loginDiagnostics.engine
+          };
+        }
+        await reportResult(wallResult2);
       } else {
         let captureDataUrl = null;
         await waitForCaptureSlot();
@@ -225,6 +274,14 @@ async function handleTask(task, token) {
           if (assets.error) {
             collectResult.structured_collected_data.extraction_error = assets.error;
           }
+          // Attach login diagnostics
+          if (loginDiagnostics) {
+            collectResult.structured_collected_data.login_diagnostics = {
+              has_login_cookies: loginDiagnostics.has_login_cookies,
+              cookie_count: loginDiagnostics.cookie_count,
+              engine: loginDiagnostics.engine
+            };
+          }
         }
 
         await reportResult(collectResult);
@@ -241,6 +298,14 @@ async function handleTask(task, token) {
         dataUrl = await captureWithFocus(tabId, tab.windowId);
       }
       const result = normalizeImagePayload(dataUrl, requestId, startedAt);
+      // Attach login diagnostics to screenshot result
+      if (loginDiagnostics) {
+        result.login_diagnostics = {
+          has_login_cookies: loginDiagnostics.has_login_cookies,
+          cookie_count: loginDiagnostics.cookie_count,
+          engine: loginDiagnostics.engine
+        };
+      }
       await reportResult(result);
     }
 

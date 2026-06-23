@@ -1,0 +1,134 @@
+{{template "head" .}}
+{{template "header" (dict "ActiveNav" "port-scan" "staticVersion" .staticVersion)}}
+
+	<main>
+		<div class="card">
+			<h2>端口扫描</h2>
+			<p class="text-muted">对目标 URL 进行端口扫描，检测开放端口和服务。</p>
+
+			<div class="form-group">
+				<label>目标 URL（每行一个）</label>
+				<textarea id="scan-urls" rows="5" class="form-control" placeholder="https://example.com&#10;http://1.2.3.4:8080&#10;example.org"></textarea>
+			</div>
+
+			<div class="form-row">
+				<div class="form-group" style="flex:2">
+					<label>扫描端口（逗号分隔，留空使用默认）</label>
+					<input type="text" id="scan-ports" class="form-control" placeholder="80, 443, 8080, 8443, 3306, 6379">
+					<small>默认端口：80, 81, 443, 8000, 8080, 8443, 9000</small>
+				</div>
+				<div class="form-group" style="flex:1">
+					<label>并发数</label>
+					<input type="number" id="scan-concurrency" class="form-control" value="10" min="1" max="50">
+				</div>
+			</div>
+
+			<button class="btn btn-primary" id="btn-scan">开始扫描</button>
+			<span class="scan-status" id="scan-status"></span>
+		</div>
+
+		<!-- 结果 -->
+		<div id="scan-results" style="display:none">
+			<div class="summary-cards" id="scan-summary"></div>
+
+			<table>
+				<thead>
+					<tr>
+						<th>输入</th>
+						<th>解析 IP</th>
+						<th>CDN</th>
+						<th>开放端口</th>
+						<th>状态</th>
+					</tr>
+				</thead>
+				<tbody id="scan-result-list"></tbody>
+			</table>
+		</div>
+	</main>
+
+	<div class="toast" id="toast"></div>
+
+	<style nonce="{{.CSPNonce}}">
+	.scan-status { margin-left: 12px; font-size: 14px; color: var(--text-muted, #888); }
+	.port-badge { display: inline-block; padding: 2px 6px; margin: 1px; border-radius: 3px; font-size: 12px; background: #e8f5e9; color: #2e7d32; }
+	.cdn-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #fff3e0; color: #e65100; }
+	</style>
+
+	<script nonce="{{.CSPNonce}}">
+	document.getElementById('btn-scan').addEventListener('click', async () => {
+		const urlsText = document.getElementById('scan-urls').value.trim();
+		if (!urlsText) { showToast('请输入目标 URL', 'error'); return; }
+
+		const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u);
+		const portsText = document.getElementById('scan-ports').value.trim();
+		const ports = portsText ? portsText.split(',').map(p => parseInt(p.trim())).filter(p => p > 0) : [];
+		const concurrency = parseInt(document.getElementById('scan-concurrency').value) || 10;
+
+		document.getElementById('btn-scan').disabled = true;
+		document.getElementById('scan-status').textContent = '扫描中...';
+		document.getElementById('scan-results').style.display = 'none';
+
+		try {
+			const res = await fetch('/api/v1/url/port-scan', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({ urls, ports, concurrency })
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				showToast('扫描失败: ' + (data.error?.message || '未知错误'), 'error');
+				return;
+			}
+			renderResults(data);
+		} catch(e) {
+			showToast('请求失败: ' + e.message, 'error');
+		} finally {
+			document.getElementById('btn-scan').disabled = false;
+			document.getElementById('scan-status').textContent = '';
+		}
+	});
+
+	function renderResults(data) {
+		const container = document.getElementById('scan-results');
+		container.style.display = '';
+
+		// Summary cards
+		const s = data.summary;
+		const summaryHtml = `
+			<div class="summary-card"><div class="count">${s.total}</div><div class="label">总 URL</div></div>
+			<div class="summary-card"><div class="count">${s.scanned}</div><div class="label">已扫描</div></div>
+			<div class="summary-card"><div class="count">${s.cdnExcluded}</div><div class="label">CDN 排除</div></div>
+			<div class="summary-card"><div class="count">${s.invalidFormat + s.resolveFailed + s.scanFailed}</div><div class="label">失败</div></div>
+		`;
+		document.getElementById('scan-summary').innerHTML = summaryHtml;
+
+		// Results table
+		const tbody = document.getElementById('scan-result-list');
+		tbody.innerHTML = '';
+		(data.results || []).forEach(r => {
+			const tr = document.createElement('tr');
+			const ips = (r.resolved_ips || []).join(', ') || '-';
+			const cdn = r.cdn_detected
+				? `<span class="cdn-badge">CDN</span> <small>${escHtml((r.cdn_reasons || []).join(', '))}</small>`
+				: '<span class="text-muted">-</span>';
+			const ports = [];
+			if (r.open_ports) {
+				Object.entries(r.open_ports).forEach(([ip, portList]) => {
+					portList.forEach(p => ports.push(`<span class="port-badge">${escHtml(ip)}:${p}</span>`));
+				});
+			}
+			const statusClass = r.status === 'scanned' ? 'status-enabled' : 'status-disabled';
+			const statusLabel = {scanned:'已扫描', cdn_excluded:'CDN排除', resolve_failed:'解析失败', scan_failed:'扫描失败', invalid_format:'格式错误'}[r.status] || r.status;
+
+			tr.innerHTML = `
+				<td>${escHtml(r.input)}</td>
+				<td><code>${escHtml(ips)}</code></td>
+				<td>${cdn}</td>
+				<td>${ports.length > 0 ? ports.join(' ') : '<span class="text-muted">无开放端口</span>'}</td>
+				<td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+			`;
+			tbody.appendChild(tr);
+		});
+	}
+	</script>
+{{template "footer" .}}

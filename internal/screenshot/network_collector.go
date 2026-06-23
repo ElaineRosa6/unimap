@@ -298,6 +298,7 @@ func parseHunterNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) 
 			ISP: item.ISP, Org: item.ASNOrg, URL: item.URL, ASN: item.ASN, Source: "hunter",
 		})
 	}
+	collection.NormalizeAssets("hunter", assets)
 	return assets, resp.Data.Total, nil
 }
 

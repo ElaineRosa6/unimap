@@ -1018,7 +1018,17 @@ function showWSDisconnectedBanner() {
 		banner = document.createElement('div');
 		banner.id = 'ws-disconnected-banner';
 		banner.style.cssText = 'background:#f8d7da; border:1px solid #f5c6cb; color:#721c24; padding:10px 16px; border-radius:6px; margin-bottom:12px; font-size:14px; display:flex; justify-content:space-between; align-items:center;';
-		banner.innerHTML = '<span>⚠️ 实时连接已断开，查询进度不可用。</span><button onclick="this.parentNode.remove();initWebSocket();" class="btn btn-sm btn-primary">重新连接</button>';
+		const span = document.createElement('span');
+		span.textContent = '⚠️ 实时连接已断开，查询进度不可用。';
+		const btn = document.createElement('button');
+		btn.className = 'btn btn-sm btn-primary';
+		btn.textContent = '重新连接';
+		btn.addEventListener('click', function() {
+			banner.remove();
+			initWebSocket();
+		});
+		banner.appendChild(span);
+		banner.appendChild(btn);
 		const main = document.querySelector('main');
 		if (main && main.firstChild) {
 			main.insertBefore(banner, main.firstChild);
@@ -1057,7 +1067,7 @@ function startPingInterval() {
 	}, 30000);
 }
 
-// P2-16: 统一 fetch 包装器 — 自动处理 401/403
+// P2-16: 统一 fetch 包装器 — 自动处理 401/403/429
 function apiFetch(url, options) {
 	return fetch(url, options).then(function(resp) {
 		if (resp.status === 401) {
@@ -1068,6 +1078,13 @@ function apiFetch(url, options) {
 		if (resp.status === 403) {
 			showMessage('权限不足，无法执行此操作', 'error');
 			throw new Error('权限不足');
+		}
+		if (resp.status === 429) {
+			var retry = resp.headers.get('Retry-After');
+			var msg = '请求过于频繁，请稍后再试';
+			if (retry) msg += '（' + retry + ' 秒后可重试）';
+			showMessage(msg, 'error');
+			throw new Error('rate_limited');
 		}
 		return resp;
 	});
@@ -1319,13 +1336,24 @@ function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, 
 		removeLoadingIndicator();
 		const resultsContent = document.getElementById('results-content');
 		if (resultsContent) {
-			resultsContent.innerHTML = `
-				<div style="color:#856404; background:#fff3cd; padding:16px; border-radius:6px; border:1px solid #ffc107;">
-					<h4 style="margin:0 0 8px;">查询超时</h4>
-					<p style="margin:0;">查询已超过 90 秒未响应，可能是引擎响应缓慢或网络问题。</p>
-					<button onclick="location.reload()" class="btn btn-primary" style="margin-top:12px;">重新查询</button>
-				</div>
-			`;
+			const wrap = document.createElement('div');
+			wrap.style.cssText = 'color:#856404; background:#fff3cd; padding:16px; border-radius:6px; border:1px solid #ffc107;';
+			const h4 = document.createElement('h4');
+			h4.style.margin = '0 0 8px';
+			h4.textContent = '查询超时';
+			const p = document.createElement('p');
+			p.style.margin = '0';
+			p.textContent = '查询已超过 90 秒未响应，可能是引擎响应缓慢或网络问题。';
+			const btn = document.createElement('button');
+			btn.className = 'btn btn-primary';
+			btn.style.marginTop = '12px';
+			btn.textContent = '重新查询';
+			btn.addEventListener('click', function() { location.reload(); });
+			wrap.appendChild(h4);
+			wrap.appendChild(p);
+			wrap.appendChild(btn);
+			resultsContent.innerHTML = '';
+			resultsContent.appendChild(wrap);
 		}
 		// 恢复按钮状态
 		if (submitBtn) {
@@ -1404,16 +1432,7 @@ function initResultsActionDelegation() {
 
 	resultsContent.addEventListener('click', function(e) {
 		var btn = e.target.closest('[data-action]');
-		if (!btn) {
-			// 错误信息折叠展开
-			var header = e.target.closest('.errors-header');
-			if (header) {
-				header.parentElement.classList.toggle('expanded');
-				var arrow = header.querySelector('.toggle-arrow');
-				if (arrow) arrow.classList.toggle('expanded');
-			}
-			return;
-		}
+		if (!btn) return;
 		var action = btn.getAttribute('data-action');
 		switch (action) {
 			case 'go-home':
@@ -1427,6 +1446,26 @@ function initResultsActionDelegation() {
 				break;
 		}
 	});
+}
+
+// 错误信息折叠展开：直接绑定到每个 .errors-header。每次 innerHTML 渲染
+// 产生的都是全新元素，旧绑定随旧元素一起销毁，故无重复绑定风险。
+// 不依赖容器级委托——渲染流程中若其他初始化（initResultsTable 等）抛
+// 异常会中断委托绑定，导致点击无反应；直接绑定放在 innerHTML 之后、
+// 其他 init 之前，确保不受影响。
+function bindErrorToggles() {
+	var headers = document.querySelectorAll('.errors-header');
+	for (var i = 0; i < headers.length; i++) {
+		(function(header) {
+			header.addEventListener('click', function() {
+				var box = header.closest('.errors-collapsible');
+				if (!box) return;
+				box.classList.toggle('expanded');
+				var arrow = header.querySelector('.toggle-arrow');
+				if (arrow) arrow.classList.toggle('expanded');
+			});
+		})(headers[i]);
+	}
 }
 
 // 显示查询错误
@@ -1467,26 +1506,6 @@ function showResults(data) {
 				if (obj[key] !== undefined && obj[key] !== null) return obj[key];
 			}
 			return '';
-		}
-
-		// renderCollectionMethodBadge surfaces how a single asset was collected
-		// (API, browser collection, or browser fallback after API failure) so
-		// the user can tell at a glance which path produced the result.
-		function renderCollectionMethodBadge(asset) {
-			if (!asset) return '';
-			const extra = asset.extra || asset.Extra || {};
-			const method = String(extra.collection_method || '').toLowerCase();
-			if (!method) return '';
-			let cls = 'method-api';
-			let label = 'API';
-			if (method === 'browser') {
-				cls = 'method-browser';
-				label = '浏览器采集';
-			} else if (method === 'browser_fallback') {
-				cls = 'method-browser-fallback';
-				label = 'API 失败后浏览器补采';
-			}
-			return ` <span class="status-badge ${cls}" title="${escapeAttr(method)}">${escapeHtml(label)}</span>`;
 		}
 
 		// 构建结果HTML
@@ -1654,7 +1673,10 @@ function showResults(data) {
 		
 		// 更新结果内容
 		resultsContent.innerHTML = html;
-		
+
+		// 直接绑定错误折叠展开（须在其他 init 之前，避免后续异常中断绑定）
+		bindErrorToggles();
+
 		// 保存当前查询数据供截图使用
 		window.currentQueryData = {
 			query: data.query || '',
@@ -1665,16 +1687,23 @@ function showResults(data) {
 		};
 		
 		// 保存到服务端历史
-		saveQueryToServerHistory(data.query || '', data.engines || [], data);
-		
-		// 初始化结果表格功能
-		initResultsTable();
-		// 事件委托：资产详情/复制/截图按钮（避免翻页重复绑定）
-		initAssetActionDelegation();
-		// CSP兼容：注册结果操作事件委托
-		initResultsActionDelegation();
-		// P2-2: 渲染第一页数据
-		renderAssetRows(0, 50);
+		try { saveQueryToServerHistory(data.query || '', data.engines || [], data); } catch(e) { console.error('saveQueryToServerHistory:', e); }
+
+		// 用 try/finally 保证：即使某个 init 抛异常，结果行也一定渲染，
+		// 错误折叠展开也一定绑定。否则任一 init 异常会中断后续所有绑定，
+		// 导致表格行/错误展开都不工作。
+		try {
+			// 初始化结果表格功能
+			initResultsTable();
+			// 事件委托：资产详情/复制/截图按钮（避免翻页重复绑定）
+			initAssetActionDelegation();
+			// CSP兼容：注册结果操作事件委托
+			initResultsActionDelegation();
+		} catch(e) { console.error('results init:', e); }
+		try {
+			// P2-2: 渲染第一页数据
+			renderAssetRows(0, 50);
+		} catch(e) { console.error('renderAssetRows:', e); }
 	}
 }
 
@@ -1689,6 +1718,28 @@ function renderAssetRowsFrom(assets, start, end) {
 	if (!tbody || !assets || !assets.length) { if (tbody) tbody.innerHTML = ''; return; }
 	const slice = assets.slice(start, end);
 	tbody.innerHTML = slice.map(asset => assetToRowHTML(asset)).join('');
+}
+
+// renderCollectionMethodBadge surfaces how a single asset was collected
+// (API, browser collection, or browser fallback after API failure) so
+// the user can tell at a glance which path produced the result.
+// 必须是顶层函数：被全局的 assetToRowHTML 调用，不能定义在 showResults
+// 闭包内（否则 ReferenceError 导致整张表渲染失败）。
+function renderCollectionMethodBadge(asset) {
+	if (!asset) return '';
+	const extra = asset.extra || asset.Extra || {};
+	const method = String(extra.collection_method || '').toLowerCase();
+	if (!method) return '';
+	let cls = 'method-api';
+	let label = 'API';
+	if (method === 'browser') {
+		cls = 'method-browser';
+		label = '浏览器采集';
+	} else if (method === 'browser_fallback') {
+		cls = 'method-browser-fallback';
+		label = 'API 失败后浏览器补采';
+	}
+	return ` <span class="status-badge ${cls}" title="${escapeAttr(method)}">${escapeHtml(label)}</span>`;
 }
 
 // P2-2: 单条资产转为表格行 HTML

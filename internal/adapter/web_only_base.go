@@ -79,6 +79,7 @@ func (w *WebOnlyAdapterBase) Search(ctx context.Context, query string, page, pag
 			engineResult.HasMore = true
 		}
 	}
+	collection.NormalizeAssets(w.name, allAssets)
 
 	engineResult.NormalizedData = allAssets
 	return engineResult, nil

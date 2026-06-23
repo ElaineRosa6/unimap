@@ -311,9 +311,6 @@ func (p *ExtensionProvider) handleLoginWallResult(cr collection.CollectResult, r
 	metrics.IncBrowserLoginRequired(engine)
 	if result.StructuredCollectedData != nil {
 		cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(result.StructuredCollectedData.Items, engine, result.StructuredCollectedData.HasMore)
-		if engine == "hunter" {
-			collection.CleanHunterFields(cr.Assets)
-		}
 		if result.StructuredCollectedData.Extra != nil {
 			if title, ok := result.StructuredCollectedData.Extra["title"].(string); ok && title != "" {
 				cr.Title = title
@@ -345,9 +342,6 @@ func (p *ExtensionProvider) populateCollectResultFromBridge(cr *collection.Colle
 	}
 	data := result.StructuredCollectedData
 	cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(data.Items, engine, data.HasMore)
-	if engine == "hunter" {
-		collection.CleanHunterFields(cr.Assets)
-	}
 	if data.Extra != nil {
 		if title, ok := data.Extra["title"].(string); ok && title != "" {
 			cr.Title = title

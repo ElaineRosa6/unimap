@@ -34,7 +34,8 @@ func (s *Server) handleNotificationChannels(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, model.APIResponse{
-		Data: map[string]any{"channels": infos},
+		Success: true,
+		Data:    map[string]any{"channels": infos},
 	})
 }
 
@@ -52,6 +53,7 @@ func (s *Server) handleNotifyReload(w http.ResponseWriter, r *http.Request) {
 	s.reloadNotifyChannels()
 
 	writeJSON(w, http.StatusOK, model.APIResponse{
+		Success: true,
 		Message: "channels reloaded",
 	})
 }
@@ -96,7 +98,7 @@ func (s *Server) reloadEngineAdapters() {
 	s.reloadBrowserFallbackConfig()
 }
 
-// registerCoreEngineAdapters 注册 5 个核心引擎适配器
+// registerCoreEngineAdapters 注册核心 5 引擎适配器。新引擎适配器代码保留，未来启用时取消注释即可。
 func (s *Server) registerCoreEngineAdapters() {
 	cfg := s.config
 	type engineReg struct {
@@ -122,6 +124,12 @@ func (s *Server) registerCoreEngineAdapters() {
 		{cfg.Engines.Shodan.Enabled, cfg.Engines.Shodan.APIKey,
 			func() { s.orchestrator.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second)) },
 			func() { s.orchestrator.RegisterAdapter(adapter.NewShodanAdapterWebOnly()) }, "Shodan"},
+		{cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID,
+			func() { s.orchestrator.RegisterAdapter(adapter.NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second)) },
+			func() { s.orchestrator.RegisterAdapter(adapter.NewCensysAdapterWebOnly()) }, "Censys"},
+		{cfg.Engines.Daydaymap.Enabled, cfg.Engines.Daydaymap.APIKey,
+			func() { s.orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second)) },
+			func() { s.orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapterWebOnly()) }, "DayDayMap"},
 	}
 	for _, e := range engines {
 		if !e.enabled {

@@ -30,6 +30,26 @@ type HunterAdapter struct {
 	lastReq time.Time
 }
 
+// HunterItem is a single result item from the Hunter API.
+type HunterItem struct {
+	IP           string                 `json:"ip"`
+	Port         float64                `json:"port"` // float64 in JSON
+	Protocol     string                 `json:"protocol"`
+	Domain       string                 `json:"domain"`
+	WebTitle     string                 `json:"web_title"`
+	HeaderServer string                 `json:"header_server"`
+	StatusCode   float64                `json:"status_code"`
+	Country      string                 `json:"country"`
+	Province     string                 `json:"province"`
+	City         string                 `json:"city"`
+	ISP          string                 `json:"isp"`
+	Org          string                 `json:"as_org"`
+	URL          string                 `json:"url"`
+	// Legacy nested fields for fallback
+	Web      map[string]interface{} `json:"web"`
+	Location map[string]interface{} `json:"location"`
+}
+
 // NewHunterAdapter 创建Hunter适配器
 func NewHunterAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *HunterAdapter {
 	client := resty.New().
@@ -229,8 +249,8 @@ func parseHunterSearchResponse(body []byte, page, pageSize int, engineName strin
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 		Data    struct {
-			Total int                      `json:"total"`
-			Items []map[string]interface{} `json:"arr"`
+			Total int          `json:"total"`
+			Items []HunterItem `json:"arr"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -249,8 +269,8 @@ func parseHunterSearchResponse(body []byte, page, pageSize int, engineName strin
 		}
 	}
 	rawData := make([]interface{}, len(resp.Data.Items))
-	for i, item := range resp.Data.Items {
-		rawData[i] = item
+	for i := range resp.Data.Items {
+		rawData[i] = &resp.Data.Items[i]
 	}
 	*result = &model.EngineResult{
 		EngineName: engineName, RawData: rawData, Total: resp.Data.Total,
@@ -266,46 +286,32 @@ func (h *HunterAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset
 		return assets, nil
 	}
 	for _, item := range raw.RawData {
-		data, ok := item.(map[string]interface{})
+		m, ok := item.(*HunterItem)
 		if !ok {
 			continue
 		}
-		if asset := h.normalizeHunterItem(data); asset != nil {
+		if asset := normalizeHunterMatch(m); asset != nil {
 			assets = append(assets, *asset)
 		}
 	}
 	return assets, nil
 }
 
-// normalizeHunterItem 解析单条 Hunter 数据
-func (h *HunterAdapter) normalizeHunterItem(data map[string]interface{}) *model.UnifiedAsset {
-	asset := &model.UnifiedAsset{Source: h.Name(), Extra: data}
-	getStr := func(k string) string { v, _ := data[k].(string); return v }
-	getInt := func(k string) int {
-		if v, ok := data[k].(float64); ok { return int(v) }
-		if v, ok := data[k].(int); ok { return v }
-		return 0
+// normalizeHunterMatch converts a parsed HunterItem to a UnifiedAsset.
+func normalizeHunterMatch(m *HunterItem) *model.UnifiedAsset {
+	if m == nil || (m.IP == "" && m.Domain == "") {
+		return nil
+	}
+	asset := &model.UnifiedAsset{Source: "hunter",
+		IP: m.IP, Port: int(m.Port), Protocol: m.Protocol, Host: m.Domain,
+		Title: m.WebTitle, Server: m.HeaderServer, StatusCode: int(m.StatusCode),
+		CountryCode: m.Country, Region: m.Province, City: m.City,
+		ISP: m.ISP, Org: m.Org, URL: m.URL,
 	}
 
-	// 扁平结构（新版 API）
-	asset.IP = getStr("ip")
-	asset.Port = getInt("port")
-	asset.Protocol = getStr("protocol")
-	asset.Host = getStr("domain")
-	asset.Title = getStr("web_title")
-	asset.Server = getStr("header_server")
-	asset.StatusCode = getInt("status_code")
-	asset.CountryCode = getStr("country")
-	asset.Region = getStr("province")
-	asset.City = getStr("city")
-	asset.ISP = getStr("isp")
-	asset.Org = getStr("as_org")
-	asset.URL = getStr("url")
-
+	// Legacy nested fields as fallback when flat fields are empty
 	if asset.IP == "" {
-		h.parseHunterLegacyFields(data, asset)
-		if asset.IP == "" { asset.IP = getStr("ip") }
-		if asset.Port == 0 { asset.Port = getInt("port") }
+		parseHunterLegacyFields(m, asset)
 	}
 
 	ensureHunterURL(asset)
@@ -316,23 +322,23 @@ func (h *HunterAdapter) normalizeHunterItem(data map[string]interface{}) *model.
 }
 
 // parseHunterLegacyFields 解析旧版嵌套结构（web/location 子对象）
-func (h *HunterAdapter) parseHunterLegacyFields(data map[string]interface{}, asset *model.UnifiedAsset) {
-	if web, ok := data["web"].(map[string]interface{}); ok {
+func parseHunterLegacyFields(m *HunterItem, asset *model.UnifiedAsset) {
+	if m.Web != nil {
 		setStr := func(key string, target *string) {
-			if v, ok := web[key].(string); ok { *target = v }
+			if v, ok := m.Web[key].(string); ok { *target = v }
 		}
 		setStr("ip", &asset.IP)
 		setStr("protocol", &asset.Protocol)
 		setStr("domain", &asset.Host)
 		setStr("title", &asset.Title)
 		setStr("server", &asset.Server)
-		if v, ok := web["port"].(float64); ok { asset.Port = int(v) }
-		if v, ok := web["status_code"].(float64); ok { asset.StatusCode = int(v) }
+		if v, ok := m.Web["port"].(float64); ok { asset.Port = int(v) }
+		if v, ok := m.Web["status_code"].(float64); ok { asset.StatusCode = int(v) }
 	}
-	if loc, ok := data["location"].(map[string]interface{}); ok {
-		if v, ok := loc["country_cn"].(string); ok { asset.CountryCode = v }
-		if v, ok := loc["province_cn"].(string); ok { asset.Region = v }
-		if v, ok := loc["city_cn"].(string); ok { asset.City = v }
+	if m.Location != nil {
+		if v, ok := m.Location["country_cn"].(string); ok { asset.CountryCode = v }
+		if v, ok := m.Location["province_cn"].(string); ok { asset.Region = v }
+		if v, ok := m.Location["city_cn"].(string); ok { asset.City = v }
 	}
 }
 

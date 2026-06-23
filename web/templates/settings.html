@@ -50,6 +50,7 @@
 		color: var(--accent);
 		background: var(--accent-subtle);
 		border-left-color: var(--accent);
+		font-weight: 600;
 	}
 
 	.ctrl-body {
@@ -81,9 +82,14 @@
 	.cfg-group {
 		background: var(--bg-surface);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
+		border-radius: var(--radius-md);
 		overflow: hidden;
 		margin-bottom: 20px;
+		box-shadow: var(--shadow-sm);
+		transition: box-shadow var(--duration-normal) var(--ease);
+	}
+	.cfg-group:hover {
+		box-shadow: var(--shadow-md);
 	}
 	.cfg-group-title {
 		padding: 14px 20px;
@@ -182,7 +188,7 @@
 		border-radius: 50%;
 		transition: 0.2s;
 	}
-	.cfg-switch input:checked + .cfg-slider { background: var(--success); }
+	.cfg-switch input:checked + .cfg-slider { background: var(--accent); }
 	.cfg-switch input:checked + .cfg-slider::before { transform: translateX(20px); }
 	.cfg-toggle-label {
 		font-size: 12px;
@@ -209,10 +215,19 @@
 		font-family: var(--font-sans);
 		transition: background var(--duration-fast);
 	}
-	.cfg-btn-save { background: var(--accent); color: #fff; }
-	.cfg-btn-save:hover { background: var(--accent-hover); }
-	.cfg-btn-test { background: transparent; color: var(--success); border: 1px solid var(--success); }
-	.cfg-btn-test:hover { background: var(--success-bg); }
+	.cfg-btn-save {
+		background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+		color: #fff;
+		box-shadow: 0 2px 8px var(--accent-glow);
+		transition: all var(--duration-fast) var(--ease);
+	}
+	.cfg-btn-save:hover {
+		background: linear-gradient(135deg, var(--accent-hover) 0%, #4338ca 100%);
+		box-shadow: 0 4px 14px var(--accent-glow);
+		transform: translateY(-1px);
+	}
+	.cfg-btn-test { background: transparent; color: var(--accent); border: 1px solid var(--accent-border); transition: all var(--duration-fast); }
+	.cfg-btn-test:hover { background: var(--accent-subtle); border-color: var(--accent); }
 
 	.cfg-result {
 		font-size: 12px;
@@ -496,6 +511,25 @@
 
 				<div id="notify-channel-list"></div>
 
+				<!-- 飞书应用全局配置（来自 config.yaml，启动时注册） -->
+				<div class="cfg-group" id="feishu-app-config">
+					<div class="cfg-group-title"><span class="dot" id="feishu-app-dot"></span> 飞书应用 (Feishu App) — 全局配置
+						<button class="cfg-btn cfg-btn-test" id="btn-feishu-app-edit" style="margin-left:auto">编辑</button>
+					</div>
+					<div class="cfg-row" id="feishu-app-summary"><span class="cfg-key">App ID</span><div class="cfg-val"><span id="feishu-app-summary-id" class="hint">未配置</span></div></div>
+					<div id="feishu-app-fields" class="hidden-init">
+						<div class="cfg-row"><span class="cfg-key">App ID</span><div class="cfg-val"><input type="text" id="feishu-app-id" placeholder="cli_xxxxxxxx"><div class="hint">飞书应用 App ID</div></div></div>
+						<div class="cfg-row"><span class="cfg-key">App Secret</span><div class="cfg-val"><input type="password" id="feishu-app-secret" placeholder="留空保留原值" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">加密存储</div></div></div>
+						<div class="cfg-row"><span class="cfg-key">Chat ID</span><div class="cfg-val"><input type="text" id="feishu-app-chat-id" placeholder="oc_xxxxxxxx"><div class="hint">飞书群聊 Chat ID</div></div></div>
+						<div class="cfg-row toggle-row"><span class="cfg-key">通知总开关</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="feishu-app-notify-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用通知推送</span></label></div></div>
+						<div class="cfg-actions">
+							<button class="cfg-btn cfg-btn-save" id="btn-feishu-app-save">保存</button>
+							<button class="cfg-btn cfg-btn-test" id="btn-feishu-app-collapse">收起</button>
+							<span class="cfg-result" id="feishu-app-result"></span>
+						</div>
+					</div>
+				</div>
+
 				<div class="cfg-group hidden-init" id="notify-form-panel">
 					<div class="cfg-group-title" id="notify-form-title">新增渠道</div>
 					<div class="cfg-row"><span class="cfg-key">渠道 ID</span><div class="cfg-val"><input type="text" id="nch-id" placeholder="如 team-dingtalk"><div class="hint">唯一标识，创建后不可修改</div></div></div>
@@ -549,8 +583,6 @@
 				</div>
 			</div>
 	</div>
-
-{{template "footer" .}}
 
 <script nonce="{{.CSPNonce}}">
 (function() {
@@ -627,8 +659,49 @@
 				var cs = document.getElementById('cache-max-size');
 				if (cs) cs.value = data.system.cache_max_entries || 1000;
 			}
+			// 飞书应用全局配置
+			if (data.notifications) {
+				var n = data.notifications;
+				var dot = document.getElementById('feishu-app-dot');
+				var summaryEl = document.getElementById('feishu-app-summary-id');
+				var fa = n.feishu_app;
+				if (fa) {
+					var aid = document.getElementById('feishu-app-id');
+					if (aid) aid.value = fa.app_id || '';
+					var asecret = document.getElementById('feishu-app-secret');
+					if (asecret) asecret.value = fa.app_secret ? '********' : '';
+					var chatId = document.getElementById('feishu-app-chat-id');
+					if (chatId) chatId.value = fa.chat_id || '';
+					if (dot) dot.className = 'dot on';
+					if (summaryEl) summaryEl.textContent = fa.app_id || '已配置';
+				} else {
+					if (dot) dot.className = 'dot off';
+					if (summaryEl) summaryEl.textContent = '未配置';
+				}
+				var notifyEnabled = document.getElementById('feishu-app-notify-enabled');
+				if (notifyEnabled) notifyEnabled.checked = n.enabled !== false;
+			}
 		} catch (e) { console.error('Config load error:', e); }
 	}
+
+		window.saveFeishuApp = async function() {
+			var appId = document.getElementById("feishu-app-id").value.trim();
+			var appSecret = document.getElementById("feishu-app-secret").value;
+			var chatId = document.getElementById("feishu-app-chat-id").value.trim();
+			var notifyEnabled = document.getElementById("feishu-app-notify-enabled").checked;
+			var data = { enabled: notifyEnabled };
+			if (appId) data.feishu_app = { app_id: appId, app_secret: appSecret, chat_id: chatId };
+			try {
+				var resp = await fetch("/api/v1/config", {
+					method: "POST",
+					headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok() },
+					body: JSON.stringify({ section: "notifications", data: data })
+				});
+				var result = await resp.json();
+				showResult("feishu-app-result", result.success ? "ok" : "fail", result.success ? (result.message || "已保存，重启后生效") : extractErrorMsg(result));
+				if (result.success) loadConfig();
+			} catch (e) { showResult("feishu-app-result", "fail", "保存失败: " + e.message); }
+		};
 
 	window.saveAllEngines = async function() {
 		var engines = ['fofa', 'hunter', 'zoomeye', 'quake', 'shodan'];
@@ -663,7 +736,7 @@
 				body: JSON.stringify({ section: 'engines', data: data })
 			});
 			var result = await resp.json();
-			showResult('engines-result', result.success ? 'ok' : 'fail', result.message || (result.success ? '全部保存成功' : '保存失败'));
+			showResult('engines-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '全部保存成功') : extractErrorMsg(result));
 			Object.keys(data).forEach(function(eng) {
 				var d = document.getElementById(eng + '-dot');
 				if (d) d.className = 'dot ' + (data[eng].enabled ? 'on' : 'off');
@@ -687,7 +760,7 @@
 				}})
 			});
 			var result = await resp.json();
-			showResult('icp-result', result.success ? 'ok' : 'fail', result.message || (result.success ? '保存成功' : '保存失败'));
+			showResult('icp-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '保存成功') : extractErrorMsg(result));
 		} catch (e) { showResult('icp-result', 'fail', '保存失败: ' + e.message); }
 	};
 
@@ -725,7 +798,7 @@
 				}})
 			});
 			var result = await resp.json();
-			showResult('screenshot-result', result.success ? 'ok' : 'fail', result.message || (result.success ? '保存成功' : '保存失败'));
+			showResult('screenshot-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '保存成功') : extractErrorMsg(result));
 		} catch (e) { showResult('screenshot-result', 'fail', '保存失败: ' + e.message); }
 	};
 
@@ -741,7 +814,7 @@
 				}})
 			});
 			var result = await resp.json();
-			showResult('system-result', result.success ? 'ok' : 'fail', result.message || (result.success ? '保存成功' : '保存失败'));
+			showResult('system-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '保存成功') : extractErrorMsg(result));
 		} catch (e) { showResult('system-result', 'fail', '保存失败: ' + e.message); }
 	};
 
@@ -802,11 +875,14 @@
 		try {
 			var resp = await fetch('/api/v1/cookies/login-status');
 			var data = await resp.json();
-			var engines = (data && data.engines) || {};
+			// Backend returns engines as an array: [{engine, logged_in, ...}, ...]
+			var arr = (data && data.engines) || [];
+			var map = {};
+			arr.forEach(function(it) { if (it && it.engine) map[it.engine] = it; });
 			Object.keys(ckIds).forEach(function(eng) {
 				var el = document.getElementById('ck-status-' + eng);
 				if (!el) return;
-				var st = engines[eng];
+				var st = map[eng];
 				if (!st) { el.textContent = '未知'; return; }
 				el.textContent = st.logged_in ? '已登录' : '未登录';
 			});
@@ -907,8 +983,9 @@
 				body: JSON.stringify({ mode: mode })
 			});
 			var data = await resp.json();
-			showResult('session-result', data.success !== false ? 'ok' : 'fail',
-				data.success !== false ? ('模式已切换到 ' + (data.mode || mode)) : (extractErrorMsg(data)));
+			var ok = resp.ok && data.success !== false;
+			showResult('session-result', ok ? 'ok' : 'fail',
+				ok ? ('模式已切换到 ' + (data.mode || mode)) : (extractErrorMsg(data)));
 		} catch (e) { showResult('session-result', 'fail', '切换失败: ' + e.message); }
 	}
 
@@ -933,7 +1010,7 @@
 		fetch('/api/v1/notifications/channels', { headers: { 'Authorization': 'Bearer ' + tok() } })
 			.then(function(r) { return r.json(); })
 			.then(function(data) {
-				notifyChannels = (data && data.channels) || [];
+				notifyChannels = (data && data.data && data.data.channels) || (data && data.channels) || [];
 				renderNotifyChannelList();
 			})
 			.catch(function(e) { console.error('notify channels load error:', e); });
@@ -979,14 +1056,18 @@
 		var isApp = type === 'feishu_app';
 		var webhookRows = document.querySelectorAll('.nch-webhook-row');
 		var appRows = document.querySelectorAll('.nch-app-row');
-		webhookRows.forEach(function(row) { row.style.display = isApp ? 'none' : ''; });
-		appRows.forEach(function(row) { row.style.display = isApp ? '' : 'none'; });
+		webhookRows.forEach(function(row) { row.style.display = isApp ? 'none' : 'block'; });
+		// nch-app-row has class "hidden-init" (display:none); clearing inline display
+		// would let the class win, so use 'block' to actually show the rows.
+		appRows.forEach(function(row) { row.style.display = isApp ? 'block' : 'none'; });
 	}
 
 	function showNotifyForm(isEdit) {
 		editingChannelId = isEdit || null;
 		document.getElementById('notify-form-title').textContent = isEdit ? '编辑渠道: ' + isEdit : '新增渠道';
-		document.getElementById('notify-form-panel').style.display = '';
+		// Use 'block' not '' — the panel has class "hidden-init" (display:none),
+		// so clearing inline display would let the class win and keep it hidden.
+		document.getElementById('notify-form-panel').style.display = 'block';
 
 		if (isEdit) {
 			document.getElementById('nch-id').disabled = true;
@@ -1001,7 +1082,7 @@
 				document.getElementById('nch-chat-id').value = ch.chat_id || '';
 				document.getElementById('nch-enabled').checked = ch.enabled;
 			}
-			document.getElementById('btn-nch-test').style.display = '';
+			document.getElementById('btn-nch-test').style.display = 'inline-block';
 		} else {
 			document.getElementById('nch-id').disabled = false;
 			document.getElementById('nch-id').value = '';
@@ -1195,6 +1276,24 @@
 	if (btnScreenshotSave) btnScreenshotSave.addEventListener('click', window.saveScreenshot);
 	var btnSystemSave = document.getElementById('btn-system-save');
 	if (btnSystemSave) btnSystemSave.addEventListener('click', window.saveSystem);
+	var btnFeishuAppSave = document.getElementById('btn-feishu-app-save');
+	if (btnFeishuAppSave) btnFeishuAppSave.addEventListener('click', window.saveFeishuApp);
+	// Feishu app panel: expand on "编辑", collapse on "收起"
+	var btnFeishuAppEdit = document.getElementById('btn-feishu-app-edit');
+	var feishuAppFields = document.getElementById('feishu-app-fields');
+	if (btnFeishuAppEdit && feishuAppFields) {
+		btnFeishuAppEdit.addEventListener('click', function() {
+			feishuAppFields.style.display = 'block';
+			btnFeishuAppEdit.style.display = 'none';
+		});
+	}
+	var btnFeishuAppCollapse = document.getElementById('btn-feishu-app-collapse');
+	if (btnFeishuAppCollapse && feishuAppFields) {
+		btnFeishuAppCollapse.addEventListener('click', function() {
+			feishuAppFields.style.display = 'none';
+			if (btnFeishuAppEdit) btnFeishuAppEdit.style.display = '';
+		});
+	}
 
 	// Notification channel buttons
 	var btnAdd = document.getElementById('btn-nch-add');
@@ -1226,3 +1325,5 @@
 	loadNotifyChannelsPanel();
 })();
 </script>
+
+{{template "footer" .}}

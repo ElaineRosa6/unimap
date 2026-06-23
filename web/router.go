@@ -55,6 +55,7 @@ func (r *Router) registerPageRoutes() {
 	r.addRoute("batch-screenshot", "GET", "/batch-screenshot", http.RedirectHandler("/monitor", http.StatusMovedPermanently).ServeHTTP, false)
 	r.addRoute("monitor", "GET", "/monitor", s.handleMonitorPage, false)
 	r.addRoute("scheduler", "GET", "/scheduler", s.handleSchedulerPage, false)
+	r.addRoute("port-scan", "GET", "/port-scan", s.handlePortScanPage, false)
 	r.addRoute("icp-page", "GET", "/icp", s.handleICPPage, false)
 	r.addRoute("settings-page", "GET", "/settings", s.handleSettingsPage, false)
 }

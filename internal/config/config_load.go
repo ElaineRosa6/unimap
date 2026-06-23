@@ -82,18 +82,6 @@ func (m *Manager) resolveEnv(config *Config) {
 	config.Engines.Daydaymap.APIKey = m.ResolveEnv(config.Engines.Daydaymap.APIKey)
 	config.Engines.Daydaymap.BaseURL = m.ResolveEnv(config.Engines.Daydaymap.BaseURL)
 
-	// 解析BinaryEdge配置
-	config.Engines.Binaryedge.APIKey = m.ResolveEnv(config.Engines.Binaryedge.APIKey)
-	config.Engines.Binaryedge.BaseURL = m.ResolveEnv(config.Engines.Binaryedge.BaseURL)
-
-	// 解析Onyphe配置
-	config.Engines.Onyphe.APIKey = m.ResolveEnv(config.Engines.Onyphe.APIKey)
-	config.Engines.Onyphe.BaseURL = m.ResolveEnv(config.Engines.Onyphe.BaseURL)
-
-	// 解析GreyNoise配置
-	config.Engines.Greynoise.APIKey = m.ResolveEnv(config.Engines.Greynoise.APIKey)
-	config.Engines.Greynoise.BaseURL = m.ResolveEnv(config.Engines.Greynoise.BaseURL)
-
 	// 解析系统配置
 	config.System.UserAgent = m.ResolveEnv(config.System.UserAgent)
 

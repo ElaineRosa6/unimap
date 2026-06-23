@@ -22,6 +22,27 @@ const (
 	FofaDefaultQPS = 3
 )
 
+// FofaItem is a single result item from the Fofa API.
+// The API returns rows as arrays ([][]interface{}); field order
+// depends on the "fields" query parameter.
+type FofaItem struct {
+	IP         string  `json:"ip"`
+	Port       float64 `json:"port"` // JSON numbers decode as float64
+	Protocol   string  `json:"protocol"`
+	Domain     string  `json:"domain"`
+	Title      string  `json:"title"`
+	Server     string  `json:"server"`
+	Header     string  `json:"header"`
+	Body       string  `json:"body"`
+	Country    string  `json:"country"`
+	Region     string  `json:"region"`
+	City       string  `json:"city"`
+	ASN        string  `json:"asn"`
+	Org        string  `json:"org"`
+	ISP        string  `json:"isp"`
+	StatusCode float64 `json:"status_code"`
+}
+
 // FofaAdapter FOFA引擎适配器
 type FofaAdapter struct {
 	client  *resty.Client
@@ -124,6 +145,58 @@ func safeRowField(row []interface{}, idx int) interface{} {
 		return row[idx]
 	}
 	return nil
+}
+
+// fofaRowToItem maps a Fofa API row ([]interface{}) to a FofaItem struct
+// using the provided field name order.
+func fofaRowToItem(row []interface{}, fieldNames []string) *FofaItem {
+	item := &FofaItem{}
+	for j, name := range fieldNames {
+		if j >= len(row) {
+			break
+		}
+		v := row[j]
+		if v == nil {
+			continue
+		}
+		switch name {
+		case "ip":
+			item.IP, _ = v.(string)
+		case "port":
+			if f, ok := v.(float64); ok {
+				item.Port = f
+			}
+		case "protocol":
+			item.Protocol, _ = v.(string)
+		case "domain":
+			item.Domain, _ = v.(string)
+		case "title":
+			item.Title, _ = v.(string)
+		case "server":
+			item.Server, _ = v.(string)
+		case "header":
+			item.Header, _ = v.(string)
+		case "body":
+			item.Body, _ = v.(string)
+		case "country":
+			item.Country, _ = v.(string)
+		case "region":
+			item.Region, _ = v.(string)
+		case "city":
+			item.City, _ = v.(string)
+		case "asn":
+			item.ASN, _ = v.(string)
+		case "org":
+			item.Org, _ = v.(string)
+		case "isp":
+			item.ISP, _ = v.(string)
+		case "status_code":
+			if f, ok := v.(float64); ok {
+				item.StatusCode = f
+			}
+		}
+	}
+	return item
 }
 
 // mapField 映射统一字段到FOFA字段
@@ -276,11 +349,7 @@ func parseFofaSearchResponse(body []byte, activeFields string, page, pageSize in
 	fieldNames := strings.Split(activeFields, ",")
 	rawData := make([]interface{}, len(resp.Results))
 	for i, row := range resp.Results {
-		data := make(map[string]interface{}, len(fieldNames))
-		for j, name := range fieldNames {
-			data[name] = safeRowField(row, j)
-		}
-		rawData[i] = data
+		rawData[i] = fofaRowToItem(row, fieldNames)
 	}
 	*result = &model.EngineResult{
 		EngineName: engineName, RawData: rawData, Total: resp.Total,
@@ -296,11 +365,11 @@ func (f *FofaAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, 
 		return assets, nil
 	}
 	for _, item := range raw.RawData {
-		data, ok := item.(map[string]interface{})
+		data, ok := item.(*FofaItem)
 		if !ok {
 			continue
 		}
-		if asset := f.normalizeFofaItem(data); asset != nil {
+		if asset := normalizeFofaItem(data); asset != nil {
 			assets = append(assets, *asset)
 		}
 	}
@@ -308,41 +377,42 @@ func (f *FofaAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, 
 }
 
 // normalizeFofaItem 解析单条 FOFA 数据
-func (f *FofaAdapter) normalizeFofaItem(data map[string]interface{}) *model.UnifiedAsset {
-	asset := &model.UnifiedAsset{Source: f.Name()}
-	getStr := func(k string) string { v, _ := data[k].(string); return v }
-	getInt := func(k string) int {
-		if v, ok := data[k].(float64); ok { return int(v) }
-		if v, ok := data[k].(int); ok { return v }
-		return 0
+func normalizeFofaItem(item *FofaItem) *model.UnifiedAsset {
+	if item == nil || item.IP == "" {
+		return nil
 	}
-
-	asset.IP = getStr("ip")
-	asset.Port = getInt("port")
-	asset.Protocol = getStr("protocol")
-	asset.Host = getStr("domain")
-	asset.Title = getStr("title")
-	asset.Server = getStr("server")
-	if body := getStr("body"); len(body) > 200 {
-		asset.BodySnippet = body[:200]
+	asset := &model.UnifiedAsset{
+		Source:     "fofa",
+		IP:         item.IP,
+		Port:       int(item.Port),
+		Protocol:   item.Protocol,
+		Host:       item.Domain,
+		Title:      item.Title,
+		Server:     item.Server,
+		CountryCode: item.Country,
+		Region:     item.Region,
+		City:       item.City,
+		ASN:        item.ASN,
+		Org:        item.Org,
+		ISP:        item.ISP,
+		StatusCode: int(item.StatusCode),
+	}
+	// Body snippet: prefer body field, fall back to header
+	snippet := item.Body
+	if snippet == "" {
+		snippet = item.Header
+	}
+	if len(snippet) > 200 {
+		asset.BodySnippet = snippet[:200]
 	} else {
-		asset.BodySnippet = body
+		asset.BodySnippet = snippet
 	}
-	asset.StatusCode = getInt("status_code")
-	asset.CountryCode = getStr("country")
-	asset.Region = getStr("region")
-	asset.City = getStr("city")
-	asset.ASN = getStr("asn")
-	asset.Org = getStr("org")
-	asset.ISP = getStr("isp")
 
 	if asset.IP != "" && asset.Port > 0 {
 		buildFofaURL(asset)
-		asset.Extra = data
 		return asset
 	}
-	if asset.Host != "" || asset.IP != "" {
-		asset.Extra = data
+	if asset.Host != "" {
 		return asset
 	}
 	return nil

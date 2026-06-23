@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/auth"
 	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/model"
@@ -249,6 +250,41 @@ func TestBuildQueryAPIPayload(t *testing.T) {
 	}
 	if len(collected) != 1 || collected[0].Engine != "quake" {
 		t.Fatalf("unexpected browserCollectedData: %#v", collected)
+	}
+}
+
+func TestBuildQueryAPIPayload_CleansHunterBrowserCollectedData(t *testing.T) {
+	payload := buildQueryAPIPayload(
+		"test",
+		[]string{"hunter"},
+		nil,
+		browserQueryOutcome{
+			Enabled: true,
+			CollectedResults: []collection.CollectResult{{
+				Engine: "hunter",
+				Assets: []model.UnifiedAsset{{
+					CountryCode: "成都市",
+					Host:        "不看空域名 -",
+					Title:       "Dovecot imapd企业办公 邮件系统 开源 Dovecot imapd",
+				}},
+			}},
+		},
+		"collect",
+	)
+
+	collected := payload["browserCollectedData"].([]collection.CollectResult)
+	if len(collected) != 1 {
+		t.Fatalf("expected 1 collected result, got %d", len(collected))
+	}
+	asset := collected[0].Assets[0]
+	if asset.CountryCode != "中国" {
+		t.Fatalf("expected cleaned country_code 中国, got %q", asset.CountryCode)
+	}
+	if asset.Host != "" {
+		t.Fatalf("expected cleaned host to be empty, got %q", asset.Host)
+	}
+	if asset.Title != "Dovecot imapd" {
+		t.Fatalf("expected cleaned title, got %q", asset.Title)
 	}
 }
 
@@ -809,6 +845,8 @@ func TestHandleGetAdminToken_ReturnsToken(t *testing.T) {
 	s := &Server{config: cfg}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/account/admin-token", nil)
+	// Admin-token identity (synthetic admin) is authorized to read the token.
+	req = req.WithContext(contextWithUserID(req.Context(), adminSyntheticUserID))
 	w := httptest.NewRecorder()
 	s.handleGetAdminToken(w, req)
 
@@ -824,6 +862,56 @@ func TestHandleGetAdminToken_ReturnsToken(t *testing.T) {
 	}
 	if tok, _ := resp["token"].(string); tok != "test-admin-token-123" {
 		t.Fatalf("expected real token 'test-admin-token-123', got %q", tok)
+	}
+}
+
+// TestHandleGetAdminToken_ForbiddenForNonAdmin ensures a logged-in non-admin
+// user cannot retrieve the admin token (P0 FINDING-001 privilege escalation fix).
+func TestHandleGetAdminToken_ForbiddenForNonAdmin(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "test-admin-token-123"
+	// Non-admin user has a real DB id (userID > 0) and role != admin.
+	s := &Server{config: cfg, userRepo: &mockUserRepo{users: map[int64]*auth.User{
+		42: {ID: 42, Username: "normal", Role: "user", Status: "active"},
+	}}}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/account/admin-token", nil)
+	req = req.WithContext(contextWithUserID(req.Context(), 42))
+	w := httptest.NewRecorder()
+	s.handleGetAdminToken(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-admin user, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "test-admin-token-123") {
+		t.Fatalf("admin token must not be leaked to non-admin user, body=%s", w.Body.String())
+	}
+}
+
+// TestHandleGetAdminToken_LegacySingleUser ensures the legacy single-user mode
+// (userID == 0, config admin account, no user DB) can still retrieve the token.
+// This is the default deployment shape today; it must not regress.
+func TestHandleGetAdminToken_LegacySingleUser(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "test-admin-token-123"
+	s := &Server{config: cfg} // no userRepo => legacy single-user mode
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/account/admin-token", nil)
+	req = req.WithContext(contextWithUserID(req.Context(), 0))
+	w := httptest.NewRecorder()
+	s.handleGetAdminToken(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for legacy single-user admin, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if tok, _ := resp["token"].(string); tok != "test-admin-token-123" {
+		t.Fatalf("expected real token, got %q", tok)
 	}
 }
 

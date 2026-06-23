@@ -23,6 +23,36 @@ type ShodanAdapter struct {
 	timeout time.Duration
 }
 
+// ShodanSearchResponse is the Shodan Host Search API response.
+type ShodanSearchResponse struct {
+	Matches []ShodanMatch `json:"matches"`
+	Total   int           `json:"total"`
+	Error   string        `json:"error,omitempty"`
+}
+
+// ShodanMatch is a single Shodan result from the Host Search API.
+type ShodanMatch struct {
+	IP        string            `json:"ip_str"`
+	Port      int               `json:"port"`
+	Transport string            `json:"transport"`
+	Hostnames []string          `json:"hostnames"`
+	Domain    string            `json:"domain"`
+	Title     string            `json:"title"`
+	Server    string            `json:"server"`
+	HTTP      map[string]string `json:"http"`
+	Status    int               `json:"status"`
+	Country   string            `json:"country_code"`
+	Region    string            `json:"region_code"`
+	City      string            `json:"city"`
+	ASN       string            `json:"asn"`
+	Org       string            `json:"org"`
+	ISP       string            `json:"isp"`
+	OS        string            `json:"os"`
+	Product   string            `json:"product"`
+	Version   string            `json:"version"`
+	Data      string            `json:"data"`
+}
+
 // NewShodanAdapter 创建Shodan适配器
 func NewShodanAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *ShodanAdapter {
 	client := resty.New().
@@ -188,31 +218,7 @@ func (s *ShodanAdapter) executeShodanSearch(query string, page, pageSize int, re
 
 // parseShodanSearchResponse 解析 Shodan 搜索响应
 func parseShodanSearchResponse(body []byte, page, pageSize int, engineName string, result **model.EngineResult) error {
-	var resp struct {
-		Matches []struct {
-			IP        string            `json:"ip_str"`
-			Port      int               `json:"port"`
-			Transport string            `json:"transport"`
-			Hostnames []string          `json:"hostnames"`
-			Domain    string            `json:"domain"`
-			Title     string            `json:"title"`
-			Server    string            `json:"server"`
-			HTTP      map[string]string `json:"http"`
-			Status    int               `json:"status"`
-			Country   string            `json:"country_code"`
-			Region    string            `json:"region_code"`
-			City      string            `json:"city"`
-			ASN       string            `json:"asn"`
-			Org       string            `json:"org"`
-			ISP       string            `json:"isp"`
-			OS        string            `json:"os"`
-			Product   string            `json:"product"`
-			Version   string            `json:"version"`
-			Data      string            `json:"data"`
-		} `json:"matches"`
-		Total int    `json:"total"`
-		Error string `json:"error,omitempty"`
-	}
+	var resp ShodanSearchResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return err
 	}
@@ -220,14 +226,8 @@ func parseShodanSearchResponse(body []byte, page, pageSize int, engineName strin
 		return fmt.Errorf("%s", resp.Error)
 	}
 	rawData := make([]interface{}, len(resp.Matches))
-	for i, m := range resp.Matches {
-		rawData[i] = map[string]interface{}{
-			"ip": m.IP, "port": m.Port, "protocol": m.Transport, "domain": m.Domain,
-			"hostnames": m.Hostnames, "title": m.Title, "server": m.Server, "http": m.HTTP,
-			"status_code": m.Status, "country": m.Country, "region": m.Region, "city": m.City,
-			"asn": m.ASN, "org": m.Org, "isp": m.ISP, "os": m.OS, "product": m.Product,
-			"version": m.Version, "data": m.Data,
-		}
+	for i := range resp.Matches {
+		rawData[i] = &resp.Matches[i]
 	}
 	*result = &model.EngineResult{
 		EngineName: engineName, RawData: rawData, Total: resp.Total,
@@ -243,57 +243,50 @@ func (s *ShodanAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset
 		return assets, nil
 	}
 	for _, item := range raw.RawData {
-		data, ok := item.(map[string]interface{})
+		m, ok := item.(*ShodanMatch)
 		if !ok {
 			continue
 		}
-		if asset := s.normalizeShodanItem(data); asset != nil {
+		if asset := normalizeShodanMatch(m); asset != nil {
 			assets = append(assets, *asset)
 		}
 	}
 	return assets, nil
 }
 
-// normalizeShodanItem 解析单条 Shodan 数据
-func (s *ShodanAdapter) normalizeShodanItem(data map[string]interface{}) *model.UnifiedAsset {
-	asset := &model.UnifiedAsset{Source: s.Name()}
-	getStr := func(k string) string { v, _ := data[k].(string); return v }
-	getInt := func(k string) int {
-		if v, ok := data[k].(float64); ok { return int(v) }
-		if v, ok := data[k].(int); ok { return v }
-		return 0
+// normalizeShodanMatch converts a parsed Shodan API match to a UnifiedAsset.
+func normalizeShodanMatch(m *ShodanMatch) *model.UnifiedAsset {
+	if m == nil || m.IP == "" {
+		return nil
 	}
-
-	asset.IP = getStr("ip")
-	asset.Port = getInt("port")
-	asset.Protocol = getStr("protocol")
-	if domain := getStr("domain"); domain != "" {
-		asset.Host = domain
-	} else if hostnames, ok := data["hostnames"].([]interface{}); ok && len(hostnames) > 0 {
-		if h, ok := hostnames[0].(string); ok { asset.Host = h }
+	asset := &model.UnifiedAsset{Source: "shodan",
+		IP: m.IP, Port: m.Port, Protocol: m.Transport, Host: m.Domain,
+		Title: m.Title, Server: m.Server,
+		StatusCode: m.Status, CountryCode: m.Country, Region: m.Region, City: m.City,
+		ASN: m.ASN, Org: m.Org, ISP: m.ISP,
 	}
-	asset.Title = getStr("title")
-	asset.Server = getStr("server")
-	if body := getStr("data"); len(body) > 200 {
-		asset.BodySnippet = body[:200]
+	// Use first hostname if no domain
+	if asset.Host == "" && len(m.Hostnames) > 0 {
+		asset.Host = m.Hostnames[0]
+	}
+	// Body snippet from data field
+	if len(m.Data) > 200 {
+		asset.BodySnippet = m.Data[:200]
 	} else {
-		asset.BodySnippet = body
+		asset.BodySnippet = m.Data
 	}
-	asset.StatusCode = getInt("status_code")
-	asset.CountryCode = getStr("country")
-	asset.Region = getStr("region")
-	asset.City = getStr("city")
-	asset.ASN = getStr("asn")
-	asset.Org = getStr("org")
-	asset.ISP = getStr("isp")
+	// Shodan Host Search v1 does not include per-result timestamps;
+	// LastSeen is filled from the Extension's browser DOM extraction path.
+	_ = m.OS   // OS field available if needed in the future
+	_ = m.Product
+	_ = m.Version
+	_ = m.HTTP
 
 	if asset.IP != "" && asset.Port > 0 {
 		buildShodanURL(asset)
-		asset.Extra = data
 		return asset
 	}
 	if asset.Host != "" {
-		asset.Extra = data
 		return asset
 	}
 	return nil

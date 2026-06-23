@@ -222,7 +222,7 @@ type ScheduledTask struct {
 	Name       string              `json:"name"`
 	Type       TaskType            `json:"type"`
 	Enabled    bool                `json:"enabled"`
-	CronExpr   string              `json:"cron_expr"`
+	CronExpr   string              `json:"cron_expr,omitempty"`
 	Payload    *model.TaskPayload  `json:"payload"`
 	TimeoutSec int                 `json:"timeout_seconds"`
 	MaxRetries int                 `json:"max_retries"`
@@ -230,10 +230,20 @@ type ScheduledTask struct {
 	NextRunAt  *time.Time          `json:"next_run_at,omitempty"`
 	CreatedAt  time.Time           `json:"created_at"`
 
+	// Schedule type: "cron" (default), "once", "delay"
+	ScheduleType string     `json:"schedule_type,omitempty"`
+	// For "once": absolute execution time (RFC3339)
+	RunAt *time.Time `json:"run_at,omitempty"`
+	// For "delay": seconds from creation to execution
+	DelaySeconds int `json:"delay_seconds,omitempty"`
+
 	// 高级功能字段
 	DependsOn       []string            `json:"depends_on,omitempty"`
 	ExecutionWindow *ExecutionWindow    `json:"execution_window,omitempty"`
 	Notifications   *NotificationConfig `json:"notifications,omitempty"`
+
+	// Internal: timer for one-time/delayed tasks
+	timer *time.Timer `json:"-"`
 }
 
 // ExecutionWindow defines when a task is allowed to run.

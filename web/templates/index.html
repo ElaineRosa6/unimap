@@ -106,6 +106,93 @@
 					</div>
 				</div>
 			</section>
+
+	<!-- UQL Syntax Reference — floating trigger button -->
+			<button class="syntax-drawer-btn" id="syntax-drawer-btn" title="UQL 语法参考" aria-label="打开语法参考">
+				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+			</button>
+
+			<!-- UQL Syntax Reference — right-side drawer -->
+			<div class="syntax-overlay" id="syntax-overlay" hidden></div>
+			<aside class="syntax-drawer" id="syntax-drawer" hidden>
+				<div class="syntax-drawer-header">
+					<h3>UQL 语法参考</h3>
+					<button class="syntax-drawer-close" id="syntax-drawer-close" aria-label="关闭">&times;</button>
+				</div>
+				<div class="syntax-drawer-body">
+					<!-- Operators -->
+					<div class="syntax-card">
+						<h4>操作符</h4>
+						<table class="syntax-table">
+							<thead><tr><th>操作符</th><th>说明</th><th>示例</th></tr></thead>
+							<tbody>
+								<tr><td><code>=</code></td><td>等于</td><td><code>port = 80</code></td></tr>
+								<tr><td><code>!=</code></td><td>不等于</td><td><code>country != CN</code></td></tr>
+								<tr><td><code>~=</code></td><td>包含匹配</td><td><code>title ~= "login"</code></td></tr>
+								<tr><td><code>IN</code></td><td>多值匹配</td><td><code>port IN [80, 443]</code></td></tr>
+								<tr><td><code>&gt; &lt;</code></td><td>大于 / 小于</td><td><code>port &gt; 1024</code></td></tr>
+							</tbody>
+						</table>
+						<h4 style="margin-top:16px">逻辑连接</h4>
+						<table class="syntax-table">
+							<thead><tr><th>符号</th><th>说明</th></tr></thead>
+							<tbody>
+								<tr><td><code>&&</code></td><td>与 (AND)</td></tr>
+								<tr><td><code>||</code></td><td>或 (OR)</td></tr>
+							</tbody>
+						</table>
+					</div>
+
+					<!-- Field Mapping -->
+					<div class="syntax-card">
+						<h4>字段映射 &mdash; UQL &rarr; 各引擎原生语法</h4>
+						<div class="syntax-scroll">
+						<table class="syntax-table syntax-table--mapping">
+							<thead><tr><th>UQL</th><th>FOFA</th><th>Hunter</th><th>ZoomEye</th><th>Quake</th><th>Shodan</th></tr></thead>
+							<tbody>
+								<tr><td><code>ip</code></td><td><code>ip</code></td><td><code>ip</code></td><td><code>ip</code></td><td><code>ip</code></td><td><code>ip</code></td></tr>
+								<tr><td><code>port</code></td><td><code>port</code></td><td><code>port</code></td><td><code>port</code></td><td><code>port</code></td><td><code>port</code></td></tr>
+								<tr><td><code>protocol</code></td><td><code>protocol</code></td><td><code>protocol</code></td><td><code>service</code></td><td><code>service</code></td><td><code>transport</code></td></tr>
+								<tr><td><code>title</code></td><td><code>title</code></td><td><code>web.title</code></td><td><code>title</code></td><td><code>title</code></td><td><code>http.title</code></td></tr>
+								<tr><td><code>body</code></td><td><code>body</code></td><td><code>web.body</code></td><td><code>http.body</code></td><td><code>response</code></td><td><code>http.html</code></td></tr>
+								<tr><td><code>header</code></td><td><code>header</code></td><td><code>header</code></td><td><code>http.header</code></td><td><code>&mdash;</code></td><td><code>http.headers_hash</code></td></tr>
+								<tr><td><code>server</code></td><td><code>server</code></td><td><code>header.server</code></td><td><code>http.header.server</code></td><td><code>server</code></td><td><code>http.server</code></td></tr>
+								<tr><td><code>status_code</code></td><td><code>status_code</code></td><td><code>web.status_code</code></td><td><code>&mdash;</code></td><td><code>status_code</code></td><td><code>http.status</code></td></tr>
+								<tr><td><code>country</code></td><td><code>country</code></td><td><code>ip.country</code></td><td><code>country</code></td><td><code>country</code></td><td><code>country</code></td></tr>
+								<tr><td><code>region</code></td><td><code>region</code></td><td><code>ip.province</code></td><td><code>subdivisions</code></td><td><code>province</code></td><td><code>region</code></td></tr>
+								<tr><td><code>city</code></td><td><code>city</code></td><td><code>ip.city</code></td><td><code>city</code></td><td><code>city</code></td><td><code>city</code></td></tr>
+								<tr><td><code>asn</code></td><td><code>asn</code></td><td><code>asn</code></td><td><code>asn</code></td><td><code>asn</code></td><td><code>asn</code></td></tr>
+								<tr><td><code>org</code></td><td><code>org</code></td><td><code>ip.org</code></td><td><code>org</code></td><td><code>org</code></td><td><code>org</code></td></tr>
+								<tr><td><code>isp</code></td><td><code>&mdash;</code></td><td><code>ip.isp</code></td><td><code>isp</code></td><td><code>isp</code></td><td><code>isp</code></td></tr>
+								<tr><td><code>os</code></td><td><code>os</code></td><td><code>ip.os</code></td><td><code>os</code></td><td><code>os</code></td><td><code>os</code></td></tr>
+								<tr><td><code>app</code></td><td><code>app</code></td><td><code>app.name</code></td><td><code>app</code></td><td><code>app</code></td><td><code>product</code></td></tr>
+								<tr><td><code>host</code></td><td><code>host</code></td><td><code>domain</code></td><td><code>hostname</code></td><td><code>domain</code></td><td><code>hostname</code></td></tr>
+								<tr><td><code>domain</code></td><td><code>domain</code></td><td><code>domain</code></td><td><code>domain</code></td><td><code>domain</code></td><td><code>domain</code></td></tr>
+								<tr><td><code>cert</code></td><td><code>cert</code></td><td><code>cert</code></td><td><code>&mdash;</code></td><td><code>cert</code></td><td><code>ssl</code></td></tr>
+								<tr><td><code>url</code></td><td><code>host</code></td><td><code>&mdash;</code></td><td><code>site</code></td><td><code>url</code></td><td><code>&mdash;</code></td></tr>
+							</tbody>
+						</table>
+						</div>
+						<small class="form-text">&mdash; 表示该引擎不支持此字段。同名透传（parser fallback）的字段未列出。</small>
+					</div>
+				</div>
+			</aside>
 		</main>
 
+<script nonce="{{.CSPNonce}}">
+(function() {
+	var btn = document.getElementById('syntax-drawer-btn');
+	var drawer = document.getElementById('syntax-drawer');
+	var overlay = document.getElementById('syntax-overlay');
+	var close = document.getElementById('syntax-drawer-close');
+
+	function open() { overlay.hidden = false; drawer.hidden = false; }
+	function shut() { overlay.hidden = true; drawer.hidden = true; }
+
+	btn.addEventListener('click', open);
+	close.addEventListener('click', shut);
+	overlay.addEventListener('click', shut);
+	document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && !drawer.hidden) shut(); });
+})();
+</script>
 {{template "footer" .}}
