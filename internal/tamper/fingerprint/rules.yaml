@@ -1,0 +1,580 @@
+# 指纹规则库 — 从 urlive.py 移植，按类别组织
+# 匹配维度: header / body / title / cookie
+
+# ── Web Server ──────────────────────────────────────────
+- name: Nginx
+  category: webserver
+  type: header
+  key: Server
+  regex: (?i)nginx
+
+- name: Apache
+  category: webserver
+  type: header
+  key: Server
+  regex: (?i)apache|coyote|Apache-Coyote
+
+- name: IIS
+  category: webserver
+  type: header
+  key: Server
+  regex: (?i)microsoft-iis|iis
+
+- name: Tomcat
+  category: webserver
+  type: header
+  key: Server
+  regex: (?i)tomcat|coyote
+
+- name: OpenResty
+  category: webserver
+  type: header
+  key: Server
+  regex: (?i)openresty
+
+- name: LiteSpeed
+  category: webserver
+  type: header
+  key: Server
+  regex: (?i)litespeed
+
+- name: Tengine
+  category: webserver
+  type: header
+  key: Server
+  regex: (?i)tengine
+
+- name: Caddy
+  category: webserver
+  type: header
+  key: Server
+  regex: (?i)caddy
+
+- name: Cloudflare
+  category: webserver
+  type: header
+  key: Server
+  regex: (?i)cloudflare
+
+- name: Varnish
+  category: webserver
+  type: header
+  key: Server
+  regex: (?i)varnish
+
+- name: Jetty
+  category: webserver
+  type: header
+  key: Server
+  regex: (?i)jetty
+
+# ── Framework ───────────────────────────────────────────
+- name: PHP
+  category: framework
+  type: header
+  key: X-Powered-By
+  regex: (?i)php
+
+- name: ASP.NET
+  category: framework
+  type: header
+  key: X-Powered-By
+  regex: (?i)asp\.net
+
+- name: ThinkPHP
+  category: framework
+  type: header
+  key: X-Powered-By
+  regex: (?i)thinkphp
+
+- name: Express
+  category: framework
+  type: header
+  key: X-Powered-By
+  regex: (?i)express
+
+- name: Next.js
+  category: framework
+  type: header
+  key: X-Powered-By
+  regex: (?i)next\.js
+
+- name: Spring
+  category: framework
+  type: header
+  key: X-Application-Context
+  regex: .*
+
+- name: Laravel
+  category: framework
+  type: cookie
+  regex: (?i)laravel_session
+
+- name: Django
+  category: framework
+  type: cookie
+  regex: (?i)csrftoken
+
+- name: Rails
+  category: framework
+  type: cookie
+  regex: (?i)_session_id
+
+- name: Shiro
+  category: framework
+  type: cookie
+  regex: (?i)rememberMe=
+
+- name: Java-JSESSIONID
+  category: framework
+  type: cookie
+  regex: (?i)JSESSIONID
+
+- name: PHPSESSID
+  category: framework
+  type: cookie
+  regex: (?i)PHPSESSID
+
+- name: SpringBoot-Whitelabel
+  category: framework
+  type: body
+  regex: (?i)whitelabel error page
+
+# ── Frontend ────────────────────────────────────────────
+- name: Vue.js
+  category: frontend
+  type: body
+  regex: (?i)vue\.js|vue\.min\.js|data-v-
+
+- name: React
+  category: frontend
+  type: body
+  regex: (?i)react\.min\.js|react-dom|data-reactroot|__NEXT_DATA__
+
+- name: Angular
+  category: frontend
+  type: body
+  regex: (?i)ng-version|angular\.min\.js
+
+- name: jQuery
+  category: frontend
+  type: body
+  regex: (?i)jquery[.\-]?\d*\.\d*\.\d*\.js|jquery\.min\.js
+
+- name: Bootstrap
+  category: frontend
+  type: body
+  regex: (?i)bootstrap[.\-]?\d*\.\d*\.\d*\.(css|js)
+
+- name: Layui
+  category: frontend
+  type: body
+  regex: (?i)layui\.(css|js)|class="layui
+
+- name: ElementUI
+  category: frontend
+  type: body
+  regex: (?i)element-ui\.(css|js)
+
+- name: AntDesign
+  category: frontend
+  type: body
+  regex: (?i)antd\.(css|js)|ant-design
+
+- name: ECharts
+  category: frontend
+  type: body
+  regex: (?i)echarts\.(min\.)?js
+
+# ── CMS ─────────────────────────────────────────────────
+- name: WordPress
+  category: cms
+  type: body
+  regex: (?i)wp-content|wp-includes|wordpress
+
+- name: WordPress-XMLRPC
+  category: cms
+  type: header
+  key: X-Pingback
+  regex: (?i)wordpress
+
+- name: Drupal
+  category: cms
+  type: body
+  regex: (?i)drupal|sites/default/files
+
+- name: Joomla
+  category: cms
+  type: body
+  regex: (?i)joomla
+
+- name: DedeCMS
+  category: cms
+  type: body
+  regex: (?i)/dede/|powerby.*dedecms|dedeajax
+
+- name: Discuz
+  category: cms
+  type: body
+  regex: (?i)Discuz!
+
+- name: Typecho
+  category: cms
+  type: body
+  regex: (?i)typecho|typecho\.js
+
+- name: PbootCMS
+  category: cms
+  type: body
+  regex: (?i)pbootcms|powerby.*pboot
+
+# ── OA / 办公系统 ───────────────────────────────────────
+- name: Weaver-OA
+  category: oa
+  type: body
+  regex: (?i)weaver\.|/weaver/|js/ecology8
+
+- name: Seeyon-OA
+  category: oa
+  type: body
+  regex: (?i)seeyon|/seeyon/
+
+- name: Tongda-OA
+  category: oa
+  type: body
+  regex: (?i)通达OA|td_oa|inc/js/td
+
+- name: Yonyou-NC
+  category: oa
+  type: body
+  regex: (?i)yonyou|/nccloud/|iufo
+
+- name: Fanruan-Report
+  category: oa
+  type: body
+  regex: (?i)fineReport|WebReport
+
+- name: Landray-OA
+  category: oa
+  type: body
+  regex: (?i)landray|/sys/portal/
+
+- name: Whir-OA
+  category: oa
+  type: body
+  regex: (?i)whir.*oa|com\.whir
+
+- name: iOffice
+  category: oa
+  type: body
+  regex: (?i)ioffice|hongfan
+
+# ── Middleware ──────────────────────────────────────────
+- name: WebLogic
+  category: middleware
+  type: body
+  regex: (?i)weblogic|welcome to weblogic
+
+- name: WebSphere
+  category: middleware
+  type: header
+  key: Server
+  regex: (?i)websphere
+
+- name: JBoss
+  category: middleware
+  type: header
+  key: Server
+  regex: (?i)jboss|jbossweb
+
+- name: Nacos
+  category: middleware
+  type: body
+  regex: (?i)nacos|console-ui
+
+- name: XXL-JOB
+  category: middleware
+  type: body
+  regex: (?i)xxl-job|jobexecutor
+
+- name: Consul
+  category: middleware
+  type: body
+  regex: (?i)consul|v1/agent|/ui/
+
+- name: ZooKeeper
+  category: middleware
+  type: body
+  regex: (?i)zookeeper|zkui
+
+- name: Sentinel-Dashboard
+  category: middleware
+  type: body
+  regex: (?i)sentinel.*dashboard
+
+- name: SkyWalking
+  category: middleware
+  type: body
+  regex: (?i)skywalking|ui\.topology
+
+- name: Dubbo-Admin
+  category: middleware
+  type: title
+  regex: (?i)dubbo.*admin
+
+- name: Kong
+  category: middleware
+  type: header
+  key: Server
+  regex: (?i)kong
+
+- name: Envoy
+  category: middleware
+  type: header
+  key: Server
+  regex: (?i)envoy
+
+- name: Traefik
+  category: middleware
+  type: header
+  key: Server
+  regex: (?i)traefik
+
+- name: HAProxy
+  category: middleware
+  type: header
+  key: Server
+  regex: (?i)haproxy
+
+# ── Monitoring / Ops Panel ──────────────────────────────
+- name: Zabbix
+  category: monitoring
+  type: body
+  regex: (?i)zabbix\.js|zabbix\.css|zabbix
+
+- name: Grafana
+  category: monitoring
+  type: body
+  regex: (?i)grafana|grafana\.min\.js
+
+- name: Kibana
+  category: monitoring
+  type: body
+  regex: (?i)kibana|kbn-logo
+
+- name: Prometheus
+  category: monitoring
+  type: body
+  regex: (?i)prometheus|graphite-target
+
+- name: BTPanel
+  category: monitoring
+  type: body
+  regex: (?i)bt\.cn|宝塔|linux面板
+
+- name: 1Panel
+  category: monitoring
+  type: body
+  regex: (?i)1panel|FIT2CLOUD
+
+- name: Portainer
+  category: monitoring
+  type: body
+  regex: (?i)portainer
+
+- name: Rancher
+  category: monitoring
+  type: body
+  regex: (?i)rancher|global-nav
+
+# ── DevOps ──────────────────────────────────────────────
+- name: GitLab
+  category: devops
+  type: body
+  regex: (?i)gitlab|data-project-id
+
+- name: Jenkins
+  category: devops
+  type: body
+  regex: (?i)jenkins|jenkins-ci|X-Jenkins
+
+- name: SonarQube
+  category: devops
+  type: body
+  regex: (?i)sonarqube|sonar-css
+
+- name: Harbor
+  category: devops
+  type: title
+  regex: (?i)harbor
+
+- name: Nexus
+  category: devops
+  type: body
+  regex: (?i)nexus.*repository|nexus.*oss
+
+- name: Jira
+  category: devops
+  type: body
+  regex: (?i)atlassian.*jira|data-jira
+
+- name: Confluence
+  category: devops
+  type: body
+  regex: (?i)confluence|atlassian.*confluence
+
+- name: Gitea
+  category: devops
+  type: body
+  regex: (?i)Powered by Gitea|gitea\.css
+
+- name: Gogs
+  category: devops
+  type: body
+  regex: (?i)Powered by Gogs|gogs\.css
+
+# ── Security ────────────────────────────────────────────
+- name: WAF
+  category: security
+  type: body
+  regex: (?i)firewall|拦截|非法请求|safeline|长亭|安全狗|云锁
+
+- name: Cloudflare-CFRAY
+  category: security
+  type: header
+  key: CF-RAY
+  regex: .*
+
+- name: Akamai
+  category: security
+  type: header
+  key: X-Akamai
+  regex: .*
+
+- name: F5-BIGIP
+  category: security
+  type: header
+  key: Server
+  regex: (?i)bigip|big-ip
+
+- name: Fortinet
+  category: security
+  type: header
+  key: Server
+  regex: (?i)fortinet|fortigate
+
+- name: PaloAlto
+  category: security
+  type: header
+  key: Server
+  regex: (?i)globalprotect|paloalto
+
+# ── Database Admin ──────────────────────────────────────
+- name: phpMyAdmin
+  category: database
+  type: body
+  regex: (?i)phpmyadmin|pma_theme|pma_navigation
+
+- name: Adminer
+  category: database
+  type: body
+  regex: (?i)adminer|Login - Adminer
+
+# ── API / Docs ──────────────────────────────────────────
+- name: Swagger
+  category: other
+  type: body
+  regex: (?i)swagger-ui|swagger\.css|swagger-ui\.bundle
+
+- name: YApi
+  category: other
+  type: body
+  regex: (?i)yapi|YMFE
+
+# ── Message Queue ───────────────────────────────────────
+- name: RabbitMQ
+  category: other
+  type: body
+  regex: (?i)rabbitmq_management|rabbitmq-web
+
+- name: RocketMQ
+  category: other
+  type: body
+  regex: (?i)rocketmq-console|ops.*rocketmq
+
+# ── Storage / Object ────────────────────────────────────
+- name: MinIO
+  category: other
+  type: body
+  regex: (?i)minio|MINIO_BROWSER
+
+- name: Docker-Registry
+  category: other
+  type: body
+  regex: (?i)docker-registry|v2/_catalog
+
+# ── Other Tools ─────────────────────────────────────────
+- name: JumpServer
+  category: other
+  type: body
+  regex: (?i)jumpserver|jumpserver.*assets
+
+- name: Wiki.js
+  category: other
+  type: body
+  regex: (?i)wiki\.js|wikijs
+
+- name: Swagger-Title
+  category: other
+  type: title
+  regex: (?i)swagger ui
+
+- name: Nacos-Title
+  category: middleware
+  type: title
+  regex: (?i)nacos
+
+- name: XXL-JOB-Title
+  category: middleware
+  type: title
+  regex: (?i)xxl-job
+
+- name: Grafana-Title
+  category: monitoring
+  type: title
+  regex: (?i)grafana
+
+- name: Prometheus-Title
+  category: monitoring
+  type: title
+  regex: (?i)prometheus
+
+- name: GitLab-Title
+  category: devops
+  type: title
+  regex: (?i)gitlab
+
+- name: SonarQube-Title
+  category: devops
+  type: title
+  regex: (?i)sonarqube
+
+- name: Redmine-Title
+  category: devops
+  type: title
+  regex: (?i)redmine
+
+- name: Cockpit
+  category: monitoring
+  type: title
+  regex: (?i)cockpit
+
+- name: phpMyAdmin-Title
+  category: database
+  type: title
+  regex: (?i)phpMyAdmin
+
+- name: BTPanel-Title
+  category: monitoring
+  type: title
+  regex: (?i)宝塔

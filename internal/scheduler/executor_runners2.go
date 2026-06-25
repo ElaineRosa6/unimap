@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -441,6 +442,7 @@ type icpQueryResult struct {
 	qtype   string
 	total   int
 	domains []string
+	results []adapter.ICPResult
 }
 
 func (r *ICPQueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
@@ -463,12 +465,19 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload *model.TaskPayload
 	failFast := extractBool(payload, "fail_fast", false)
 	taskID := extractString(payload, "_task_id", "")
 
+	// 拟人请求间隔配置（可通过 payload 覆盖默认值）
+	companyIntervalMin := extractInt(payload, "request_interval_min", 30)
+	companyIntervalMax := extractInt(payload, "request_interval_max", 90)
+	typeIntervalMin := extractInt(payload, "type_interval_min", 3)
+	typeIntervalMax := extractInt(payload, "type_interval_max", 8)
+
 	baseURL := strings.TrimSpace(cfg.BaseURL)
 	apiKey := cfg.APIKey
 	startedAt := time.Now()
 
 	execRes := r.executeICPQueries(
 		ctx, queries, types, baseURL, apiKey, page, pageSize, failFast, taskID, startedAt,
+		companyIntervalMin, companyIntervalMax, typeIntervalMin, typeIntervalMax,
 	)
 	if execRes.ctxErr != nil {
 		return "", execRes.ctxErr
@@ -560,10 +569,11 @@ type icpExecResult struct {
 func (r *ICPQueryRunner) executeICPQueries(
 	ctx context.Context, queries, types []string, baseURL, apiKey string,
 	page, pageSize int, failFast bool, taskID string, startedAt time.Time,
+	companyIntervalMin, companyIntervalMax, typeIntervalMin, typeIntervalMax int,
 ) icpExecResult {
 	var res icpExecResult
-	for _, q := range queries {
-		for _, queryType := range types {
+	for i, q := range queries {
+		for j, queryType := range types {
 			select {
 			case <-ctx.Done():
 				res.ctxErr = ctx.Err()
@@ -582,26 +592,57 @@ func (r *ICPQueryRunner) executeICPQueries(
 				if failFast {
 					break
 				}
-				continue
-			}
-			res.succeeded++
-			res.totalRecords += total
+			} else {
+				res.succeeded++
+				res.totalRecords += total
 
-			var domains []string
-			for _, item := range results {
-				if item.Domain != "" {
-					domains = append(domains, item.Domain)
+				var domains []string
+				for _, item := range results {
+					if item.Domain != "" {
+						domains = append(domains, item.Domain)
+					}
+				}
+				res.queryResults = append(res.queryResults, icpQueryResult{query: q, qtype: queryType, total: total, domains: domains, results: results})
+
+				r.persistRun(taskID, q, queryType, page, pageSize, total, results, startedAt)
+			}
+
+			// 类型间间隔（非最后一个类型）：随机 3-8 秒，模拟人切换类型
+			if j < len(types)-1 {
+				delay := time.Duration(randInt(typeIntervalMin, typeIntervalMax)) * time.Second
+				logger.Infof("[scheduler] ICP: waiting %v between types for %q", delay, q)
+				select {
+				case <-ctx.Done():
+					res.ctxErr = ctx.Err()
+					return res
+				case <-time.After(delay):
 				}
 			}
-			res.queryResults = append(res.queryResults, icpQueryResult{query: q, qtype: queryType, total: total, domains: domains})
-
-			r.persistRun(taskID, q, queryType, page, pageSize, total, results, startedAt)
 		}
 		if failFast && len(res.errs) > 0 {
 			break
 		}
+		// 公司间间隔（非最后一个公司）：随机 30-90 秒，模拟人查看结果
+		if i < len(queries)-1 {
+			delay := time.Duration(randInt(companyIntervalMin, companyIntervalMax)) * time.Second
+			logger.Infof("[scheduler] ICP: waiting %v before next company %q", delay, queries[i+1])
+			select {
+			case <-ctx.Done():
+				res.ctxErr = ctx.Err()
+				return res
+			case <-time.After(delay):
+			}
+		}
 	}
 	return res
+}
+
+// randInt returns a random integer in [min, max] (inclusive).
+func randInt(min, max int) int {
+	if min >= max {
+		return min
+	}
+	return min + rand.Intn(max-min+1)
 }
 
 func formatICPResults(types, queries []string, succeeded, totalRecords int, queryResults []icpQueryResult, errs []string) string {
@@ -611,16 +652,51 @@ func formatICPResults(types, queries []string, succeeded, totalRecords int, quer
 	for _, qr := range queryResults {
 		fmt.Fprintf(&b, "✅ %s [%s]: %d 条", qr.query, qr.qtype, qr.total)
 		if len(qr.domains) > 0 {
-			show := qr.domains
-			if len(show) > 5 {
-				show = show[:5]
-			}
-			fmt.Fprintf(&b, " — %s", strings.Join(show, ", "))
-			if len(qr.domains) > 5 {
-				fmt.Fprintf(&b, " 等%d个", len(qr.domains))
-			}
+			fmt.Fprintf(&b, " — %s", strings.Join(qr.domains, ", "))
 		}
 		b.WriteString("\n")
+		// 列出每条记录的详情（域名 / 许可证号 / 主办单位）
+		if len(qr.results) > 0 {
+			b.WriteString("📋 明细:\n")
+			for _, r := range qr.results {
+				domain := r.Domain
+				if domain == "" {
+					domain = r.ServiceName
+				}
+				// 镜像 adapter.ICPResult.licence() 的 fallback 逻辑
+				licence := r.Licence
+				if licence == "" {
+					licence = r.MainLicWeb
+				}
+				if licence == "" {
+					licence = r.MainLicence
+				}
+				// 网站名称（web 类型有 ContentName，app 类型用 ServiceName）
+				siteName := r.ContentName
+				if siteName == "" {
+					siteName = r.ServiceName
+				}
+				fmt.Fprintf(&b, "  • %s\n", domain)
+				fmt.Fprintf(&b, "    许可证: %s\n", licence)
+				fmt.Fprintf(&b, "    网站名称: %s\n", siteName)
+				fmt.Fprintf(&b, "    主办单位: %s\n", r.UnitName)
+				if r.NatureName != "" {
+					fmt.Fprintf(&b, "    单位性质: %s\n", r.NatureName)
+				}
+				if r.CityName != "" {
+					fmt.Fprintf(&b, "    城市: %s\n", r.CityName)
+				}
+				if r.UpdateRecTime != "" {
+					fmt.Fprintf(&b, "    审核日期: %s\n", r.UpdateRecTime)
+				}
+				if r.UpdateRecord != "" {
+					fmt.Fprintf(&b, "    更新记录: %s\n", r.UpdateRecord)
+				}
+				if r.LimitAccess != "" {
+					fmt.Fprintf(&b, "    访问限制: %s\n", r.LimitAccess)
+				}
+			}
+		}
 	}
 	for _, e := range errs {
 		fmt.Fprintf(&b, "❌ %s\n", e)

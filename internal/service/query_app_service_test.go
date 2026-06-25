@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/unimap/project/internal/collection"
@@ -10,13 +11,16 @@ import (
 )
 
 type stubBrowserRouter struct {
+	mu              sync.Mutex
 	openErrByEngine map[string]error
 	collectResults  map[string][]collection.CollectResult
 	openCalls       int
 }
 
 func (r *stubBrowserRouter) OpenSearchEngineResult(_ context.Context, engine, _ string) (string, error) {
+	r.mu.Lock()
 	r.openCalls++
+	r.mu.Unlock()
 	if err := r.openErrByEngine[engine]; err != nil {
 		return "", err
 	}
@@ -36,7 +40,9 @@ type stubCombinedBrowserRouter struct {
 }
 
 func (r *stubCombinedBrowserRouter) CollectAndCaptureSearchEngineResult(_ context.Context, engine, query, queryID string) ([]collection.CollectResult, string, error) {
+	r.mu.Lock()
 	r.combinedCalls++
+	r.mu.Unlock()
 	return []collection.CollectResult{{Engine: engine, Query: queryID, Assets: []model.UnifiedAsset{{URL: query}}}}, "/tmp/capture.png", nil
 }
 
@@ -46,6 +52,7 @@ func TestRunBrowserQueryAsync_ReportsProgressForEachEngine(t *testing.T) {
 		openErrByEngine: map[string]error{"hunter": errors.New("login required")},
 	}
 
+	var mu sync.Mutex
 	var calls []struct {
 		done   int
 		total  int
@@ -65,6 +72,8 @@ func TestRunBrowserQueryAsync_ReportsProgressForEachEngine(t *testing.T) {
 		nil,
 		router,
 		func(done, total int, engine string, err error) {
+			mu.Lock()
+			defer mu.Unlock()
 			calls = append(calls, struct {
 				done   int
 				total  int
@@ -75,14 +84,26 @@ func TestRunBrowserQueryAsync_ReportsProgressForEachEngine(t *testing.T) {
 	)
 
 	outcome := <-ch
+	mu.Lock()
+	defer mu.Unlock()
 	if len(calls) != 2 {
 		t.Fatalf("expected 2 progress calls, got %d", len(calls))
 	}
-	if calls[0].done != 1 || calls[0].total != 2 || calls[0].engine != "fofa" || calls[0].err != nil {
-		t.Fatalf("unexpected first progress call: %+v", calls[0])
+	// Parallel execution: order is non-deterministic, so verify by engine.
+	byEngine := map[string]bool{}
+	doneValues := map[int]bool{}
+	for _, c := range calls {
+		if c.total != 2 {
+			t.Fatalf("expected total=2 for %s, got %d", c.engine, c.total)
+		}
+		byEngine[c.engine] = true
+		doneValues[c.done] = true
 	}
-	if calls[1].done != 2 || calls[1].total != 2 || calls[1].engine != "hunter" || calls[1].err == nil {
-		t.Fatalf("unexpected second progress call: %+v", calls[1])
+	if !byEngine["fofa"] || !byEngine["hunter"] {
+		t.Fatalf("expected both fofa and hunter in progress calls, got %v", byEngine)
+	}
+	if !doneValues[1] || !doneValues[2] {
+		t.Fatalf("expected done values 1 and 2, got %v", doneValues)
 	}
 	if len(outcome.Errors) != 1 {
 		t.Fatalf("expected one browser error, got %#v", outcome.Errors)

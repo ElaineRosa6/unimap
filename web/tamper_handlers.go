@@ -5,18 +5,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/tamper"
 )
 
 func (s *Server) newTamperDetector(ctx context.Context, mode string) (*tamper.Detector, context.CancelFunc, error) {
-	detector := tamper.NewDetector(tamper.DetectorConfig{
+	cfg := tamper.DetectorConfig{
 		BaseDir:       "./hash_store",
 		DetectionMode: mode,
-	})
+	}
+	if s.config != nil {
+		cfg.PortScanEnabled = s.config.Tamper.PortScanEnabled
+		cfg.InsecureSkipVerify = s.config.Tamper.InsecureSkipVerify
+		if s.config.Tamper.PortScanTimeoutMs > 0 {
+			cfg.PortScanTimeout = time.Duration(s.config.Tamper.PortScanTimeoutMs) * time.Millisecond
+		}
+	}
+	detector := tamper.NewDetector(cfg)
 
 	cleanup := func() {}
 	if s.screenshotMgr == nil {
@@ -75,6 +85,19 @@ func (s *Server) handleTamperCheck(w http.ResponseWriter, r *http.Request) {
 		req.Concurrency = maxTamperConcurrency
 	}
 
+	// SSRF: reject URLs that resolve to private/internal addresses
+	for _, urlStr := range req.URLs {
+		parsed, err := url.Parse(urlStr)
+		if err != nil {
+			continue
+		}
+		if isPrivateOrInternalIP(parsed.Hostname()) {
+			writeAPIError(w, http.StatusForbidden, "blocked_url",
+				"url resolves to private/internal address", nil)
+			return
+		}
+	}
+
 	proxy := s.selectRequestProxy()
 	resp, err := s.tamperApp.Check(r.Context(), service.TamperCheckRequest{
 		URLs:        req.URLs,
@@ -128,6 +151,19 @@ func (s *Server) handleTamperBaseline(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Concurrency <= 0 || req.Concurrency > maxTamperConcurrency {
 		req.Concurrency = maxTamperConcurrency
+	}
+
+	// SSRF: reject URLs that resolve to private/internal addresses
+	for _, urlStr := range req.URLs {
+		parsed, err := url.Parse(urlStr)
+		if err != nil {
+			continue
+		}
+		if isPrivateOrInternalIP(parsed.Hostname()) {
+			writeAPIError(w, http.StatusForbidden, "blocked_url",
+				"url resolves to private/internal address", nil)
+			return
+		}
 	}
 
 	proxy := s.selectRequestProxy()

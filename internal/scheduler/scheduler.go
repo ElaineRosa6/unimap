@@ -30,15 +30,16 @@ func NewScheduler(storePath string, historyPath string, maxHistory int) *Schedul
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Scheduler{
-		tasks:      make(map[string]*ScheduledTask),
-		cron:       c,
-		cronIDs:    make(map[string]cron.EntryID),
-		handlers:   make(map[TaskType]TaskHandler),
-		history:    make([]ExecutionRecord, 0),
-		maxHistory: maxHistory,
-		stopCh:     make(chan struct{}),
-		ctx:        ctx,
-		cancel:     cancel,
+		tasks:         make(map[string]*ScheduledTask),
+		cron:          c,
+		cronIDs:       make(map[string]cron.EntryID),
+		handlers:      make(map[TaskType]TaskHandler),
+		history:       make([]ExecutionRecord, 0),
+		maxHistory:    maxHistory,
+		stopCh:        make(chan struct{}),
+		ctx:           ctx,
+		cancel:        cancel,
+		notifyTimeout: 60 * time.Second, // 默认 60 秒，覆盖慢 DNS 解析场景
 	}
 
 	if storePath != "" {

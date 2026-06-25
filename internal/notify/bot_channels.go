@@ -351,12 +351,13 @@ type FeishuAppChannel struct {
 // NewFeishuAppChannel 创建飞书应用渠道
 func NewFeishuAppChannel(appID, appSecret, chatID string, enabled bool) *FeishuAppChannel {
 	// Custom transport to work around Go HTTP client DNS/connection issues on Windows
-	// when connecting to open.feishu.cn. Forces IPv4-first dial and shorter timeouts.
+	// when connecting to open.feishu.cn. Forces IPv4-first dial and generous timeouts
+	// to accommodate slow DNS resolution (12s+ observed on some Windows environments).
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			// Force IPv4 to avoid IPv6 resolution hangs on some Windows environments.
 			dialer := &net.Dialer{
-				Timeout:   8 * time.Second,
+				Timeout:   30 * time.Second,
 				KeepAlive: 30 * time.Second,
 			}
 			return dialer.DialContext(ctx, "tcp4", addr)
@@ -372,7 +373,7 @@ func NewFeishuAppChannel(appID, appSecret, chatID string, enabled bool) *FeishuA
 		appSecret: appSecret,
 		chatID:    chatID,
 		enabled:   enabled,
-		client:    &http.Client{Timeout: 20 * time.Second, Transport: transport},
+		client:    &http.Client{Timeout: 45 * time.Second, Transport: transport},
 	}
 }
 

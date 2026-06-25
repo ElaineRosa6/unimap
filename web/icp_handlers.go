@@ -9,6 +9,7 @@ import (
 
 	"github.com/unimap/project/internal/adapter"
 	icpdb "github.com/unimap/project/internal/icp/database"
+	"github.com/unimap/project/internal/logger"
 )
 
 // handleICPPage renders the ICP query page (GET /icp).
@@ -74,6 +75,7 @@ func (s *Server) handleICPQuery(w http.ResponseWriter, r *http.Request) {
 	pageSize := parsePositiveInt(r.URL.Query().Get("page_size"), 20)
 	if pageSize > 100 { pageSize = 100 }
 
+	startedAt := time.Now()
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
@@ -82,6 +84,35 @@ func (s *Server) handleICPQuery(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadGateway, "icp_query_failed", sanitizeError(err.Error()), nil)
 		return
 	}
+
+	// 持久化到 ICP 结果库（手动查询，TaskID 用 "manual"，与定时任务区分）
+	// 镜像 scheduler.ICPQueryRunner.persistRun 的模式：每个成功的类型组存一条 run。
+	if s.icpRepo != nil {
+		for _, g := range groups {
+			if g.Error != "" {
+				continue // 跳过出错的类型组，与 scheduler 一致
+			}
+			run := &icpdb.ICPQueryRun{
+				TaskID:       "manual",
+				QueryKeyword: search,
+				QueryType:    g.Type,
+				Page:         page,
+				PageSize:     pageSize,
+				TotalRecords: g.Total,
+				ResultCount:  len(g.Results),
+				StartedAt:    startedAt,
+			}
+			runID, err := s.icpRepo.SaveRun(run)
+			if err != nil {
+				logger.Warnf("ICP: failed to persist run for keyword=%q type=%s: %v", search, g.Type, err)
+				continue
+			}
+			if err := s.icpRepo.SaveResults(runID, g.Results, time.Now()); err != nil {
+				logger.Warnf("ICP: failed to persist results for run %d: %v", runID, err)
+			}
+		}
+	}
+
 	total := 0
 	for _, g := range groups { total += g.Total }
 	writeJSON(w, http.StatusOK, map[string]interface{}{

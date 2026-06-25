@@ -799,6 +799,8 @@ let cdpStatusTimer = null;
 let bridgeStatusTimer = null;
 let engineStatusMap = {}; // { engineName: { hasKey: bool, enabled: bool } }
 let currentQueryTimeout = null; // P1-2: 查询超时计时器
+const QUERY_CLIENT_TIMEOUT_MS = 5 * 60 * 1000;
+const QUERY_CLIENT_TIMEOUT_LABEL = '5 分钟';
 let currentAssets = []; // P2-2: 当前查询结果数据（用于分页渲染）
 let filteredAssets = null; // P2-2: 筛选后的子集（null 表示未筛选）
 
@@ -1328,10 +1330,10 @@ function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, 
 		api_engines: browserQuery ? apiEngines : engines,
 		page_size: 50,
 		browser_query: !!browserQuery,
-			browser_action: browserAction || '',
+		browser_action: browserAction || '',
 	}));
 
-	// P1-2: 客户端超时检测 — 90s 无响应则提示
+	// P1-2: 客户端超时检测
 	currentQueryTimeout = setTimeout(function() {
 		removeLoadingIndicator();
 		const resultsContent = document.getElementById('results-content');
@@ -1343,7 +1345,7 @@ function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, 
 			h4.textContent = '查询超时';
 			const p = document.createElement('p');
 			p.style.margin = '0';
-			p.textContent = '查询已超过 90 秒未响应，可能是引擎响应缓慢或网络问题。';
+			p.textContent = '查询已超过 ' + QUERY_CLIENT_TIMEOUT_LABEL + ' 未响应，可能是引擎响应缓慢或网络问题。';
 			const btn = document.createElement('button');
 			btn.className = 'btn btn-primary';
 			btn.style.marginTop = '12px';
@@ -1361,14 +1363,14 @@ function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, 
 			submitBtn.disabled = false;
 			submitBtn.classList.remove('loading');
 		}
-	}, 90000);
+	}, QUERY_CLIENT_TIMEOUT_MS);
 }
 
 // 传统API回退方案
 function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, browserAction) {
 	// P1-2: AbortController 超时控制
 	const controller = new AbortController();
-	const timeoutId = setTimeout(function() { controller.abort(); }, 90000);
+	const timeoutId = setTimeout(function() { controller.abort(); }, QUERY_CLIENT_TIMEOUT_MS);
 
 	// 发送API请求
 	apiFetch('/api/v1/query', {
@@ -1417,7 +1419,7 @@ function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, b
 
 		// 显示错误
 		if (error.name === 'AbortError') {
-			showResultsError('查询超时（超过 90 秒），请稍后重试。');
+			showResultsError('查询超时（超过 ' + QUERY_CLIENT_TIMEOUT_LABEL + '），请稍后重试。');
 		} else {
 			showResultsError('查询失败: ' + error.message);
 		}
@@ -1599,15 +1601,15 @@ function showResults(data) {
 		// 显示结果表格
 		if (Array.isArray(assets) && assets.length > 0) {
 			html += `
-				<div class="filter-bar" style="margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+				<div class="filter-bar">
 					<strong>结果筛选:</strong>
-					<input type="text" id="filter-ip" placeholder="IP" class="form-control" style="width: 120px; padding: 5px;">
-					<input type="text" id="filter-port" placeholder="端口" class="form-control" style="width: 80px; padding: 5px;">
-					<input type="text" id="filter-protocol" placeholder="协议" class="form-control" style="width: 80px; padding: 5px;">
-					<input type="text" id="filter-source" placeholder="来源" class="form-control" style="width: 100px; padding: 5px;">
-					<button id="btn-apply-filter" class="btn">筛选</button>
-					<button id="btn-reset-filter" class="btn">重置</button>							
-					<span style="font-size: 0.9em; margin-left: auto;">
+					<input type="text" id="filter-ip" placeholder="IP" class="form-control">
+					<input type="text" id="filter-port" placeholder="端口" class="form-control">
+					<input type="text" id="filter-protocol" placeholder="协议" class="form-control">
+					<input type="text" id="filter-source" placeholder="来源" class="form-control">
+					<button id="btn-apply-filter" class="btn btn-sm btn-secondary">筛选</button>
+					<button id="btn-reset-filter" class="btn btn-sm btn-secondary">重置</button>
+					<span class="filter-count">
 						显示: <span id="displayed-count">${assets.length}</span> / <span id="total-count">${assets.length}</span>
 					</span>
 				</div>
@@ -1624,7 +1626,7 @@ function showResults(data) {
 								<th>服务器</th>
 								<th>状态码</th>
 								<th>来源</th>
-								<th style="min-width: 200px;">操作</th>
+								<th>操作</th>
 							</tr>
 						</thead>
 						<tbody id="results-body">
@@ -1641,25 +1643,25 @@ function showResults(data) {
 				</div>
 			`;
 		}
-		
+
 		// 添加截图操作栏
 		html += `
-			<div class="screenshot-actions" style="margin: 15px 0; padding: 15px; background: #f0f8ff; border-radius: 4px; border: 1px solid #b0d4f1;">
-				<h4 style="margin-bottom: 10px;">📸 截图功能</h4>
-				<div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+			<div class="screenshot-actions">
+				<h4>📸 截图功能</h4>
+				<div class="screenshot-btns">
 					<button type="button" id="btn-screenshot-all" class="btn btn-primary" data-action="capture-all-screenshots">
 						批量截图所有结果
 					</button>
 					<button type="button" id="btn-screenshot-search-engines" class="btn btn-info" data-action="capture-search-engine-screenshots">
 						截图搜索引擎结果页
 					</button>
-					<span id="screenshot-status" style="margin-left: 10px; color: #666;"></span>
+					<span id="screenshot-status" class="screenshot-status"></span>
 				</div>
-				<div id="screenshot-progress" style="margin-top: 10px; display: none;">
-					<div class="progress-container" style="width: 100%; height: 20px; background: #e9ecef; border-radius: 10px; overflow: hidden;">
-						<div id="screenshot-progress-bar" style="width: 0%; height: 100%; background: #007bff; transition: width 0.3s;"></div>
+				<div id="screenshot-progress" class="hidden">
+					<div class="progress-container">
+						<div id="screenshot-progress-bar" class="progress-bar"></div>
 					</div>
-					<p id="screenshot-progress-text" style="margin-top: 5px; font-size: 0.9em; color: #666;"></p>
+					<p id="screenshot-progress-text" class="progress-text"></p>
 				</div>
 			</div>
 		`;
@@ -1757,7 +1759,7 @@ function assetToRowHTML(asset) {
 	const methodBadge = renderCollectionMethodBadge(asset);
 	return `<tr data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}" data-protocol="${escapeAttr(protocol)}" data-host="${escapeAttr(host)}" data-title="${escapeAttr(title)}" data-server="${escapeAttr(server)}" data-status="${escapeAttr(statusCode)}" data-source="${escapeAttr(source)}" data-url="${escapeAttr(targetURL)}">
 		<td>${escapeHtml(ip)}</td><td>${escapeHtml(port)}</td><td>${escapeHtml(protocol)}</td><td>${escapeHtml(host)}</td><td>${escapeHtml(title)}</td><td>${escapeHtml(server)}</td><td>${escapeHtml(statusCode)}</td><td>${escapeHtml(source)}${methodBadge}</td>
-		<td><button type="button" class="btn btn-sm btn-info btn-detail" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}">详情</button> <button type="button" class="btn btn-sm btn-success btn-copy" data-ip="${escapeAttr(ip)}">复制IP</button> <a href="${engineHref}" target="_blank" class="btn btn-sm btn-primary" style="text-decoration:none;color:white;">跳转</a> <button type="button" class="btn btn-sm btn-warning btn-screenshot" data-url="${escapeAttr(targetURL)}" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}" data-protocol="${escapeAttr(protocol)}">截图</button></td>
+		<td><button type="button" class="btn btn-sm btn-info btn-detail" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}">详情</button> <button type="button" class="btn btn-sm btn-success btn-copy" data-ip="${escapeAttr(ip)}">复制IP</button> <a href="${engineHref}" target="_blank" class="btn btn-sm btn-primary">跳转</a> <button type="button" class="btn btn-sm btn-warning btn-screenshot" data-url="${escapeAttr(targetURL)}" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}" data-protocol="${escapeAttr(protocol)}">截图</button></td>
 	</tr>`;
 }
 
@@ -2035,6 +2037,13 @@ function checkEngineStatus() {
 					el.textContent = 'Key ✗';
 					el.setAttribute('data-state', 'error');
 					el.title = '引擎已禁用';
+				}
+			});
+			// 自动取消勾选没有 API Key 的引擎，避免 Shodan 等 Web-only 适配器被误选进 API 查询。
+			document.querySelectorAll('input[name="engines"]').forEach(function(cb) {
+				var st = engineStatusMap[cb.value];
+				if (st && !st.hasKey) {
+					cb.checked = false;
 				}
 			});
 			// P1-1: 首次使用引导 — 无任何引擎配置时显示提示
@@ -3024,7 +3033,7 @@ function captureSearchEngineScreenshots() {
 	const progressText = document.getElementById('screenshot-progress-text');
 
 	statusEl.textContent = '正在截图搜索引擎结果页...';
-	progressEl.style.display = 'block';
+	progressEl.classList.remove('hidden');
 
 	let completed = 0;
 	const total = engines.length;
@@ -3078,7 +3087,7 @@ function captureAllScreenshots() {
 	const progressText = document.getElementById('screenshot-progress-text');
 
 	statusEl.textContent = '正在批量截图目标网站...';
-	progressEl.style.display = 'block';
+	progressEl.classList.remove('hidden');
 
 	// 准备URL列表
 	const urls = assets.map(asset => {
