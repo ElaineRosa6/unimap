@@ -11,6 +11,7 @@ import (
 
 	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
@@ -186,7 +187,13 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.queryApp.ExecuteQuery(r.Context(), query, engines, pageSize)
 	var browserOutcome browserQueryOutcome
 	if browserQueryCh != nil {
-		browserOutcome = <-browserQueryCh
+		// 浏览器查询已并行化，但仍可能耗时较长；给 60 秒超时保护，
+		// 超时则用已有结果返回，避免浏览器采集拖慢 API 查询响应。
+		select {
+		case browserOutcome = <-browserQueryCh:
+		case <-time.After(service.BrowserQueryWaitTimeout):
+			logger.Warnf("browser query timed out after %s for query %q, returning API results only", service.BrowserQueryWaitTimeout, query)
+		}
 	}
 	if err != nil {
 		writeAPIError(

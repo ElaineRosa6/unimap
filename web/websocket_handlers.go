@@ -52,7 +52,10 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conn, err := s.upgrader.Upgrade(w, r, nil)
-	if err != nil { logger.Errorf("WebSocket upgrade failed: %v", err); return }
+	if err != nil {
+		logger.Errorf("WebSocket upgrade failed: %v", err)
+		return
+	}
 	defer conn.Close()
 
 	connID := generateConnectionID()
@@ -104,7 +107,10 @@ func wsSetupPingPong(conn *websocket.Conn, managed *managedConn, done chan struc
 				setWriteDeadline(conn)
 				err := conn.WriteMessage(websocket.PingMessage, nil)
 				managed.writeMu.Unlock()
-				if err != nil { logger.Errorf("WebSocket ping error: %v", err); return }
+				if err != nil {
+					logger.Errorf("WebSocket ping error: %v", err)
+					return
+				}
 			}
 		}
 	}()
@@ -240,7 +246,7 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 	}
 
 	// API 查询和浏览器查询独立超时，互不拖累
-	apiCtx, apiCancel := context.WithTimeout(ctx, 60*time.Second)
+	apiCtx, apiCancel := context.WithTimeout(ctx, service.QueryExecutionTimeout)
 	defer apiCancel()
 
 	if browserQuery {
@@ -271,12 +277,20 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 	}()
 
 	// 等待两个查询都完成（或超时）
+	// 浏览器查询已并行化，但仍给 60 秒超时保护，避免拖慢 API 查询结果返回。
 	var resp *service.QueryResponse
 	var queryErr error
 	var browserOutcome browserQueryOutcome
 
 	apiDone := false
 	browserDone := browserQueryCh == nil
+	var browserTimer *time.Timer
+	var browserTimerCh <-chan time.Time
+	if !browserDone {
+		browserTimer = time.NewTimer(service.BrowserQueryWaitTimeout)
+		defer browserTimer.Stop()
+		browserTimerCh = browserTimer.C
+	}
 	for !apiDone || !browserDone {
 		select {
 		case r := <-apiCh:
@@ -286,10 +300,14 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 		case outcome := <-browserQueryCh:
 			browserDone = true
 			browserOutcome = outcome
+		case <-browserTimerCh:
+			// 浏览器查询超时，放弃等待，用已有结果返回
+			browserDone = true
+			logger.Warnf("browser query timed out after %s for WS query %s, returning API results only", service.BrowserQueryWaitTimeout, queryID)
 		}
 	}
 	if queryErr == nil && apiCtx.Err() != nil {
-		queryErr = fmt.Errorf("query timeout after 60s: %v", apiCtx.Err())
+		queryErr = fmt.Errorf("query timeout after %s: %v", service.QueryExecutionTimeout, apiCtx.Err())
 	}
 
 	statusCopy := s.finalizeWSQueryStatus(queryID, query, engines, queryErr, resp, browserOutcome, browserAction)

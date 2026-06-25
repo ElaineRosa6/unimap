@@ -5,9 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/config"
+	icpdb "github.com/unimap/project/internal/icp/database"
 )
 
 func newServerWithICP(enabled bool, baseURL string) *Server {
@@ -368,5 +372,181 @@ func TestHandleICPQuery_MultiTypePartialFailure(t *testing.T) {
 	}
 	if resp.Groups[1].Error == "" {
 		t.Fatalf("app group should have error")
+	}
+}
+
+// mockICPRepo records SaveRun/SaveResults calls for assertion.
+type mockICPRepo struct {
+	mu          sync.Mutex
+	savedRuns   []*icpdb.ICPQueryRun
+	savedResult map[int64][]adapter.ICPResult
+	nextID      int64
+}
+
+func newMockICPRepo() *mockICPRepo {
+	return &mockICPRepo{savedResult: make(map[int64][]adapter.ICPResult)}
+}
+
+func (m *mockICPRepo) SaveRun(run *icpdb.ICPQueryRun) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.nextID++
+	run.ID = m.nextID
+	m.savedRuns = append(m.savedRuns, run)
+	return run.ID, nil
+}
+
+func (m *mockICPRepo) SaveResults(runID int64, results []adapter.ICPResult, _ time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.savedResult[runID] = results
+	return nil
+}
+
+func (m *mockICPRepo) GetRunsByTaskID(string, int) ([]*icpdb.ICPQueryRun, error) { return nil, nil }
+func (m *mockICPRepo) GetRunsByKeyword(string, string, int) ([]*icpdb.ICPQueryRun, error) {
+	return nil, nil
+}
+func (m *mockICPRepo) GetResultsByRunID(int64) ([]*icpdb.ICPResultRow, error) { return nil, nil }
+func (m *mockICPRepo) GetLatestResults(string, string) ([]*icpdb.ICPResultRow, error) {
+	return nil, nil
+}
+func (m *mockICPRepo) GetPreviousResults(string, string, time.Time) ([]*icpdb.ICPResultRow, error) {
+	return nil, nil
+}
+func (m *mockICPRepo) CleanupOldRuns(time.Time) (int64, error) { return 0, nil }
+
+func TestHandleICPQuery_PersistsToRepo(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"code": 200,
+			"msg":  "ok",
+			"params": map[string]interface{}{
+				"total": 1,
+				"list": []map[string]interface{}{
+					{"domain": "example.com", "licence": "京ICP证000001号", "unitName": "Example Co"},
+				},
+			},
+		})
+	}))
+	defer mock.Close()
+
+	repo := newMockICPRepo()
+	s := newServerWithICP(true, mock.URL)
+	s.icpRepo = repo
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/icp/query?type=web&search=example.com", nil)
+	w := httptest.NewRecorder()
+	s.handleICPQuery(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%q)", w.Code, w.Body.String())
+	}
+
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	if len(repo.savedRuns) != 1 {
+		t.Fatalf("expected 1 SaveRun call, got %d", len(repo.savedRuns))
+	}
+	run := repo.savedRuns[0]
+	if run.TaskID != "manual" {
+		t.Fatalf("expected TaskID=manual, got %q", run.TaskID)
+	}
+	if run.QueryKeyword != "example.com" {
+		t.Fatalf("expected QueryKeyword=example.com, got %q", run.QueryKeyword)
+	}
+	if run.QueryType != "web" {
+		t.Fatalf("expected QueryType=web, got %q", run.QueryType)
+	}
+	if run.TotalRecords != 1 || run.ResultCount != 1 {
+		t.Fatalf("expected total=1 count=1, got total=%d count=%d", run.TotalRecords, run.ResultCount)
+	}
+	if len(repo.savedResult[run.ID]) != 1 {
+		t.Fatalf("expected 1 result saved for run %d, got %d", run.ID, len(repo.savedResult[run.ID]))
+	}
+	if repo.savedResult[run.ID][0].Domain != "example.com" {
+		t.Fatalf("expected saved domain=example.com, got %q", repo.savedResult[run.ID][0].Domain)
+	}
+}
+
+func TestHandleICPQuery_MultiTypePersistsPerType(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/query/web"):
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"code": 200, "msg": "ok",
+				"params": map[string]interface{}{"total": 1, "list": []map[string]interface{}{{"domain": "web.com"}}},
+			})
+		case strings.HasPrefix(r.URL.Path, "/query/app"):
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"code": 200, "msg": "ok",
+				"params": map[string]interface{}{"total": 1, "list": []map[string]interface{}{{"domain": "app.com"}}},
+			})
+		}
+	}))
+	defer mock.Close()
+
+	repo := newMockICPRepo()
+	s := newServerWithICP(true, mock.URL)
+	s.icpRepo = repo
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/icp/query?type=web,app&search=test.com", nil)
+	w := httptest.NewRecorder()
+	s.handleICPQuery(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	if len(repo.savedRuns) != 2 {
+		t.Fatalf("expected 2 SaveRun calls (one per type), got %d", len(repo.savedRuns))
+	}
+	types := map[string]bool{}
+	for _, run := range repo.savedRuns {
+		types[run.QueryType] = true
+	}
+	if !types["web"] || !types["app"] {
+		t.Fatalf("expected both web and app runs saved, got %v", types)
+	}
+}
+
+func TestHandleICPQuery_SkipsErrorGroups(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/query/web"):
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"code": 200, "msg": "ok",
+				"params": map[string]interface{}{"total": 1, "list": []map[string]interface{}{{"domain": "ok.com"}}},
+			})
+		default:
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte("sidecar error"))
+		}
+	}))
+	defer mock.Close()
+
+	repo := newMockICPRepo()
+	s := newServerWithICP(true, mock.URL)
+	s.icpRepo = repo
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/icp/query?type=web,app&search=test.com", nil)
+	w := httptest.NewRecorder()
+	s.handleICPQuery(w, req)
+
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	if len(repo.savedRuns) != 1 {
+		t.Fatalf("expected 1 SaveRun (only successful web group), got %d", len(repo.savedRuns))
+	}
+	if repo.savedRuns[0].QueryType != "web" {
+		t.Fatalf("expected only web run saved, got %q", repo.savedRuns[0].QueryType)
 	}
 }

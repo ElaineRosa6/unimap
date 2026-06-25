@@ -24,6 +24,7 @@
 			</div>
 
 			<button class="btn btn-primary" id="btn-scan">开始扫描</button>
+			<button class="btn btn-secondary" id="btn-pscan-history">历史</button>
 			<span class="scan-status" id="scan-status"></span>
 		</div>
 
@@ -43,10 +44,27 @@
 				</thead>
 				<tbody id="scan-result-list"></tbody>
 			</table>
-		</div>
-	</main>
+	</div>
 
-	<div class="toast" id="toast"></div>
+	<!-- 端口扫描历史 -->
+	<div id="pscan-history" class="modal">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h3>扫描历史</h3>
+				<button type="button" class="close-btn">&times;</button>
+			</div>
+			<div class="modal-body">
+				<ul id="pscan-history-list"></ul>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-secondary close-btn">关闭</button>
+				<button type="button" class="btn btn-danger" id="btn-clear-pscan-history">清空</button>
+			</div>
+		</div>
+	</div>
+</main>
+
+<div class="toast" id="toast"></div>
 
 	<style nonce="{{.CSPNonce}}">
 	.scan-status { margin-left: 12px; font-size: 14px; color: var(--text-muted, #888); }
@@ -80,6 +98,23 @@
 				return;
 			}
 			renderResults(data);
+			// 保存到操作历史（fire-and-forget）
+			try {
+				var s = data.summary || {};
+				var hasFailures = (s.scanFailed || 0) > 0 || (s.resolveFailed || 0) > 0;
+				apiFetch('/api/v1/history/save', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						operation_type: 'port_scan',
+						input: { urls: urls, ports: ports, concurrency: concurrency },
+						status: hasFailures ? 'partial' : 'success',
+						total_count: s.total || 0,
+						summary: s,
+						results: (data.results || []).slice(0, 1000)
+					})
+				}).catch(function(err) { console.error('Failed to save port scan history:', err); });
+			} catch(e) { console.error(e); }
 		} catch(e) {
 			showToast('请求失败: ' + e.message, 'error');
 		} finally {
@@ -128,6 +163,76 @@
 				<td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
 			`;
 			tbody.appendChild(tr);
+		});
+	}
+
+	// ===== 端口扫描历史 =====
+	function openPScanHistory() {
+		var modal = document.getElementById('pscan-history');
+		var list = document.getElementById('pscan-history-list');
+		list.innerHTML = '<li class="no-history">加载中...</li>';
+		modal.style.display = 'block';
+
+		apiFetch('/api/v1/history?type=port_scan&limit=50')
+			.then(parseJsonResponse)
+			.then(function(data) {
+				list.innerHTML = '';
+				var items = data.items || [];
+				if (items.length === 0) {
+					list.innerHTML = '<li class="no-history">无扫描历史</li>';
+					return;
+				}
+				items.forEach(function(item) {
+					var li = document.createElement('li');
+					var urls = '', portsStr = '';
+					try {
+						var input = JSON.parse(item.input);
+						urls = (input.urls || []).join('\n');
+						portsStr = (input.ports || []).join(', ');
+					} catch(e) { urls = item.input; }
+
+					var codeEl = document.createElement('code');
+					codeEl.textContent = urls.split('\n')[0] + (urls.split('\n').length > 1 ? ' (+' + (urls.split('\n').length - 1) + ')' : '');
+					var meta = document.createElement('small');
+					meta.textContent = (portsStr ? '端口: ' + portsStr + ' | ' : '') + new Date(item.created_at).toLocaleString();
+					var statusEl = document.createElement('span');
+					statusEl.className = 'status-badge status-' + item.status;
+					statusEl.textContent = item.status === 'success' ? '成功' : item.status === 'partial' ? '部分' : '失败';
+
+					li.appendChild(codeEl);
+					li.appendChild(statusEl);
+					li.appendChild(meta);
+					li.addEventListener('click', function() {
+						document.getElementById('scan-urls').value = urls;
+						document.getElementById('scan-ports').value = portsStr;
+						closePScanHistory();
+					});
+					list.appendChild(li);
+				});
+			})
+			.catch(function(err) {
+				list.innerHTML = '<li class="no-history">加载失败</li>';
+				console.error('Failed to load port scan history:', err);
+			});
+	}
+
+	function closePScanHistory() {
+		document.getElementById('pscan-history').style.display = 'none';
+	}
+
+	document.getElementById('btn-pscan-history').addEventListener('click', openPScanHistory);
+	document.querySelectorAll('#pscan-history .close-btn').forEach(function(btn) {
+		btn.addEventListener('click', closePScanHistory);
+	});
+	var clearPScanBtn = document.getElementById('btn-clear-pscan-history');
+	if (clearPScanBtn) {
+		clearPScanBtn.addEventListener('click', function() {
+			if (!confirm('确定要清空所有端口扫描历史吗？')) return;
+			apiFetch('/api/v1/history?type=port_scan', { method: 'DELETE' })
+				.then(function() {
+					document.getElementById('pscan-history-list').innerHTML = '<li class="no-history">无扫描历史</li>';
+				})
+				.catch(function(err) { console.error('Failed to clear port scan history:', err); });
 		});
 	}
 	</script>

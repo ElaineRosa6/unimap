@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -53,6 +54,7 @@ func (d *Detector) ComputePageHash(ctx context.Context, targetURL string) (*Page
 	if d.performanceMode == PerformanceModeFast {
 		result, err := d.computeHashWithHTTP(ctx, targetURL)
 		if err == nil {
+			d.runPortScanIfEnabled(ctx, targetURL, result)
 			d.cacheMu.Lock()
 			d.cache[cacheKey] = &cacheEntry{result: result, timestamp: time.Now()}
 			d.cacheMu.Unlock()
@@ -87,8 +89,9 @@ func (d *Detector) ComputePageHash(ctx context.Context, targetURL string) (*Page
 		return nil, fmt.Errorf("failed to load page: %w", err)
 	}
 
-	result, err := d.ComputeHashFromHTML(targetURL, title, html)
+	result, err := d.ComputeHashFromHTML(targetURL, title, html, nil) // chromedp 模式不传 headers
 	if err == nil {
+		d.runPortScanIfEnabled(ctx, targetURL, result)
 		d.cacheMu.Lock()
 		d.cache[cacheKey] = &cacheEntry{result: result, timestamp: time.Now()}
 		d.cacheMu.Unlock()
@@ -101,14 +104,34 @@ func (d *Detector) computeHashWithHTTP(ctx context.Context, targetURL string) (*
 	timeoutCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	client := utils.DefaultHTTPClient()
+	// 记录重定向链
+	var redirectURLs []string
+
+	// Create an independent client to avoid mutating the shared DefaultHTTPClient.
+	// Cloning the transport and setting CheckRedirect on a fresh client prevents
+	// data races with concurrent tamper checks.
+	baseTransport := utils.DefaultHTTPClient().Transport.(*http.Transport).Clone()
+	if d.insecureSkipVerify {
+		baseTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	client := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: baseTransport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("too many redirects")
+			}
+			redirectURLs = append(redirectURLs, req.URL.String())
+			return nil
+		},
+	}
 
 	req, err := http.NewRequestWithContext(timeoutCtx, http.MethodGet, targetURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", randomUA())
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
 
@@ -128,6 +151,7 @@ func (d *Detector) computeHashWithHTTP(ctx context.Context, targetURL string) (*
 	}
 
 	html := string(bodyBytes)
+	finalURL := resp.Request.URL.String()
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
@@ -140,11 +164,24 @@ func (d *Detector) computeHashWithHTTP(ctx context.Context, targetURL string) (*
 		title = targetURL
 	}
 
-	return d.ComputeHashFromHTML(targetURL, title, html)
+	// 收集 HTTP 响应头用于指纹识别
+	httpHeaders := make(map[string]string, len(resp.Header))
+	for k := range resp.Header {
+		httpHeaders[k] = resp.Header.Get(k)
+	}
+
+	result, err := d.ComputeHashFromHTML(targetURL, title, html, httpHeaders)
+	if err != nil {
+		return nil, err
+	}
+	result.FinalURL = finalURL
+	result.RedirectURLs = redirectURLs
+	return result, nil
 }
 
 // ComputeHashFromHTML computes a page hash from raw HTML content.
-func (d *Detector) ComputeHashFromHTML(url, title, html string) (*PageHashResult, error) {
+// httpHeaders 可选 — HTTP 模式传入响应头用于指纹识别，chromedp 模式可传 nil。
+func (d *Detector) ComputeHashFromHTML(url, title, html string, httpHeaders map[string]string) (*PageHashResult, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
 		metrics.IncBrowserDOMParseFailure("tamper")
@@ -152,11 +189,12 @@ func (d *Detector) ComputeHashFromHTML(url, title, html string) (*PageHashResult
 	}
 
 	result := &PageHashResult{
-		URL:        url,
-		Title:      title,
-		Timestamp:  time.Now().Unix(),
-		HTMLLength: len(html),
-		Status:     "success",
+		URL:         url,
+		Title:       title,
+		Timestamp:   time.Now().Unix(),
+		HTMLLength:  len(html),
+		Status:      "success",
+		HTTPHeaders: httpHeaders,
 	}
 
 	if len(html) > 4096 {
@@ -170,6 +208,19 @@ func (d *Detector) ComputeHashFromHTML(url, title, html string) (*PageHashResult
 
 	result.FullHash = d.computeFullHash(segmentHashes)
 	result.SimpleMD5Hash = computeSimpleMD5Hash(html)
+
+	// 计算规范化 HTTP 指纹
+	if httpHeaders != nil {
+		result.NormalizedHTTPFingerprint = computeNormalizedHTTPFingerprint(
+			"HTTP/1.1 200 OK", httpHeaders, result.SimpleMD5Hash)
+	}
+
+	// 运行指纹识别引擎
+	if d.fpEngine != nil && httpHeaders != nil {
+		body := strings.ToLower(html)
+		setCookie := httpHeaders["Set-Cookie"]
+		result.Fingerprints = d.fpEngine.Match(httpHeaders, body, title, setCookie)
+	}
 
 	return result, nil
 }
@@ -299,10 +350,11 @@ func (d *Detector) computeScriptHash(doc *goquery.Document) SegmentHash {
 	var scripts []string
 	doc.Find("script").Each(func(i int, s *goquery.Selection) {
 		src, _ := s.Attr("src")
+		src = normalizeAssetURL(src)
 		integrity, _ := s.Attr("integrity")
 		async, _ := s.Attr("async")
 		deferAttr, _ := s.Attr("defer")
-		content := s.Text()
+		content := normalizeInlineScript(s.Text())
 		scripts = append(scripts, strings.Join([]string{src, integrity, async, deferAttr, content}, ":"))
 	})
 
@@ -321,6 +373,7 @@ func (d *Detector) computeJSFileHash(doc *goquery.Document) SegmentHash {
 	var jsFiles []string
 	doc.Find("script[src]").Each(func(i int, s *goquery.Selection) {
 		src, _ := s.Attr("src")
+		src = normalizeAssetURL(src)
 		integrity, _ := s.Attr("integrity")
 		crossorigin, _ := s.Attr("crossorigin")
 		referrerpolicy, _ := s.Attr("referrerpolicy")
@@ -345,6 +398,7 @@ func (d *Detector) computeStyleHash(doc *goquery.Document) SegmentHash {
 	})
 	doc.Find("link[rel='stylesheet']").Each(func(i int, s *goquery.Selection) {
 		href, _ := s.Attr("href")
+		href = normalizeAssetURL(href)
 		styles = append(styles, href)
 	})
 
@@ -388,6 +442,7 @@ func (d *Detector) computeFaviconHash(doc *goquery.Document) SegmentHash {
 			return
 		}
 		href, _ := s.Attr("href")
+		href = normalizeAssetURL(href)
 		typ, _ := s.Attr("type")
 		sizes, _ := s.Attr("sizes")
 		icons = append(icons, strings.Join([]string{relLower, href, typ, sizes}, ":"))
@@ -533,9 +588,51 @@ func (d *Detector) cleanHTML(html string) string {
 	html = reDataImages.ReplaceAllString(html, "DATA_IMAGE_REMOVED")
 	html = reNonce.ReplaceAllString(html, "")
 	html = reCSRFToken.ReplaceAllString(html, "")
+	html = reTimestamp.ReplaceAllString(html, "TIMESTAMP")
+	html = reUUID.ReplaceAllString(html, "UUID")
 	html = strings.TrimSpace(html)
 
 	return html
+}
+
+// normalizeAssetURL 归一化版本化文件名和 cache-busting 参数
+func normalizeAssetURL(raw string) string {
+	raw = reVersionedFile.ReplaceAllString(raw, "HASH.$2")
+	raw = reCacheBust.ReplaceAllString(raw, "")
+	return raw
+}
+
+// normalizeInlineScript 剥离 SSR 水合数据和分析/统计脚本
+func normalizeInlineScript(content string) string {
+	content = reSSRHydration.ReplaceAllString(content, "__SSR_HYDRATION__")
+	content = reAnalyticsScript.ReplaceAllString(content, "__ANALYTICS__")
+	return content
+}
+
+// computeNormalizedHTTPFingerprint 计算规范化 HTTP 指纹
+//
+// 这不是 urlive.py 的原始响应 MD5。这是规范化版本：
+//   MD5(状态行 + 排序规范化头 + 空行 + SimpleMD5Hash)
+//
+// 移除 Date/Age/Expires 等易变头，确保同一页面两次请求的指纹一致。
+func computeNormalizedHTTPFingerprint(statusLine string, headers map[string]string, bodyHash string) string {
+	if headers == nil {
+		return ""
+	}
+
+	// 收集排序后的规范头（排除易变头）
+	var normalized []string
+	for k, v := range headers {
+		if _, skip := volatileHTTPHeaders[k]; skip {
+			continue
+		}
+		normalized = append(normalized, k+": "+v)
+	}
+	sort.Strings(normalized)
+
+	combined := statusLine + "\r\n" + strings.Join(normalized, "\r\n") + "\r\n\r\n" + bodyHash
+	hash := md5.Sum([]byte(combined))
+	return hex.EncodeToString(hash[:])
 }
 
 func computeSHA256(data string) string {
