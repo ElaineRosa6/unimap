@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/unimap/project/internal/adapter"
-	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/collection"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 )
 
@@ -357,6 +358,7 @@ func (m *mockEngineAdapter) IsWebOnly() bool                     { return false 
 // ===== mockScreenshotProvider =====
 
 type mockScreenshotProvider struct {
+	mu               sync.Mutex
 	openedQueries    []string
 	collectedQueries []string
 }
@@ -378,10 +380,14 @@ func (m *mockScreenshotProvider) CaptureBatchURLs(ctx context.Context, urls []st
 }
 func (m *mockScreenshotProvider) GetScreenshotDirectory() string { return "/mock/screenshots" }
 func (m *mockScreenshotProvider) OpenSearchEngineResult(ctx context.Context, engine, query string) (string, error) {
+	m.mu.Lock()
 	m.openedQueries = append(m.openedQueries, query)
+	m.mu.Unlock()
 	return "/mock/open", nil
 }
 func (m *mockScreenshotProvider) CollectSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, error) {
+	m.mu.Lock()
 	m.collectedQueries = append(m.collectedQueries, query)
+	m.mu.Unlock()
 	return []collection.CollectResult{{Engine: engine, Query: query, RawURL: "https://mock.engine/result?q=" + query}}, nil
 }

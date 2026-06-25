@@ -179,6 +179,7 @@
 
 ## 当前活跃
 
+- [巡检功能增强计划 2026-06-25](project_monitoring_enhancement_plan_2026-06-25.md) — ✅ 全部完成（5 Phase）：误报修复 + 指纹引擎(107规则) + HTTP指纹 + UA池 + 端口联动；+28 测试；页面"监控"→"巡检"
 - [截图等待时间统一15秒 + 飞书应用图片推送修复 2026-06-18](project_screenshot_wait_timing_fix_2026-06-18.md) — ✅ 5引擎截图完整+飞书推送正常；collect_and_capture 统一15秒等待+滚动触发懒加载；extractImagePaths 双格式识别
 - [Extension 模式问题 2026-05-09](project_extension_mode_issues_2026-05-09.md) — ✅P0已修复(Shodan补齐+翻译路径验证)、✅P1进度已实现、P1登录状态部分解决
 - [Bridge 认证修复 2026-06-03](project_bridge_auth_fix_2026-06-03.md) — ✅截图超时根因(重启丢token→401)修复：admin token loopback 兜底+签名/pairing联动+5测试+真机curl E2E全绿
@@ -187,6 +188,7 @@
 
 ## 当前文档（docs/）
 
+- [巡检功能增强计划 2026-06-25](../docs/MONITORING_ENHANCEMENT_PLAN.md) — ✅ 全部完成：5 Phase，+28 测试，35/35 包通过
 - [E2E采集验证 2026-06-04](../docs/E2E_COLLECTION_VERIFICATION_2026-06-04.md) — ✅ 截图✅ Shodan 6/6 + Quake 2/2；采集✅ 5引擎全部打通（2026-06-07验证）：FOFA/ZoomEye/Shodan/Hunter/Quake均成功；Quake URL格式修正后采集成功（10 items, card_fallback方法）
 - [问题修复报告 2026-06-01](../docs/FIX_REPORT_2026-06-01.md) — Phase 1-4 全量修复 + Hunter 限流根因
 - [项目审查报告 2026-06-01](../docs/PROJECT_REVIEW_2026-06-01.md) — 第二轮全量审查：7 维度深度分析，18 项新发现

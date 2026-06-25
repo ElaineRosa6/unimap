@@ -20,14 +20,17 @@ import (
 // sendNotification sends notifications based on task configuration and execution result.
 func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord) {
 	if !s.shouldSendNotification(task, record) {
+		logger.Warnf("[scheduler] notify: skipped for task %s (status=%s, shouldSend=false)", task.ID, record.Status)
 		return
 	}
 
 	channelIDs := migrateChannelIDs(task.Notifications)
 	if len(channelIDs) == 0 {
+		logger.Warnf("[scheduler] notify: no channel IDs for task %s", task.ID)
 		return
 	}
 
+	logger.Infof("[scheduler] notify: preparing to send to %d channels for task %s (status=%s)", len(channelIDs), task.ID, record.Status)
 	msg := s.buildNotificationMessage(task, record)
 	timeout := s.notifyTimeout
 	if timeout == 0 {
@@ -47,10 +50,12 @@ func (s *Scheduler) shouldSendNotification(task *ScheduledTask, record Execution
 	if s.notifyCfgProvider != nil {
 		globalCfg := s.notifyCfgProvider()
 		if globalCfg == nil || !globalCfg.Enabled {
+			logger.Warnf("[scheduler] notify: global config disabled (nil=%v)", globalCfg == nil)
 			return false
 		}
 	}
 	if task.Notifications == nil || !task.Notifications.Enabled {
+		logger.Warnf("[scheduler] notify: task notifications disabled (nil=%v)", task.Notifications == nil)
 		return false
 	}
 
@@ -62,6 +67,9 @@ func (s *Scheduler) shouldSendNotification(task *ScheduledTask, record Execution
 		shouldNotify = task.Notifications.OnFailure
 	case "timeout":
 		shouldNotify = task.Notifications.OnTimeout
+	}
+	if !shouldNotify {
+		logger.Warnf("[scheduler] notify: on_%s=false for task %s", record.Status, task.ID)
 	}
 	return shouldNotify
 }
@@ -116,10 +124,16 @@ func (s *Scheduler) sendInlineWebhookNotification(webhookURL string, msg notify.
 
 func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.TaskNotification, timeout time.Duration) {
 	if s.notifyRegistry == nil {
+		logger.Warnf("[scheduler] notify: registry is nil, skipping channel %s", chID)
 		return
 	}
 	ch := s.notifyRegistry.Get(chID)
-	if ch == nil || !ch.IsEnabled() {
+	if ch == nil {
+		logger.Warnf("[scheduler] notify: channel %s not found in registry", chID)
+		return
+	}
+	if !ch.IsEnabled() {
+		logger.Warnf("[scheduler] notify: channel %s is disabled, skipping", chID)
 		return
 	}
 
@@ -127,6 +141,7 @@ func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.Task
 	stopping := s.stopped || s.stopping
 	s.mu.RUnlock()
 	if stopping {
+		logger.Warnf("[scheduler] notify: scheduler stopping, skipping channel %s", chID)
 		return
 	}
 	s.notifyWg.Add(1)
@@ -139,10 +154,12 @@ func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.Task
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
+		logger.Infof("[scheduler] notify: sending to channel %s (%s), timeout=%v", ch.ID(), ch.Type(), timeout)
 		if err := ch.Send(ctx, msg); err != nil {
 			logger.Errorf("[scheduler] notify %s (%s) failed: %v", ch.ID(), ch.Type(), err)
 			metrics.IncSchedulerNotifyFail(ch.Type())
 		} else {
+			logger.Infof("[scheduler] notify %s (%s) sent successfully", ch.ID(), ch.Type())
 			metrics.IncSchedulerNotifySuccess(ch.Type())
 		}
 	}(ch)

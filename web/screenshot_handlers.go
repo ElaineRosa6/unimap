@@ -15,6 +15,7 @@ import (
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
 )
 
@@ -46,10 +47,85 @@ type batchJob struct {
 type batchJobStore struct {
 	mu   sync.RWMutex
 	jobs map[string]*batchJob
+	repo *batchdb.Repository // optional persistent backend; nil = memory-only
 }
 
 func newBatchJobStore() *batchJobStore {
 	return &batchJobStore{jobs: make(map[string]*batchJob)}
+}
+
+// setRepo attaches a persistent repository and loads prior jobs from disk.
+func (s *batchJobStore) setRepo(repo *batchdb.Repository) {
+	s.mu.Lock()
+	s.repo = repo
+	s.mu.Unlock()
+	s.loadFromDB()
+}
+
+// persistLocked writes the current job snapshot to the DB.
+// Must be called with s.mu held (at least read-locked); no-op if repo is nil.
+func (s *batchJobStore) persistLocked(job *batchJob) {
+	if s.repo == nil || job == nil {
+		return
+	}
+	rec := &batchdb.BatchJobRecord{
+		ID:        job.ID,
+		Status:    string(job.Status),
+		Total:     job.Total,
+		Completed: job.Completed,
+		Success:   job.Success,
+		Failed:    job.Failed,
+		Error:     job.Error,
+		Results:   job.Results,
+		StartedAt: job.StartedAt,
+		EndedAt:   job.EndedAt,
+	}
+	if err := s.repo.SaveJob(rec); err != nil {
+		logger.Warnf("screenshot: failed to persist batch job %s: %v", job.ID, err)
+	}
+}
+
+// loadFromDB restores completed/failed jobs from the DB into the in-memory map.
+// Jobs that were "running" at shutdown are marked "failed" (their goroutine is gone).
+func (s *batchJobStore) loadFromDB() {
+	if s.repo == nil {
+		return
+	}
+	records, err := s.repo.ListJobs(200)
+	if err != nil {
+		logger.Warnf("screenshot: failed to load batch jobs from DB: %v", err)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, rec := range records {
+		status := batchJobStatus(rec.Status)
+		if status == batchJobRunning {
+			status = batchJobFailed // goroutine lost on restart
+			rec.Status = string(status)
+			rec.Error = "interrupted by server restart"
+			_ = s.repo.SaveJob(&batchdb.BatchJobRecord{
+				ID: rec.ID, Status: rec.Status, Total: rec.Total, Completed: rec.Completed,
+				Success: rec.Success, Failed: rec.Failed, Error: rec.Error,
+				Results: rec.Results, StartedAt: rec.StartedAt, EndedAt: rec.EndedAt,
+			})
+		}
+		s.jobs[rec.ID] = &batchJob{
+			ID:        rec.ID,
+			Status:    status,
+			Total:     rec.Total,
+			Completed: rec.Completed,
+			Success:   rec.Success,
+			Failed:    rec.Failed,
+			Results:   rec.Results,
+			Error:     rec.Error,
+			StartedAt: rec.StartedAt,
+			EndedAt:   rec.EndedAt,
+		}
+	}
+	if len(records) > 0 {
+		logger.Infof("screenshot: restored %d batch jobs from DB", len(records))
+	}
 }
 
 func (s *batchJobStore) create(id string, total int) *batchJob {
@@ -62,6 +138,7 @@ func (s *batchJobStore) create(id string, total int) *batchJob {
 		StartedAt: time.Now(),
 	}
 	s.jobs[id] = job
+	s.persistLocked(job)
 	return job
 }
 
@@ -97,6 +174,7 @@ func (s *batchJobStore) recordResult(id string, result screenshot.BatchScreensho
 		} else {
 			job.Failed++
 		}
+		s.persistLocked(job)
 	}
 }
 
@@ -111,6 +189,7 @@ func (s *batchJobStore) complete(id string, results []screenshot.BatchScreenshot
 		job.Completed = len(results)
 		now := time.Now()
 		job.EndedAt = &now
+		s.persistLocked(job)
 	}
 }
 
@@ -122,6 +201,7 @@ func (s *batchJobStore) fail(id string, err error) {
 		job.Error = err.Error()
 		now := time.Now()
 		job.EndedAt = &now
+		s.persistLocked(job)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
@@ -33,6 +34,14 @@ type QueryAppService struct {
 	orchestrator *adapter.EngineOrchestrator
 }
 
+const (
+	// QueryExecutionTimeout is the server-side guard for one UQL API query.
+	QueryExecutionTimeout = 5 * time.Minute
+
+	// BrowserQueryWaitTimeout bounds how long handlers wait for optional browser collection.
+	BrowserQueryWaitTimeout = 60 * time.Second
+)
+
 func NewQueryAppService(unified *UnifiedService, orchestrator *adapter.EngineOrchestrator) *QueryAppService {
 	return &QueryAppService{unified: unified, orchestrator: orchestrator}
 }
@@ -59,6 +68,14 @@ func (s *QueryAppService) ExecuteQuery(ctx context.Context, query string, engine
 	}
 	if pageSize <= 0 {
 		pageSize = 50
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, QueryExecutionTimeout)
+		defer cancel()
 	}
 	return s.unified.Query(ctx, QueryRequest{
 		Query:       query,
@@ -152,20 +169,29 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 
 		total := len(engines)
 		completed := 0
+		var mu sync.Mutex // protects outcome fields and completed counter
+		var wg sync.WaitGroup
 		for _, engine := range engines {
-			func(engine string) {
+			wg.Add(1)
+			go func(engine string) {
 				var engineErr error
 				defer func() {
+					mu.Lock()
 					completed++
+					ce := completed
 					if progress != nil {
-						progress(completed, total, engine, engineErr)
+						progress(ce, total, engine, engineErr)
 					}
+					mu.Unlock()
+					wg.Done()
 				}()
 
 				browserQuery, err := s.translateBrowserQuery(query, engine)
 				if err != nil {
 					engineErr = err
+					mu.Lock()
 					outcome.Errors = append(outcome.Errors, err.Error())
+					mu.Unlock()
 					return
 				}
 
@@ -182,20 +208,30 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 					if browserRouter != nil {
 						if _, err := browserRouter.OpenSearchEngineResult(ctx, engine, browserQuery); err != nil {
 							engineErr = err
+							mu.Lock()
 							outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
+							mu.Unlock()
 							return
 						}
+						mu.Lock()
 						outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
+						mu.Unlock()
 					} else if screenshotMgr == nil {
+						mu.Lock()
 						outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open skipped for %s: no browser provider", engine))
+						mu.Unlock()
 						engineErr = fmt.Errorf("no browser provider")
 						return
 					} else if _, err := screenshotMgr.OpenSearchEngineResult(ctx, engine, browserQuery); err != nil {
 						engineErr = err
+						mu.Lock()
 						outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser query open failed for %s: %v", engine, err))
+						mu.Unlock()
 						return
 					} else {
+						mu.Lock()
 						outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
+						mu.Unlock()
 					}
 				}
 
@@ -210,10 +246,14 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 						collected, err := browserRouter.CollectSearchEngineResult(ctx, engine, browserQuery, queryID)
 						if err != nil {
 							engineErr = err
+							mu.Lock()
 							outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser collect failed for %s: %v", engine, err))
+							mu.Unlock()
 						} else {
 							tagBrowserAssets(collected)
+							mu.Lock()
 							outcome.CollectedResults = append(outcome.CollectedResults, collected...)
+							mu.Unlock()
 						}
 					}
 
@@ -228,10 +268,13 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 						collected, path, err := combined.CollectAndCaptureSearchEngineResult(ctx, engine, browserQuery, captureQueryID)
 						if err != nil {
 							engineErr = err
+							mu.Lock()
 							outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser collect+capture failed for %s: %v", engine, err))
+							mu.Unlock()
 						} else {
-							outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
 							tagBrowserAssets(collected)
+							mu.Lock()
+							outcome.OpenedEngines = append(outcome.OpenedEngines, engine)
 							outcome.CollectedResults = append(outcome.CollectedResults, collected...)
 							if path != "" && previewURLBuilder != nil {
 								if outcome.AutoCapturedPaths == nil {
@@ -241,6 +284,7 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 									outcome.AutoCapturedPaths[engine] = previewURL
 								}
 							}
+							mu.Unlock()
 						}
 					} else {
 						// 降级：分步调用
@@ -248,10 +292,14 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 							collected, err := browserRouter.CollectSearchEngineResult(ctx, engine, browserQuery, queryID)
 							if err != nil {
 								engineErr = err
+								mu.Lock()
 								outcome.Errors = append(outcome.Errors, fmt.Sprintf("browser collect failed for %s: %v", engine, err))
+								mu.Unlock()
 							} else {
 								tagBrowserAssets(collected)
+								mu.Lock()
 								outcome.CollectedResults = append(outcome.CollectedResults, collected...)
+								mu.Unlock()
 							}
 						}
 						if captureAvailable {
@@ -261,20 +309,25 @@ func (s *QueryAppService) RunBrowserQueryAsync(
 							}
 							path, _, _, _, err := screenshotApp.CaptureSearchEngineResult(ctx, screenshotMgr, engine, browserQuery, captureQueryID)
 							if err != nil {
+								mu.Lock()
 								outcome.AutoCaptureErrors = append(outcome.AutoCaptureErrors, fmt.Sprintf("screenshot failed for %s: %v", engine, err))
+								mu.Unlock()
 							} else if previewURLBuilder != nil {
+								mu.Lock()
 								if outcome.AutoCapturedPaths == nil {
 									outcome.AutoCapturedPaths = make(map[string]string)
 								}
 								if previewURL := previewURLBuilder(path); previewURL != "" {
 									outcome.AutoCapturedPaths[engine] = previewURL
 								}
+								mu.Unlock()
 							}
 						}
 					}
 				}
 			}(engine)
 		}
+		wg.Wait()
 		resultCh <- outcome
 	}()
 

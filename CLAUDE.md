@@ -122,13 +122,22 @@ go run -tags gui ./cmd/unimap-gui
 - 自动降级，无需人工干预
 
 ### 篡改检测 (5 种模式)
+
+> Web 页面已更名为"巡检"。底层代码仍使用 `tamper` 命名。
+
 | 模式 | 说明 |
 |------|------|
-| strict | 任何内容变化都告警 |
-| relaxed | 忽略非关键区域变化 |
-| malicious | 仅检测恶意脚本/可疑内容 |
-| performance | 快速 HTTP 模式，跳过渲染 |
-| full | 完整浏览器渲染 + 所有检测 |
+| strict | SimpleMD5Hash 一票否决 + 任何内容变化都告警 |
+| relaxed | SimpleMD5Hash 降级为辅助信号；版本化 JS/SSR 水合/分析脚本/时间戳/UUID 自动归一化 |
+| security | 仅检测恶意脚本/隐藏 iframe/危险事件处理器 |
+| balanced | 稳定分段 ≥2 修改或 critical 分段变化告警 |
+| precise | 仅 critical 分段（main/article/forms）变化告警 |
+
+**2026-06-25 增强**：
+- 指纹识别引擎：107 规则 × 4 维度（header/body/title/cookie），13 类别
+- 规范化 HTTP 指纹：MD5(状态行 + 排序头 + body_hash)，排除易变头
+- UA 池轮换（8 UA）、SSL 跳过、重定向记录
+- 端口联动：基线端口记录 + 变化检测（默认 29 端口）
 
 ### 定时任务系统 (20 种 Runner)
 - Cron 表达式创建、启停、编辑、删除

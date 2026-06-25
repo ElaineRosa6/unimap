@@ -267,8 +267,15 @@ type Config struct {
 			OnEmptyResult bool     `yaml:"on_empty_result"` // API 返回空结果时是否 fallback
 			Engines       []string `yaml:"engines"`         // 允许自动 fallback 的引擎白名单
 		} `yaml:"browser_fallback"`
-	} `yaml:"query"`
-}
+		} `yaml:"query"`
+
+		// Tamper 篡改检测配置
+		Tamper struct {
+			PortScanEnabled    bool  `yaml:"port_scan_enabled"`     // 巡检时附带端口扫描
+			PortScanTimeoutMs  int   `yaml:"port_scan_timeout_ms"`  // 单端口超时（毫秒），默认 800
+			InsecureSkipVerify bool  `yaml:"insecure_skip_verify"`  // 跳过 SSL 证书验证（内网/自签证书）
+		} `yaml:"tamper"`
+	}
 
 // NotificationChannelCfg 全局通知渠道配置
 type NotificationChannelCfg struct {
