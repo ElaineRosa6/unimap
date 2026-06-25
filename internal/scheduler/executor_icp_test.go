@@ -316,7 +316,7 @@ func TestICPQueryRunner_MultiQueryPartialFailure(t *testing.T) {
 	result, err := r.Execute(context.Background(), &model.TaskPayload{
 		Queries: []string{"ok1", "fail_api", "ok2"},
 		Type:    "web",
-		Extra:   map[string]any{"fail_fast": false},
+		Extra:   map[string]any{"fail_fast": false, "request_interval_min": 0, "request_interval_max": 0, "type_interval_min": 0, "type_interval_max": 0},
 	})
 	// Partial failure: nil error, result string has errors info
 	if err != nil {
@@ -345,7 +345,7 @@ func TestICPQueryRunner_FailFast(t *testing.T) {
 	result, err := r.Execute(context.Background(), &model.TaskPayload{
 		Queries: []string{"fail500", "ok1", "ok2"},
 		Type:    "web",
-		Extra:   map[string]any{"fail_fast": true},
+		Extra:   map[string]any{"fail_fast": true, "request_interval_min": 0, "request_interval_max": 0, "type_interval_min": 0, "type_interval_max": 0},
 	})
 	// All failed (0 succeeded with fail_fast on first query) → error
 	if err == nil {
@@ -367,6 +367,7 @@ func TestICPQueryRunner_AllFail(t *testing.T) {
 
 	result, err := r.Execute(context.Background(), &model.TaskPayload{
 		Queries: []string{"fail500", "fail_api"},
+		Extra:   map[string]any{"request_interval_min": 0, "request_interval_max": 0, "type_interval_min": 0, "type_interval_max": 0},
 	})
 	if err == nil {
 		t.Fatal("expected error when all queries failed")

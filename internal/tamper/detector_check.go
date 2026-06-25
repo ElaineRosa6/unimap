@@ -11,6 +11,7 @@ import (
 
 	"github.com/unimap/project/internal/alerting"
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/tamper/fingerprint"
 	"github.com/unimap/project/internal/utils/workerpool"
 )
 
@@ -86,8 +87,57 @@ func (d *Detector) CheckTampering(ctx context.Context, url string) (*TamperCheck
 		checkType = d.evaluateTamperChanges(url, currentHash, baseline, result)
 	}
 
+	// 指纹变化分析（辅助信息，不影响 Tampered 判定）
+	if d.fpEngine != nil && baseline.Fingerprints != nil && currentHash.Fingerprints != nil {
+		result.FingerprintChanges = compareFingerprints(baseline.Fingerprints, currentHash.Fingerprints)
+	}
+
+	// 端口变化分析（辅助信息，不影响 Tampered 判定）
+	if d.portScanEnabled && baseline != nil {
+		result.PortChanges = comparePorts(baseline.OpenPorts, currentHash.OpenPorts)
+	}
+
 	d.saveCheckRecord(url, result, currentHash, baseline, checkType)
 	return result, nil
+}
+
+// compareFingerprints 比对基线和当前指纹，返回变化列表
+func compareFingerprints(baseline, current []fingerprint.FingerprintResult) []FingerprintChange {
+	baselineSet := make(map[string]fingerprint.FingerprintResult, len(baseline))
+	for _, fp := range baseline {
+		baselineSet[fp.RuleName] = fp
+	}
+
+	currentSet := make(map[string]struct{}, len(current))
+	for _, fp := range current {
+		currentSet[fp.RuleName] = struct{}{}
+	}
+
+	var changes []FingerprintChange
+
+	// 新增的指纹
+	for _, fp := range current {
+		if _, exists := baselineSet[fp.RuleName]; !exists {
+			changes = append(changes, FingerprintChange{
+				RuleName: fp.RuleName,
+				Category: string(fp.Category),
+				Change:   "added",
+			})
+		}
+	}
+
+	// 消失的指纹
+	for _, fp := range baseline {
+		if _, exists := currentSet[fp.RuleName]; !exists {
+			changes = append(changes, FingerprintChange{
+				RuleName: fp.RuleName,
+				Category: string(fp.Category),
+				Change:   "removed",
+			})
+		}
+	}
+
+	return changes
 }
 
 // handleBaselineLoadError 处理基线加载错误和首次检查（无基线）两种情况
@@ -152,6 +202,15 @@ func (d *Detector) evaluateSuspiciousFlags(url string, result *TamperCheckResult
 }
 
 // evaluateTamperChanges 评估内容变更是否构成篡改，返回 checkType
+//
+// 三态语义：
+//   - "normal":         无任何变化 (Tampered=false)
+//   - "normal_dynamic": 有变化但属动态波动 (Tampered=false)
+//   - "tampered":       有意义的变化 (Tampered=true)
+//
+// SimpleMD5Hash 的作用因检测模式而异：
+//   - strict 模式：SimpleMD5Hash 变化独立触发 tampered
+//   - 其他模式：  SimpleMD5Hash 仅作辅助信息，不作为独立判定依据
 func (d *Detector) evaluateTamperChanges(url string, currentHash, baseline *PageHashResult, result *TamperCheckResult) string {
 	simpleMD5Changed := baseline.SimpleMD5Hash != "" && currentHash.SimpleMD5Hash != "" &&
 		baseline.SimpleMD5Hash != currentHash.SimpleMD5Hash
@@ -161,9 +220,14 @@ func (d *Detector) evaluateTamperChanges(url string, currentHash, baseline *Page
 	result.Changes = changes
 
 	if !simpleMD5Changed && len(changes) == 0 {
+		result.Tampered = false
+		result.Status = "normal"
 		return "normal"
 	}
-	if simpleMD5Changed || d.isMeaningfulTamper(changes) {
+
+	// strict 模式：SimpleMD5Hash 独立触发；其他模式：仅分段有意义变化触发
+	md5Veto := d.detectionMode == DetectionModeStrict && simpleMD5Changed
+	if md5Veto || d.isMeaningfulTamper(changes) {
 		result.Tampered = true
 		result.Status = "tampered"
 		if d.alertManager != nil {
@@ -176,10 +240,10 @@ func (d *Detector) evaluateTamperChanges(url string, currentHash, baseline *Page
 		}
 		return "tampered"
 	}
-	if len(changes) > 0 {
-		result.Status = "changed"
-		result.Tampered = true
-	}
+
+	// 有变化但不构成有意义篡改 → 动态波动
+	result.Tampered = false
+	result.Status = "normal_dynamic"
 	return "normal_dynamic"
 }
 

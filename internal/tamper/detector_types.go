@@ -2,8 +2,10 @@ package tamper
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/unimap/project/internal/alerting"
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/tamper/fingerprint"
 )
 
 const (
@@ -61,6 +64,43 @@ var relaxedVolatileSegments = map[string]struct{}{
 	SegmentFullContent: {},
 }
 
+// userAgentPool UA 池 — 每次请求随机选择一个，避免单一 UA 被目标站点识别和屏蔽
+var userAgentPool = []string{
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 OPR/105.0.0.0",
+	"Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
+}
+
+// randomUA 从 UA 池随机选择一个
+func randomUA() string {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(userAgentPool))))
+	if err != nil {
+		return userAgentPool[0]
+	}
+	return userAgentPool[n.Int64()]
+}
+
+// volatileHTTPHeaders HTTP 响应头中每次请求可能变化、不应纳入指纹的字段
+var volatileHTTPHeaders = map[string]struct{}{
+	"Date":          {},
+	"Age":           {},
+	"Expires":       {},
+	"Set-Cookie":    {},
+	"X-Request-Id":  {},
+	"X-Trace-Id":    {},
+	"X-Runtime":     {},
+	"X-RateLimit-Reset": {},
+	"Cf-Cache-Status": {},
+	"X-Cache":       {},
+	"X-Served-By":   {},
+	"X-Timer":       {},
+}
+
 var compatibilityOptionalSegments = map[string]struct{}{
 	SegmentJSFiles: {},
 	SegmentFavicon: {},
@@ -73,6 +113,14 @@ var (
 	reDataImages     = regexp.MustCompile(`(?i)data:image/[^"']*`)
 	reNonce          = regexp.MustCompile(`(?i)nonce="[^"]*"`)
 	reCSRFToken      = regexp.MustCompile(`(?i)csrf[^"]*_token["']?\s*[:=]\s*["'][^"']*["']`)
+
+	// 分段 hasher 内部归一化正则（Phase 0 误报修复）
+	reVersionedFile   = regexp.MustCompile(`[a-f0-9]{8,}([-.][a-f0-9]{8,})*\.(js|css)`)
+	reCacheBust       = regexp.MustCompile(`[?&](?:v|ver|version|t|ts|_|cb|nocache|rand)=\d+`)
+	reSSRHydration    = regexp.MustCompile(`window\.__(?:NEXT_DATA__|NUXT__|INITIAL_STATE__|DATA__|RENDER_DATA__|PRELOADED_STATE__)\s*=\s*\{[\s\S]*?\}\s*;?`)
+	reAnalyticsScript = regexp.MustCompile(`(?:var\s+)?(?:_hmt|_gaq|gtag|fbq|_paq|wa_t)\s*[=\(][\s\S]*`)
+	reTimestamp       = regexp.MustCompile(`\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?`)
+	reUUID            = regexp.MustCompile(`\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
 )
 
 var (
@@ -181,29 +229,50 @@ type SegmentHash struct {
 
 // PageHashResult holds the full hash computation result for a page.
 type PageHashResult struct {
-	URL           string        `json:"url"`
-	Title         string        `json:"title"`
-	FullHash      string        `json:"full_hash"`
-	SimpleMD5Hash string        `json:"simple_md5_hash"`
-	SegmentHashes []SegmentHash `json:"segment_hashes"`
-	Timestamp     int64         `json:"timestamp"`
-	HTMLLength    int           `json:"html_length"`
-	Status        string        `json:"status"`
-	RawHTML       string        `json:"-"`
+	URL           string                          `json:"url"`
+	Title         string                          `json:"title"`
+	FullHash      string                          `json:"full_hash"`
+	SimpleMD5Hash string                          `json:"simple_md5_hash"`
+	SegmentHashes []SegmentHash                   `json:"segment_hashes"`
+	Timestamp     int64                           `json:"timestamp"`
+	HTMLLength    int                             `json:"html_length"`
+	Status        string                          `json:"status"`
+	RawHTML       string                          `json:"-"`
+	HTTPHeaders              map[string]string               `json:"http_headers,omitempty"`
+	Fingerprints             []fingerprint.FingerprintResult `json:"fingerprints,omitempty"`
+	NormalizedHTTPFingerprint string                         `json:"normalized_http_fingerprint,omitempty"`
+	FinalURL                  string                         `json:"final_url,omitempty"`    // 最终落地 URL（跟随重定向后）
+	RedirectURLs              []string                       `json:"redirect_urls,omitempty"` // 重定向链
+	OpenPorts                 []int                          `json:"open_ports,omitempty"`    // 主机开放端口
+}
+
+// FingerprintChange 记录指纹变化（新增/消失）
+type FingerprintChange struct {
+	RuleName string `json:"rule_name"`
+	Category string `json:"category"`
+	Change   string `json:"change"` // "added" | "removed"
+}
+
+// PortChange 记录端口变化
+type PortChange struct {
+	Port   int    `json:"port"`
+	Change string `json:"change"` // "opened" | "closed"
 }
 
 // TamperCheckResult is the result of a single tamper check.
 type TamperCheckResult struct {
-	URL              string          `json:"url"`
-	CurrentHash      *PageHashResult `json:"current_hash"`
-	BaselineHash     *PageHashResult `json:"baseline_hash,omitempty"`
-	Tampered         bool            `json:"tampered"`
-	Status           string          `json:"status"`
-	ErrorType        string          `json:"error_type,omitempty"`
-	ErrorMessage     string          `json:"error_message,omitempty"`
-	TamperedSegments []string        `json:"tampered_segments,omitempty"`
-	Changes          []SegmentChange `json:"changes,omitempty"`
-	SuspiciousFlags  []string        `json:"suspicious_flags,omitempty"`
+	URL                string              `json:"url"`
+	CurrentHash        *PageHashResult     `json:"current_hash"`
+	BaselineHash       *PageHashResult     `json:"baseline_hash,omitempty"`
+	Tampered           bool                `json:"tampered"`
+	Status             string              `json:"status"`
+	ErrorType          string              `json:"error_type,omitempty"`
+	ErrorMessage       string              `json:"error_message,omitempty"`
+	TamperedSegments   []string            `json:"tampered_segments,omitempty"`
+	Changes            []SegmentChange     `json:"changes,omitempty"`
+	SuspiciousFlags    []string            `json:"suspicious_flags,omitempty"`
+	FingerprintChanges []FingerprintChange `json:"fingerprint_changes,omitempty"`
+	PortChanges        []PortChange        `json:"port_changes,omitempty"`
 	Timestamp        int64           `json:"timestamp"`
 }
 
@@ -234,18 +303,27 @@ type Detector struct {
 	allocCancel     context.CancelFunc
 	detectionMode   string
 	performanceMode string
-	alertManager    *alerting.Manager
-	cache           map[string]*cacheEntry
+	alertManager       *alerting.Manager
+	fpEngine           *fingerprint.Engine
+	insecureSkipVerify bool
+	portScanEnabled    bool
+	portScanList       []int
+	portScanTimeout    time.Duration
+	cache              map[string]*cacheEntry
 	cacheMu         sync.RWMutex
 	mu              sync.Mutex
 }
 
 // DetectorConfig holds configuration for creating a new Detector.
 type DetectorConfig struct {
-	BaseDir         string
-	DetectionMode   string
-	PerformanceMode string
-	AlertManager    *alerting.Manager
+	BaseDir             string
+	DetectionMode       string
+	PerformanceMode     string
+	AlertManager        *alerting.Manager
+	InsecureSkipVerify  bool  // 跳过 SSL 证书验证（内网/自签证书场景）
+	PortScanEnabled     bool  // 巡检时附带端口扫描
+	PortScanList        []int // 扫描端口列表（为空时使用默认 Top 20）
+	PortScanTimeout     time.Duration // 单端口超时（默认 800ms）
 }
 
 // CheckRecord represents a single tamper check record persisted to disk.
@@ -559,12 +637,24 @@ func (s *HashStorage) DeleteCheckRecords(url string) error {
 // NewDetector creates a new Detector with the given configuration.
 func NewDetector(cfg DetectorConfig) *Detector {
 	storage := NewHashStorage(cfg.BaseDir)
+
+	// 初始化指纹引擎（失败不影响核心功能，仅记录日志）
+	fpEngine, err := fingerprint.NewEngine()
+	if err != nil {
+		logger.Warnf("Failed to initialize fingerprint engine: %v", err)
+	}
+
 	return &Detector{
-		storage:         storage,
-		detectionMode:   normalizeDetectionMode(cfg.DetectionMode),
-		performanceMode: normalizePerformanceMode(cfg.PerformanceMode),
-		alertManager:    cfg.AlertManager,
-		cache:           make(map[string]*cacheEntry),
+		storage:            storage,
+		detectionMode:      normalizeDetectionMode(cfg.DetectionMode),
+		performanceMode:    normalizePerformanceMode(cfg.PerformanceMode),
+		alertManager:       cfg.AlertManager,
+		fpEngine:           fpEngine,
+		insecureSkipVerify: cfg.InsecureSkipVerify,
+		portScanEnabled:    cfg.PortScanEnabled,
+		portScanList:       normalizePortList(cfg.PortScanList),
+		portScanTimeout:    normalizePortTimeout(cfg.PortScanTimeout),
+		cache:              make(map[string]*cacheEntry),
 	}
 }
 
@@ -596,4 +686,46 @@ func normalizePerformanceMode(raw string) string {
 	default:
 		return PerformanceModeBalanced
 	}
+}
+
+// defaultPortScanList 默认巡检扫描频次最高的服务端口
+var defaultPortScanList = []int{21, 22, 25, 53, 80, 81, 110, 143, 443, 993, 995, 1433, 1521, 2181, 2375, 3128, 3306, 3389, 5432, 5672, 6379, 8000, 8080, 8443, 9000, 9090, 9200, 11211, 27017}
+
+// maxPortScanList caps user-defined port lists to prevent resource exhaustion.
+const maxPortScanList = 100
+
+func normalizePortList(ports []int) []int {
+	if len(ports) == 0 {
+		return defaultPortScanList
+	}
+	if len(ports) > maxPortScanList {
+		ports = ports[:maxPortScanList]
+	}
+	seen := make(map[int]struct{}, len(ports))
+	var deduped []int
+	for _, p := range ports {
+		if p < 1 || p > 65535 {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		deduped = append(deduped, p)
+	}
+	sort.Ints(deduped)
+	return deduped
+}
+
+func normalizePortTimeout(timeout time.Duration) time.Duration {
+	if timeout <= 0 {
+		return 800 * time.Millisecond
+	}
+	if timeout < 100*time.Millisecond {
+		return 100 * time.Millisecond
+	}
+	if timeout > 5*time.Second {
+		return 5 * time.Second
+	}
+	return timeout
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/unimap/project/internal/requestid"
 	"github.com/unimap/project/internal/scheduler"
 	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
 )
 
@@ -94,6 +95,7 @@ type Server struct {
 	screenshotMgr    *screenshot.Manager
 	screenshotRouter *screenshot.ScreenshotRouter
 	batchJobs        *batchJobStore
+	batchDB          *batchdb.Database
 	config           *config.Config
 	configManager    *config.Manager
 	chromeCmd        *os.Process
@@ -142,6 +144,7 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 	initICPDatabase(srv, cfg)
 	initHistoryDatabase(srv, cfg)
 	initUserDatabase(srv)
+	initScreenshotBatchDB(srv)
 
 	sched := initScheduler(srv, cfg, screenshotApp, screenshotMgr, alertManager, orchestrator, unifiedSvc, nodeTaskQueue)
 	srv.notifyRegistry = initNotifySystem(cfg, cfgManager, sched)
@@ -447,6 +450,29 @@ func initHistoryDatabase(srv *Server, cfg *config.Config) {
 	srv.historyRepo = historydb.NewRepository(db.DB())
 }
 
+// initScreenshotBatchDB initializes the screenshot batch job metadata database.
+// On failure it logs a warning and leaves batchJobs as memory-only (graceful degradation).
+func initScreenshotBatchDB(srv *Server) {
+	dbPath := "./data/screenshot_batches.db"
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		logger.Warnf("screenshot batch DB dir create failed (%s): %v", dbPath, err)
+		return
+	}
+	db, err := batchdb.NewDatabase(dbPath)
+	if err != nil {
+		logger.Warnf("screenshot batch DB unavailable at %s: %v", dbPath, err)
+		return
+	}
+	if err := db.InitSchema(); err != nil {
+		logger.Warnf("screenshot batch DB schema init failed: %v", err)
+		_ = db.Close()
+		return
+	}
+	srv.batchDB = db
+	srv.batchJobs.setRepo(batchdb.NewRepository(db.DB()))
+	logger.Infof("screenshot batch DB initialized at %s", dbPath)
+}
+
 // initUserDatabase initializes the user database on the server.
 func initUserDatabase(srv *Server) {
 	userDBPath := "./data/users.db"
@@ -577,6 +603,9 @@ func reloadNotifyChannelConfigs(reg *notify.Registry, cfg *config.Config) {
 			Enabled:        cc.Enabled,
 			WebhookURL:     cc.WebhookURL,
 			Secret:         cc.Secret,
+			AppID:          cc.AppID,
+			AppSecret:      cc.AppSecret,
+			ChatID:         cc.ChatID,
 			Headers:        cc.Headers,
 			AllowPrivateIP: cc.AllowPrivateIP,
 		})
@@ -1017,6 +1046,11 @@ func (s *Server) shutdownDatabases() {
 	if s.userDB != nil {
 		if err := s.userDB.Close(); err != nil {
 			logger.Warnf("user DB close error: %v", err)
+		}
+	}
+	if s.batchDB != nil {
+		if err := s.batchDB.Close(); err != nil {
+			logger.Warnf("screenshot batch DB close error: %v", err)
 		}
 	}
 }

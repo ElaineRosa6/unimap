@@ -254,6 +254,17 @@
 	.icp-msg.error { background: var(--danger-bg, #fef2f2); color: var(--danger, #b91c1c); border: 1px solid var(--danger-border, #fecaca); }
 	.icp-msg.warning { background: var(--warning-bg, #fff7ed); color: var(--warning, #c2410c); border: 1px solid var(--warning-border, #fed7aa); }
 	.icp-msg.ok { background: var(--success-bg, #f0fdf4); color: var(--success, #15803d); border: 1px solid var(--success-border, #bbf7d0); }
+
+	.icp-history { margin-top: 24px; }
+	.icp-history-hdr { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+	.icp-history-hdr h2 { margin: 0; font-size: 16px; font-weight: 600; }
+	.icp-history-hdr .btn-sm { padding: 4px 12px; font-size: 13px; cursor: pointer; }
+	.icp-history-hdr .history-hint { font-size: 12px; color: var(--text-muted, #888); }
+	.icp-run-row { cursor: pointer; }
+	.icp-run-row:hover { background: var(--hover-bg, #f5f5f5); }
+	.icp-run-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; background: var(--accent-bg, #eef2ff); color: var(--accent, #4f46e5); }
+	.icp-run-results { display: none; }
+	.icp-run-results.show { display: block; }
 </style>
 
 <main class="icp-wrap">
@@ -276,6 +287,7 @@
 		</div>
 		<input type="text" id="icp-search-input" placeholder="域名 / 公司名 / 许可证号" autocomplete="off">
 		<button type="button" class="btn-primary" id="btn-icp-search">查询</button>
+		<button type="button" class="btn-sm" id="btn-icp-history">历史</button>
 	</div>
 
 	<div id="icp-msg" class="icp-msg"></div>
@@ -298,6 +310,17 @@
 			</div>
 		</aside>
 	</div>
+
+	<section class="icp-history">
+		<div class="icp-history-hdr">
+			<h2>历史记录</h2>
+			<button type="button" class="btn-sm" id="btn-icp-history-refresh">刷新</button>
+			<span class="history-hint" id="icp-history-hint">输入关键词后点击「历史」按关键词查询；留空则不加载</span>
+		</div>
+		<div id="icp-history-body">
+			<div class="icp-empty">点击「历史」查看查询记录</div>
+		</div>
+	</section>
 </main>
 
 <script nonce="{{.CSPNonce}}">
@@ -488,10 +511,104 @@
 			});
 	}
 
+	var historyBody = document.getElementById('icp-history-body');
+	var historyHint = document.getElementById('icp-history-hint');
+
+	function loadICPHistory() {
+		var keyword = input.value.trim();
+		if (!keyword) {
+			historyBody.innerHTML = '<div class="icp-empty">请先在搜索框输入关键词，再点击「历史」</div>';
+			return;
+		}
+		historyBody.innerHTML = '<div class="icp-empty">加载中...</div>';
+		var url = '/api/v1/icp/history?keyword=' + encodeURIComponent(keyword) + '&type=web&limit=20';
+		fetch(url, { credentials: 'same-origin' })
+			.then(function(resp) {
+				return resp.json().then(function(data) { return { status: resp.status, body: data }; });
+			})
+			.then(function(env) {
+				if (env.status !== 200 || !env.body.success) {
+					var b = env.body || {};
+					var errMsg = (b.error && typeof b.error === 'object' && b.error.message) ? b.error.message : ('HTTP ' + env.status);
+					historyBody.innerHTML = '<div class="icp-empty">加载失败: ' + escapeHtml(errMsg) + '</div>';
+					return;
+				}
+				var runs = env.body.runs || [];
+				if (runs.length === 0) {
+					historyBody.innerHTML = '<div class="icp-empty">暂无「' + escapeHtml(keyword) + '」的历史记录</div>';
+					return;
+				}
+				renderICPHistoryRuns(runs);
+			})
+			.catch(function(err) {
+				historyBody.innerHTML = '<div class="icp-empty">网络错误: ' + escapeHtml(err.message) + '</div>';
+			});
+	}
+
+	function renderICPHistoryRuns(runs) {
+		var html = '<table class="icp-table"><thead><tr>'
+			+ '<th>时间</th><th>关键词</th><th>类型</th><th>结果数</th><th>来源</th>'
+			+ '</tr></thead><tbody>';
+		runs.forEach(function(run) {
+			var time = run.created_at ? new Date(run.created_at).toLocaleString() : '-';
+			var taskLabel = run.task_id === 'manual' ? '手动' : (run.task_id ? escapeHtml(run.task_id) : '手动');
+			html += '<tr class="icp-run-row" data-run-id="' + escapeHtml(String(run.id)) + '">'
+				+ '<td>' + escapeHtml(time) + '</td>'
+				+ '<td>' + escapeHtml(run.query_keyword || '-') + '</td>'
+				+ '<td><span class="icp-run-badge">' + escapeHtml(run.query_type || '-') + '</span></td>'
+				+ '<td>' + (run.result_count || 0) + '</td>'
+				+ '<td>' + taskLabel + '</td>'
+				+ '</tr>';
+		});
+		html += '</tbody></table>';
+		historyBody.innerHTML = html;
+
+		historyBody.querySelectorAll('.icp-run-row').forEach(function(row) {
+			row.addEventListener('click', function() {
+				var runID = row.getAttribute('data-run-id');
+				viewICPRun(runID, row);
+			});
+		});
+	}
+
+	function viewICPRun(runID, triggerRow) {
+		var url = '/api/v1/icp/history/results?run_id=' + encodeURIComponent(runID);
+		fetch(url, { credentials: 'same-origin' })
+			.then(function(resp) {
+				return resp.json().then(function(data) { return { status: resp.status, body: data }; });
+			})
+			.then(function(env) {
+				if (env.status !== 200 || !env.body.success) {
+					showMsg('error', '加载历史结果失败');
+					return;
+				}
+				var results = env.body.results || [];
+				if (results.length === 0) {
+					showMsg('warning', '该记录无结果数据');
+					return;
+				}
+				// 展平到 currentResults 并在左侧列表渲染，复用现有展示逻辑
+				currentResults = results.map(function(r) {
+					r._type = r.query_type || 'web';
+					r._label = r.query_type || 'web';
+					return r;
+				});
+				renderList(currentResults);
+				if (currentResults.length > 0) selectRow(0);
+				meta.textContent = '历史记录 #' + runID + ' / ' + currentResults.length + ' 条';
+				showMsg('ok', '已加载历史记录 #' + runID);
+			})
+			.catch(function(err) {
+				showMsg('error', '网络错误: ' + err.message);
+			});
+	}
+
 	btn.addEventListener('click', doSearch);
 	input.addEventListener('keydown', function(e) {
 		if (e.key === 'Enter') doSearch();
 	});
+	document.getElementById('btn-icp-history').addEventListener('click', loadICPHistory);
+	document.getElementById('btn-icp-history-refresh').addEventListener('click', loadICPHistory);
 	})();
 </script>
 
