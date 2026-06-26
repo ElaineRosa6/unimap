@@ -62,6 +62,8 @@ jobs:
           cache: true
 
       - name: Run tests (with race detector)
+        env:
+          CGO_ENABLED: 1
         run: go test -race -v -count=1 ./...
 
       - name: Run tests (coverage)
@@ -146,6 +148,8 @@ jobs:
           cache: true
 
       - name: Run govulncheck
+        env:
+          GOTOOLCHAIN: go1.26.4
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...

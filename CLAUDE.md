@@ -411,6 +411,11 @@ go run -tags gui ./cmd/unimap-gui
 4. ~~**Quake 响应解析**~~ ✅ 已修复（2026-06-21）
 5. ~~**前端 API 错误显示**~~ ✅ 已修复（2026-06-21，10 项）
 6. ~~**查询结果表格不渲染**~~ ✅ 已修复（2026-06-21）
+7. **CI 收尾（2026-06-26，进行中）**：已完成 `.gitattributes`、`CGO_ENABLED=1` race 覆盖、依赖升级
+  - **Lint**: 已补 `.gitattributes` 强制 LF，并执行 `git add --renormalize .` + `gofmt -w .`
+  - **Test**: 已在 `Run tests (with race detector)` step 显式设置 `CGO_ENABLED=1`
+  - **Security Scan**: 已升级 `golang.org/x/image@v0.43.0`、`golang.org/x/net@v0.55.0`、`github.com/redis/go-redis/v9@v9.6.3`
+  - **验证备注**: 本地 `go build ./...`、`go test -race -count=1 ./...`、`go vet ./...` 通过；`govulncheck` 受本机 Go 1.26.0/1.26.2/1.26.3 标准库漏洞基线影响，需 CI 侧确认补丁版 toolchain（建议 Go 1.26.4+）
 
 ### 2026-06-20 移除 BinaryEdge/Onyphe/GreyNoise 三引擎（commit fb6dcdb）
 
