@@ -154,7 +154,8 @@ func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
 		"title":       "title",
 		"header":      "http.header",
 		"port":        "port",
-		"protocol":    "service",
+		"protocol":    "protocol",
+		"service":     "service",
 		"ip":          "ip",
 		"country":     "country",
 		"region":      "subdivisions",
@@ -169,7 +170,6 @@ func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
 		"banner":      "banner",
 		"server":      "http.header.server",
 		"host":        "hostname",
-		"url":         "site",
 		"status_code": "http.header.status_code",
 		"cert":        "ssl",
 	}
