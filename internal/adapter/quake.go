@@ -24,12 +24,12 @@ type QuakeAdapter struct {
 
 // QuakeItem is a single result item from the Quake v3 search API.
 type QuakeItem struct {
-	IP       string        `json:"ip"`
-	Port     float64       `json:"port"`
-	Hostname string        `json:"hostname"`
-	Domain   string        `json:"domain"`
-	URL      string        `json:"url"`
-	Service  *QuakeService `json:"service,omitempty"`
+	IP       string         `json:"ip"`
+	Port     float64        `json:"port"`
+	Hostname string         `json:"hostname"`
+	Domain   string         `json:"domain"`
+	URL      string         `json:"url"`
+	Service  *QuakeService  `json:"service,omitempty"`
 	Location *QuakeLocation `json:"location,omitempty"`
 }
 
@@ -151,8 +151,8 @@ func (q *QuakeAdapter) translateNode(node *model.UQLNode) string {
 func (q *QuakeAdapter) buildCondition(field, op, value string) string {
 	// 字段映射
 	mapping := map[string]string{
-		"body":        "response",
-		"title":       "title",
+		"body":  "response",
+		"title": "title",
 		// "header" removed — Quake has no header field; falls through to passthrough
 		"port":        "port",
 		"protocol":    "service",

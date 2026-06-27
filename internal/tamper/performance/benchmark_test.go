@@ -117,7 +117,7 @@ func BenchmarkCacheHitRate(b *testing.B) {
 
 	// 打印缓存命中率
 	stats := po.GetPerformanceMetrics().GetStats()
-	b.Logf("Cache Hit Rate: %.2f%%", stats["cache_hit_rate"].(float64)*100)
+	b.Logf("Cache Hit Rate: %.2f%%", stats.CacheHitRate*100)
 }
 
 // BenchmarkMultipleSites 测试多站点性能
@@ -177,7 +177,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 
 	// 获取缓存统计
 	stats := cm.GetStats()
-	b.Logf("Cache Size: %d items", stats["total_items"])
+	b.Logf("Cache Size: %d items", stats.TotalItems)
 }
 
 // BenchmarkConcurrencyScaling 测试并发扩展性

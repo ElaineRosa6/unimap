@@ -532,7 +532,7 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 				IP: "1.2.3.4", Port: 80, ServiceName: "HTTP",
 				HTTP: &CensysHTTP{Response: CensysHTTPResponseBody{
 					HTMLTitle: "Example", StatusCode: 200,
-					Body: strings.Repeat("x", 500),
+					Body:    strings.Repeat("x", 500),
 					Headers: CensysHTTPHeaders{Server: "nginx"},
 				}},
 				Location: loc, AutonomousSystem: asn, DNS: dns,

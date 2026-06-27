@@ -1,6 +1,7 @@
 package web
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"time"
 
@@ -33,6 +34,19 @@ func metricsMiddleware(next http.Handler) http.Handler {
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", map[string]string{"expected": http.MethodGet})
+		return
+	}
+	if s.config != nil && s.config.Web.Auth.Enabled {
+		token := extractBearerToken(r.Header.Get("Authorization"))
+		if token == "" {
+			token = r.Header.Get("X-Admin-Token")
+		}
+		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.adminToken())) != 1 {
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized", "admin token required for metrics", nil)
+			return
+		}
+	} else if bindAddr := s.bindAddr(); bindAddr != "127.0.0.1" && bindAddr != "localhost" {
+		writeAPIError(w, http.StatusForbidden, "forbidden", "metrics disabled on non-loopback without auth", nil)
 		return
 	}
 	promhttp.Handler().ServeHTTP(w, r)

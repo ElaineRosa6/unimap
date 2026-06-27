@@ -8,11 +8,10 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20260405000525-47a8ff65b46a
 	github.com/chromedp/chromedp v0.15.1
 	github.com/go-resty/resty/v2 v2.11.0
-	github.com/google/uuid v1.1.2
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/mattn/go-sqlite3 v1.14.41
 	github.com/microcosm-cc/bluemonday v1.0.27
-	github.com/natefinch/lumberjack v2.0.0+incompatible
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.6.3
 	github.com/robfig/cron/v3 v3.0.1
@@ -22,6 +21,7 @@ require (
 	golang.org/x/crypto v0.51.0
 	golang.org/x/image v0.43.0
 	golang.org/x/text v0.38.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -71,6 +71,5 @@ require (
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
-	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	honnef.co/go/js/dom v0.0.0-20210725211120-f030747120f2 // indirect
 )

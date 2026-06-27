@@ -245,8 +245,8 @@ func TestTryBrowserFallback_MultipleEngines(t *testing.T) {
 
 	results := []*model.EngineResult{
 		{EngineName: "fofa", NormalizedData: []model.UnifiedAsset{{IP: "1.1.1.1", Port: 80}}}, // success
-		{EngineName: "hunter", Error: "rate-limit"},                                            // failed, whitelisted
-		{EngineName: "shodan", Error: "unauthorized"},                                          // failed, NOT whitelisted
+		{EngineName: "hunter", Error: "rate-limit"},                                           // failed, whitelisted
+		{EngineName: "shodan", Error: "unauthorized"},                                         // failed, NOT whitelisted
 	}
 	queries := []model.EngineQuery{
 		{EngineName: "fofa", Query: `app="x"`},
@@ -291,16 +291,16 @@ func TestTryBrowserFallback_MultipleEngines(t *testing.T) {
 func TestTryBrowserFallback_FallbackResultEntersMerger(t *testing.T) {
 	// Build assets as the fallback path would produce them.
 	fallbackAsset := model.UnifiedAsset{
-		IP:   "192.168.1.1",
-		Port: 8080,
+		IP:     "192.168.1.1",
+		Port:   8080,
 		Source: "fofa",
 		Extra: map[string]interface{}{
 			"collection_method": "browser_fallback",
 		},
 	}
 	apiAsset := model.UnifiedAsset{
-		IP:   "192.168.1.2",
-		Port: 443,
+		IP:     "192.168.1.2",
+		Port:   443,
 		Source: "hunter",
 		Extra: map[string]interface{}{
 			"via": "api",

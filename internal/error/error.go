@@ -80,8 +80,8 @@ type UnimapError struct {
 	Code        int       `json:"code"`
 	Message     string    `json:"message"`
 	Details     string    `json:"details,omitempty"`
-	StackTrace  string    `json:"stack_trace,omitempty"`
-	OriginalErr error     `json:"original_err,omitempty"`
+	StackTrace  string    `json:"-"`
+	OriginalErr error     `json:"-"`
 }
 
 // Error 实现error接口

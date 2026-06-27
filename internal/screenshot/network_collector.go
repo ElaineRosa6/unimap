@@ -227,33 +227,33 @@ func parseZoomEyeNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error)
 	return assets, resp.Total, nil
 }
 
+// zoomEyeNetworkResult is a typed alternative parser for ZoomEye search API responses.
+type zoomEyeNetworkResult struct {
+	IP      string  `json:"ip"`
+	Port    float64 `json:"port"`
+	Service string  `json:"service"`
+	Domain  string  `json:"domain"`
+	Title   string  `json:"title"`
+}
+
 func parseZoomEyeNetworkResponseAlt(body []byte) ([]model.UnifiedAsset, int, error) {
 	var resp struct {
-		Total   int                      `json:"total"`
-		Results []map[string]interface{} `json:"results"`
+		Total   int                    `json:"total"`
+		Results []zoomEyeNetworkResult `json:"results"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, 0, fmt.Errorf("failed to parse ZoomEye response: %w", err)
 	}
 	assets := make([]model.UnifiedAsset, 0, len(resp.Results))
 	for _, item := range resp.Results {
-		a := model.UnifiedAsset{Source: "zoomeye"}
-		if v, ok := item["ip"].(string); ok {
-			a.IP = v
-		}
-		if v, ok := item["port"].(float64); ok {
-			a.Port = int(v)
-		}
-		if v, ok := item["service"].(string); ok {
-			a.Protocol = v
-		}
-		if v, ok := item["domain"].(string); ok {
-			a.Host = v
-		}
-		if v, ok := item["title"].(string); ok {
-			a.Title = v
-		}
-		assets = append(assets, a)
+		assets = append(assets, model.UnifiedAsset{
+			Source:   "zoomeye",
+			IP:       item.IP,
+			Port:     int(item.Port),
+			Protocol: item.Service,
+			Host:     item.Domain,
+			Title:    item.Title,
+		})
 	}
 	return assets, resp.Total, nil
 }

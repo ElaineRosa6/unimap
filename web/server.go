@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -820,7 +821,6 @@ func isWebRoot(dir string) bool {
 	return true
 }
 
-
 // icpConfigProvider returns a snapshot of the current ICP config for the scheduler runner.
 func (s *Server) icpConfigProvider() adapter.ICPConfig {
 	s.configMutex.Lock()
@@ -855,6 +855,9 @@ func (s *Server) Start() error {
 	logger.Infof("Web server started at http://%s:%d", s.bindAddr(), s.port)
 	logger.Infof("Registered %d routes", len(router.GetRoutes()))
 	logger.Infof("Web security config loaded: cors_origins=%d rate_limit_enabled=%t max_body_bytes=%d", len(allowedOrigins), rateLimitEnabled, maxBodyBytes)
+	if bindAddr := s.bindAddr(); bindAddr != "127.0.0.1" && bindAddr != "localhost" {
+		logger.Warnf("⚠️  Server bound to %s (non-loopback). Ensure a reverse proxy with TLS terminates HTTPS in front of this server.", bindAddr)
+	}
 	return s.httpServer.ListenAndServe()
 }
 
@@ -916,7 +919,7 @@ func (s *Server) buildServerMiddlewareChain(mux http.Handler, rateLimitEnabled b
 		handler = s.adminAuthMiddleware()(handler)
 		logger.Infof("Web auth enabled: admin token authentication active")
 	} else if bindAddr := s.bindAddr(); bindAddr != "127.0.0.1" && bindAddr != "localhost" {
-		logger.Warnf("⚠️  WARNING: Admin auth is DISABLED and server is bound to %s (non-loopback). All API endpoints are publicly accessible!", bindAddr)
+		logger.Fatalf("FATAL: Admin auth is DISABLED and server is bound to %s (non-loopback). Refusing to start to prevent unauthenticated access. Set web.auth.enabled=true or bind to loopback.", bindAddr)
 	}
 	handler = metricsMiddleware(handler)
 	handler = auditMiddleware(handler)
@@ -1094,7 +1097,9 @@ func (s *Server) bindAddr() string {
 func (s *Server) cleanupStaleQueries() {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("panic in cleanupStaleQueries: %v", r)
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			logger.Errorf("panic in cleanupStaleQueries: %v\n%s", r, buf[:n])
 		}
 	}()
 	ticker := time.NewTicker(10 * time.Minute)
@@ -1121,7 +1126,9 @@ func (s *Server) cleanupStaleQueries() {
 func (s *Server) cleanupStaleBridgeTokens() {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("panic in cleanupStaleBridgeTokens: %v", r)
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			logger.Errorf("panic in cleanupStaleBridgeTokens: %v\n%s", r, buf[:n])
 		}
 	}()
 	ticker := time.NewTicker(5 * time.Minute)
@@ -1157,7 +1164,9 @@ func (s *Server) cleanupStaleBridgeTokens() {
 func (s *Server) cleanupStaleBatchJobs() {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("panic in cleanupStaleBatchJobs: %v", r)
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			logger.Errorf("panic in cleanupStaleBatchJobs: %v\n%s", r, buf[:n])
 		}
 	}()
 	ticker := time.NewTicker(15 * time.Minute)

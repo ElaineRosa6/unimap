@@ -32,19 +32,19 @@ type HunterAdapter struct {
 
 // HunterItem is a single result item from the Hunter API.
 type HunterItem struct {
-	IP           string                 `json:"ip"`
-	Port         float64                `json:"port"` // float64 in JSON
-	Protocol     string                 `json:"protocol"`
-	Domain       string                 `json:"domain"`
-	WebTitle     string                 `json:"web_title"`
-	HeaderServer string                 `json:"header_server"`
-	StatusCode   float64                `json:"status_code"`
-	Country      string                 `json:"country"`
-	Province     string                 `json:"province"`
-	City         string                 `json:"city"`
-	ISP          string                 `json:"isp"`
-	Org          string                 `json:"as_org"`
-	URL          string                 `json:"url"`
+	IP           string  `json:"ip"`
+	Port         float64 `json:"port"` // float64 in JSON
+	Protocol     string  `json:"protocol"`
+	Domain       string  `json:"domain"`
+	WebTitle     string  `json:"web_title"`
+	HeaderServer string  `json:"header_server"`
+	StatusCode   float64 `json:"status_code"`
+	Country      string  `json:"country"`
+	Province     string  `json:"province"`
+	City         string  `json:"city"`
+	ISP          string  `json:"isp"`
+	Org          string  `json:"as_org"`
+	URL          string  `json:"url"`
 	// Legacy nested fields for fallback
 	Web      map[string]interface{} `json:"web"`
 	Location map[string]interface{} `json:"location"`
@@ -325,20 +325,32 @@ func normalizeHunterMatch(m *HunterItem) *model.UnifiedAsset {
 func parseHunterLegacyFields(m *HunterItem, asset *model.UnifiedAsset) {
 	if m.Web != nil {
 		setStr := func(key string, target *string) {
-			if v, ok := m.Web[key].(string); ok { *target = v }
+			if v, ok := m.Web[key].(string); ok {
+				*target = v
+			}
 		}
 		setStr("ip", &asset.IP)
 		setStr("protocol", &asset.Protocol)
 		setStr("domain", &asset.Host)
 		setStr("title", &asset.Title)
 		setStr("server", &asset.Server)
-		if v, ok := m.Web["port"].(float64); ok { asset.Port = int(v) }
-		if v, ok := m.Web["status_code"].(float64); ok { asset.StatusCode = int(v) }
+		if v, ok := m.Web["port"].(float64); ok {
+			asset.Port = int(v)
+		}
+		if v, ok := m.Web["status_code"].(float64); ok {
+			asset.StatusCode = int(v)
+		}
 	}
 	if m.Location != nil {
-		if v, ok := m.Location["country_cn"].(string); ok { asset.CountryCode = v }
-		if v, ok := m.Location["province_cn"].(string); ok { asset.Region = v }
-		if v, ok := m.Location["city_cn"].(string); ok { asset.City = v }
+		if v, ok := m.Location["country_cn"].(string); ok {
+			asset.CountryCode = v
+		}
+		if v, ok := m.Location["province_cn"].(string); ok {
+			asset.Region = v
+		}
+		if v, ok := m.Location["city_cn"].(string); ok {
+			asset.City = v
+		}
 	}
 }
 
@@ -349,12 +361,20 @@ func ensureHunterURL(asset *model.UnifiedAsset) {
 	}
 	proto := asset.Protocol
 	if proto == "" {
-		if asset.Port == 443 { proto = "https" } else { proto = "http" }
+		if asset.Port == 443 {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
 	}
 	host := asset.IP
-	if asset.Host != "" { host = asset.Host }
+	if asset.Host != "" {
+		host = asset.Host
+	}
 	scheme := "http"
-	if strings.HasPrefix(proto, "https") || asset.Port == 443 { scheme = "https" }
+	if strings.HasPrefix(proto, "https") || asset.Port == 443 {
+		scheme = "https"
+	}
 	u := &url.URL{Scheme: scheme, Host: fmt.Sprintf("%s:%d", host, asset.Port)}
 	asset.URL = u.String()
 }

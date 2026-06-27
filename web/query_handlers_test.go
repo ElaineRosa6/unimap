@@ -238,16 +238,13 @@ func TestBuildQueryAPIPayload(t *testing.T) {
 		"capture",
 	)
 
-	if payload["query"] != "test" {
-		t.Fatalf("expected query 'test', got %v", payload["query"])
+	if payload.Query != "test" {
+		t.Fatalf("expected query 'test', got %v", payload.Query)
 	}
-	if payload["browserQuery"] != true {
-		t.Fatalf("expected browserQuery true, got %v", payload["browserQuery"])
+	if payload.BrowserQuery != true {
+		t.Fatalf("expected browserQuery true, got %v", payload.BrowserQuery)
 	}
-	collected, ok := payload["browserCollectedData"].([]collection.CollectResult)
-	if !ok {
-		t.Fatal("expected browserCollectedData to be []collection.CollectResult")
-	}
+	collected := payload.BrowserCollectedData
 	if len(collected) != 1 || collected[0].Engine != "quake" {
 		t.Fatalf("unexpected browserCollectedData: %#v", collected)
 	}
@@ -272,7 +269,7 @@ func TestBuildQueryAPIPayload_CleansHunterBrowserCollectedData(t *testing.T) {
 		"collect",
 	)
 
-	collected := payload["browserCollectedData"].([]collection.CollectResult)
+	collected := payload.BrowserCollectedData
 	if len(collected) != 1 {
 		t.Fatalf("expected 1 collected result, got %d", len(collected))
 	}
@@ -300,10 +297,7 @@ func TestBuildQueryAPIPayload_CombinesErrors(t *testing.T) {
 		"explicit error",
 	)
 
-	errors, ok := payload["errors"].([]string)
-	if !ok {
-		t.Fatal("expected errors to be []string")
-	}
+	errors := payload.Errors
 	if len(errors) < 2 {
 		t.Fatalf("expected at least 2 errors, got %d", len(errors))
 	}
@@ -332,15 +326,15 @@ func TestBuildQueryAPIPayload_MergesCollectedAssets(t *testing.T) {
 
 	payload := buildQueryAPIPayload("test", []string{"fofa", "hunter", "quake"}, resp, browserOutcome, "collect")
 
-	assets := payload["assets"].([]model.UnifiedAsset)
+	assets := payload.Assets
 	if len(assets) != 4 {
 		t.Fatalf("expected 4 assets (1 query + 3 collected), got %d", len(assets))
 	}
-	total := payload["totalCount"].(int)
+	total := payload.TotalCount
 	if total != 4 {
 		t.Fatalf("expected totalCount 4, got %d", total)
 	}
-	stats := payload["engineStats"].(map[string]int)
+	stats := payload.EngineStats
 	if stats["fofa"] != 1 {
 		t.Errorf("expected fofa=1, got %d", stats["fofa"])
 	}
@@ -372,20 +366,14 @@ func TestBuildQueryAPIPayload_MergesBrowserCollectedAssets(t *testing.T) {
 		"collect",
 	)
 
-	assets, ok := payload["assets"].([]model.UnifiedAsset)
-	if !ok {
-		t.Fatal("expected assets to be []model.UnifiedAsset")
-	}
+	assets := payload.Assets
 	if len(assets) != 2 {
 		t.Fatalf("expected 2 merged assets, got %#v", assets)
 	}
-	if payload["totalCount"] != 2 {
-		t.Fatalf("expected totalCount 2, got %v", payload["totalCount"])
+	if payload.TotalCount != 2 {
+		t.Fatalf("expected totalCount 2, got %v", payload.TotalCount)
 	}
-	engineStats, ok := payload["engineStats"].(map[string]int)
-	if !ok {
-		t.Fatal("expected engineStats to be map[string]int")
-	}
+	engineStats := payload.EngineStats
 	if engineStats["fofa"] != 1 {
 		t.Fatalf("expected fofa browser stat 1, got %#v", engineStats)
 	}

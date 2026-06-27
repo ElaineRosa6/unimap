@@ -294,7 +294,7 @@ func TestIsBlockedIP(t *testing.T) {
 
 func TestIsPrivateOrInternalIP(t *testing.T) {
 	tests := []struct {
-		ip string
+		ip   string
 		want bool
 	}{
 		{"127.0.0.1", true},

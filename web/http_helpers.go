@@ -173,7 +173,7 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) boo
 			writeAPIError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body exceeds configured limit", nil)
 			return false
 		}
-		writeAPIError(w, http.StatusBadRequest, "invalid_request_body", "invalid JSON request body", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "invalid_request_body", "invalid JSON request body", nil)
 		return false
 	}
 	return true
@@ -323,7 +323,7 @@ func isBlockedIP(ip net.IP) bool {
 
 // isPrivateOrInternalIP 兼容旧接口，内部委托给 isPrivateOrInternalHost
 func isPrivateOrInternalIP(host string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	return isPrivateOrInternalHost(ctx, host)
 }

@@ -48,7 +48,9 @@ func (t *SearchTask) Execute() error {
 	}
 
 	page := t.query.Page
-	if page <= 0 { page = 1 }
+	if page <= 0 {
+		page = 1
+	}
 	cacheKey := utils.GenerateCacheKey(t.query.EngineName, t.query.Query, page, t.pageSize)
 
 	if cachedResults, found := t.orchestrator.cache.Get(cacheKey); found {
@@ -73,11 +75,15 @@ func (t *SearchTask) Execute() error {
 // executeSearchWithRetry 带指数退避的重试搜索
 func (t *SearchTask) executeSearchWithRetry(adapter EngineAdapter) (*model.EngineResult, error) {
 	retryCount := t.retryAttempts
-	if retryCount <= 0 { retryCount = 3 }
+	if retryCount <= 0 {
+		retryCount = 3
+	}
 
 	for attempt := 0; attempt <= retryCount; attempt++ {
 		page := t.query.Page
-		if page <= 0 { page = 1 }
+		if page <= 0 {
+			page = 1
+		}
 		result, err := adapter.Search(t.ctx, t.query.Query, page, t.pageSize)
 		if err == nil {
 			if result == nil {
@@ -97,7 +103,9 @@ func (t *SearchTask) executeSearchWithRetry(adapter EngineAdapter) (*model.Engin
 			return nil, err
 		}
 		backoff := time.Duration(1<<uint(attempt)) * 100 * time.Millisecond
-		if backoff > 2*time.Second { backoff = 2 * time.Second }
+		if backoff > 2*time.Second {
+			backoff = 2 * time.Second
+		}
 		logger.CtxWarnf(t.ctx, "%s search attempt %d failed, retrying in %s: %v", t.query.EngineName, attempt+1, backoff, err)
 		select {
 		case <-time.After(backoff):
@@ -256,12 +264,16 @@ func (t *PaginatedSearchTask) Execute() error {
 		return nil
 	}
 	for page := 1; page <= t.maxPages; page++ {
-		if t.ctx.Err() != nil { return nil }
+		if t.ctx.Err() != nil {
+			return nil
+		}
 		if page > 1 && t.orchestrator.IsEngineCircuited(t.query.EngineName) {
 			logger.Warnf("circuit breaker opened, stopping pagination for %s at page %d", t.query.EngineName, page)
 			break
 		}
-		if stop := t.fetchPaginatedPage(adapter, page); stop { break }
+		if stop := t.fetchPaginatedPage(adapter, page); stop {
+			break
+		}
 		time.Sleep(DefaultRateLimitDelay)
 	}
 	return nil

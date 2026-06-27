@@ -10,14 +10,14 @@ func TestFillTestRequestFromChannel_FillsEmptyFields(t *testing.T) {
 	s := &Server{}
 	req := &notifyChannelTestRequest{ID: "ch1"}
 	ch := config.NotificationChannelCfg{
-		Type:        "webhook",
-		WebhookURL:  "https://hook.example.com",
-		Secret:      "my-secret",
-		AppID:       "app-123",
-		AppSecret:   "app-secret",
-		ChatID:      "chat-456",
+		Type:           "webhook",
+		WebhookURL:     "https://hook.example.com",
+		Secret:         "my-secret",
+		AppID:          "app-123",
+		AppSecret:      "app-secret",
+		ChatID:         "chat-456",
 		AllowPrivateIP: true,
-		Headers:     map[string]string{"X-Custom": "val"},
+		Headers:        map[string]string{"X-Custom": "val"},
 	}
 	s.fillTestRequestFromChannel(req, ch)
 

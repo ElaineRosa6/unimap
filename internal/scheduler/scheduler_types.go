@@ -134,57 +134,57 @@ func DefaultTemplates() []TaskTemplate {
 		{
 			ID: "tmpl_daily_tamper_check", Name: "每日篡改检测",
 			Description: "每天凌晨 2 点对所有重要 URL 进行篡改检测",
-			Type: TaskTamperCheck, CronExpr: "0 0 2 * * *",
-			Payload:     &model.TaskPayload{DetectMode: "full"},
+			Type:        TaskTamperCheck, CronExpr: "0 0 2 * * *",
+			Payload:    &model.TaskPayload{DetectMode: "full"},
 			TimeoutSec: 3600, MaxRetries: 2, Tags: []string{"security", "daily"},
 		},
 		{
 			ID: "tmpl_weekly_export", Name: "每周数据导出",
 			Description: "每周日午夜导出本周查询数据",
-			Type: TaskExport, CronExpr: "0 0 0 * * 0",
-			Payload:     &model.TaskPayload{Format: "json"},
+			Type:        TaskExport, CronExpr: "0 0 0 * * 0",
+			Payload:    &model.TaskPayload{Format: "json"},
 			TimeoutSec: 1800, MaxRetries: 1, Tags: []string{"export", "weekly"},
 		},
 		{
 			ID: "tmpl_hourly_quota_check", Name: "每小时配额检查",
 			Description: "每小时检查各引擎 API 配额状态",
-			Type: TaskQuotaMonitor, CronExpr: "0 0 * * * *",
-			Payload:     &model.TaskPayload{LowThresh: 10},
+			Type:        TaskQuotaMonitor, CronExpr: "0 0 * * * *",
+			Payload:    &model.TaskPayload{LowThresh: 10},
 			TimeoutSec: 300, MaxRetries: 0, Tags: []string{"monitoring", "hourly"},
 		},
 		{
 			ID: "tmpl_daily_screenshot_cleanup", Name: "每日截图清理",
 			Description: "每天凌晨 3 点清理 30 天前的截图",
-			Type: TaskScreenshotCleanup, CronExpr: "0 0 3 * * *",
-			Payload:     &model.TaskPayload{MaxAgeDays: 30},
+			Type:        TaskScreenshotCleanup, CronExpr: "0 0 3 * * *",
+			Payload:    &model.TaskPayload{MaxAgeDays: 30},
 			TimeoutSec: 600, MaxRetries: 1, Tags: []string{"cleanup", "daily"},
 		},
 		{
 			ID: "tmpl_weekly_baseline_refresh", Name: "每周基线刷新",
 			Description: "每周日凌晨刷新篡改检测基线",
-			Type: TaskBaselineRefresh, CronExpr: "0 0 4 * * 0",
-			Payload:     &model.TaskPayload{},
+			Type:        TaskBaselineRefresh, CronExpr: "0 0 4 * * 0",
+			Payload:    &model.TaskPayload{},
 			TimeoutSec: 1800, MaxRetries: 1, Tags: []string{"security", "weekly"},
 		},
 		{
 			ID: "tmpl_daily_cookie_verify", Name: "每日 Cookie 验证",
 			Description: "每天早上 8 点验证各引擎 Cookie 有效性",
-			Type: TaskCookieVerify, CronExpr: "0 0 8 * * *",
-			Payload:     &model.TaskPayload{},
+			Type:        TaskCookieVerify, CronExpr: "0 0 8 * * *",
+			Payload:    &model.TaskPayload{},
 			TimeoutSec: 600, MaxRetries: 2, Tags: []string{"auth", "daily"},
 		},
 		{
 			ID: "tmpl_daily_icp_company_watch", Name: "每日企业备案巡检",
 			Description: "每天早上 9 点查询关注企业的 ICP 备案状态",
-			Type: TaskICPQuery, CronExpr: "0 0 9 * * *",
-			Payload:     &model.TaskPayload{Queries: []string{}, Type: "web", Page: 1, PageSizeICP: 40},
+			Type:        TaskICPQuery, CronExpr: "0 0 9 * * *",
+			Payload:    &model.TaskPayload{Queries: []string{}, Type: "web", Page: 1, PageSizeICP: 40},
 			TimeoutSec: 600, MaxRetries: 1, Tags: []string{"icp", "daily", "compliance"},
 		},
 		{
 			ID: "tmpl_weekly_icp_domain_scan", Name: "每周域名备案变更扫描",
 			Description: "每周一凌晨 3 点扫描目标域名 ICP 备案变更",
-			Type: TaskICPQuery, CronExpr: "0 0 3 * * 1",
-			Payload:     &model.TaskPayload{Queries: []string{}, Type: "web", Page: 1, PageSizeICP: 40},
+			Type:        TaskICPQuery, CronExpr: "0 0 3 * * 1",
+			Payload:    &model.TaskPayload{Queries: []string{}, Type: "web", Page: 1, PageSizeICP: 40},
 			TimeoutSec: 1800, MaxRetries: 1, Tags: []string{"icp", "weekly", "monitoring"},
 		},
 	}
@@ -218,20 +218,20 @@ func (s *Scheduler) CreateTaskFromTemplate(templateID string, name string, cronE
 
 // ScheduledTask represents a user-configured scheduled task.
 type ScheduledTask struct {
-	ID         string              `json:"id"`
-	Name       string              `json:"name"`
-	Type       TaskType            `json:"type"`
-	Enabled    bool                `json:"enabled"`
-	CronExpr   string              `json:"cron_expr,omitempty"`
-	Payload    *model.TaskPayload  `json:"payload"`
-	TimeoutSec int                 `json:"timeout_seconds"`
-	MaxRetries int                 `json:"max_retries"`
-	LastRunAt  *time.Time          `json:"last_run_at,omitempty"`
-	NextRunAt  *time.Time          `json:"next_run_at,omitempty"`
-	CreatedAt  time.Time           `json:"created_at"`
+	ID         string             `json:"id"`
+	Name       string             `json:"name"`
+	Type       TaskType           `json:"type"`
+	Enabled    bool               `json:"enabled"`
+	CronExpr   string             `json:"cron_expr,omitempty"`
+	Payload    *model.TaskPayload `json:"payload"`
+	TimeoutSec int                `json:"timeout_seconds"`
+	MaxRetries int                `json:"max_retries"`
+	LastRunAt  *time.Time         `json:"last_run_at,omitempty"`
+	NextRunAt  *time.Time         `json:"next_run_at,omitempty"`
+	CreatedAt  time.Time          `json:"created_at"`
 
 	// Schedule type: "cron" (default), "once", "delay"
-	ScheduleType string     `json:"schedule_type,omitempty"`
+	ScheduleType string `json:"schedule_type,omitempty"`
 	// For "once": absolute execution time (RFC3339)
 	RunAt *time.Time `json:"run_at,omitempty"`
 	// For "delay": seconds from creation to execution
@@ -268,15 +268,15 @@ type NotificationConfig struct {
 
 // TaskTemplate is a pre-defined task configuration.
 type TaskTemplate struct {
-	ID          string              `json:"id"`
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
-	Type        TaskType            `json:"type"`
-	CronExpr    string              `json:"cron_expr"`
-	Payload     *model.TaskPayload  `json:"payload"`
-	TimeoutSec  int                 `json:"timeout_seconds"`
-	MaxRetries  int                 `json:"max_retries"`
-	Tags        []string            `json:"tags"`
+	ID          string             `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	Type        TaskType           `json:"type"`
+	CronExpr    string             `json:"cron_expr"`
+	Payload     *model.TaskPayload `json:"payload"`
+	TimeoutSec  int                `json:"timeout_seconds"`
+	MaxRetries  int                `json:"max_retries"`
+	Tags        []string           `json:"tags"`
 }
 
 // ExecutionRecord stores the result of a task execution.

@@ -70,7 +70,27 @@ func (s *Server) browserQueryProvider() screenshot.Provider {
 	return nil
 }
 
-func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string, explicitErrors ...string) map[string]interface{} {
+// QueryAPIPayload is the typed response for the query API.
+type QueryAPIPayload struct {
+	Query                string                     `json:"query"`
+	Engines              []string                   `json:"engines"`
+	Assets               []model.UnifiedAsset       `json:"assets"`
+	TotalCount           int                        `json:"totalCount"`
+	EngineStats          map[string]int             `json:"engineStats"`
+	Errors               []string                   `json:"errors"`
+	Error                string                     `json:"error,omitempty"`
+	BrowserQuery         bool                       `json:"browserQuery"`
+	BrowserAction        string                     `json:"browserAction"`
+	BrowserOpenedEngines []string                   `json:"browserOpenedEngines"`
+	BrowserCollectedData []collection.CollectResult `json:"browserCollectedData"`
+	BrowserQueryErrors   []string                   `json:"browserQueryErrors"`
+	AutoCapture          bool                       `json:"autoCapture"`
+	AutoCaptureQueryID   string                     `json:"autoCaptureQueryID"`
+	AutoCapturedPaths    map[string]string          `json:"autoCapturedPaths"`
+	AutoCaptureErrors    []string                   `json:"autoCaptureErrors"`
+}
+
+func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string, explicitErrors ...string) QueryAPIPayload {
 	for i := range browserOutcome.CollectedResults {
 		collection.NormalizeAssets(browserOutcome.CollectedResults[i].Engine, browserOutcome.CollectedResults[i].Assets)
 	}
@@ -127,22 +147,22 @@ func buildQueryAPIPayload(query string, engines []string, resp *service.QueryRes
 		}
 	}
 
-	return map[string]interface{}{
-		"query":                query,
-		"engines":              engines,
-		"assets":               assets,
-		"totalCount":           totalCount,
-		"engineStats":          engineStats,
-		"errors":               combinedErrors,
-		"browserQuery":         browserOutcome.Enabled,
-		"browserAction":        browserAction,
-		"browserOpenedEngines": browserOutcome.OpenedEngines,
-		"browserCollectedData": browserOutcome.CollectedResults,
-		"browserQueryErrors":   browserOutcome.Errors,
-		"autoCapture":          browserOutcome.AutoCaptureEnabled,
-		"autoCaptureQueryID":   browserOutcome.AutoCaptureQueryID,
-		"autoCapturedPaths":    browserOutcome.AutoCapturedPaths,
-		"autoCaptureErrors":    browserOutcome.AutoCaptureErrors,
+	return QueryAPIPayload{
+		Query:                query,
+		Engines:              engines,
+		Assets:               assets,
+		TotalCount:           totalCount,
+		EngineStats:          engineStats,
+		Errors:               combinedErrors,
+		BrowserQuery:         browserOutcome.Enabled,
+		BrowserAction:        browserAction,
+		BrowserOpenedEngines: browserOutcome.OpenedEngines,
+		BrowserCollectedData: browserOutcome.CollectedResults,
+		BrowserQueryErrors:   browserOutcome.Errors,
+		AutoCapture:          browserOutcome.AutoCaptureEnabled,
+		AutoCaptureQueryID:   browserOutcome.AutoCaptureQueryID,
+		AutoCapturedPaths:    browserOutcome.AutoCapturedPaths,
+		AutoCaptureErrors:    browserOutcome.AutoCaptureErrors,
 	}
 }
 
@@ -171,6 +191,10 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 		if size, err := strconv.Atoi(pageSizeStr); err == nil && size > 0 {
 			pageSize = size
 		}
+	}
+	const maxPageSize = 500
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
 	}
 
 	// 解析引擎列表（支持 engines=a&engines=b 和 engines=a,b 两种形式）
@@ -544,6 +568,11 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 				"error":       "use /api/v1/users/" + fmt.Sprintf("%d", uid) + "/password instead",
 				"redirect_to": fmt.Sprintf("/api/v1/users/%d/password", uid),
 			})
+			return
+		}
+		// In multi-user mode, legacy endpoint requires admin
+		if ok, msg := s.requireAdmin(r); !ok {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": msg})
 			return
 		}
 	}

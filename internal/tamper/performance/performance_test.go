@@ -56,8 +56,8 @@ func TestPerformanceOptimizer_Optimize_CacheHit(t *testing.T) {
 
 	// Verify cache hit was recorded
 	stats := po.GetPerformanceMetrics().GetStats()
-	if stats["cache_hits"].(int) != 1 {
-		t.Errorf("cache_hits = %v, want 1", stats["cache_hits"])
+	if stats.CacheHits != 1 {
+		t.Errorf("cache_hits = %v, want 1", stats.CacheHits)
 	}
 }
 
@@ -183,8 +183,8 @@ func TestCacheManager_GetStats(t *testing.T) {
 	cm.Get("key1")
 
 	stats := cm.GetStats()
-	if stats["total_items"] != 2 {
-		t.Errorf("GetStats() total_items = %v, want 2", stats["total_items"])
+	if stats.TotalItems != 2 {
+		t.Errorf("GetStats() total_items = %v, want 2", stats.TotalItems)
 	}
 }
 
@@ -345,14 +345,14 @@ func TestPerformanceMetrics_GetStats(t *testing.T) {
 
 	stats := pm.GetStats()
 
-	if stats["total_requests"] != 3 {
-		t.Errorf("total_requests = %v, want 3", stats["total_requests"])
+	if stats.TotalRequests != 3 {
+		t.Errorf("total_requests = %v, want 3", stats.TotalRequests)
 	}
-	if stats["cache_hits"] != 1 {
-		t.Errorf("cache_hits = %v, want 1", stats["cache_hits"])
+	if stats.CacheHits != 1 {
+		t.Errorf("cache_hits = %v, want 1", stats.CacheHits)
 	}
-	if stats["cache_misses"] != 1 {
-		t.Errorf("cache_misses = %v, want 1", stats["cache_misses"])
+	if stats.CacheMisses != 1 {
+		t.Errorf("cache_misses = %v, want 1", stats.CacheMisses)
 	}
 }
 
@@ -361,11 +361,11 @@ func TestPerformanceMetrics_GetStats_Empty(t *testing.T) {
 
 	stats := pm.GetStats()
 
-	if stats["total_requests"] != 0 {
-		t.Errorf("empty stats total_requests = %v, want 0", stats["total_requests"])
+	if stats.TotalRequests != 0 {
+		t.Errorf("empty stats total_requests = %v, want 0", stats.TotalRequests)
 	}
-	if stats["cache_hit_rate"] != 0.0 {
-		t.Errorf("empty stats cache_hit_rate = %v, want 0", stats["cache_hit_rate"])
+	if stats.CacheHitRate != 0.0 {
+		t.Errorf("empty stats cache_hit_rate = %v, want 0", stats.CacheHitRate)
 	}
 }
 
@@ -379,8 +379,8 @@ func TestPerformanceMetrics_GetSiteStats(t *testing.T) {
 	if stats == nil {
 		t.Fatal("GetSiteStats() returned nil")
 	}
-	if stats["count"] != 2 {
-		t.Errorf("count = %v, want 2", stats["count"])
+	if stats.Count != 2 {
+		t.Errorf("count = %v, want 2", stats.Count)
 	}
 }
 

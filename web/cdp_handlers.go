@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/unimap/project/internal/service"
 	"time"
 
 	"github.com/chromedp/cdproto/network"
@@ -29,15 +31,21 @@ func (s *Server) handleCDPStatus(w http.ResponseWriter, r *http.Request) {
 	baseURL := s.resolveCDPURL()
 	online, info, err := s.checkCDPStatus(r.Context(), baseURL)
 
-	resp := map[string]interface{}{
-		"online": online,
-		"url":    baseURL,
+	type cdpStatusResponse struct {
+		Online  bool                   `json:"online"`
+		URL     string                 `json:"url"`
+		Version *service.CDPStatusInfo `json:"version,omitempty"`
+		Error   string                 `json:"error,omitempty"`
+	}
+	resp := cdpStatusResponse{
+		Online: online,
+		URL:    baseURL,
 	}
 	if info != nil {
-		resp["version"] = info
+		resp.Version = info
 	}
 	if err != nil && !online {
-		resp["error"] = err.Error()
+		resp.Error = err.Error()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -62,13 +70,20 @@ func (s *Server) handleCDPConnect(w http.ResponseWriter, r *http.Request) {
 	baseURL := s.resolveCDPURL()
 	ctx := r.Context()
 	if ok, info, _ := s.checkCDPStatus(ctx, baseURL); ok {
+		type cdpConnectResponse struct {
+			Success bool                   `json:"success"`
+			Online  bool                   `json:"online"`
+			URL     string                 `json:"url"`
+			Version *service.CDPStatusInfo `json:"version,omitempty"`
+			Message string                 `json:"message"`
+		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"online":  true,
-			"url":     baseURL,
-			"version": info,
-			"message": "CDP already online",
+		if err := json.NewEncoder(w).Encode(cdpConnectResponse{
+			Success: true,
+			Online:  true,
+			URL:     baseURL,
+			Version: info,
+			Message: "CDP already online",
 		}); err != nil {
 			logger.Debugf("failed to encode CDP connect response: %v", err)
 		}
@@ -188,7 +203,7 @@ func isAllDigits(val string) bool {
 	return val != ""
 }
 
-func (s *Server) checkCDPStatus(ctx context.Context, baseURL string) (bool, map[string]interface{}, error) {
+func (s *Server) checkCDPStatus(ctx context.Context, baseURL string) (bool, *service.CDPStatusInfo, error) {
 	baseURL = normalizeCDPBaseURL(baseURL)
 	if baseURL == "" {
 		return false, nil, fmt.Errorf("cdp url is empty")
@@ -211,15 +226,15 @@ func (s *Server) checkCDPStatus(ctx context.Context, baseURL string) (bool, map[
 		return false, nil, fmt.Errorf("unexpected status: %s", resp.Status)
 	}
 
-	var info map[string]interface{}
+	var info service.CDPStatusInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		return false, nil, err
 	}
 
-	return true, info, nil
+	return true, &info, nil
 }
 
-func (s *Server) waitForCDP(ctx context.Context, baseURL string, timeout time.Duration) (bool, map[string]interface{}, error) {
+func (s *Server) waitForCDP(ctx context.Context, baseURL string, timeout time.Duration) (bool, *service.CDPStatusInfo, error) {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for time.Now().Before(deadline) {

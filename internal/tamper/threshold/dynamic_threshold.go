@@ -187,12 +187,19 @@ func (tm *ThresholdManager) ResetSiteData(siteURL string) {
 	delete(tm.historicalData, siteURL)
 }
 
+// ThresholdStats is the typed report returned by GetThresholdStats.
+type ThresholdStats struct {
+	TotalSites               int     `json:"total_sites"`
+	TotalScans               int     `json:"total_scans"`
+	TotalFalsePositives      int     `json:"total_false_positives"`
+	TotalTruePositives       int     `json:"total_true_positives"`
+	OverallFalsePositiveRate float64 `json:"overall_false_positive_rate,omitempty"`
+}
+
 // GetThresholdStats 获取阈值统计信息
-func (tm *ThresholdManager) GetThresholdStats() map[string]interface{} {
+func (tm *ThresholdManager) GetThresholdStats() ThresholdStats {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
-
-	stats := make(map[string]interface{})
 
 	totalSites := len(tm.historicalData)
 	totalScans := 0
@@ -205,13 +212,15 @@ func (tm *ThresholdManager) GetThresholdStats() map[string]interface{} {
 		totalTruePositives += data.TruePositives
 	}
 
-	stats["total_sites"] = totalSites
-	stats["total_scans"] = totalScans
-	stats["total_false_positives"] = totalFalsePositives
-	stats["total_true_positives"] = totalTruePositives
+	stats := ThresholdStats{
+		TotalSites:          totalSites,
+		TotalScans:          totalScans,
+		TotalFalsePositives: totalFalsePositives,
+		TotalTruePositives:  totalTruePositives,
+	}
 
 	if totalScans > 0 {
-		stats["overall_false_positive_rate"] = float64(totalFalsePositives) / float64(totalScans)
+		stats.OverallFalsePositiveRate = float64(totalFalsePositives) / float64(totalScans)
 	}
 
 	return stats

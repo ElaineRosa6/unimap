@@ -29,14 +29,14 @@ type BridgeTask struct {
 
 // BridgeResult is the normalized extension execution result.
 type BridgeResult struct {
-	RequestID               string                    `json:"request_id"`
-	Success                 bool                      `json:"success"`
-	ImagePath               string                    `json:"image_path,omitempty"`
-	CollectedData           string                    `json:"collected_data,omitempty"`
+	RequestID               string                     `json:"request_id"`
+	Success                 bool                       `json:"success"`
+	ImagePath               string                     `json:"image_path,omitempty"`
+	CollectedData           string                     `json:"collected_data,omitempty"`
 	StructuredCollectedData *model.BridgeCollectedData `json:"structured_collected_data,omitempty"`
-	ErrorCode               string                    `json:"error_code,omitempty"`
-	Error                   string                    `json:"error,omitempty"`
-	DurationMS              int64                     `json:"duration_ms"`
+	ErrorCode               string                     `json:"error_code,omitempty"`
+	Error                   string                     `json:"error,omitempty"`
+	DurationMS              int64                      `json:"duration_ms"`
 }
 
 // BridgeClient abstracts transport between backend and browser extension.

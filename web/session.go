@@ -27,9 +27,9 @@ const (
 
 // sessionRevocationStore tracks revoked session IDs for server-side invalidation.
 type sessionRevocationStore struct {
-	mu      sync.RWMutex
-	revoked map[string]time.Time // session ID -> expiry time
-	stopCh  chan struct{}
+	mu       sync.RWMutex
+	revoked  map[string]time.Time // session ID -> expiry time
+	stopCh   chan struct{}
 	stopOnce sync.Once
 }
 

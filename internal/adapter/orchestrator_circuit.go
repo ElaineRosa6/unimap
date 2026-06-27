@@ -99,7 +99,6 @@ func (cb *CircuitBreaker) GetStats() (state CircuitState, failures int, threshol
 	return cb.State, cb.Failures, cb.Threshold, cb.LastFailure, cb.ResetDuration
 }
 
-
 // SetCircuitBreakerConfig 设置熔断器配置
 func (o *EngineOrchestrator) SetCircuitBreakerConfig(engineName string, threshold int, resetDuration time.Duration) {
 	o.mutex.Lock()
@@ -172,21 +171,29 @@ func (o *EngineOrchestrator) RecordEngineFailure(engineName string) {
 	}
 }
 
+// CircuitBreakerEntryStats is the typed stats for a single circuit breaker.
+type CircuitBreakerEntryStats struct {
+	State         string        `json:"state"`
+	Failures      int           `json:"failures"`
+	Threshold     int           `json:"threshold"`
+	LastFailure   time.Time     `json:"last_failure"`
+	ResetDuration time.Duration `json:"reset_duration"`
+}
+
 // GetCircuitBreakerStats 获取所有熔断器状态（用于调试/监控）
-func (o *EngineOrchestrator) GetCircuitBreakerStats() map[string]map[string]interface{} {
+func (o *EngineOrchestrator) GetCircuitBreakerStats() map[string]CircuitBreakerEntryStats {
 	o.mutex.RLock()
 	defer o.mutex.RUnlock()
-	stats := make(map[string]map[string]interface{})
+	stats := make(map[string]CircuitBreakerEntryStats)
 	for name, cb := range o.circuitBreakers {
 		state, failures, threshold, lastFailure, resetDuration := cb.GetStats()
-		stats[name] = map[string]interface{}{
-			"state":          string(state),
-			"failures":       failures,
-			"threshold":      threshold,
-			"last_failure":   lastFailure,
-			"reset_duration": resetDuration,
+		stats[name] = CircuitBreakerEntryStats{
+			State:         string(state),
+			Failures:      failures,
+			Threshold:     threshold,
+			LastFailure:   lastFailure,
+			ResetDuration: resetDuration,
 		}
 	}
 	return stats
 }
-

@@ -73,7 +73,9 @@ func (s *Server) handleICPQuery(w http.ResponseWriter, r *http.Request) {
 
 	page := parsePositiveInt(r.URL.Query().Get("page"), 1)
 	pageSize := parsePositiveInt(r.URL.Query().Get("page_size"), 20)
-	if pageSize > 100 { pageSize = 100 }
+	if pageSize > 100 {
+		pageSize = 100
+	}
 
 	startedAt := time.Now()
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -114,14 +116,18 @@ func (s *Server) handleICPQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	total := 0
-	for _, g := range groups { total += g.Total }
+	for _, g := range groups {
+		total += g.Total
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true, "total": total, "page": page, "page_size": pageSize, "groups": groups,
 	})
 }
 
 func (s *Server) getICPConfig() (enabled bool, baseURL, apiKey, defaultType string) {
-	if s.config == nil { return }
+	if s.config == nil {
+		return
+	}
 	s.configMutex.Lock()
 	defer s.configMutex.Unlock()
 	return s.config.ICP.Enabled, strings.TrimSpace(s.config.ICP.BaseURL), s.config.ICP.APIKey, s.config.ICP.DefaultType
@@ -129,19 +135,28 @@ func (s *Server) getICPConfig() (enabled bool, baseURL, apiKey, defaultType stri
 
 func parseICPQueryTypes(w http.ResponseWriter, r *http.Request, defaultType string) ([]string, bool) {
 	rawType := strings.TrimSpace(r.URL.Query().Get("type"))
-	if rawType == "" { rawType = defaultType }
+	if rawType == "" {
+		rawType = defaultType
+	}
 	var types []string
 	seen := make(map[string]bool)
 	for _, part := range strings.Split(rawType, ",") {
 		t := strings.TrimSpace(part)
-		if t == "" { continue }
+		if t == "" {
+			continue
+		}
 		if !adapter.IsValidICPQueryType(t) {
 			writeAPIError(w, http.StatusBadRequest, "invalid_type", "invalid ICP query type", map[string]string{"type": t})
 			return nil, false
 		}
-		if !seen[t] { seen[t] = true; types = append(types, t) }
+		if !seen[t] {
+			seen[t] = true
+			types = append(types, t)
+		}
 	}
-	if len(types) == 0 { types = []string{defaultType} }
+	if len(types) == 0 {
+		types = []string{defaultType}
+	}
 	return types, true
 }
 

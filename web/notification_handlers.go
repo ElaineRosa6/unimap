@@ -110,25 +110,39 @@ func (s *Server) registerCoreEngineAdapters() {
 	}
 	engines := []engineReg{
 		{cfg.Engines.Fofa.Enabled, cfg.Engines.Fofa.APIKey,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewFofaAdapter(cfg.Engines.Fofa.APIBaseURL, cfg.Engines.Fofa.APIKey, cfg.Engines.Fofa.Email, cfg.Engines.Fofa.QPS, time.Duration(cfg.Engines.Fofa.Timeout)*time.Second)) },
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewFofaAdapter(cfg.Engines.Fofa.APIBaseURL, cfg.Engines.Fofa.APIKey, cfg.Engines.Fofa.Email, cfg.Engines.Fofa.QPS, time.Duration(cfg.Engines.Fofa.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewFofaAdapterWebOnly()) }, "FOFA"},
 		{cfg.Engines.Hunter.Enabled, cfg.Engines.Hunter.APIKey,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewHunterAdapter(cfg.Engines.Hunter.BaseURL, cfg.Engines.Hunter.APIKey, cfg.Engines.Hunter.QPS, time.Duration(cfg.Engines.Hunter.Timeout)*time.Second)) },
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewHunterAdapter(cfg.Engines.Hunter.BaseURL, cfg.Engines.Hunter.APIKey, cfg.Engines.Hunter.QPS, time.Duration(cfg.Engines.Hunter.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewHunterAdapterWebOnly()) }, "Hunter"},
 		{cfg.Engines.Zoomeye.Enabled, cfg.Engines.Zoomeye.APIKey,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewZoomEyeAdapter(cfg.Engines.Zoomeye.BaseURL, cfg.Engines.Zoomeye.APIKey, cfg.Engines.Zoomeye.QPS, time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second)) },
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewZoomEyeAdapter(cfg.Engines.Zoomeye.BaseURL, cfg.Engines.Zoomeye.APIKey, cfg.Engines.Zoomeye.QPS, time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewZoomEyeAdapterWebOnly()) }, "ZoomEye"},
 		{cfg.Engines.Quake.Enabled, cfg.Engines.Quake.APIKey,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewQuakeAdapter(cfg.Engines.Quake.BaseURL, cfg.Engines.Quake.APIKey, cfg.Engines.Quake.QPS, time.Duration(cfg.Engines.Quake.Timeout)*time.Second)) },
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewQuakeAdapter(cfg.Engines.Quake.BaseURL, cfg.Engines.Quake.APIKey, cfg.Engines.Quake.QPS, time.Duration(cfg.Engines.Quake.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewQuakeAdapterWebOnly()) }, "Quake"},
 		{cfg.Engines.Shodan.Enabled, cfg.Engines.Shodan.APIKey,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second)) },
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewShodanAdapterWebOnly()) }, "Shodan"},
 		{cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second)) },
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewCensysAdapterWebOnly()) }, "Censys"},
 		{cfg.Engines.Daydaymap.Enabled, cfg.Engines.Daydaymap.APIKey,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second)) },
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapterWebOnly()) }, "DayDayMap"},
 	}
 	for _, e := range engines {

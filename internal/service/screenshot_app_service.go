@@ -132,10 +132,26 @@ type BatchScreenshotRequest struct {
 }
 
 type BatchScreenshotResponse struct {
-	QueryID       string                   `json:"query_id"`
-	SearchEngines []map[string]interface{} `json:"search_engines"`
-	Targets       []map[string]interface{} `json:"targets"`
-	Errors        []string                 `json:"errors"`
+	QueryID       string                 `json:"query_id"`
+	SearchEngines []SearchEngineInfo     `json:"search_engines"`
+	Targets       []ScreenshotTargetInfo `json:"targets"`
+	Errors        []string               `json:"errors"`
+}
+
+// SearchEngineInfo represents a search engine entry in batch screenshot response.
+type SearchEngineInfo struct {
+	Engine string `json:"engine"`
+	Query  string `json:"query"`
+	Path   string `json:"path,omitempty"`
+}
+
+// ScreenshotTargetInfo represents a screenshot target in batch screenshot response.
+type ScreenshotTargetInfo struct {
+	URL      string `json:"url"`
+	IP       string `json:"ip,omitempty"`
+	Port     string `json:"port,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
+	Path     string `json:"path,omitempty"`
 }
 
 type BatchURLsRequest struct {
@@ -254,8 +270,8 @@ func (s *ScreenshotAppService) CaptureBatch(ctx context.Context, mgr *screenshot
 
 	resp := &BatchScreenshotResponse{
 		QueryID:       req.QueryID,
-		SearchEngines: []map[string]interface{}{},
-		Targets:       []map[string]interface{}{},
+		SearchEngines: []SearchEngineInfo{},
+		Targets:       []ScreenshotTargetInfo{},
 		Errors:        []string{},
 	}
 
@@ -273,10 +289,10 @@ func (s *ScreenshotAppService) CaptureBatch(ctx context.Context, mgr *screenshot
 				resp.Errors = append(resp.Errors, fmt.Sprintf("%s: %v", engineName, err))
 				return
 			}
-			resp.SearchEngines = append(resp.SearchEngines, map[string]interface{}{
-				"engine": engineName,
-				"query":  query,
-				"path":   path,
+			resp.SearchEngines = append(resp.SearchEngines, SearchEngineInfo{
+				Engine: engineName,
+				Query:  query,
+				Path:   path,
 			})
 		}(engine.Engine, engine.Query)
 	}
@@ -292,12 +308,12 @@ func (s *ScreenshotAppService) CaptureBatch(ctx context.Context, mgr *screenshot
 				resp.Errors = append(resp.Errors, fmt.Sprintf("%s:%s: %v", ip, port, err))
 				return
 			}
-			resp.Targets = append(resp.Targets, map[string]interface{}{
-				"url":      url,
-				"ip":       ip,
-				"port":     port,
-				"protocol": protocol,
-				"path":     path,
+			resp.Targets = append(resp.Targets, ScreenshotTargetInfo{
+				URL:      url,
+				IP:       ip,
+				Port:     port,
+				Protocol: protocol,
+				Path:     path,
 			})
 		}(target.URL, target.IP, target.Port, target.Protocol)
 	}
