@@ -227,7 +227,7 @@ go run -tags gui ./cmd/unimap-gui
 5. ~~**CleanHunterFields 调用链断裂**~~ ✅ 已修复（2026-06-16，解析、L1 fallback、Web payload 统一调用）
 
 #### Medium（4 项）
-6. ~~**653 处 `map[string]interface{}`**~~ ✅ Phase 1-18 完成（653→406，减少 38%），核心引擎适配器/通知/监控/服务/tamper/CLI/auth/CDP/GUI/health/backup/query/bridge/screenshot 已全部类型化。剩余 406 处为合理保留：Web 响应构造（268，Go 惯用 JSON 模式）、collection/parser（51，浏览器扩展动态数据）、scheduler/adapter（56，动态 payload/外部 API）、其他小包（31，Extra 扩展点/测试/泛型池）。
+6. ~~**653 处 `map[string]interface{}`**~~ ✅ **已完结，不再继续**。Phase 1-18 完成（653→406，减少 38%）。剩余 406 处为**合理保留的动态数据用法**：Web 响应构造（268，Go 惯用 JSON 模式）、collection/parser（51，浏览器扩展动态数据）、scheduler/adapter（56，动态 payload/外部 API）、其他小包（31，Extra 扩展点/测试/泛型池）。**禁止再做此重构——强行类型化会降低代码可读性且无收益。**
 8. **L2 Hook 设计冻结** — 仅当 L1/L3 telemetry 证明收益时启动。
 9. ~~**web/ flaky test**~~ ✅ 已修复（2026-06-16，`TestClassifyBatchURLsPreservesOriginalIndices` 改为稳定输入并通过 `-race` 复核）
 10. ~~**定时任务缺少简易定时功能**~~ ✅ 已修复（2026-06-16，新增 `ScheduleType` 字段支持 `"once"`/`"delay"`/`"cron"` 三种模式，⏳ 审计中）
