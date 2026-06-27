@@ -238,9 +238,9 @@ func TestIsMaskedSecret(t *testing.T) {
 	}{
 		{"", false},
 		{"abc1234567890def", false},
-		{"abc1****0def", true},  // matches maskAPIKey output (4+****+4)
-		{"****", true},          // pure asterisks still counted as masked
-		{"abc****def", false},   // 3-char prefix doesn't match maskAPIKey format
+		{"abc1****0def", true},   // matches maskAPIKey output (4+****+4)
+		{"****", true},           // pure asterisks still counted as masked
+		{"abc****def", false},    // 3-char prefix doesn't match maskAPIKey format
 		{"mykey****real", false}, // real key containing **** should not be rejected
 	}
 	for _, tc := range tests {
@@ -271,12 +271,12 @@ func TestApplyEngineSections_InvalidEngineType(t *testing.T) {
 func TestApplySingleEngineSection_Fofa(t *testing.T) {
 	cfg := &config.Config{}
 	eng := map[string]interface{}{
-		"enabled":    true,
-		"api_key":    "new-fofa-key",
+		"enabled":      true,
+		"api_key":      "new-fofa-key",
 		"api_base_url": "https://fofa.example.com",
-		"email":      "test@example.com",
-		"qps":        float64(5),
-		"timeout":    float64(60),
+		"email":        "test@example.com",
+		"qps":          float64(5),
+		"timeout":      float64(60),
 	}
 	applySingleEngineSection(cfg, "fofa", eng)
 	if !cfg.Engines.Fofa.Enabled {

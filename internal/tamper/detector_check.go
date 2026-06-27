@@ -51,7 +51,7 @@ func (d *Detector) ListAllCheckRecords() (map[string][]*CheckRecord, error) {
 }
 
 // GetCheckStats delegates to the underlying storage.
-func (d *Detector) GetCheckStats(url string) (map[string]interface{}, error) {
+func (d *Detector) GetCheckStats(url string) (CheckStats, error) {
 	return d.storage.GetCheckStats(url)
 }
 

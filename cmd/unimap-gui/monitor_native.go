@@ -538,7 +538,9 @@ func createHistoryTab(window fyne.Window, state *AppState) fyne.CanvasObject {
 	right.Offset = 0.33
 	content := container.NewHSplit(container.NewHSplit(left, middle), right)
 	content.Offset = 0.58
-	if s, ok := content.Leading.(*container.Split); ok { s.Offset = 0.42 }
+	if s, ok := content.Leading.(*container.Split); ok {
+		s.Offset = 0.42
+	}
 
 	toolbar := buildHistoryToolbar(window, h)
 	return container.NewBorder(
@@ -580,10 +582,13 @@ func (h *historyTabState) refreshDetail() {
 
 func (h *historyTabState) loadRecords() {
 	if h.selectedURL < 0 || h.selectedURL >= len(h.urlItems) {
-		h.records = nil; h.selectedRecord = -1
+		h.records = nil
+		h.selectedRecord = -1
 	} else {
 		h.records = h.recordsByURL[h.urlItems[h.selectedURL].URL]
-		if h.selectedRecord >= len(h.records) { h.selectedRecord = -1 }
+		if h.selectedRecord >= len(h.records) {
+			h.selectedRecord = -1
+		}
 	}
 	h.recordList.Refresh()
 	h.refreshDetail()
@@ -597,7 +602,9 @@ func (h *historyTabState) refreshURLs() {
 		return
 	}
 	baselineSet := make(map[string]bool, len(baselineURLs))
-	for _, item := range baselineURLs { baselineSet[item] = true }
+	for _, item := range baselineURLs {
+		baselineSet[item] = true
+	}
 
 	byURL := make(map[string]*historyURLItem)
 	source, apiRecords, apiErr := "API", []apiTamperHistoryItem{}, error(nil)
@@ -605,22 +612,33 @@ func (h *historyTabState) refreshURLs() {
 	if apiErr == nil {
 		h.mergeHistoryFromAPI(baselineURLs, baselineSet, byURL, apiRecords)
 		for urlText := range h.recordsByURL {
-			sort.Slice(h.recordsByURL[urlText], func(i, j int) bool { return h.recordsByURL[urlText][i].Timestamp > h.recordsByURL[urlText][j].Timestamp })
+			sort.Slice(h.recordsByURL[urlText], func(i, j int) bool {
+				return h.recordsByURL[urlText][i].Timestamp > h.recordsByURL[urlText][j].Timestamp
+			})
 		}
 	} else {
 		source = "本地"
 		allRecords, err := h.state.TamperStorage.ListAllCheckRecords()
-		if err != nil { h.statsLabel.SetText("读取历史索引失败: " + err.Error()); return }
+		if err != nil {
+			h.statsLabel.SetText("读取历史索引失败: " + err.Error())
+			return
+		}
 		h.mergeHistoryFromLocal(baselineURLs, baselineSet, byURL, allRecords)
 	}
 
 	h.urlItems = h.urlItems[:0]
-	for _, item := range byURL { h.urlItems = append(h.urlItems, *item) }
+	for _, item := range byURL {
+		h.urlItems = append(h.urlItems, *item)
+	}
 	sort.Slice(h.urlItems, func(i, j int) bool {
-		if h.urlItems[i].LastCheckAt == h.urlItems[j].LastCheckAt { return h.urlItems[i].URL < h.urlItems[j].URL }
+		if h.urlItems[i].LastCheckAt == h.urlItems[j].LastCheckAt {
+			return h.urlItems[i].URL < h.urlItems[j].URL
+		}
 		return h.urlItems[i].LastCheckAt > h.urlItems[j].LastCheckAt
 	})
-	if h.selectedURL >= len(h.urlItems) { h.selectedURL = -1 }
+	if h.selectedURL >= len(h.urlItems) {
+		h.selectedURL = -1
+	}
 	h.urlList.Refresh()
 	h.loadRecords()
 	h.statsLabel.SetText(fmt.Sprintf("已加载 %d 个监控目标（历史来源: %s，基线来源: %s）", len(h.urlItems), source, baselineSource))
@@ -628,33 +646,55 @@ func (h *historyTabState) refreshURLs() {
 
 func (h *historyTabState) mergeHistoryFromAPI(baselineURLs []string, baselineSet map[string]bool, byURL map[string]*historyURLItem, apiRecords []apiTamperHistoryItem) {
 	for _, item := range baselineURLs {
-		if _, ok := byURL[item]; !ok { byURL[item] = &historyURLItem{URL: item, HasBaseline: true} }
+		if _, ok := byURL[item]; !ok {
+			byURL[item] = &historyURLItem{URL: item, HasBaseline: true}
+		}
 	}
 	for _, rec := range apiRecords {
 		record := rec.toCheckRecord()
-		if record == nil || strings.TrimSpace(record.URL) == "" { continue }
+		if record == nil || strings.TrimSpace(record.URL) == "" {
+			continue
+		}
 		h.recordsByURL[record.URL] = append(h.recordsByURL[record.URL], record)
 		info, ok := byURL[record.URL]
-		if !ok { info = &historyURLItem{URL: record.URL}; byURL[record.URL] = info }
+		if !ok {
+			info = &historyURLItem{URL: record.URL}
+			byURL[record.URL] = info
+		}
 		info.RecordCount++
-		if record.Timestamp > info.LastCheckAt { info.LastCheckAt = record.Timestamp }
-		if baselineSet[record.URL] { info.HasBaseline = true }
+		if record.Timestamp > info.LastCheckAt {
+			info.LastCheckAt = record.Timestamp
+		}
+		if baselineSet[record.URL] {
+			info.HasBaseline = true
+		}
 	}
 }
 
 func (h *historyTabState) mergeHistoryFromLocal(baselineURLs []string, baselineSet map[string]bool, byURL map[string]*historyURLItem, allRecords map[string][]*tamper.CheckRecord) {
 	for _, item := range baselineURLs {
-		if _, ok := byURL[item]; !ok { byURL[item] = &historyURLItem{URL: item, HasBaseline: true} }
+		if _, ok := byURL[item]; !ok {
+			byURL[item] = &historyURLItem{URL: item, HasBaseline: true}
+		}
 	}
 	for _, list := range allRecords {
 		for _, record := range list {
-			if strings.TrimSpace(record.URL) == "" { continue }
+			if strings.TrimSpace(record.URL) == "" {
+				continue
+			}
 			h.recordsByURL[record.URL] = append(h.recordsByURL[record.URL], record)
 			info, ok := byURL[record.URL]
-			if !ok { info = &historyURLItem{URL: record.URL}; byURL[record.URL] = info }
+			if !ok {
+				info = &historyURLItem{URL: record.URL}
+				byURL[record.URL] = info
+			}
 			info.RecordCount++
-			if record.Timestamp > info.LastCheckAt { info.LastCheckAt = record.Timestamp }
-			if baselineSet[record.URL] { info.HasBaseline = true }
+			if record.Timestamp > info.LastCheckAt {
+				info.LastCheckAt = record.Timestamp
+			}
+			if baselineSet[record.URL] {
+				info.HasBaseline = true
+			}
 		}
 	}
 }
@@ -663,13 +703,19 @@ func buildHistoryURLList(h *historyTabState) *widget.List {
 	return widget.NewList(
 		func() int { return len(h.urlItems) },
 		func() fyne.CanvasObject {
-			primary := widget.NewLabel(""); primary.TextStyle = fyne.TextStyle{Bold: true}
+			primary := widget.NewLabel("")
+			primary.TextStyle = fyne.TextStyle{Bold: true}
 			return container.NewVBox(primary, widget.NewLabel(""))
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			item := h.urlItems[id]
-			box, ok := obj.(*fyne.Container); if !ok || len(box.Objects) < 2 { return }
-			if primary, ok := box.Objects[0].(*widget.Label); ok { primary.SetText(item.URL) }
+			box, ok := obj.(*fyne.Container)
+			if !ok || len(box.Objects) < 2 {
+				return
+			}
+			if primary, ok := box.Objects[0].(*widget.Label); ok {
+				primary.SetText(item.URL)
+			}
 			if secondary, ok := box.Objects[1].(*widget.Label); ok {
 				secondary.SetText(fmt.Sprintf("记录 %d | 基线 %s | 最近 %s", item.RecordCount, yesNo(item.HasBaseline), formatTimestamp(item.LastCheckAt)))
 			}
@@ -681,14 +727,22 @@ func buildHistoryRecordList(h *historyTabState) *widget.List {
 	return widget.NewList(
 		func() int { return len(h.records) },
 		func() fyne.CanvasObject {
-			primary := widget.NewLabel(""); primary.TextStyle = fyne.TextStyle{Bold: true}
+			primary := widget.NewLabel("")
+			primary.TextStyle = fyne.TextStyle{Bold: true}
 			return container.NewVBox(primary, widget.NewLabel(""))
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			record := h.records[id]
-			box, ok := obj.(*fyne.Container); if !ok || len(box.Objects) < 2 { return }
-			if primary, ok := box.Objects[0].(*widget.Label); ok { primary.SetText(fmt.Sprintf("%s | %s", record.CheckType, formatTimestamp(record.Timestamp))) }
-			if secondary, ok := box.Objects[1].(*widget.Label); ok { secondary.SetText(historyRecordSummary(record)) }
+			box, ok := obj.(*fyne.Container)
+			if !ok || len(box.Objects) < 2 {
+				return
+			}
+			if primary, ok := box.Objects[0].(*widget.Label); ok {
+				primary.SetText(fmt.Sprintf("%s | %s", record.CheckType, formatTimestamp(record.Timestamp)))
+			}
+			if secondary, ok := box.Objects[1].(*widget.Label); ok {
+				secondary.SetText(historyRecordSummary(record))
+			}
 		},
 	)
 }
@@ -696,26 +750,43 @@ func buildHistoryRecordList(h *historyTabState) *widget.List {
 func buildHistoryToolbar(window fyne.Window, h *historyTabState) *fyne.Container {
 	refreshBtn := widget.NewButtonWithIcon("刷新历史", theme.ViewRefreshIcon(), func() { h.refreshURLs() })
 	copyBtn := widget.NewButton("复制所选 URL", func() {
-		if h.selectedURL < 0 || h.selectedURL >= len(h.urlItems) { dialog.ShowInformation("提示", "请先选择一个 URL", window); return }
+		if h.selectedURL < 0 || h.selectedURL >= len(h.urlItems) {
+			dialog.ShowInformation("提示", "请先选择一个 URL", window)
+			return
+		}
 		window.Clipboard().SetContent(h.urlItems[h.selectedURL].URL)
 		h.statsLabel.SetText("已复制所选 URL")
 	})
 	deleteHistoryBtn := widget.NewButton("删除该 URL 历史", func() {
-		if h.selectedURL < 0 || h.selectedURL >= len(h.urlItems) { dialog.ShowInformation("提示", "请先选择一个 URL", window); return }
+		if h.selectedURL < 0 || h.selectedURL >= len(h.urlItems) {
+			dialog.ShowInformation("提示", "请先选择一个 URL", window)
+			return
+		}
 		selected := h.urlItems[h.selectedURL]
 		dialog.ShowConfirm("删除历史", "确认删除该 URL 的全部检测记录？", func(confirm bool) {
-			if !confirm { return }
+			if !confirm {
+				return
+			}
 			source, err := runDeleteHistoryPreferAPI(context.Background(), h.state, selected.URL)
-			if err != nil { dialog.ShowError(err, window); return }
+			if err != nil {
+				dialog.ShowError(err, window)
+				return
+			}
 			h.refreshURLs()
 			h.statsLabel.SetText("历史已删除（来源: " + source + "）")
 		}, window)
 	})
 	deleteBaselineBtn := widget.NewButton("删除该 URL 基线", func() {
-		if h.selectedURL < 0 || h.selectedURL >= len(h.urlItems) { dialog.ShowInformation("提示", "请先选择一个 URL", window); return }
+		if h.selectedURL < 0 || h.selectedURL >= len(h.urlItems) {
+			dialog.ShowInformation("提示", "请先选择一个 URL", window)
+			return
+		}
 		selected := h.urlItems[h.selectedURL]
 		source, err := runDeleteBaselinePreferAPI(context.Background(), h.state, selected.URL)
-		if err != nil { dialog.ShowError(err, window); return }
+		if err != nil {
+			dialog.ShowError(err, window)
+			return
+		}
 		h.refreshURLs()
 		h.statsLabel.SetText("基线已删除（来源: " + source + "）")
 	})
@@ -745,7 +816,9 @@ func createScreenshotTab(window fyne.Window, state *AppState) fyne.CanvasObject 
 		),
 	)
 	content.Offset = 0.34
-	if s, ok := content.Trailing.(*container.Split); ok { s.Offset = 0.45 }
+	if s, ok := content.Trailing.(*container.Split); ok {
+		s.Offset = 0.45
+	}
 	st.refreshDetail()
 	toolbar := buildScreenshotToolbar(window, st)
 	return container.NewBorder(
@@ -783,11 +856,16 @@ func (st *screenshotTabState) loadFiles() {
 	st.files = nil
 	st.selectedFile = -1
 	if st.selectedBatch < 0 || st.selectedBatch >= len(st.batches) {
-		st.fileList.Refresh(); st.refreshDetail(); return
+		st.fileList.Refresh()
+		st.refreshDetail()
+		return
 	}
 	batchName := st.batches[st.selectedBatch].Name
 	apiFiles, source, err := listScreenshotBatchFilesPreferAPI(context.Background(), batchName, st.baseDir)
-	if err != nil { st.statusLabel.SetText("读取截图批次失败: " + err.Error()); return }
+	if err != nil {
+		st.statusLabel.SetText("读取截图批次失败: " + err.Error())
+		return
+	}
 	st.files = apiFiles
 	st.fileList.Refresh()
 	st.refreshDetail()
@@ -797,9 +875,14 @@ func (st *screenshotTabState) loadFiles() {
 func (st *screenshotTabState) refreshBatches() {
 	st.batches = nil
 	apiBatches, source, err := listScreenshotBatchesPreferAPI(context.Background(), st.baseDir)
-	if err != nil { st.statusLabel.SetText("读取截图目录失败: " + err.Error()); return }
+	if err != nil {
+		st.statusLabel.SetText("读取截图目录失败: " + err.Error())
+		return
+	}
 	st.batches = apiBatches
-	if st.selectedBatch >= len(st.batches) { st.selectedBatch = -1 }
+	if st.selectedBatch >= len(st.batches) {
+		st.selectedBatch = -1
+	}
 	st.batchList.Refresh()
 	st.loadFiles()
 	st.statusLabel.SetText(fmt.Sprintf("已加载 %d 个截图批次（来源: %s）", len(st.batches), source))
@@ -809,14 +892,22 @@ func buildScreenshotBatchList(st *screenshotTabState) *widget.List {
 	return widget.NewList(
 		func() int { return len(st.batches) },
 		func() fyne.CanvasObject {
-			p := widget.NewLabel(""); p.TextStyle = fyne.TextStyle{Bold: true}
+			p := widget.NewLabel("")
+			p.TextStyle = fyne.TextStyle{Bold: true}
 			return container.NewVBox(p, widget.NewLabel(""))
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			item := st.batches[id]
-			box, ok := obj.(*fyne.Container); if !ok || len(box.Objects) < 2 { return }
-			if p, ok := box.Objects[0].(*widget.Label); ok { p.SetText(item.Name) }
-			if s, ok := box.Objects[1].(*widget.Label); ok { s.SetText(fmt.Sprintf("文件 %d | %s", item.FileCount, item.UpdatedAt.Format("2006-01-02 15:04:05"))) }
+			box, ok := obj.(*fyne.Container)
+			if !ok || len(box.Objects) < 2 {
+				return
+			}
+			if p, ok := box.Objects[0].(*widget.Label); ok {
+				p.SetText(item.Name)
+			}
+			if s, ok := box.Objects[1].(*widget.Label); ok {
+				s.SetText(fmt.Sprintf("文件 %d | %s", item.FileCount, item.UpdatedAt.Format("2006-01-02 15:04:05")))
+			}
 		},
 	)
 }
@@ -825,14 +916,22 @@ func buildScreenshotFileList(st *screenshotTabState) *widget.List {
 	return widget.NewList(
 		func() int { return len(st.files) },
 		func() fyne.CanvasObject {
-			p := widget.NewLabel(""); p.TextStyle = fyne.TextStyle{Bold: true}
+			p := widget.NewLabel("")
+			p.TextStyle = fyne.TextStyle{Bold: true}
 			return container.NewVBox(p, widget.NewLabel(""))
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			item := st.files[id]
-			box, ok := obj.(*fyne.Container); if !ok || len(box.Objects) < 2 { return }
-			if p, ok := box.Objects[0].(*widget.Label); ok { p.SetText(item.Name) }
-			if s, ok := box.Objects[1].(*widget.Label); ok { s.SetText(fmt.Sprintf("%s | %s", formatFileSize(item.Size), item.UpdatedAt.Format("2006-01-02 15:04:05"))) }
+			box, ok := obj.(*fyne.Container)
+			if !ok || len(box.Objects) < 2 {
+				return
+			}
+			if p, ok := box.Objects[0].(*widget.Label); ok {
+				p.SetText(item.Name)
+			}
+			if s, ok := box.Objects[1].(*widget.Label); ok {
+				s.SetText(fmt.Sprintf("%s | %s", formatFileSize(item.Size), item.UpdatedAt.Format("2006-01-02 15:04:05")))
+			}
 		},
 	)
 }
@@ -840,36 +939,62 @@ func buildScreenshotFileList(st *screenshotTabState) *widget.List {
 func buildScreenshotToolbar(window fyne.Window, st *screenshotTabState) *fyne.Container {
 	refreshBtn := widget.NewButtonWithIcon("刷新截图", theme.ViewRefreshIcon(), func() { st.refreshBatches() })
 	openRootBtn := widget.NewButton("打开根目录", func() {
-		if err := openPathInSystem(st.baseDir); err != nil { dialog.ShowError(err, window) }
+		if err := openPathInSystem(st.baseDir); err != nil {
+			dialog.ShowError(err, window)
+		}
 	})
 	openBatchBtn := widget.NewButton("打开所选批次", func() {
-		if st.selectedBatch < 0 || st.selectedBatch >= len(st.batches) { dialog.ShowInformation("提示", "请先选择一个批次", window); return }
-		if err := openPathInSystem(st.batches[st.selectedBatch].Path); err != nil { dialog.ShowError(err, window) }
+		if st.selectedBatch < 0 || st.selectedBatch >= len(st.batches) {
+			dialog.ShowInformation("提示", "请先选择一个批次", window)
+			return
+		}
+		if err := openPathInSystem(st.batches[st.selectedBatch].Path); err != nil {
+			dialog.ShowError(err, window)
+		}
 	})
 	openFileBtn := widget.NewButton("打开所选文件", func() {
-		if st.selectedFile < 0 || st.selectedFile >= len(st.files) { dialog.ShowInformation("提示", "请先选择一个截图文件", window); return }
-		if err := openPathInSystem(st.files[st.selectedFile].Path); err != nil { dialog.ShowError(err, window) }
+		if st.selectedFile < 0 || st.selectedFile >= len(st.files) {
+			dialog.ShowInformation("提示", "请先选择一个截图文件", window)
+			return
+		}
+		if err := openPathInSystem(st.files[st.selectedFile].Path); err != nil {
+			dialog.ShowError(err, window)
+		}
 	})
 	deleteFileBtn := widget.NewButton("删除所选文件", func() {
 		if st.selectedBatch < 0 || st.selectedBatch >= len(st.batches) || st.selectedFile < 0 || st.selectedFile >= len(st.files) {
-			dialog.ShowInformation("提示", "请先选择批次和截图文件", window); return
+			dialog.ShowInformation("提示", "请先选择批次和截图文件", window)
+			return
 		}
 		batchName, fileName, filePath := st.batches[st.selectedBatch].Name, st.files[st.selectedFile].Name, st.files[st.selectedFile].Path
 		dialog.ShowConfirm("删除截图文件", "确认删除所选截图文件？", func(confirm bool) {
-			if !confirm { return }
+			if !confirm {
+				return
+			}
 			source, err := runDeleteScreenshotFilePreferAPI(context.Background(), batchName, fileName, filePath)
-			if err != nil { dialog.ShowError(err, window); return }
+			if err != nil {
+				dialog.ShowError(err, window)
+				return
+			}
 			st.loadFiles()
 			st.statusLabel.SetText("截图文件已删除（来源: " + source + "）")
 		}, window)
 	})
 	deleteBatchBtn := widget.NewButton("删除所选批次", func() {
-		if st.selectedBatch < 0 || st.selectedBatch >= len(st.batches) { dialog.ShowInformation("提示", "请先选择一个批次", window); return }
+		if st.selectedBatch < 0 || st.selectedBatch >= len(st.batches) {
+			dialog.ShowInformation("提示", "请先选择一个批次", window)
+			return
+		}
 		batchName, batchPath := st.batches[st.selectedBatch].Name, st.batches[st.selectedBatch].Path
 		dialog.ShowConfirm("删除截图批次", "确认删除该批次及其全部截图文件？", func(confirm bool) {
-			if !confirm { return }
+			if !confirm {
+				return
+			}
 			source, err := runDeleteScreenshotBatchPreferAPI(context.Background(), batchName, batchPath)
-			if err != nil { dialog.ShowError(err, window); return }
+			if err != nil {
+				dialog.ShowError(err, window)
+				return
+			}
 			st.refreshBatches()
 			st.statusLabel.SetText("截图批次已删除（来源: " + source + "）")
 		}, window)
@@ -1044,12 +1169,14 @@ func resolveGUIAPIBase() string {
 
 func runTamperCheckViaAPI(ctx context.Context, urls []string, concurrency int) ([]tamper.TamperCheckResult, error) {
 	base := resolveGUIAPIBase()
-	payload := map[string]interface{}{
-		"urls":        urls,
-		"concurrency": concurrency,
-		"mode":        tamper.DetectionModeRelaxed,
+	type tamperCheckRequest struct {
+		URLs        []string `json:"urls"`
+		Concurrency int      `json:"concurrency"`
+		Mode        string   `json:"mode"`
 	}
-	body, err := json.Marshal(payload)
+	body, err := json.Marshal(tamperCheckRequest{
+		URLs: urls, Concurrency: concurrency, Mode: tamper.DetectionModeRelaxed,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -1098,11 +1225,11 @@ func runTamperCheckPreferAPI(ctx context.Context, state *AppState, urls []string
 
 func runSetBaselineViaAPI(ctx context.Context, urls []string, concurrency int) ([]tamper.PageHashResult, error) {
 	base := resolveGUIAPIBase()
-	payload := map[string]interface{}{
-		"urls":        urls,
-		"concurrency": concurrency,
+	type setBaselineRequest struct {
+		URLs        []string `json:"urls"`
+		Concurrency int      `json:"concurrency"`
 	}
-	body, err := json.Marshal(payload)
+	body, err := json.Marshal(setBaselineRequest{URLs: urls, Concurrency: concurrency})
 	if err != nil {
 		return nil, err
 	}
@@ -1533,12 +1660,14 @@ func runDeleteScreenshotFilePreferAPI(ctx context.Context, batchName, fileName, 
 
 func runBatchScreenshotViaAPI(ctx context.Context, urls []string, batchID string, concurrency int) ([]screenshot.BatchScreenshotResult, error) {
 	base := resolveGUIAPIBase()
-	payload := map[string]interface{}{
-		"urls":        urls,
-		"batch_id":    batchID,
-		"concurrency": concurrency,
+	type batchScreenshotRequest struct {
+		URLs        []string `json:"urls"`
+		BatchID     string   `json:"batch_id"`
+		Concurrency int      `json:"concurrency"`
 	}
-	body, err := json.Marshal(payload)
+	body, err := json.Marshal(batchScreenshotRequest{
+		URLs: urls, BatchID: batchID, Concurrency: concurrency,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -1918,10 +2047,10 @@ func formatMonitorDetail(item monitorTarget) string {
 func formatBaselineDetail(state *AppState, baselineURL string, records []*tamper.CheckRecord) string {
 	stats, _ := state.TamperStorage.GetCheckStats(baselineURL)
 	lines := []string{"URL: " + baselineURL}
-	if stats != nil {
-		lines = append(lines, fmt.Sprintf("检测总数: %v", stats["total_checks"]))
-		lines = append(lines, fmt.Sprintf("篡改次数: %v", stats["tampered_count"]))
-		lines = append(lines, fmt.Sprintf("安全次数: %v", stats["safe_count"]))
+	if stats.TotalChecks > 0 {
+		lines = append(lines, fmt.Sprintf("检测总数: %d", stats.TotalChecks))
+		lines = append(lines, fmt.Sprintf("篡改次数: %d", stats.TamperedCount))
+		lines = append(lines, fmt.Sprintf("安全次数: %d", stats.SafeCount))
 	}
 	if len(records) == 0 {
 		lines = append(lines, "最近记录: 暂无")
@@ -1936,24 +2065,24 @@ func formatBaselineDetail(state *AppState, baselineURL string, records []*tamper
 
 func baselineMetaText(state *AppState, baselineURL string) string {
 	stats, err := state.TamperStorage.GetCheckStats(baselineURL)
-	if err != nil || stats == nil {
+	if err != nil || stats.TotalChecks == 0 {
 		return "已保存基线"
 	}
-	return fmt.Sprintf("检测 %v 次 | 最近 %s", stats["total_checks"], formatAnyTimestamp(stats["last_check_time"]))
+	return fmt.Sprintf("检测 %d 次 | 最近 %s", stats.TotalChecks, formatAnyTimestamp(stats.LastCheckTime))
 }
 
-func formatHistoryURLDetail(item historyURLItem, stats map[string]interface{}) string {
+func formatHistoryURLDetail(item historyURLItem, stats tamper.CheckStats) string {
 	lines := []string{
 		"URL: " + item.URL,
 		"是否有基线: " + yesNo(item.HasBaseline),
 		fmt.Sprintf("历史记录数: %d", item.RecordCount),
 		"最近检测: " + formatTimestamp(item.LastCheckAt),
 	}
-	if stats != nil {
+	if stats.TotalChecks > 0 {
 		lines = append(lines,
-			fmt.Sprintf("篡改次数: %v", stats["tampered_count"]),
-			fmt.Sprintf("安全次数: %v", stats["safe_count"]),
-			fmt.Sprintf("首次检测次数: %v", stats["first_check_count"]),
+			fmt.Sprintf("篡改次数: %d", stats.TamperedCount),
+			fmt.Sprintf("安全次数: %d", stats.SafeCount),
+			fmt.Sprintf("首次检测次数: %d", stats.FirstCheckCount),
 		)
 	}
 	return strings.Join(lines, "\n")

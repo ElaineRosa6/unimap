@@ -30,7 +30,7 @@ func (s *Server) handleNodeTaskEnqueue(w http.ResponseWriter, r *http.Request) {
 
 	rec, err := s.distributed.NodeTaskQueue.Enqueue(req)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "node_task_enqueue_failed", "node task enqueue failed", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "node_task_enqueue_failed", "node task enqueue failed", sanitizeError(err.Error()))
 		return
 	}
 
@@ -65,10 +65,10 @@ func (s *Server) handleNodeTaskClaim(w http.ResponseWriter, r *http.Request) {
 		if node, err := s.distributed.NodeRegistry.Get(req.NodeID); err == nil && node != nil {
 			rec, err := s.distributed.NodeTaskQueue.ClaimWithNode(node)
 			if err != nil {
-				writeAPIError(w, http.StatusBadRequest, "node_task_claim_failed", "node task claim failed", err.Error())
+				writeAPIError(w, http.StatusBadRequest, "node_task_claim_failed", "node task claim failed", sanitizeError(err.Error()))
 				return
 			}
-		if rec == nil {
+			if rec == nil {
 				writeJSON(w, http.StatusOK, model.APIResponse{Success: true, Message: "no task available"})
 				return
 			}
@@ -86,7 +86,7 @@ func (s *Server) handleNodeTaskClaim(w http.ResponseWriter, r *http.Request) {
 	}
 	rec, err := s.distributed.NodeTaskQueue.ClaimWithNode(node)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "node_task_claim_failed", "node task claim failed", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "node_task_claim_failed", "node task claim failed", sanitizeError(err.Error()))
 		return
 	}
 	if rec == nil {
@@ -123,7 +123,7 @@ func (s *Server) handleNodeTaskResult(w http.ResponseWriter, r *http.Request) {
 
 	rec, err := s.distributed.NodeTaskQueue.SubmitResult(req)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "node_task_result_failed", "node task result failed", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "node_task_result_failed", "node task result failed", sanitizeError(err.Error()))
 		return
 	}
 
@@ -179,7 +179,7 @@ func (s *Server) handleNodeTaskGet(w http.ResponseWriter, r *http.Request) {
 
 	rec, err := s.distributed.NodeTaskQueue.Get(taskID)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "task_get_failed", "failed to get task", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "task_get_failed", "failed to get task", sanitizeError(err.Error()))
 		return
 	}
 	if rec == nil {
@@ -216,7 +216,7 @@ func (s *Server) handleNodeTaskDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.distributed.NodeTaskQueue.Delete(taskID); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "task_delete_failed", "failed to delete task", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "task_delete_failed", "failed to delete task", sanitizeError(err.Error()))
 		return
 	}
 

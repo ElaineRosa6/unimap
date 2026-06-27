@@ -218,8 +218,15 @@ func (cm *CacheManager) cleanup() {
 	}
 }
 
+// CacheStats is the typed report returned by CacheManager.GetStats.
+type CacheStats struct {
+	TotalItems  int `json:"total_items"`
+	TotalAccess int `json:"total_access"`
+	MaxSize     int `json:"max_size"`
+}
+
 // GetStats 获取缓存统计信息
-func (cm *CacheManager) GetStats() map[string]interface{} {
+func (cm *CacheManager) GetStats() CacheStats {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
@@ -230,10 +237,10 @@ func (cm *CacheManager) GetStats() map[string]interface{} {
 		totalAccess += item.AccessCount
 	}
 
-	return map[string]interface{}{
-		"total_items":  totalItems,
-		"total_access": totalAccess,
-		"max_size":     cm.maxSize,
+	return CacheStats{
+		TotalItems:  totalItems,
+		TotalAccess: totalAccess,
+		MaxSize:     cm.maxSize,
 	}
 }
 
@@ -358,8 +365,19 @@ func (pm *PerformanceMetrics) RecordCacheMiss(siteURL string) {
 	pm.cacheMisses++
 }
 
+// PerformanceStats is the typed report returned by PerformanceMetrics.GetStats.
+type PerformanceStats struct {
+	TotalRequests     int     `json:"total_requests"`
+	TotalTime         string  `json:"total_time"`
+	AverageTime       string  `json:"average_time"`
+	CacheHits         int     `json:"cache_hits"`
+	CacheMisses       int     `json:"cache_misses"`
+	CacheHitRate      float64 `json:"cache_hit_rate"`
+	OptimizationCount int     `json:"optimization_count"`
+}
+
 // GetStats 获取性能统计信息
-func (pm *PerformanceMetrics) GetStats() map[string]interface{} {
+func (pm *PerformanceMetrics) GetStats() PerformanceStats {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -373,19 +391,28 @@ func (pm *PerformanceMetrics) GetStats() map[string]interface{} {
 		cacheHitRate = float64(pm.cacheHits) / float64(pm.cacheHits+pm.cacheMisses)
 	}
 
-	return map[string]interface{}{
-		"total_requests":     pm.totalRequests,
-		"total_time":         pm.totalTime.String(),
-		"average_time":       avgTime.String(),
-		"cache_hits":         pm.cacheHits,
-		"cache_misses":       pm.cacheMisses,
-		"cache_hit_rate":     cacheHitRate,
-		"optimization_count": len(pm.optimizations),
+	return PerformanceStats{
+		TotalRequests:     pm.totalRequests,
+		TotalTime:         pm.totalTime.String(),
+		AverageTime:       avgTime.String(),
+		CacheHits:         pm.cacheHits,
+		CacheMisses:       pm.cacheMisses,
+		CacheHitRate:      cacheHitRate,
+		OptimizationCount: len(pm.optimizations),
 	}
 }
 
+// SiteStats is the typed report returned by PerformanceMetrics.GetSiteStats.
+type SiteStats struct {
+	Count     int    `json:"count"`
+	TotalTime string `json:"total_time"`
+	AvgTime   string `json:"avg_time"`
+	MinTime   string `json:"min_time"`
+	MaxTime   string `json:"max_time"`
+}
+
 // GetSiteStats 获取站点性能统计
-func (pm *PerformanceMetrics) GetSiteStats(siteURL string) map[string]interface{} {
+func (pm *PerformanceMetrics) GetSiteStats(siteURL string) *SiteStats {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -394,12 +421,12 @@ func (pm *PerformanceMetrics) GetSiteStats(siteURL string) map[string]interface{
 		return nil
 	}
 
-	return map[string]interface{}{
-		"count":      metrics.Count,
-		"total_time": metrics.TotalTime.String(),
-		"avg_time":   metrics.AvgTime.String(),
-		"min_time":   metrics.MinTime.String(),
-		"max_time":   metrics.MaxTime.String(),
+	return &SiteStats{
+		Count:     metrics.Count,
+		TotalTime: metrics.TotalTime.String(),
+		AvgTime:   metrics.AvgTime.String(),
+		MinTime:   metrics.MinTime.String(),
+		MaxTime:   metrics.MaxTime.String(),
 	}
 }
 

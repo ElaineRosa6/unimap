@@ -156,11 +156,11 @@ func TestGetLeakReport(t *testing.T) {
 	d.Acquire("conn", "c-2")
 
 	report := d.GetLeakReport()
-	if report["total_active_resources"] != 2 {
-		t.Errorf("expected 2 active resources in report, got %v", report["total_active_resources"])
+	if report.TotalActiveResources != 2 {
+		t.Errorf("expected 2 active resources in report, got %v", report.TotalActiveResources)
 	}
-	if report["total_detected_leaks"] != 0 {
-		t.Errorf("expected 0 leaks in report, got %v", report["total_detected_leaks"])
+	if report.TotalDetectedLeaks != 0 {
+		t.Errorf("expected 0 leaks in report, got %v", report.TotalDetectedLeaks)
 	}
 }
 
@@ -416,14 +416,14 @@ func TestGetResourceReport(t *testing.T) {
 	m.collectStats()
 
 	report := m.GetResourceReport()
-	if report["current"] == nil {
-		t.Error("expected 'current' section in report")
+	if report.Current.Timestamp.IsZero() {
+		t.Error("expected non-zero timestamp in current section")
 	}
-	if report["high_water_mark"] == nil {
+	if report.HighWaterMark == nil {
 		t.Error("expected 'high_water_mark' section in report")
 	}
-	if report["history_length"] != 1 {
-		t.Errorf("expected history_length=1, got %v", report["history_length"])
+	if report.HistoryLength != 1 {
+		t.Errorf("expected history_length=1, got %v", report.HistoryLength)
 	}
 }
 

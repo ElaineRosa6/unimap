@@ -147,11 +147,11 @@ func TestParseNotifyChannelSaveRequest_TrimSpaces(t *testing.T) {
 func TestUpsertNotifyChannel_Insert(t *testing.T) {
 	s := &Server{config: &config.Config{}}
 	req := notifyChannelSaveRequest{
-		ID:          "ch1",
-		Type:        "webhook",
-		Enabled:     true,
-		WebhookURL:  "https://hook.example.com",
-		Headers:     map[string]string{"X-Custom": "val"},
+		ID:         "ch1",
+		Type:       "webhook",
+		Enabled:    true,
+		WebhookURL: "https://hook.example.com",
+		Headers:    map[string]string{"X-Custom": "val"},
 	}
 	s.upsertNotifyChannel(req)
 	if len(s.config.Notifications.Channels) != 1 {
@@ -195,11 +195,11 @@ func TestUpsertNotifyChannel_UpdatePreservesSecret(t *testing.T) {
 		{ID: "ch1", Type: "webhook", Secret: "keep-this", AppSecret: "keep-app"},
 	}
 	req := notifyChannelSaveRequest{
-		ID:          "ch1",
-		Type:        "webhook",
-		Secret:      "", // empty → preserve old
-		AppSecret:   "", // empty → preserve old
-		WebhookURL:  "https://new.example.com",
+		ID:         "ch1",
+		Type:       "webhook",
+		Secret:     "", // empty → preserve old
+		AppSecret:  "", // empty → preserve old
+		WebhookURL: "https://new.example.com",
 	}
 	s.upsertNotifyChannel(req)
 	ch := s.config.Notifications.Channels[0]

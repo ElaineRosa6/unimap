@@ -265,8 +265,8 @@ func TestDetector_GetCheckStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCheckStats failed: %v", err)
 	}
-	if stats["total_checks"] != 0 {
-		t.Errorf("expected 0 total checks, got %d", stats["total_checks"])
+	if stats.TotalChecks != 0 {
+		t.Errorf("expected 0 total checks, got %d", stats.TotalChecks)
 	}
 }
 

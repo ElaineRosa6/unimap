@@ -352,9 +352,9 @@ func TestHandleICPQuery_MultiTypePartialFailure(t *testing.T) {
 		Success bool `json:"success"`
 		Total   int  `json:"total"`
 		Groups  []struct {
-			Type    string `json:"type"`
-			Total   int    `json:"total"`
-			Error   string `json:"error"`
+			Type    string        `json:"type"`
+			Total   int           `json:"total"`
+			Error   string        `json:"error"`
 			Results []interface{} `json:"results"`
 		} `json:"groups"`
 	}

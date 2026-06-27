@@ -25,25 +25,25 @@ const (
 
 // TaskEnvelope is the controller-side task description used by node workers.
 type TaskEnvelope struct {
-	TaskID         string              `json:"task_id"`
-	TaskType       string              `json:"task_type"`
-	Payload        *model.TaskPayload  `json:"payload,omitempty"`
-	Priority       int                 `json:"priority,omitempty"`
-	TimeoutSeconds int                 `json:"timeout_seconds,omitempty"`
-	TraceID        string              `json:"trace_id,omitempty"`
-	RequiredCaps   []string            `json:"required_caps,omitempty"`
-	MaxReassign    int                 `json:"max_reassign,omitempty"`
+	TaskID         string             `json:"task_id"`
+	TaskType       string             `json:"task_type"`
+	Payload        *model.TaskPayload `json:"payload,omitempty"`
+	Priority       int                `json:"priority,omitempty"`
+	TimeoutSeconds int                `json:"timeout_seconds,omitempty"`
+	TraceID        string             `json:"trace_id,omitempty"`
+	RequiredCaps   []string           `json:"required_caps,omitempty"`
+	MaxReassign    int                `json:"max_reassign,omitempty"`
 }
 
 // TaskResult is the node callback payload for task completion.
 type TaskResult struct {
-	TaskID     string             `json:"task_id"`
-	NodeID     string             `json:"node_id"`
-	Status     string             `json:"status"`
-	DurationMS int64              `json:"duration_ms,omitempty"`
-	Output     *model.TaskOutput  `json:"output,omitempty"`
-	Error      string             `json:"error,omitempty"`
-	Retryable  bool               `json:"retryable,omitempty"` // 是否可重试
+	TaskID     string            `json:"task_id"`
+	NodeID     string            `json:"node_id"`
+	Status     string            `json:"status"`
+	DurationMS int64             `json:"duration_ms,omitempty"`
+	Output     *model.TaskOutput `json:"output,omitempty"`
+	Error      string            `json:"error,omitempty"`
+	Retryable  bool              `json:"retryable,omitempty"` // 是否可重试
 }
 
 // RetryRecord 重试记录
@@ -58,22 +58,22 @@ type RetryRecord struct {
 
 // TaskRecord is the queue-side task state.
 type TaskRecord struct {
-	TaskID         string              `json:"task_id"`
-	TaskType       string              `json:"task_type"`
-	Payload        *model.TaskPayload  `json:"payload,omitempty"`
-	Priority       int                 `json:"priority"`
-	TimeoutSeconds int                 `json:"timeout_seconds"`
-	TraceID        string              `json:"trace_id,omitempty"`
-	RequiredCaps   []string            `json:"required_caps,omitempty"`
-	Status         string              `json:"status"`
-	AssignedNode   string              `json:"assigned_node,omitempty"`
-	Attempt        int                 `json:"attempt"`
-	MaxReassign    int                 `json:"max_reassign"`
-	LeaseUntil     time.Time           `json:"lease_until,omitempty"`
-	CreatedAt      time.Time           `json:"created_at"`
-	UpdatedAt      time.Time           `json:"updated_at"`
-	LastError      string              `json:"last_error,omitempty"`
-	Result         *model.TaskOutput   `json:"result,omitempty"`
+	TaskID         string             `json:"task_id"`
+	TaskType       string             `json:"task_type"`
+	Payload        *model.TaskPayload `json:"payload,omitempty"`
+	Priority       int                `json:"priority"`
+	TimeoutSeconds int                `json:"timeout_seconds"`
+	TraceID        string             `json:"trace_id,omitempty"`
+	RequiredCaps   []string           `json:"required_caps,omitempty"`
+	Status         string             `json:"status"`
+	AssignedNode   string             `json:"assigned_node,omitempty"`
+	Attempt        int                `json:"attempt"`
+	MaxReassign    int                `json:"max_reassign"`
+	LeaseUntil     time.Time          `json:"lease_until,omitempty"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
+	LastError      string             `json:"last_error,omitempty"`
+	Result         *model.TaskOutput  `json:"result,omitempty"`
 
 	// 重试相关字段
 	Retryable    bool          `json:"retryable"`               // 是否可重试

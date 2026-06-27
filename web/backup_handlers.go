@@ -8,6 +8,11 @@ import (
 	"github.com/unimap/project/internal/backup"
 )
 
+// isAuthEnabled returns true if the server has auth configured.
+func (s *Server) isAuthEnabled() bool {
+	return s.config != nil && s.config.Web.Auth.Enabled
+}
+
 // handleCreateBackup POST /api/v1/backup/create
 func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -16,6 +21,12 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
 		return
+	}
+	if s.isAuthEnabled() {
+		if ok, msg := s.requireAdmin(r); !ok {
+			writeAPIError(w, http.StatusForbidden, "forbidden", msg, nil)
+			return
+		}
 	}
 
 	// 从配置读取备份目录
@@ -48,10 +59,13 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"path":       result.Path,
-		"size":       result.Size,
-		"created_at": result.CreatedAt,
+	type backupCreateResponse struct {
+		Path      string      `json:"path"`
+		Size      int64       `json:"size"`
+		CreatedAt interface{} `json:"created_at"`
+	}
+	writeJSON(w, http.StatusCreated, backupCreateResponse{
+		Path: result.Path, Size: result.Size, CreatedAt: result.CreatedAt,
 	})
 }
 
@@ -60,6 +74,12 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use GET", nil)
 		return
+	}
+	if s.isAuthEnabled() {
+		if ok, msg := s.requireAdmin(r); !ok {
+			writeAPIError(w, http.StatusForbidden, "forbidden", msg, nil)
+			return
+		}
 	}
 
 	backupDir := "./backups"
@@ -82,10 +102,11 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 		backups = []backup.BackupResult{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"backups": backups,
-		"count":   len(backups),
-	})
+	type backupListResponse struct {
+		Backups []backup.BackupResult `json:"backups"`
+		Count   int                   `json:"count"`
+	}
+	writeJSON(w, http.StatusOK, backupListResponse{Backups: backups, Count: len(backups)})
 }
 
 // buildBackupSources 构建备份源列表

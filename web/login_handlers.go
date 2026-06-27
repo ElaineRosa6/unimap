@@ -75,6 +75,9 @@ func (s *Server) handleLoginAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
 	}
+	// Rotate CSRF token after successful login to prevent replay attacks
+	newCSRF := generateCSRFToken()
+	s.setCSRFCookie(w, r, newCSRF)
 	logger.Infof("login successful: ip=%s username=%s userID=%d", clientIP, username, loginUserID)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "redirect": "/"})
 }
@@ -91,7 +94,13 @@ func (s *Server) validateLoginCSRF(w http.ResponseWriter, r *http.Request, csrfT
 }
 
 // validateLoginCredentials 验证登录凭据（用户数据库 → 配置文件降级）
+// Always performs bcrypt comparison to prevent user enumeration via timing side-channel.
 func (s *Server) validateLoginCredentials(w http.ResponseWriter, username, password, clientIP string) (int64, bool) {
+	var dbUserFound bool
+	var dbUserID int64
+	var dbUserHash string
+	var dbUserActive bool
+
 	// 用户数据库（多用户模式）
 	if s.userRepo != nil {
 		user, err := s.userRepo.GetByUsername(username)
@@ -101,28 +110,46 @@ func (s *Server) validateLoginCredentials(w http.ResponseWriter, username, passw
 			return 0, false
 		}
 		if user != nil && user.Status == "active" {
-			if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err == nil {
-				return user.ID, true
+			dbUserFound = true
+			dbUserID = user.ID
+			dbUserHash = user.PasswordHash
+			dbUserActive = true
+		}
+	}
+
+	// Always perform bcrypt comparison to equalize timing regardless of user existence.
+	if dbUserActive {
+		if err := bcrypt.CompareHashAndPassword([]byte(dbUserHash), []byte(password)); err == nil {
+			return dbUserID, true
+		}
+	} else {
+		// Dummy bcrypt to match timing of a real comparison
+		_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$000000000000000000000000000000000000000000000000000000x"), []byte(password))
+	}
+
+	// 配置文件降级（单用户遗留模式）
+	if s.config == nil || !dbUserFound {
+		// Only check config if no DB user was found
+		if !dbUserFound {
+			if s.config == nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server configuration error"})
+				return 0, false
+			}
+			expectedUser := s.config.Web.Auth.Username
+			expectedHash := s.config.Web.Auth.PasswordHash
+			if expectedUser == "" || expectedHash == "" {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "login not configured"})
+				return 0, false
+			}
+			if secureCompare(username, expectedUser) && config.CheckPassword(password, expectedHash) {
+				return 0, true
 			}
 		}
 	}
-	// 配置文件降级（单用户遗留模式）
-	if s.config == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server configuration error"})
-		return 0, false
-	}
-	expectedUser := s.config.Web.Auth.Username
-	expectedHash := s.config.Web.Auth.PasswordHash
-	if expectedUser == "" || expectedHash == "" {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "login not configured"})
-		return 0, false
-	}
-	if !secureCompare(username, expectedUser) || !config.CheckPassword(password, expectedHash) {
-		logger.Warnf("login failed: ip=%s username=%s", clientIP, username)
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid username or password"})
-		return 0, false
-	}
-	return 0, true
+
+	logger.Warnf("login failed: ip=%s username=%s", clientIP, username)
+	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid username or password"})
+	return 0, false
 }
 
 // handleLogoutAPI clears the session cookie (POST /api/v1/logout).

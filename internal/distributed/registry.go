@@ -321,7 +321,7 @@ func (r *Registry) GetFailoverStrategy() FailoverStrategy {
 	return r.failoverStrategy
 }
 
-// GetHealthyNodes 获取健康节点列表
+// GetHealthyNodes 获取健康节点列表（返回深拷贝，防止外部修改）
 func (r *Registry) GetHealthyNodes() []*NodeRecord {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -329,7 +329,7 @@ func (r *Registry) GetHealthyNodes() []*NodeRecord {
 	var healthyNodes []*NodeRecord
 	for _, node := range r.nodes {
 		if node.Online && node.HealthStatus != "critical" && node.HealthStatus != "offline" {
-			healthyNodes = append(healthyNodes, node)
+			healthyNodes = append(healthyNodes, copyNodeRecord(node))
 		}
 	}
 
@@ -527,4 +527,26 @@ func cloneStringSlice(in []string) []string {
 		return nil
 	}
 	return out
+}
+
+// copyNodeRecord creates a deep copy of a NodeRecord to prevent external mutation.
+func copyNodeRecord(src *NodeRecord) *NodeRecord {
+	cp := *src
+	if src.Labels != nil {
+		cp.Labels = make(map[string]string, len(src.Labels))
+		for k, v := range src.Labels {
+			cp.Labels[k] = v
+		}
+	}
+	if src.Capabilities != nil {
+		cp.Capabilities = make([]string, len(src.Capabilities))
+		copy(cp.Capabilities, src.Capabilities)
+	}
+	if src.HealthChecks != nil {
+		cp.HealthChecks = make(map[string]bool, len(src.HealthChecks))
+		for k, v := range src.HealthChecks {
+			cp.HealthChecks[k] = v
+		}
+	}
+	return &cp
 }

@@ -107,19 +107,23 @@ func (m *AuthMiddleware) extractAPIKey(r *http.Request) string {
 	return ""
 }
 
+// AuthErrorResponse is the typed error response for auth middleware.
+type AuthErrorResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Status  string `json:"status"`
+}
+
 // writeAuthError 写入认证错误响应
 func (m *AuthMiddleware) writeAuthError(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 
-	errorResponse := map[string]interface{}{
-		"code":    "unauthorized",
-		"message": message,
-		"status":  "error",
-	}
-
-	// 使用JSON响应
-	json.NewEncoder(w).Encode(errorResponse)
+	json.NewEncoder(w).Encode(AuthErrorResponse{
+		Code:    "unauthorized",
+		Message: message,
+		Status:  "error",
+	})
 }
 
 // GetAPIKeyID 从请求中获取API密钥ID

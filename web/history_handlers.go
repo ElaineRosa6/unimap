@@ -54,7 +54,7 @@ func (s *Server) handleHistorySave(w http.ResponseWriter, r *http.Request) {
 
 	id, err := s.historyRepo.CreateHistory(h)
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+		writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 		return
 	}
 
@@ -72,7 +72,7 @@ func (s *Server) handleHistorySave(w http.ResponseWriter, r *http.Request) {
 			results[i] = history.OperationResult{Data: string(data)}
 		}
 		if err := s.historyRepo.CreateResults(id, results); err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 			return
 		}
 	}
@@ -101,7 +101,7 @@ func (s *Server) handleHistoryListOrClear(w http.ResponseWriter, r *http.Request
 
 		items, total, err := s.historyRepo.ListHistory(opType, limit, offset)
 		if err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -113,7 +113,7 @@ func (s *Server) handleHistoryListOrClear(w http.ResponseWriter, r *http.Request
 	case http.MethodDelete:
 		opType := r.URL.Query().Get("type")
 		if err := s.historyRepo.ClearHistory(opType); err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
@@ -145,7 +145,7 @@ func (s *Server) handleHistoryGetOrDelete(w http.ResponseWriter, r *http.Request
 	case http.MethodGet:
 		h, err := s.historyRepo.GetHistory(id)
 		if err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 			return
 		}
 		if h == nil {
@@ -154,7 +154,7 @@ func (s *Server) handleHistoryGetOrDelete(w http.ResponseWriter, r *http.Request
 		}
 		results, err := s.historyRepo.GetResults(id)
 		if err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -165,7 +165,7 @@ func (s *Server) handleHistoryGetOrDelete(w http.ResponseWriter, r *http.Request
 
 	case http.MethodDelete:
 		if err := s.historyRepo.DeleteHistory(id); err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})

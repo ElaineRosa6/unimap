@@ -304,28 +304,49 @@ func (m *ResourceMonitor) CheckResourceUsage(thresholds map[string]float64) map[
 	return alerts
 }
 
+// ResourceReportCurrent is the current resource usage snapshot.
+type ResourceReportCurrent struct {
+	CPUUsage   float64        `json:"cpu_usage"`
+	Memory     ResourceMemory `json:"memory"`
+	Goroutines int            `json:"goroutines"`
+	Timestamp  time.Time      `json:"timestamp"`
+}
+
+// ResourceMemory is the memory usage subset of a resource report.
+type ResourceMemory struct {
+	Used    uint64  `json:"used"`
+	Total   uint64  `json:"total"`
+	Percent float64 `json:"percent"`
+}
+
+// ResourceReport is the typed report returned by GetResourceReport.
+type ResourceReport struct {
+	Current       ResourceReportCurrent `json:"current"`
+	HighWaterMark map[string]float64    `json:"high_water_mark"`
+	PoolStats     map[string]PoolStats  `json:"pool_stats"`
+	HistoryLength int                   `json:"history_length"`
+}
+
 // GetResourceReport 获取资源使用报告
-func (m *ResourceMonitor) GetResourceReport() map[string]interface{} {
+func (m *ResourceMonitor) GetResourceReport() ResourceReport {
 	stats := m.GetCurrentStats()
 	highWaterMark := m.GetHighWaterMark()
 
-	report := map[string]interface{}{
-		"current": map[string]interface{}{
-			"cpu_usage": stats.CPUUsage,
-			"memory": map[string]interface{}{
-				"used":    stats.MemoryUsage.Used,
-				"total":   stats.MemoryUsage.Total,
-				"percent": stats.MemoryUsage.Percent,
+	return ResourceReport{
+		Current: ResourceReportCurrent{
+			CPUUsage: stats.CPUUsage,
+			Memory: ResourceMemory{
+				Used:    stats.MemoryUsage.Used,
+				Total:   stats.MemoryUsage.Total,
+				Percent: stats.MemoryUsage.Percent,
 			},
-			"goroutines": stats.GoroutineCount,
-			"timestamp":  stats.Timestamp,
+			Goroutines: stats.GoroutineCount,
+			Timestamp:  stats.Timestamp,
 		},
-		"high_water_mark": highWaterMark,
-		"pool_stats":      stats.PoolStats,
-		"history_length":  len(m.statsHistory),
+		HighWaterMark: highWaterMark,
+		PoolStats:     stats.PoolStats,
+		HistoryLength: len(m.statsHistory),
 	}
-
-	return report
 }
 
 // RecordResponseTime 记录响应时间（毫秒）

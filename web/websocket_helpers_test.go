@@ -23,11 +23,11 @@ func TestGenerateConnectionID_Unique(t *testing.T) {
 
 func TestParseWSQueryParams(t *testing.T) {
 	tests := []struct {
-		name     string
-		params   map[string]string
-		wantErr  bool
-		wantEng  string
-		wantQ    string
+		name    string
+		params  map[string]string
+		wantErr bool
+		wantEng string
+		wantQ   string
 	}{
 		{
 			name:    "valid",
@@ -91,11 +91,11 @@ func TestSanitizeError_Extended(t *testing.T) {
 
 func TestIsTrustedRequest(t *testing.T) {
 	tests := []struct {
-		name     string
-		origin   string
-		host     string
-		origins  []string
-		want     bool
+		name    string
+		origin  string
+		host    string
+		origins []string
+		want    bool
 	}{
 		{
 			name:    "same host",

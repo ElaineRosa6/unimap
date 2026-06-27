@@ -277,7 +277,7 @@ func normalizeShodanMatch(m *ShodanMatch) *model.UnifiedAsset {
 	}
 	// Shodan Host Search v1 does not include per-result timestamps;
 	// LastSeen is filled from the Extension's browser DOM extraction path.
-	_ = m.OS   // OS field available if needed in the future
+	_ = m.OS // OS field available if needed in the future
 	_ = m.Product
 	_ = m.Version
 	_ = m.HTTP
@@ -295,7 +295,11 @@ func normalizeShodanMatch(m *ShodanMatch) *model.UnifiedAsset {
 // buildShodanURL 从 IP/Port/Protocol 构建 URL
 func buildShodanURL(asset *model.UnifiedAsset) {
 	if asset.Protocol == "" {
-		if asset.Port == 443 { asset.Protocol = "https" } else { asset.Protocol = "http" }
+		if asset.Port == 443 {
+			asset.Protocol = "https"
+		} else {
+			asset.Protocol = "http"
+		}
 	}
 	u := &url.URL{Scheme: asset.Protocol}
 	if asset.Host != "" {

@@ -219,7 +219,7 @@ func (s *TamperAppService) ListAllCheckRecords() (map[string][]*tamper.CheckReco
 }
 
 // GetCheckStats 获取检测统计信息
-func (s *TamperAppService) GetCheckStats(url string) (map[string]interface{}, error) {
+func (s *TamperAppService) GetCheckStats(url string) (tamper.CheckStats, error) {
 	detector := tamper.NewDetector(tamper.DetectorConfig{
 		BaseDir:      s.baseDir,
 		AlertManager: s.alertManager,
@@ -379,9 +379,15 @@ func buildHistoryRecord(rec *tamper.CheckRecord, recordURL, status, mode string)
 
 // limitHistoryRecords 限制历史记录数量
 func limitHistoryRecords(records []HistoryRecord, limit int) []HistoryRecord {
-	if limit <= 0 { limit = 200 }
-	if limit > 1000 { limit = 1000 }
-	if len(records) > limit { return records[:limit] }
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	if len(records) > limit {
+		return records[:limit]
+	}
 	return records
 }
 

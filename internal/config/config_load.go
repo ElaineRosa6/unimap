@@ -137,4 +137,3 @@ func (m *Manager) ResolveEnv(value string) string {
 	}
 	return value
 }
-

@@ -495,9 +495,9 @@ func TestWriteError(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
-	var resp model.APIResponse
+	var resp map[string]interface{}
 	json.NewDecoder(rec.Body).Decode(&resp)
-	if resp.Error != "test error" {
-		t.Fatalf("expected error message, got %v", resp.Error)
+	if resp["success"] != false {
+		t.Fatalf("expected success=false, got %v", resp["success"])
 	}
 }

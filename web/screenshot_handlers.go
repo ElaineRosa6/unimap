@@ -387,6 +387,9 @@ func (s *Server) handleSearchEngineScreenshot(w http.ResponseWriter, r *http.Req
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
 
 	if s.screenshotApp == nil || !s.screenshotApp.IsCaptureAvailable(s.screenshotMgr) {
 		writeAPIError(w, http.StatusServiceUnavailable, "screenshot_manager_unavailable", "screenshot manager not initialized", nil)
@@ -430,13 +433,16 @@ func (s *Server) handleSearchEngineScreenshot(w http.ResponseWriter, r *http.Req
 	metrics.IncScreenshotRequest("search_engine", "success")
 	metrics.ObserveScreenshotDuration("search_engine", time.Since(startTime))
 
+	type screenshotResponse struct {
+		Success bool   `json:"success"`
+		Path    string `json:"path"`
+		Engine  string `json:"engine"`
+		Query   string `json:"query"`
+		QueryID string `json:"query_id"`
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":  true,
-		"path":     screenshotPath,
-		"engine":   engine,
-		"query":    query,
-		"query_id": queryID,
+	json.NewEncoder(w).Encode(screenshotResponse{
+		Success: true, Path: screenshotPath, Engine: engine, Query: query, QueryID: queryID,
 	})
 }
 
@@ -523,15 +529,19 @@ func (s *Server) handleTargetScreenshot(w http.ResponseWriter, r *http.Request) 
 	metrics.IncScreenshotRequest("target", "success")
 	metrics.ObserveScreenshotDuration("target", time.Since(startTime))
 
+	type targetScreenshotResponse struct {
+		Success  bool   `json:"success"`
+		Path     string `json:"path"`
+		URL      string `json:"url"`
+		IP       string `json:"ip"`
+		Port     string `json:"port"`
+		Protocol string `json:"protocol"`
+		QueryID  string `json:"query_id"`
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":  true,
-		"path":     screenshotPath,
-		"url":      targetURL,
-		"ip":       ip,
-		"port":     port,
-		"protocol": protocol,
-		"query_id": queryID,
+	json.NewEncoder(w).Encode(targetScreenshotResponse{
+		Success: true, Path: screenshotPath, URL: targetURL, IP: ip,
+		Port: port, Protocol: protocol, QueryID: queryID,
 	})
 }
 
@@ -662,11 +672,12 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 	if len(validURLs) == 0 {
 		finalResults, successCount, failedCount := mergeBatchURLResults(len(req.URLs), validItems, invalidResults, nil)
 		s.batchJobs.complete(jobID, finalResults, successCount, failedCount)
-		writeJSON(w, http.StatusAccepted, map[string]interface{}{
-			"job_id": jobID,
-			"total":  len(req.URLs),
-			"status": "completed",
-		})
+		type batchResponse struct {
+			JobID  string `json:"job_id"`
+			Total  int    `json:"total"`
+			Status string `json:"status"`
+		}
+		writeJSON(w, http.StatusAccepted, batchResponse{JobID: jobID, Total: len(req.URLs), Status: "completed"})
 		return
 	}
 	req.URLs = validURLs
@@ -698,10 +709,13 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 	}()
 
 	// 立即返回 job ID
-	writeJSON(w, http.StatusAccepted, map[string]interface{}{
-		"job_id": jobID,
-		"total":  len(validURLs) + len(invalidResults),
-		"status": "running",
+	type batchStartResponse struct {
+		JobID  string `json:"job_id"`
+		Total  int    `json:"total"`
+		Status string `json:"status"`
+	}
+	writeJSON(w, http.StatusAccepted, batchStartResponse{
+		JobID: jobID, Total: len(validURLs) + len(invalidResults), Status: "running",
 	})
 }
 

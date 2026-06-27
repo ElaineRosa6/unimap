@@ -9,11 +9,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/natefinch/lumberjack"
 	unierror "github.com/unimap/project/internal/error"
 	"github.com/unimap/project/internal/requestid"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (

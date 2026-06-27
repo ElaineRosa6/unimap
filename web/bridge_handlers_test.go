@@ -188,26 +188,23 @@ func TestBuildBridgeDiagnosticSnapshot_NilDeps(t *testing.T) {
 	s := &Server{bridge: newBridgeState()}
 	snap := s.buildBridgeDiagnosticSnapshot()
 
-	if snap == nil {
-		t.Fatal("expected non-nil snapshot")
+	if snap.Engine == "" {
+		t.Fatal("expected non-empty engine")
 	}
-	if _, ok := snap["last_error"]; !ok {
-		t.Fatal("expected 'last_error' key in snapshot")
+	if snap.Engine != "cdp" {
+		t.Fatalf("expected default engine cdp, got %v", snap.Engine)
 	}
-	if snap["engine"] != "cdp" {
-		t.Fatalf("expected default engine cdp, got %v", snap["engine"])
+	if snap.Ready != true {
+		t.Fatalf("expected cdp mode to be ready, got %v", snap.Ready)
 	}
-	if snap["ready"] != true {
-		t.Fatalf("expected cdp mode to be ready, got %v", snap["ready"])
+	if snap.BridgeConnected != false {
+		t.Fatalf("expected no bridge service, got %v", snap.BridgeConnected)
 	}
-	if snap["bridge_connected"] != false {
-		t.Fatalf("expected no bridge service, got %v", snap["bridge_connected"])
+	if snap.ExtensionOnline != false {
+		t.Fatalf("expected extension offline, got %v", snap.ExtensionOnline)
 	}
-	if snap["extension_online"] != false {
-		t.Fatalf("expected extension offline, got %v", snap["extension_online"])
-	}
-	if snap["live_clients"] != 0 {
-		t.Fatalf("expected no live clients, got %v", snap["live_clients"])
+	if snap.LiveClients != 0 {
+		t.Fatalf("expected no live clients, got %v", snap.LiveClients)
 	}
 }
 
@@ -215,20 +212,20 @@ func TestBuildBridgeDiagnosticSnapshot_ExtensionMode_ServiceStartedNoLiveClients
 	s := newExtensionModeBridgeServer(t)
 	snap := s.buildBridgeDiagnosticSnapshot()
 
-	if snap["bridge_connected"] != true {
-		t.Fatalf("expected bridge service started, got %v", snap["bridge_connected"])
+	if snap.BridgeConnected != true {
+		t.Fatalf("expected bridge service started, got %v", snap.BridgeConnected)
 	}
-	if snap["extension_online"] != false {
-		t.Fatalf("expected extension offline without live clients, got %v", snap["extension_online"])
+	if snap.ExtensionOnline != false {
+		t.Fatalf("expected extension offline without live clients, got %v", snap.ExtensionOnline)
 	}
-	if snap["ready"] != false {
-		t.Fatalf("expected extension mode not ready without live clients, got %v", snap["ready"])
+	if snap.Ready != false {
+		t.Fatalf("expected extension mode not ready without live clients, got %v", snap.Ready)
 	}
-	if snap["router_ext_healthy"] != false {
-		t.Fatalf("expected router extension unhealthy, got %v", snap["router_ext_healthy"])
+	if snap.RouterExtHealthy != false {
+		t.Fatalf("expected router extension unhealthy, got %v", snap.RouterExtHealthy)
 	}
-	if snap["live_clients"] != 0 {
-		t.Fatalf("expected no live clients, got %v", snap["live_clients"])
+	if snap.LiveClients != 0 {
+		t.Fatalf("expected no live clients, got %v", snap.LiveClients)
 	}
 }
 
@@ -242,17 +239,17 @@ func TestBuildBridgeDiagnosticSnapshot_ExtensionMode_LiveClientPresent_Ready(t *
 	s.screenshotRouter.Start(t.Context())
 
 	snap := s.buildBridgeDiagnosticSnapshot()
-	if snap["live_clients"] != 1 {
-		t.Fatalf("expected one live client, got %v", snap["live_clients"])
+	if snap.LiveClients != 1 {
+		t.Fatalf("expected one live client, got %v", snap.LiveClients)
 	}
-	if snap["extension_online"] != true {
-		t.Fatalf("expected extension online, got %v", snap["extension_online"])
+	if snap.ExtensionOnline != true {
+		t.Fatalf("expected extension online, got %v", snap.ExtensionOnline)
 	}
-	if snap["ready"] != true {
-		t.Fatalf("expected extension mode ready, got %v", snap["ready"])
+	if snap.Ready != true {
+		t.Fatalf("expected extension mode ready, got %v", snap.Ready)
 	}
-	if snap["router_ext_healthy"] != true {
-		t.Fatalf("expected router extension healthy, got %v", snap["router_ext_healthy"])
+	if snap.RouterExtHealthy != true {
+		t.Fatalf("expected router extension healthy, got %v", snap.RouterExtHealthy)
 	}
 }
 
@@ -266,17 +263,17 @@ func TestBuildBridgeDiagnosticSnapshot_ExtensionMode_PairedButStaleLastSeen_NotR
 	s.screenshotRouter.Start(t.Context())
 
 	snap := s.buildBridgeDiagnosticSnapshot()
-	if snap["paired_clients"] != 1 {
-		t.Fatalf("expected one paired client, got %v", snap["paired_clients"])
+	if snap.PairedClients != 1 {
+		t.Fatalf("expected one paired client, got %v", snap.PairedClients)
 	}
-	if snap["live_clients"] != 0 {
-		t.Fatalf("expected no live clients, got %v", snap["live_clients"])
+	if snap.LiveClients != 0 {
+		t.Fatalf("expected no live clients, got %v", snap.LiveClients)
 	}
-	if snap["extension_online"] != false {
-		t.Fatalf("expected stale client to be offline, got %v", snap["extension_online"])
+	if snap.ExtensionOnline != false {
+		t.Fatalf("expected stale client to be offline, got %v", snap.ExtensionOnline)
 	}
-	if snap["ready"] != false {
-		t.Fatalf("expected extension mode not ready with stale client, got %v", snap["ready"])
+	if snap.Ready != false {
+		t.Fatalf("expected extension mode not ready with stale client, got %v", snap.Ready)
 	}
 }
 
