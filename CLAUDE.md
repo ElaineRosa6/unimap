@@ -234,7 +234,7 @@ go run -tags gui ./cmd/unimap-gui
 
 #### 长期项（2 项，需架构级改造，按需启动）
 - **L2 Hook** — 设计冻结。仅当 L1/L3 telemetry 证明收益时启动。
-- **新引擎端到端闭环** — Censys/DayDayMap 适配器代码存在。✅ API Key 已配置并验证通过（2026-06-23，commit fa314ed）：DayDayMap curl 200 OK（关键字搜索），Censys v3 单 IP 查询 200 OK（免费版限制）。（BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除）
+- **新引擎端到端闭环** — Censys/DayDayMap 适配器代码存在。✅ API Key 已配置并验证通过（2026-06-23，commit fa314ed）：DayDayMap curl 200 OK（关键字搜索），Censys v3 单 IP 查询 200 OK（免费版限制）。✅ **2026-06-27 真机 API 验证**：DayDayMap `port=80` 返回 5 条资产，Censys `ip=8.8.8.8` 返回 3 条资产。Extension 采集 DOM 选择器已定义，需真机浏览器测试。（BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除）
 
 #### Low（3 项）
 11. ~~**countGoroutines() 空桩** — `router_test.go:400` 硬编码 `return 0`。~~ ✅ 已修复（2026-06-17，改用 `runtime.NumGoroutine()`，goroutine leak 检测增加 5 协程容差，20 次 `-race` 运行均通过）
@@ -381,8 +381,8 @@ SQL 注入防护 ✅ | bcrypt 密码哈希 ✅ | 常量时间比较 ✅ | Sessio
 | **ZoomEye** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（选择器已更新） | ✅ | ✅ **已验证（2026-06-17）** | ✅ **已验证** | ✅ title 清理已修（commit 7e619f8） |
 | Quake | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Shodan** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **已验证（2026-06-17）** | ✅ **已验证** | ⚠️ timestamp 选择器为空（需真机调试，commit 50dc187 已修字段流） |
-| Censys | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ✅ **通过（2026-06-23, v3 单 IP）** | ⏳ 需真机采集 | ⏳ | ⏳ |
-| DayDayMap | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ✅ **通过（2026-06-23, 关键字搜索）** | ⏳ 需真机采集 | ⏳ | ⏳ |
+| Censys | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ✅ **通过（2026-06-23, v3 单 IP）** | ✅ **2026-06-27 API 验证** | ⏳ 需真机采集 | ⏳ |
+| DayDayMap | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ✅ **通过（2026-06-23, 关键字搜索）** | ✅ **2026-06-27 API 验证** | ⏳ 需真机采集 | ⏳ |
 
 **验证**：`go build ./...` / `go vet ./...` / `go test -race ./...` 全部通过（33/33 包）
 
