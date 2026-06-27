@@ -87,6 +87,9 @@ screenshots/**
 hash_store/records/**/*.json
 !hash_store/records/.gitkeep
 
+# Python scripts
+urlive.py
+
 # Claude memory
 memory/
 
