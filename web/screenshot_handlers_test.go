@@ -637,3 +637,89 @@ func TestHandleScreenshotFileDelete_WrongMethod(t *testing.T) {
 		t.Fatalf("expected 405, got %d", w.Code)
 	}
 }
+
+// ============================================================
+// writeBatchScreenshotError tests
+// ============================================================
+
+func TestWriteBatchScreenshotError_NoURLs(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeBatchScreenshotError(w, errors.New("no urls provided"))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestWriteBatchScreenshotError_TooMany(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeBatchScreenshotError(w, errors.New("too many urls"))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestWriteBatchScreenshotError_Default(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeBatchScreenshotError(w, errors.New("some other error"))
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+}
+
+// ============================================================
+// handleSetScreenshotMode tests
+// ============================================================
+
+func TestHandleSetScreenshotMode_MethodNotAllowed(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/mode", nil)
+	w := httptest.NewRecorder()
+	s.handleSetScreenshotMode(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestHandleSetScreenshotMode_InvalidMode(t *testing.T) {
+	s := &Server{config: &config.Config{}}
+	body := `{"mode":"invalid"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/mode", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+	s.handleSetScreenshotMode(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestHandleSetScreenshotMode_ValidMode(t *testing.T) {
+	s := &Server{config: &config.Config{}}
+	body := `{"mode":"cdp"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/mode", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+	s.handleSetScreenshotMode(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+// ============================================================
+// clearAllEngineCookies tests
+// ============================================================
+
+func TestClearAllEngineCookies(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Engines.Fofa.Cookies = []config.Cookie{{Name: "test", Value: "val"}}
+	cfg.Engines.Hunter.Cookies = []config.Cookie{{Name: "test", Value: "val"}}
+	s := &Server{config: cfg}
+	s.clearAllEngineCookies()
+	if len(cfg.Engines.Fofa.Cookies) != 0 {
+		t.Fatal("expected fofa cookies cleared")
+	}
+	if len(cfg.Engines.Hunter.Cookies) != 0 {
+		t.Fatal("expected hunter cookies cleared")
+	}
+}

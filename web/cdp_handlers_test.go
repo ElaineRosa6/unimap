@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/unimap/project/internal/config"
 )
 
 // ============================================================
@@ -126,5 +128,24 @@ func TestIsRemoteDebuggerAvailable_InvalidURL(t *testing.T) {
 	got := isRemoteDebuggerAvailable("://invalid")
 	if got {
 		t.Fatal("expected false for invalid URL")
+	}
+}
+
+// ============================================================
+// updateCDPConfig tests
+// ============================================================
+
+func TestUpdateCDPConfig_NilConfig(t *testing.T) {
+	s := &Server{config: nil}
+	s.updateCDPConfig("http://localhost:9222")
+	// Should not panic
+}
+
+func TestUpdateCDPConfig_WithConfig(t *testing.T) {
+	cfg := &config.Config{}
+	s := &Server{config: cfg}
+	s.updateCDPConfig("http://localhost:9222")
+	if cfg.Screenshot.ChromeRemoteDebugURL != "http://localhost:9222" {
+		t.Fatalf("expected ChromeRemoteDebugURL to be set, got %s", cfg.Screenshot.ChromeRemoteDebugURL)
 	}
 }
