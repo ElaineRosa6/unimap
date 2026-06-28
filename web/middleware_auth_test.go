@@ -149,3 +149,37 @@ func TestAdminToken(t *testing.T) {
 		t.Fatalf("expected empty when config nil, got %q", got)
 	}
 }
+
+func TestAdminToken_AuthDisabled(t *testing.T) {
+	s := &Server{config: &config.Config{}}
+	s.config.Web.Auth.Enabled = false
+	if got := s.adminToken(); got != "" {
+		t.Fatalf("expected empty when auth disabled, got %q", got)
+	}
+}
+
+func TestAdminToken_AlreadySet(t *testing.T) {
+	s := &Server{config: &config.Config{}}
+	s.config.Web.Auth.Enabled = true
+	s.config.Web.Auth.AdminToken = "my-token"
+	if got := s.adminToken(); got != "my-token" {
+		t.Fatalf("expected my-token, got %q", got)
+	}
+}
+
+func TestAdminToken_AutoGenerate(t *testing.T) {
+	s := &Server{config: &config.Config{}}
+	s.config.Web.Auth.Enabled = true
+	s.config.Web.Auth.AdminToken = ""
+	s.configManager = &config.Manager{}
+	s.configManager.SetConfig(s.config)
+	got := s.adminToken()
+	if got == "" {
+		t.Fatal("expected auto-generated token")
+	}
+	// Should return the same token on second call
+	got2 := s.adminToken()
+	if got != got2 {
+		t.Fatalf("expected same token, got %q vs %q", got, got2)
+	}
+}
