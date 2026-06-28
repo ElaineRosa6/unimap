@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -582,5 +583,215 @@ func TestHandleRunTaskNow_GetMethod_Returns405(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", rec.Code)
+	}
+}
+
+// ============================================================
+// validateTaskPayload tests
+// ============================================================
+
+func TestValidateTaskPayload_Nil(t *testing.T) {
+	if err := validateTaskPayload(nil); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
+func TestValidateTaskPayload_TooManyKeys(t *testing.T) {
+	payload := make(map[string]interface{})
+	for i := 0; i < maxPayloadKeys+1; i++ {
+		payload[fmt.Sprintf("key%d", i)] = "value"
+	}
+	if err := validateTaskPayload(payload); err == nil {
+		t.Fatal("expected error for too many keys")
+	}
+}
+
+func TestValidateTaskPayload_Valid(t *testing.T) {
+	payload := map[string]interface{}{"query": "test", "limit": 10}
+	if err := validateTaskPayload(payload); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
+func TestValidateTaskPayload_InvalidWebhookScheme(t *testing.T) {
+	payload := map[string]interface{}{"webhook_url": "ftp://example.com/webhook"}
+	if err := validateTaskPayload(payload); err == nil {
+		t.Fatal("expected error for invalid webhook scheme")
+	}
+}
+
+// ============================================================
+// handleDeleteTask additional tests
+// ============================================================
+
+func TestHandleDeleteTask_MethodNotAllowed(t *testing.T) {
+	s := &Server{scheduler: setupScheduler(t)}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/tasks/delete", nil)
+	s.handleDeleteTask(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rec.Code)
+	}
+}
+
+func TestHandleDeleteTask_MissingID(t *testing.T) {
+	s := &Server{scheduler: setupScheduler(t)}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{"id": ""})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/delete", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleDeleteTask(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleDeleteTask_NotFound(t *testing.T) {
+	s := &Server{scheduler: setupScheduler(t)}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{"id": "nonexistent"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/delete", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleDeleteTask(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestHandleDeleteTask_Success(t *testing.T) {
+	sched := setupScheduler(t)
+	s := &Server{scheduler: sched}
+	// Create a task
+	createBody, _ := json.Marshal(map[string]interface{}{
+		"name": "del-test", "type": "query", "cron_expr": "0 * * * *",
+		"payload": map[string]interface{}{"query": "test"},
+	})
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("Origin", "http://localhost:8448")
+	createRec := httptest.NewRecorder()
+	s.handleCreateTask(createRec, createReq)
+	var createResp map[string]interface{}
+	json.NewDecoder(createRec.Body).Decode(&createResp)
+	taskID := createResp["id"].(string)
+
+	deleteBody, _ := json.Marshal(map[string]interface{}{"id": taskID})
+	deleteReq := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/delete", bytes.NewReader(deleteBody))
+	deleteReq.Header.Set("Content-Type", "application/json")
+	deleteReq.Header.Set("Origin", "http://localhost:8448")
+	deleteRec := httptest.NewRecorder()
+	s.handleDeleteTask(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", deleteRec.Code)
+	}
+}
+
+// ============================================================
+// handleDisableTask tests
+// ============================================================
+
+func TestHandleDisableTask_MethodNotAllowed(t *testing.T) {
+	s := &Server{scheduler: setupScheduler(t)}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/tasks/disable", nil)
+	s.handleDisableTask(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rec.Code)
+	}
+}
+
+func TestHandleDisableTask_MissingID(t *testing.T) {
+	s := &Server{scheduler: setupScheduler(t)}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{"id": ""})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/disable", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleDisableTask(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleDisableTask_Success(t *testing.T) {
+	sched := setupScheduler(t)
+	s := &Server{scheduler: sched}
+	createBody, _ := json.Marshal(map[string]interface{}{
+		"name": "disable-test", "type": "query", "cron_expr": "0 * * * *",
+		"payload": map[string]interface{}{"query": "test"},
+	})
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("Origin", "http://localhost:8448")
+	createRec := httptest.NewRecorder()
+	s.handleCreateTask(createRec, createReq)
+	var createResp map[string]interface{}
+	json.NewDecoder(createRec.Body).Decode(&createResp)
+	taskID := createResp["id"].(string)
+
+	body, _ := json.Marshal(map[string]interface{}{"id": taskID})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/disable", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	rec := httptest.NewRecorder()
+	s.handleDisableTask(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+// ============================================================
+// handleEnableTask tests
+// ============================================================
+
+func TestHandleEnableTask_MethodNotAllowed(t *testing.T) {
+	s := &Server{scheduler: setupScheduler(t)}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scheduler/tasks/enable", nil)
+	s.handleEnableTask(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rec.Code)
+	}
+}
+
+func TestHandleEnableTask_MissingID(t *testing.T) {
+	s := &Server{scheduler: setupScheduler(t)}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{"id": ""})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/enable", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleEnableTask(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleEnableTask_Success(t *testing.T) {
+	sched := setupScheduler(t)
+	s := &Server{scheduler: sched}
+	createBody, _ := json.Marshal(map[string]interface{}{
+		"name": "enable-test", "type": "query", "cron_expr": "0 * * * *", "enabled": false,
+		"payload": map[string]interface{}{"query": "test"},
+	})
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("Origin", "http://localhost:8448")
+	createRec := httptest.NewRecorder()
+	s.handleCreateTask(createRec, createReq)
+	var createResp map[string]interface{}
+	json.NewDecoder(createRec.Body).Decode(&createResp)
+	taskID := createResp["id"].(string)
+
+	body, _ := json.Marshal(map[string]interface{}{"id": taskID})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/enable", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	rec := httptest.NewRecorder()
+	s.handleEnableTask(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 }
