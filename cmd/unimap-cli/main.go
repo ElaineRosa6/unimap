@@ -16,6 +16,7 @@ import (
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/utils"
 )
 
 func main() {
@@ -68,7 +69,7 @@ func parseCLIFlags() cliFlags {
 	flag.StringVar(&f.engines, "e", "", "Comma-separated engines")
 	flag.IntVar(&f.limit, "l", 100, "Result limit")
 	flag.StringVar(&f.output, "o", "", "Output file path")
-	flag.StringVar(&f.config, "c", "configs/config.yaml", "Config file path")
+	flag.StringVar(&f.config, "c", utils.DefaultConfigPath(), "Config file path")
 	flag.StringVar(&f.fofaCookie, "cookie-fofa", "", "FOFA cookie header")
 	flag.StringVar(&f.hunterCookie, "cookie-hunter", "", "Hunter cookie header")
 	flag.StringVar(&f.quakeCookie, "cookie-quake", "", "Quake cookie header")

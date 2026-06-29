@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/unimap/project/internal/backup"
+	"github.com/unimap/project/internal/utils"
 )
 
 // isAuthEnabled returns true if the server has auth configured.
@@ -32,11 +33,17 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 	// 从配置读取备份目录
 	backupDir := "./backups"
 	backupPrefix := "unimap"
-	if s.config != nil && s.config.Backup.OutputDir != "" {
-		backupDir = s.config.Backup.OutputDir
-	}
-	if s.config != nil && s.config.Backup.Prefix != "" {
-		backupPrefix = s.config.Backup.Prefix
+	maxBackups := 5
+	if s.config != nil {
+		if s.config.Backup.OutputDir != "" {
+			backupDir = s.config.Backup.OutputDir
+		}
+		if s.config.Backup.Prefix != "" {
+			backupPrefix = s.config.Backup.Prefix
+		}
+		if s.config.Backup.MaxBackups > 0 {
+			maxBackups = s.config.Backup.MaxBackups
+		}
 	}
 
 	// 收集要备份的源
@@ -49,7 +56,7 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 	cfg := backup.BackupConfig{
 		Sources:    sources,
 		OutputDir:  backupDir,
-		MaxBackups: s.config.Backup.MaxBackups,
+		MaxBackups: maxBackups,
 		Prefix:     backupPrefix,
 	}
 
@@ -125,18 +132,18 @@ func (s *Server) buildBackupSources() []string {
 	sources := []string{}
 
 	// 始终包含 hash_store（篡改检测基线）
-	if dirExists("./hash_store") {
-		sources = append(sources, "./hash_store")
+	if dirExists(utils.HashStoreDir()) {
+		sources = append(sources, utils.HashStoreDir())
 	}
 
 	// 包含截图数据
-	if dirExists("./screenshots") {
-		sources = append(sources, "./screenshots")
+	if dirExists(utils.ScreenshotsDir()) {
+		sources = append(sources, utils.ScreenshotsDir())
 	}
 
 	// 包含调度器数据
-	if dirExists("./data") {
-		sources = append(sources, "./data")
+	if dirExists(utils.AppDataDir()) {
+		sources = append(sources, utils.AppDataDir())
 	}
 
 	// 注意：不包含 ./configs，避免泄露敏感配置（API keys、tokens）

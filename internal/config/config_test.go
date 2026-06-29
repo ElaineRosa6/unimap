@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/unimap/project/internal/utils"
 )
 
 func TestNewManager(t *testing.T) {
@@ -81,7 +82,7 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, "console", cfg.Log.Encoding)
 
 	// Test default screenshot configurations
-	assert.Equal(t, "./screenshots", cfg.Screenshot.BaseDir)
+	assert.Equal(t, utils.ScreenshotsDir(), cfg.Screenshot.BaseDir)
 	assert.Equal(t, 30, cfg.Screenshot.Timeout)
 	assert.Equal(t, 1365, cfg.Screenshot.WindowWidth)
 	assert.Equal(t, 768, cfg.Screenshot.WindowHeight)

@@ -34,6 +34,7 @@ import (
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/utils"
 )
 
 // 查询状态
@@ -228,7 +229,7 @@ func newServerStruct(port int, webRoot string, templates *template.Template,
 		service:       unifiedSvc,
 		queryApp:      service.NewQueryAppService(unifiedSvc, orchestrator),
 		monitorApp:    service.NewMonitorAppService(proxyPool),
-		tamperApp:     service.NewTamperAppService("./hash_store", alertManager),
+		tamperApp:     service.NewTamperAppService(utils.HashStoreDir(), alertManager),
 		screenshotApp: screenshotApp,
 		orchestrator:  orchestrator,
 		upgrader:      upgrader,
@@ -250,7 +251,7 @@ func newServerStruct(port int, webRoot string, templates *template.Template,
 			NodeRegistry:  nodeRegistry,
 			NodeTaskQueue: nodeTaskQueue,
 		},
-		apiAuth:         auth.NewAuthMiddleware(auth.NewAPIKeyManager("./data/api_keys.json")),
+		apiAuth:         auth.NewAuthMiddleware(auth.NewAPIKeyManager(filepath.Join(utils.AppDataDir(), "api_keys.json"))),
 		shutdownCtx:     shutdownCtx,
 		shutdownCancel:  shutdownCancel,
 		revocationStore: newSessionRevocationStore(),
@@ -322,7 +323,7 @@ func loadEngineCookies(mgr *screenshot.Manager, cfg *config.Config) {
 
 // initScreenshotAppService creates the screenshot app service from config and manager.
 func initScreenshotAppService(cfg *config.Config, screenshotMgr *screenshot.Manager) *service.ScreenshotAppService {
-	screenshotBaseDir := "./screenshots"
+	screenshotBaseDir := utils.ScreenshotsDir()
 	if cfg != nil && strings.TrimSpace(cfg.Screenshot.BaseDir) != "" {
 		screenshotBaseDir = strings.TrimSpace(cfg.Screenshot.BaseDir)
 	}
@@ -371,7 +372,7 @@ func initDistributedNodes(cfg *config.Config) (*distributed.Registry, *distribut
 	}
 
 	registry := distributed.NewRegistry(heartbeatTimeout)
-	taskQueue := distributed.NewTaskQueueWithPath("./data/distributed_tasks.json")
+	taskQueue := distributed.NewTaskQueueWithPath(filepath.Join(utils.AppDataDir(), "distributed_tasks.json"))
 	registry.SetTaskQueue(taskQueue)
 	taskQueue.SetDefaultMaxReassign(maxReassign)
 
@@ -454,7 +455,7 @@ func initHistoryDatabase(srv *Server, cfg *config.Config) {
 // initScreenshotBatchDB initializes the screenshot batch job metadata database.
 // On failure it logs a warning and leaves batchJobs as memory-only (graceful degradation).
 func initScreenshotBatchDB(srv *Server) {
-	dbPath := "./data/screenshot_batches.db"
+	dbPath := filepath.Join(utils.AppDataDir(), "screenshot_batches.db")
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		logger.Warnf("screenshot batch DB dir create failed (%s): %v", dbPath, err)
 		return
@@ -476,7 +477,7 @@ func initScreenshotBatchDB(srv *Server) {
 
 // initUserDatabase initializes the user database on the server.
 func initUserDatabase(srv *Server) {
-	userDBPath := "./data/users.db"
+	userDBPath := filepath.Join(utils.AppDataDir(), "users.db")
 	if err := os.MkdirAll(filepath.Dir(userDBPath), 0o755); err != nil {
 		logger.Warnf("user DB dir create failed (%s): %v", userDBPath, err)
 		return
@@ -507,7 +508,10 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 		maxHistory = cfg.Scheduler.MaxHistory
 	}
 
-	sched := scheduler.NewScheduler("./data/scheduler_tasks.json", "./data/scheduler_history.json", maxHistory)
+	sched := scheduler.NewScheduler(
+		filepath.Join(utils.AppDataDir(), "scheduler_tasks.json"),
+		filepath.Join(utils.AppDataDir(), "scheduler_history.json"),
+		maxHistory)
 
 	// 高优先级 Runner (ST-01 ~ ST-08)
 	sched.RegisterHandler(scheduler.NewQueryRunner(srv.queryApp))
@@ -520,14 +524,14 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 	sched.RegisterHandler(scheduler.NewDistributedSubmitRunner(nodeTaskQueue))
 
 	// 中优先级 Runner (ST-09 ~ ST-16)
-	sched.RegisterHandler(scheduler.NewExportRunner(srv.queryApp, orchestrator, "./data/exports"))
+	sched.RegisterHandler(scheduler.NewExportRunner(srv.queryApp, orchestrator, utils.AppDataDir("exports")))
 	sched.RegisterHandler(scheduler.NewPortScanRunner(srv.monitorApp))
 	sched.RegisterHandler(scheduler.NewScreenshotCleanupRunner(screenshotApp, 30))
 	sched.RegisterHandler(scheduler.NewTamperCleanupRunner(srv.tamperApp, 90))
 	sched.RegisterHandler(scheduler.NewQuotaMonitorRunner(orchestrator, 10))
 	sched.RegisterHandler(scheduler.NewAlertSummaryRunner(alertManager))
 	sched.RegisterHandler(scheduler.NewBaselineRefreshRunner(srv.tamperApp))
-	sched.RegisterHandler(scheduler.NewURLImportRunner("./data/imports"))
+	sched.RegisterHandler(scheduler.NewURLImportRunner(utils.AppDataDir("imports")))
 
 	// 低优先级 Runner (ST-17 ~ ST-20)
 	sched.RegisterHandler(scheduler.NewPluginHealthRunner(unifiedSvc))
@@ -537,7 +541,7 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 
 	// ICP Runner (ST-21 ~ ST-22)
 	sched.RegisterHandler(scheduler.NewICPQueryRunner(srv.icpConfigProvider, srv.icpRepo, alertManager))
-	sched.RegisterHandler(scheduler.NewICPImportRunner("./data/icp_imports", sched))
+	sched.RegisterHandler(scheduler.NewICPImportRunner(utils.AppDataDir("icp_imports"), sched))
 
 	if err := sched.Load(); err != nil {
 		logger.Warnf("Failed to load scheduled tasks: %v", err)

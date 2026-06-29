@@ -10,6 +10,7 @@ import (
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/utils"
 )
 
 // ScreenshotAppService 封装截图相关应用层流程。
@@ -36,7 +37,7 @@ func NewScreenshotAppService(baseDir string) *ScreenshotAppService {
 
 func NewScreenshotAppServiceWithProvider(baseDir string, provider screenshot.Provider) *ScreenshotAppService {
 	if strings.TrimSpace(baseDir) == "" {
-		baseDir = "./screenshots"
+		baseDir = utils.ScreenshotsDir()
 	}
 	return &ScreenshotAppService{baseDir: baseDir, provider: provider, engine: "cdp"}
 }

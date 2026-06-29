@@ -17,6 +17,7 @@ import (
 	"github.com/unimap/project/internal/alerting"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/tamper/fingerprint"
+	"github.com/unimap/project/internal/utils"
 )
 
 const (
@@ -343,7 +344,7 @@ type CheckRecord struct {
 // NewHashStorage creates a new HashStorage with the given base directory.
 func NewHashStorage(baseDir string) *HashStorage {
 	if baseDir == "" {
-		baseDir = "./hash_store"
+		baseDir = utils.HashStoreDir()
 	}
 	return &HashStorage{baseDir: baseDir}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/utils"
 )
 
 // ===== QueryAppService: constructors and simple methods =====
@@ -189,10 +190,11 @@ func TestNewScreenshotAppService(t *testing.T) {
 }
 
 func TestNewScreenshotAppServiceWithProvider(t *testing.T) {
-	// nil baseDir defaults to "./screenshots"
+	// nil baseDir defaults to cross-platform screenshots dir
 	svc := NewScreenshotAppServiceWithProvider("", nil)
-	if svc.GetBaseDir() != "./screenshots" {
-		t.Errorf("GetBaseDir() = %q, want %q", svc.GetBaseDir(), "./screenshots")
+	expected := utils.ScreenshotsDir()
+	if svc.GetBaseDir() != expected {
+		t.Errorf("GetBaseDir() = %q, want %q", svc.GetBaseDir(), expected)
 	}
 }
 
