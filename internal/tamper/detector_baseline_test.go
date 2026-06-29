@@ -2,6 +2,9 @@ package tamper
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"strings"
 	"testing"
@@ -295,15 +298,24 @@ func TestDetector_CheckTampering_NoBaseline(t *testing.T) {
 		}
 	}
 
+	// 用本地 httptest server 提供可加载的页面，避免对外部 URL 的网络/导航失败。
+	// CheckTampering 先 ComputePageHash（默认 Balanced 走 chromedp），再用 CI 安全
+	// allocator（--no-sandbox）启动 Chrome；无 baseline 时返回 normal 状态。
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<!DOCTYPE html><html><head><title>No Baseline</title></head>
+<body><main><h1>Test</h1></main></body></html>`)
+	}))
+	defer ts.Close()
+
 	dir := t.TempDir()
-	d := NewDetector(DetectorConfig{BaseDir: dir})
+	d := newTestDetectorWithCDP(t, DetectorConfig{BaseDir: dir})
 
 	ctx := context.Background()
-	result, err := d.CheckTampering(ctx, "https://no-baseline.com")
+	result, err := d.CheckTampering(ctx, ts.URL)
 	if err != nil {
 		t.Fatalf("CheckTampering failed: %v", err)
 	}
-	// Without Chrome, ComputePageHash will fail, returning an error
+	// Without baseline, ComputePageHash succeeds and status defaults to normal.
 	if result != nil {
 		t.Logf("CheckTampering returned status: %s", result.Status)
 	}

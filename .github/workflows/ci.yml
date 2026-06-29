@@ -109,7 +109,13 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # install-mode=goinstall 使用项目工具链（go1.26，由 go-version-file 指定）
+          # 从源码构建 golangci-lint，避免预编译二进制（用 go1.24 构建）无法分析
+          # go1.26 目标代码："the Go language version (go1.24) used to build
+          # golangci-lint is lower than the targeted Go version (1.26)"。
+          # 锁定 v1.64.8 以保持现有 v1 版 .golangci.yml 配置兼容。
+          install-mode: goinstall
+          version: v1.64.8
           args: --timeout=5m
 
   # --- Extension scripts ---

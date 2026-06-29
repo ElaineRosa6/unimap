@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,6 +20,24 @@ func clearPageHashCache(d *Detector) {
 	d.cacheMu.Lock()
 	d.cache = make(map[string]*cacheEntry)
 	d.cacheMu.Unlock()
+}
+
+// newTestDetectorWithCDP 创建一个配置了 CI 安全 chromedp allocator 的 Detector。
+// GitHub Actions / 容器环境以 root 运行 Chrome，需要 --no-sandbox 才能启动，
+// 否则 Chrome 启动时收到 SIGABRT（"chrome failed to start: Received signal 6"）；
+// disable-dev-shm-usage 避免 /dev/shm 过小导致的崩溃。仅用于 chromedp 模式测试。
+func newTestDetectorWithCDP(t *testing.T, cfg DetectorConfig) *Detector {
+	t.Helper()
+	d := NewDetector(cfg)
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.NoSandbox,
+		chromedp.DisableGPU,
+		chromedp.Flag("disable-dev-shm-usage", "true"),
+	)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	t.Cleanup(allocCancel)
+	d.SetAllocator(context.Background(), allocCtx, allocCancel)
+	return d
 }
 
 // TestRelaxed_TimeBasedDynamicContent_NoFalsePositive 验证：
@@ -99,7 +118,7 @@ func TestRelaxed_VersionedJSFiles_NoFalsePositive(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	detector := NewDetector(DetectorConfig{
+	detector := newTestDetectorWithCDP(t, DetectorConfig{
 		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
@@ -142,7 +161,7 @@ func TestRelaxed_SSRHydrationData_NoFalsePositive(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	detector := NewDetector(DetectorConfig{
+	detector := newTestDetectorWithCDP(t, DetectorConfig{
 		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
@@ -200,7 +219,7 @@ func TestRelaxed_InjectedMaliciousIframe_DetectsTamper(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	detector := NewDetector(DetectorConfig{
+	detector := newTestDetectorWithCDP(t, DetectorConfig{
 		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
@@ -242,7 +261,7 @@ func TestRelaxed_SignificantMainContentChange_DetectsTamper(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	detector := NewDetector(DetectorConfig{
+	detector := newTestDetectorWithCDP(t, DetectorConfig{
 		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
@@ -318,7 +337,7 @@ func TestStrict_MD5Change_DetectsTamper(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	detector := NewDetector(DetectorConfig{
+	detector := newTestDetectorWithCDP(t, DetectorConfig{
 		DetectionMode: DetectionModeStrict,
 	})
 
@@ -360,7 +379,7 @@ func TestNormalDynamic_DoesNotSetTampered(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	detector := NewDetector(DetectorConfig{
+	detector := newTestDetectorWithCDP(t, DetectorConfig{
 		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
