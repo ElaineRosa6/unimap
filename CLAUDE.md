@@ -482,7 +482,7 @@ adapter（git rm）/ config（struct·clone·load·defaults·validate·GetEngine
 
 **结果**：在册引擎 10 → 7。新引擎真机验证仅剩 Censys/DayDayMap。
 
-**保留（历史快照）**：`docs/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md`、`docs/REPAIR_PLAN_2026-06-16.md`、本文件 2026-06-17 Phase5 历史段。
+**保留（历史快照）**：`docs/archive/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md`、`docs/archive/REPAIR_PLAN_2026-06-16.md`、本文件 2026-06-17 Phase5 历史段。
 
 ### 2026-06-21 前端 API 显示修复 + 表格渲染修复 + Quake 适配器修复
 
@@ -532,7 +532,7 @@ adapter（git rm）/ config（struct·clone·load·defaults·validate·GetEngine
 - ✅ 批量截图 Provider 增加逐项进度回调；CDP/Extension provider 均支持完成一条即更新 job 进度。
 - ✅ `main.js` API 请求统一走 `apiFetch`；CSV/JSON 导出基于完整结果数组，不再只导出当前 DOM 页。
 - ⏸ 仍剩长期项：L-05/TD-4 强类型渐进重构；L2 Hook。
-- 📝 剩余长期项已补充评估与实施文档：`docs/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md` §7（TD-4/L2 Hook/stealth 总评估）与 `docs/EXTENSION_ANTI_SCRAPING_ARCHITECTURE.md` §11（stealth 执行方案）。
+- 📝 剩余长期项已补充评估与实施文档：`docs/archive/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md` §7（TD-4/L2 Hook/stealth 总评估）与 `docs/archive/EXTENSION_ANTI_SCRAPING_ARCHITECTURE.md` §11（stealth 执行方案）。
 
 ### 2026-06-11 安全与稳定性修复（19 项）
 - ✅ **CRITICAL** `batchJobStore.get()` → `getSnapshot()` 深拷贝，消除 progress handler 与后台 goroutine 数据竞争。
