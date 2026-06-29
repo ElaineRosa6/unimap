@@ -360,10 +360,10 @@ func parseFofaSearchResponse(body []byte, activeFields string, page, pageSize in
 
 // Normalize 标准化FOFA结果
 func (f *FofaAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
-	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	if raw == nil || len(raw.RawData) == 0 {
-		return assets, nil
+		return []model.UnifiedAsset{}, nil
 	}
+	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	for _, item := range raw.RawData {
 		data, ok := item.(*FofaItem)
 		if !ok {
