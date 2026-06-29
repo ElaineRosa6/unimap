@@ -27,9 +27,10 @@ import (
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/tamper"
+	"github.com/unimap/project/internal/utils"
 )
 
-const configPath = "configs/config.yaml"
+var configPath = utils.DefaultConfigPath()
 
 // AppState 应用状态
 type AppState struct {
@@ -69,8 +70,8 @@ func main() {
 		Config:        cfg,
 		QueryResults:  []model.UnifiedAsset{},
 		Service:       svc,
-		Detector:      tamper.NewDetector(tamper.DetectorConfig{BaseDir: "./hash_store"}),
-		TamperStorage: tamper.NewHashStorage("./hash_store"),
+		Detector:      tamper.NewDetector(tamper.DetectorConfig{BaseDir: utils.HashStoreDir()}),
+		TamperStorage: tamper.NewHashStorage(utils.HashStoreDir()),
 		ScreenshotMgr: buildScreenshotManager(cfg),
 	}
 

@@ -607,7 +607,7 @@ func (h *historyTabState) refreshURLs() {
 	}
 
 	byURL := make(map[string]*historyURLItem)
-	source, apiRecords, apiErr := "API", []apiTamperHistoryItem{}, error(nil)
+	source, apiRecords, apiErr := "API", []guiTamperHistoryRecord{}, error(nil)
 	apiRecords, apiErr = listTamperHistoryViaAPI(context.Background(), 1000)
 	if apiErr == nil {
 		h.mergeHistoryFromAPI(baselineURLs, baselineSet, byURL, apiRecords)
@@ -644,7 +644,7 @@ func (h *historyTabState) refreshURLs() {
 	h.statsLabel.SetText(fmt.Sprintf("已加载 %d 个监控目标（历史来源: %s，基线来源: %s）", len(h.urlItems), source, baselineSource))
 }
 
-func (h *historyTabState) mergeHistoryFromAPI(baselineURLs []string, baselineSet map[string]bool, byURL map[string]*historyURLItem, apiRecords []apiTamperHistoryItem) {
+func (h *historyTabState) mergeHistoryFromAPI(baselineURLs []string, baselineSet map[string]bool, byURL map[string]*historyURLItem, apiRecords []guiTamperHistoryRecord) {
 	for _, item := range baselineURLs {
 		if _, ok := byURL[item]; !ok {
 			byURL[item] = &historyURLItem{URL: item, HasBaseline: true}

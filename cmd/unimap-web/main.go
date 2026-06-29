@@ -15,7 +15,7 @@ import (
 	"github.com/unimap/project/web"
 )
 
-const configPath = "configs/config.yaml"
+var configPath = utils.DefaultConfigPath()
 
 func main() {
 	defer logger.Sync()

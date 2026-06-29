@@ -2,9 +2,11 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/utils"
 )
 
 // engineDefaults holds default values for a search engine.
@@ -109,7 +111,7 @@ func (m *Manager) applyScreenshotDefaults(config *Config) {
 		config.Screenshot.Headless = &defaultHeadless
 	}
 	if config.Screenshot.BaseDir == "" {
-		config.Screenshot.BaseDir = "./screenshots"
+		config.Screenshot.BaseDir = utils.ScreenshotsDir()
 	}
 	if strings.TrimSpace(config.Screenshot.Engine) == "" {
 		config.Screenshot.Engine = "cdp"
@@ -369,7 +371,7 @@ func (m *Manager) applyMiscDefaults(config *Config) {
 		config.ICP.DefaultType = "web"
 	}
 	if strings.TrimSpace(config.ICP.DatabasePath) == "" {
-		config.ICP.DatabasePath = "./data/icp_results.db"
+		config.ICP.DatabasePath = filepath.Join(utils.AppDataDir(), "icp_results.db")
 	}
 
 	// 定时任务
@@ -390,7 +392,7 @@ func (m *Manager) applyMiscDefaults(config *Config) {
 		config.History.Enabled = true
 	}
 	if strings.TrimSpace(config.History.DatabasePath) == "" {
-		config.History.DatabasePath = "./data/history.db"
+		config.History.DatabasePath = filepath.Join(utils.AppDataDir(), "history.db")
 	}
 	if config.History.MaxResults == 0 {
 		config.History.MaxResults = 1000

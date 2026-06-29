@@ -10,6 +10,7 @@ import (
 	"github.com/unimap/project/internal/alerting"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/tamper"
+	"github.com/unimap/project/internal/utils"
 )
 
 // TamperAllocatorFactory 用于注入浏览器 allocator，便于复用 screenshot 的 CDP/本地启动策略。
@@ -23,7 +24,7 @@ type TamperAppService struct {
 
 func NewTamperAppService(baseDir string, alertManager *alerting.Manager) *TamperAppService {
 	if strings.TrimSpace(baseDir) == "" {
-		baseDir = "./hash_store"
+		baseDir = utils.HashStoreDir()
 	}
 	return &TamperAppService{
 		baseDir:      baseDir,

@@ -17,6 +17,7 @@ import (
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/utils"
 )
 
 // ============================================================
@@ -218,7 +219,7 @@ func (s *batchJobStore) cleanup(maxAge time.Duration) {
 }
 
 func (s *Server) resolveScreenshotBaseDir() string {
-	baseDir := "./screenshots"
+	baseDir := utils.ScreenshotsDir()
 	if s.config != nil && strings.TrimSpace(s.config.Screenshot.BaseDir) != "" {
 		baseDir = s.config.Screenshot.BaseDir
 	}

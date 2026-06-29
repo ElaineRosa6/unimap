@@ -12,11 +12,12 @@ import (
 
 	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/tamper"
+	"github.com/unimap/project/internal/utils"
 )
 
 func (s *Server) newTamperDetector(ctx context.Context, mode string) (*tamper.Detector, context.CancelFunc, error) {
 	cfg := tamper.DetectorConfig{
-		BaseDir:       "./hash_store",
+		BaseDir:       utils.HashStoreDir(),
 		DetectionMode: mode,
 	}
 	if s.config != nil {
