@@ -397,10 +397,10 @@ func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName strin
 // Normalize 标准化Censys结果
 // Censys hosts have nested services[]. Each host can produce multiple UnifiedAssets (one per service).
 func (c *CensysAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
-	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	if raw == nil || len(raw.RawData) == 0 {
-		return assets, nil
+		return []model.UnifiedAsset{}, nil
 	}
+	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	for _, item := range raw.RawData {
 		entry, ok := item.(*CensysRawEntry)
 		if !ok {

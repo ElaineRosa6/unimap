@@ -281,10 +281,10 @@ func parseHunterSearchResponse(body []byte, page, pageSize int, engineName strin
 
 // Normalize 标准化Hunter结果
 func (h *HunterAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
-	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	if raw == nil || len(raw.RawData) == 0 {
-		return assets, nil
+		return []model.UnifiedAsset{}, nil
 	}
+	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	for _, item := range raw.RawData {
 		m, ok := item.(*HunterItem)
 		if !ok {
