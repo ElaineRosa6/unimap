@@ -117,7 +117,7 @@ func (s *Server) handleTamperCheck(w http.ResponseWriter, r *http.Request) {
 	s.reportRequestProxy(proxy, true)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"mode":    resp.Mode,
 		"summary": resp.Summary,
@@ -184,7 +184,7 @@ func (s *Server) handleTamperBaseline(w http.ResponseWriter, r *http.Request) {
 	s.reportRequestProxy(proxy, true)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"summary": resp.Summary,
 		"results": resp.Results,
@@ -204,7 +204,7 @@ func (s *Server) handleTamperBaselineList(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"urls":    urls,
 		"count":   len(urls),
@@ -232,7 +232,7 @@ func (s *Server) handleTamperBaselineDelete(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("Baseline for %s deleted", urlValue),
 		"url":     urlValue,
@@ -270,7 +270,7 @@ func (s *Server) handleTamperHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"count":   result.Count,
 		"records": result.Records,

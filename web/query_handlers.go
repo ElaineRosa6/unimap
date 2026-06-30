@@ -232,7 +232,7 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 
 	// 返回JSON结果
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction))
+	_ = json.NewEncoder(w).Encode(buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction))
 }
 
 // handleIndex 处理首页请求
@@ -461,7 +461,7 @@ func (s *Server) handleQueryStatus(w http.ResponseWriter, r *http.Request) {
 
 	// 返回JSON结果
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(statusCopy)
+	_ = json.NewEncoder(w).Encode(statusCopy)
 }
 
 // handleAccountPage renders the account management page (GET /account).
