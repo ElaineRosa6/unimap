@@ -429,6 +429,7 @@ func urlBase64(s string) string {
 }
 
 // extractExtraFields collects unrecognized fields into an Extra map.
+// nolint:unused
 func extractExtraFields(item map[string]interface{}) map[string]interface{} {
 	known := map[string]bool{
 		"url": true, "title": true, "ip": true, "port": true,

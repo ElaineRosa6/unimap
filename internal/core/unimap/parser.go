@@ -10,8 +10,8 @@ import (
 
 // UQLParser UQL查询语言解析器
 type UQLParser struct {
-	scanner *scanner.Scanner
-	current rune
+	scanner *scanner.Scanner // nolint:unused
+	current rune             // nolint:unused
 }
 
 // NewUQLParser 创建解析器

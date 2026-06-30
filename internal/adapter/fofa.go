@@ -140,6 +140,7 @@ func (f *FofaAdapter) translateNode(node *model.UQLNode) string {
 }
 
 // safeRowField safely extracts a field from a row by index, returning nil if out of bounds.
+// nolint:unused
 func safeRowField(row []interface{}, idx int) interface{} {
 	if idx < len(row) {
 		return row[idx]

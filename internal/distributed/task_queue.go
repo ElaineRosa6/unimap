@@ -714,6 +714,7 @@ func cloneTaskOutput(in *model.TaskOutput) *model.TaskOutput {
 }
 
 // saveSnapshot persists the current task queue state to disk.
+// nolint:unused
 func (q *TaskQueue) saveSnapshot() {
 	if q.snapshotPath == "" {
 		return

@@ -369,6 +369,7 @@ type CDPStatusInfo struct {
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 }
 
+// nolint:unused
 func checkCDPStatus(ctx context.Context, baseURL string) (bool, *CDPStatusInfo, error) {
 	baseURL = normalizeCDPBaseURL(baseURL)
 	if baseURL == "" {

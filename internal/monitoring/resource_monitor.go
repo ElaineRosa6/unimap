@@ -538,7 +538,7 @@ func (m *ResourceMonitor) DeleteCustomMetric(name string, labels map[string]stri
 	defer m.mutex.Unlock()
 
 	key := name
-	if labels != nil && len(labels) > 0 {
+	if len(labels) > 0 {
 		for k, v := range labels {
 			key += ":" + k + "=" + v
 		}
