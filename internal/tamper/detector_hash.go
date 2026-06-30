@@ -110,7 +110,12 @@ func (d *Detector) computeHashWithHTTP(ctx context.Context, targetURL string) (*
 	// Create an independent client to avoid mutating the shared DefaultHTTPClient.
 	// Cloning the transport and setting CheckRedirect on a fresh client prevents
 	// data races with concurrent tamper checks.
-	baseTransport := utils.DefaultHTTPClient().Transport.(*http.Transport).Clone()
+	baseTransport, ok := utils.DefaultHTTPClient().Transport.(*http.Transport) //nolint:errcheck
+	if !ok || baseTransport == nil {
+		baseTransport = http.DefaultTransport.(*http.Transport).Clone() //nolint:errcheck
+	} else {
+		baseTransport = baseTransport.Clone()
+	}
 	if d.insecureSkipVerify {
 		baseTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
