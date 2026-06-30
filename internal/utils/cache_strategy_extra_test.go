@@ -248,8 +248,8 @@ func TestCacheStrategyManager_StatsAggregation(t *testing.T) {
 	m.RegisterStrategy("my_strat", s)
 
 	// Record via manager's strategy
-	strat := m.GetStrategy("my_strat")
-	stats := strat.GetStats()
+	strategyObj := m.GetStrategy("my_strat")
+	stats := strategyObj.GetStats()
 	if stats.TotalQueries != 1 {
 		t.Errorf("expected 1 query, got %d", stats.TotalQueries)
 	}

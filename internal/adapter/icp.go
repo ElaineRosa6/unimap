@@ -322,7 +322,7 @@ func (a *ICPAdapter) doSearch(ctx context.Context, query string, page, pageSize 
 	rawData := make([]interface{}, 0, len(results))
 	for _, r := range results {
 		rawData = append(rawData, r)
-		assets = append(assets, model.UnifiedAsset{
+		asset := model.UnifiedAsset{
 			Host:   r.host(),
 			Title:  r.title(),
 			Org:    r.unitName(),
@@ -340,7 +340,8 @@ func (a *ICPAdapter) doSearch(ctx context.Context, query string, page, pageSize 
 				"icp_service_name":  r.ServiceName,
 				"icp_data_id":       string(r.DataID),
 			},
-		})
+		}
+		assets = append(assets, asset)
 	}
 	return &model.EngineResult{EngineName: a.Name(), Total: total, RawData: rawData, Page: page, HasMore: len(results) >= pageSize}, nil
 }

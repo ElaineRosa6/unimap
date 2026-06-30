@@ -238,10 +238,11 @@ func parseShodanSearchResponse(body []byte, page, pageSize int, engineName strin
 
 // Normalize 标准化Shodan结果
 func (s *ShodanAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
-	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	if raw == nil || len(raw.RawData) == 0 {
-		return assets, nil
+		return []model.UnifiedAsset{}, nil
 	}
+
+	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	for _, item := range raw.RawData {
 		m, ok := item.(*ShodanMatch)
 		if !ok {

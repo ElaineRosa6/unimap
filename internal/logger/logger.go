@@ -499,7 +499,6 @@ func CtxErrorWithDetails(ctx context.Context, err error, msg string, fields ...z
 	}
 
 	rid := requestid.FromContext(ctx)
-	fields = append(fields, zap.String("request_id", rid))
 
 	if ue, ok := err.(*unierror.UnimapError); ok {
 		// 使用结构化日志记录统一错误
