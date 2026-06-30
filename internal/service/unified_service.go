@@ -42,7 +42,7 @@ type UnifiedService struct {
 	cacheCleanup       time.Duration
 	cacheBackend       string
 	strategyManager    *utils.CacheStrategyManager
-	mu                 sync.RWMutex // nolint:unused
+	mu                 sync.RWMutex                // nolint:unused
 	maxMemoryMB        int                         // 最大内存使用限制（MB）
 	maxConcurrent      int                         // 最大并发查询数
 	activeQueries      int                         // 当前活跃查询数

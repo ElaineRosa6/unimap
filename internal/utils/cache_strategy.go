@@ -113,7 +113,7 @@ type queryStat struct {
 	timeoutCount       int
 	cacheHitRate       float64
 	lastCacheHit       time.Time // nolint:unused
-	queryFrequency     float64 // 查询频率（查询/小时）
+	queryFrequency     float64   // 查询频率（查询/小时）
 	dataChangeDetected bool
 }
 
