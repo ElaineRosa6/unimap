@@ -139,7 +139,11 @@ go run -tags gui ./cmd/unimap-gui
 - UA 池轮换（8 UA）、SSL 跳过、重定向记录
 - 端口联动：基线端口记录 + 变化检测（默认 29 端口）
 
-### 定时任务系统 (20 种 Runner)
+**2026-06-30 巡检审计修复**（commit `2bf5fe5`）：
+- **模式降级 Bug 已修**：service 层曾用 `if mode != strict { mode = relaxed }` 把 `security/balanced/precise` 静默降级为 `relaxed`，UI/定时任务的模式选择不生效。已导出 `tamper.NormalizeDetectionMode`，5 模式全部透传。
+- **定时篡改巡检渲染 JS**：`TamperCheckRunner` 曾传 nil allocator 只能 HTTP/Fast 模式，SPA 目标拿空 hash 误报。已从 `screenshotMgr` 注入 allocator，与交互式 `/api/v1/tamper/check` 能力对齐。
+
+### 定时任务系统 (22 种 Runner)
 - Cron 表达式创建、启停、编辑、删除
 - **一次性/延迟执行**：`ScheduleType` 支持 `"once"`（指定时间）/`"delay"`（延迟 N 秒）/`"cron"`（循环），执行后自动禁用
 - 执行历史追踪、持久化
@@ -348,6 +352,43 @@ go run -tags gui ./cmd/unimap-gui
 #### 安全亮点（已确认安全）
 
 SQL 注入防护 ✅ | bcrypt 密码哈希 ✅ | 常量时间比较 ✅ | Session AES-GCM 加密 ✅ | CSRF 双提交 ✅ | 登录暴力破解防护 ✅ | 路径遍历多层防护 ✅ | SSRF urlguard ✅ | html/template 自动转义 ✅ | 优雅关闭 ✅ | 认证 fail-closed ✅ | API Key 加盐哈希 ✅
+
+### 2026-06-30 巡检功能审计与逻辑缺陷修复（commit `2bf5fe5`，CI 全绿）
+
+> 决策记录：`docs/DECISIONS/0003-patrol-inspection-audit-and-fixes.md` | 记忆：`topics/project_patrol-inspection-audit.md`
+
+三个 Explore agent 全量审计巡检子系统（篡改检测 + URL 可达性 + 批量截图 + 端口扫描 + ICP 巡检 + 基线刷新）。识别 4 确认 Bug + 4 完善性缺口，全部修复；7 架构级缺口列为后续。
+
+#### Tier 1 — 确认 Bug（✅ 全部修复）
+
+| # | 问题 | 修复 |
+|---|------|------|
+| 1 | **篡改模式被强制降级**：service 层 `if mode != strict { relaxed }` 把 security/balanced/precise 静默降级，UI/定时任务 5 模式选择形同虚设 | 导出 `NormalizeDetectionMode`，service 层改用它，5 模式全透传 |
+| 2 | **每日篡改模板无效模式**：`tmpl_daily_tamper_check` `DetectMode:"full"` 非合法模式 | 改为 `"relaxed"` |
+| 3 | **定时篡改巡检不渲染 JS**：`TamperCheckRunner` 传 nil allocator，SPA 页面拿空 hash 误报 | 从 `screenshotMgr` 注入 allocator（nil 时保持原行为） |
+| 4 | **可达性统计缺 blocked 桶**：SSRF 拦截的 URL 无汇总分支，`Total` 对不上 | `URLReachabilitySummary` 加 `Blocked` 字段 + switch 分支，`Total = Reachable+Unreachable+InvalidFormat+Blocked` |
+
+#### Tier 2 — 完善性修复（✅ 全部完成）
+
+| # | 问题 | 修复 |
+|---|------|------|
+| 5 | 基线刷新串行执行，忽略 payload concurrency | `BaselineRefreshRunner` 信号量+WaitGroup 并发化 |
+| 6 | "查看基线"无 UI 入口 | `monitor.html` 加 `btn-list-baseline` 绑定 `loadBaselineList()` |
+| 7 | 历史类型过滤缺 no_baseline/unreachable/suspicious | `monitor.html` 下拉补全 3 选项 |
+| 8 | scheduler 帮助文档模式错误 | `scheduler.html` `malicious/performance/full` → `security/balanced/precise` |
+
+#### 关键教训（写入记忆）
+- **两层能力语义割裂**：下层（detector）提供更丰富能力时，上层（service）不能擅自收窄语义而不导出/复用下层的归一化逻辑。
+- **定时路径与交互路径能力不对等**：审计定时/后台任务时，必须比对它与交互式入口的能力是否对等（allocator、proxy、SSRF 校验等）。
+
+#### 列为后续的架构级缺口（本次未修，需设计决策）
+1. 可达性/端口扫描未产生告警记录（`AlertTypeReachability` 定义但无人触发）
+2. 告警与资源监控仅存内存，重启丢失
+3. `operation_history` 表无内部写入者（仅客户端 POST）
+4. 定时批量截图结果未进 `batchdb`
+5. 篡改导出器无生产调用方（死代码）
+6. 无定时备份任务类型
+7. 篡改记录文件式无索引（量大时查询慢）
 
 ### 2026-06-17 新引擎代码基础设施全量补齐 + countGoroutines 空桩修复
 
