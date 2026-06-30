@@ -188,7 +188,7 @@ func (m *PluginManager) StartHealthMonitor() {
 					if !status.Healthy {
 						logger.Warnf("Plugin %s is unhealthy: %s", name, status.Message)
 						// 触发健康检查失败钩子
-						m.hooks.TriggerHook(HookHealthCheckFailed, name, &model.HookData{
+						m.hooks.TriggerHook(HookHealthCheckFailed, name, &model.HookData{ //nolint:errcheck
 							Extra: map[string]any{"status": status},
 						})
 					}

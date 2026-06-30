@@ -72,9 +72,9 @@ func (e *ExcelExporter) Export(assets []model.UnifiedAsset, filepath string) err
 
 	// 写入数据
 	for i, asset := range assets {
-		row := i + 2 // 从第2行开始（第1行是表头）
-		f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), asset.IP)    //nolint:errcheck
-		f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), asset.Port)   //nolint:errcheck
+		row := i + 2                                                   // 从第2行开始（第1行是表头）
+		f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), asset.IP)   //nolint:errcheck
+		f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), asset.Port) //nolint:errcheck
 		f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), asset.Protocol)
 		f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), asset.Host)
 		f.SetCellValue(sheetName, fmt.Sprintf("E%d", row), asset.URL)

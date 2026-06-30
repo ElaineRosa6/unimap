@@ -119,7 +119,7 @@ func (m *AuthMiddleware) writeAuthError(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 
-	json.NewEncoder(w).Encode(AuthErrorResponse{
+	json.NewEncoder(w).Encode(AuthErrorResponse{ //nolint:errcheck
 		Code:    "unauthorized",
 		Message: message,
 		Status:  "error",

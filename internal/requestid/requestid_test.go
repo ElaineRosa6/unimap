@@ -133,7 +133,7 @@ func TestWithContext(t *testing.T) {
 func TestFromContext(t *testing.T) {
 	t.Run("returns empty for nil context", func(t *testing.T) {
 		// FromContext explicitly handles nil context and returns ""
-		if got := FromContext(nil); got != "" {
+		if got := FromContext(nil); got != "" { //nolint:staticcheck // SA1012: intentionally testing nil context
 			t.Errorf("expected empty string for nil context, got %q", got)
 		}
 	})

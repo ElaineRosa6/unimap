@@ -301,7 +301,7 @@ func newCore(level zap.AtomicLevel, encoding string, file string, rotate bool, m
 		// 确保目录存在（使用 filepath.Dir 兼容 Windows）
 		fileDir := filepath.Dir(file)
 		if fileDir != "" && fileDir != "." {
-			os.MkdirAll(fileDir, 0755)
+			_ = os.MkdirAll(fileDir, 0755)
 		}
 
 		var writer zapcore.WriteSyncer
