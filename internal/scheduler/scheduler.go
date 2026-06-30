@@ -233,7 +233,7 @@ func (s *Scheduler) AddTask(task *ScheduledTask) error {
 		delete(s.tasks, task.ID)
 		return fmt.Errorf("failed to schedule task: %w", err)
 	}
-	s.saveLocked()
+	s.saveLocked() //nolint:errcheck
 	return nil
 }
 
@@ -329,7 +329,7 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 			return fmt.Errorf("failed to schedule task: %w", err)
 		}
 	}
-	s.saveLocked()
+	s.saveLocked() //nolint:errcheck
 	return nil
 }
 

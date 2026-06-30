@@ -472,7 +472,7 @@ func (c *FeishuAppChannel) uploadImage(ctx context.Context, imagePath string) (s
 	if err != nil {
 		return "", fmt.Errorf("create form file: %w", err)
 	}
-	part.Write(imageData)
+	part.Write(imageData) //nolint:errcheck
 	writer.Close()
 
 	req, err := http.NewRequestWithContext(ctx, "POST",

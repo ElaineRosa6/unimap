@@ -78,7 +78,7 @@ func (s *Server) handleImportCookieJSON(w http.ResponseWriter, r *http.Request) 
 	s.configMutex.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 		"success":      true,
 		"cookieHeader": cookiesToHeader(cookies),
 	})
@@ -124,7 +124,7 @@ func (s *Server) handleVerifyCookies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 		"query":   query,
 		"results": results,
 	})
