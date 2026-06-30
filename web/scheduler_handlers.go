@@ -19,7 +19,7 @@ const maxPayloadSizeBytes = 64 * 1024
 func writeSchedulerJSONError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"error": msg,
 	})
 }

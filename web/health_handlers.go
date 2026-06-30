@@ -100,13 +100,13 @@ func (s *Server) handleHealthReady(w http.ResponseWriter, r *http.Request) {
 	if status != "ok" {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleHealthLive 存活检查：进程是否存活
 func (s *Server) handleHealthLive(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(struct {
+	_ = json.NewEncoder(w).Encode(struct {
 		Status  string `json:"status"`
 		Version string `json:"version"`
 		Time    string `json:"time"`

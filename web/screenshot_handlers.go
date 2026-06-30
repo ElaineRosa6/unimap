@@ -442,7 +442,7 @@ func (s *Server) handleSearchEngineScreenshot(w http.ResponseWriter, r *http.Req
 		QueryID string `json:"query_id"`
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(screenshotResponse{
+	_ = json.NewEncoder(w).Encode(screenshotResponse{
 		Success: true, Path: screenshotPath, Engine: engine, Query: query, QueryID: queryID,
 	})
 }
@@ -540,7 +540,7 @@ func (s *Server) handleTargetScreenshot(w http.ResponseWriter, r *http.Request) 
 		QueryID  string `json:"query_id"`
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(targetScreenshotResponse{
+	_ = json.NewEncoder(w).Encode(targetScreenshotResponse{
 		Success: true, Path: screenshotPath, URL: targetURL, IP: ip,
 		Port: port, Protocol: protocol, QueryID: queryID,
 	})
@@ -623,7 +623,7 @@ func (s *Server) handleBatchScreenshot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	_ = json.NewEncoder(w).Encode(results)
 }
 
 // handleBatchURLsScreenshot 处理批量URL截图请求（P1-4: 异步执行，返回 job ID）

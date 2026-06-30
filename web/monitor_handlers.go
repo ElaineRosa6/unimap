@@ -145,7 +145,7 @@ func (s *Server) handleImportURLs(w http.ResponseWriter, r *http.Request) {
 	validUrls := filterValidURLs(urls)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"total":    len(urls),
 		"valid":    len(validUrls),
 		"urls":     validUrls,
@@ -199,7 +199,7 @@ func (s *Server) handleURLReachability(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"summary": response.Summary,
 		"results": response.Results,
@@ -252,7 +252,7 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"summary": response.Summary,
 		"ports":   response.Ports,
