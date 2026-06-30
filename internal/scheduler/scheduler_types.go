@@ -135,7 +135,7 @@ func DefaultTemplates() []TaskTemplate {
 			ID: "tmpl_daily_tamper_check", Name: "每日篡改检测",
 			Description: "每天凌晨 2 点对所有重要 URL 进行篡改检测",
 			Type:        TaskTamperCheck, CronExpr: "0 0 2 * * *",
-			Payload:    &model.TaskPayload{DetectMode: "full"},
+			Payload:    &model.TaskPayload{DetectMode: "relaxed"},
 			TimeoutSec: 3600, MaxRetries: 2, Tags: []string{"security", "daily"},
 		},
 		{

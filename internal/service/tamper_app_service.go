@@ -61,10 +61,11 @@ func (s *TamperAppService) Check(ctx context.Context, req TamperCheckRequest, al
 	if req.Concurrency <= 0 {
 		req.Concurrency = 5
 	}
-	mode := strings.ToLower(strings.TrimSpace(req.Mode))
-	if mode != tamper.DetectionModeStrict {
-		mode = tamper.DetectionModeRelaxed
-	}
+	// NormalizeDetectionMode preserves all five supported detection modes
+	// (relaxed/strict/security/balanced/precise); previously the service layer
+	// silently downgraded security/balanced/precise to relaxed, hiding the
+	// detector's richer thresholds from both the UI and scheduled tasks.
+	mode := tamper.NormalizeDetectionMode(req.Mode)
 
 	detector, cleanup, err := s.newDetector(ctx, mode, allocatorFactory)
 	if err != nil {

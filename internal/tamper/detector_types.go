@@ -652,7 +652,7 @@ func NewDetector(cfg DetectorConfig) *Detector {
 
 	return &Detector{
 		storage:            storage,
-		detectionMode:      normalizeDetectionMode(cfg.DetectionMode),
+		detectionMode:      NormalizeDetectionMode(cfg.DetectionMode),
 		performanceMode:    normalizePerformanceMode(cfg.PerformanceMode),
 		alertManager:       cfg.AlertManager,
 		fpEngine:           fpEngine,
@@ -664,7 +664,10 @@ func NewDetector(cfg DetectorConfig) *Detector {
 	}
 }
 
-func normalizeDetectionMode(raw string) string {
+// NormalizeDetectionMode maps raw user input to one of the supported detection
+// modes, defaulting to DetectionModeRelaxed for unknown values. Exported so the
+// service layer can validate mode strings without re-implementing the mapping.
+func NormalizeDetectionMode(raw string) string {
 	mode := strings.ToLower(strings.TrimSpace(raw))
 	switch mode {
 	case DetectionModeStrict:

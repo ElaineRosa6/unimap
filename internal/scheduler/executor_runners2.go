@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
@@ -112,20 +113,46 @@ func (r *BaselineRefreshRunner) Execute(ctx context.Context, payload *model.Task
 		urls = baselines
 	}
 
-	refreshed := 0
-	failed := 0
-	var failedURLs []string
+	// Concurrency: clamp to >=1. Previously baselines were refreshed one URL
+	// at a time, ignoring the payload's concurrency field; large baseline sets
+	// were slow. We now run SetBaseline concurrently with a semaphore.
+	concurrency := extractInt(payload, "concurrency", 5)
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	if concurrency > len(urls) {
+		concurrency = len(urls)
+	}
+
+	var (
+		mu         sync.Mutex
+		refreshed  int
+		failed     int
+		failedURLs []string
+		wg         sync.WaitGroup
+	)
+	sem := make(chan struct{}, concurrency)
 
 	for _, url := range urls {
-		req := service.TamperBaselineRequest{URLs: []string{url}}
-		_, err := r.tamperSvc.SetBaseline(ctx, req, nil)
-		if err != nil {
-			failed++
-			failedURLs = append(failedURLs, url)
-			continue
-		}
-		refreshed++
+		wg.Add(1)
+		go func(url string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			req := service.TamperBaselineRequest{URLs: []string{url}}
+			_, err := r.tamperSvc.SetBaseline(ctx, req, nil)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				failed++
+				failedURLs = append(failedURLs, url)
+				return
+			}
+			refreshed++
+		}(url)
 	}
+	wg.Wait()
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "基线刷新完成：%d 个 URL\n\n", len(urls))
