@@ -73,9 +73,9 @@ func Backup(cfg BackupConfig) (*BackupResult, error) {
 	var files []fileWithBase
 	var sourceErrors []error
 	for _, src := range cfg.Sources {
-		srcFiles, baseDir, err := collectFiles(src)
-		if err != nil {
-			sourceErrors = append(sourceErrors, fmt.Errorf("source %s: %w", src, err))
+		srcFiles, baseDir, collectErr := collectFiles(src)
+		if collectErr != nil {
+			sourceErrors = append(sourceErrors, fmt.Errorf("source %s: %w", src, collectErr))
 			continue
 		}
 		for _, f := range srcFiles {
@@ -93,9 +93,9 @@ func Backup(cfg BackupConfig) (*BackupResult, error) {
 	// 写入 tar
 	var tarErrors []error
 	for _, f := range files {
-		if err := addFileToTar(tw, f.path, f.baseDir); err != nil {
-			tarErrors = append(tarErrors, fmt.Errorf("%s: %w", f.path, err))
-			logger.Warnf("Failed to add %s to backup: %v", f.path, err)
+		if tarErr := addFileToTar(tw, f.path, f.baseDir); tarErr != nil {
+			tarErrors = append(tarErrors, fmt.Errorf("%s: %w", f.path, tarErr))
+			logger.Warnf("Failed to add %s to backup: %v", f.path, tarErr)
 		}
 	}
 
@@ -216,8 +216,8 @@ func addFileToTar(tw *tar.Writer, path string, baseDir string) error {
 	}
 	header.Name = relPath
 
-	if err := tw.WriteHeader(header); err != nil {
-		return err
+	if writeErr := tw.WriteHeader(header); writeErr != nil {
+		return writeErr
 	}
 
 	if info.IsDir() {

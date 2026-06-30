@@ -214,8 +214,8 @@ func TestCtxLogFunctions(t *testing.T) {
 	// Test context log functions with nil context
 	CtxDebugf(context.TODO(), "debug %s", "test")
 	CtxInfof(context.TODO(), "info %s", "test")
-	CtxWarnf(nil, "warn %s", "test")
-	CtxErrorf(nil, "error %s", "test")
+	CtxWarnf(context.TODO(), "warn %s", "test")
+	CtxErrorf(context.TODO(), "error %s", "test")
 }
 
 func TestMultipleInit(t *testing.T) {

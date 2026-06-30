@@ -204,20 +204,20 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 
 	l1Result, l1Ch := collectViaNetworkOnContext(browserCtx, engine, query)
 	if l1Ch != nil {
-		if err := chromedp.Run(browserCtx, network.Enable()); err != nil {
-			logger.Warnf("enable network failed on %s: %v", engine, err)
+		if enableErr := chromedp.Run(browserCtx, network.Enable()); enableErr != nil {
+			logger.Warnf("enable network failed on %s: %v", engine, enableErr)
 		}
 	}
 
 	// 单次导航
-	if err := chromedp.Run(browserCtx, chromedp.Navigate(searchURL)); err != nil {
-		return nil, "", fmt.Errorf("navigate to search URL failed: %w", err)
+	if navErr := chromedp.Run(browserCtx, chromedp.Navigate(searchURL)); navErr != nil {
+		return nil, "", fmt.Errorf("navigate to search URL failed: %w", navErr)
 	}
-	if err := chromedp.Run(browserCtx, chromedp.WaitReady("body", chromedp.ByQuery)); err != nil {
-		logger.Warnf("wait for body failed on %s: %v", engine, err)
+	if waitErr := chromedp.Run(browserCtx, chromedp.WaitReady("body", chromedp.ByQuery)); waitErr != nil {
+		logger.Warnf("wait for body failed on %s: %v", engine, waitErr)
 	}
-	if err := chromedp.Run(browserCtx, chromedp.Sleep(3*time.Second)); err != nil {
-		return nil, "", err
+	if sleepErr := chromedp.Run(browserCtx, chromedp.Sleep(3*time.Second)); sleepErr != nil {
+		return nil, "", sleepErr
 	}
 
 	// 采集数据

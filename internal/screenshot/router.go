@@ -368,12 +368,12 @@ func (r *ScreenshotRouter) CollectAndCaptureSearchEngineResult(ctx context.Conte
 	extProvider, ok := provider.(*ExtensionProvider)
 	if !ok {
 		// 降级为分步调用
-		collected, err := r.CollectSearchEngineResult(ctx, engine, query, queryID)
-		if err != nil {
-			return nil, "", err
+		collected, collectErr := r.CollectSearchEngineResult(ctx, engine, query, queryID)
+		if collectErr != nil {
+			return nil, "", collectErr
 		}
-		path, err := r.CaptureSearchEngineResult(ctx, engine, query, queryID)
-		return collected, path, err
+		path, captureErr := r.CaptureSearchEngineResult(ctx, engine, query, queryID)
+		return collected, path, captureErr
 	}
 	searchURL := buildSearchEngineURL(engine, query)
 	if searchURL == "" {
