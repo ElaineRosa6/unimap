@@ -85,7 +85,7 @@ func (s *ExponentialBackoffStrategy) ShouldRetry(attempt int, err error, resp *h
 		var netErr net.Error
 		if errors.As(err, &netErr) {
 			//nolint:staticcheck // SA1019: Temporary() is deprecated but required for correct retry behavior
-				return netErr.Timeout() || netErr.Temporary()
+			return netErr.Timeout() || netErr.Temporary()
 		}
 		return true
 	}
@@ -173,7 +173,7 @@ func (s *FixedIntervalStrategy) ShouldRetry(attempt int, err error, resp *http.R
 		var netErr net.Error
 		if errors.As(err, &netErr) {
 			//nolint:staticcheck // SA1019: Temporary() is deprecated but required for correct retry behavior
-				return netErr.Timeout() || netErr.Temporary()
+			return netErr.Timeout() || netErr.Temporary()
 		}
 		return true
 	}
