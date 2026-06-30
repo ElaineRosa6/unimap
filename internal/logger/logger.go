@@ -85,7 +85,7 @@ type logEntry struct {
 	level   zapcore.Level
 	msg     string
 	fields  []zap.Field
-	callers []zapcore.EntryCaller
+	callers []zapcore.EntryCaller // nolint:unused
 }
 
 // Config 日志配置

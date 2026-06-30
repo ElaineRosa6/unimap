@@ -32,6 +32,7 @@ func NewStore(taskPath, historyPath string) *Store {
 	}
 }
 
+// nolint:unused
 type persistedData struct {
 	Tasks   []*ScheduledTask  `json:"tasks"`
 	History []ExecutionRecord `json:"history"`

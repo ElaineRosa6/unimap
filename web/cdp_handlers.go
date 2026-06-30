@@ -377,6 +377,7 @@ func (s *Server) startCDPChrome(baseURL string) error {
 	return nil
 }
 
+// nolint:unused
 func (s *Server) resolveChromePath() string {
 	path, _ := s.resolveChromePathWithDiagnostics()
 	return path

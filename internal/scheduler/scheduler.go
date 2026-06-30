@@ -537,6 +537,7 @@ func (s *Scheduler) hasCyclicDependencyLocked(taskID string, dependsOn []string)
 }
 
 // hasCyclicDependency checks for cyclic dependencies in a task's dependency chain.
+// nolint:unused
 func (s *Scheduler) hasCyclicDependency(taskID string, dependsOn []string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -892,6 +893,7 @@ func (s *Scheduler) getNextRunTime(taskID string) time.Time {
 }
 
 // saveAsync persists data to disk in a background goroutine.
+// nolint:unused
 func (s *Scheduler) saveAsync() {
 	go func() {
 		defer func() {

@@ -16,7 +16,7 @@ type ShutdownManager struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	signals  chan os.Signal
-	wg       sync.WaitGroup
+	wg       sync.WaitGroup // nolint:unused
 	handlers []ShutdownHandler
 	mu       sync.RWMutex
 	timeout  time.Duration

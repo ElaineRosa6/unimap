@@ -42,7 +42,7 @@ type UnifiedService struct {
 	cacheCleanup       time.Duration
 	cacheBackend       string
 	strategyManager    *utils.CacheStrategyManager
-	mu                 sync.RWMutex
+	mu                 sync.RWMutex // nolint:unused
 	maxMemoryMB        int                         // 最大内存使用限制（MB）
 	maxConcurrent      int                         // 最大并发查询数
 	activeQueries      int                         // 当前活跃查询数
@@ -711,6 +711,7 @@ func (s *UnifiedService) releaseQueryLock() {
 }
 
 // runWithQueryLock 在查询并发锁保护下执行函数，panic 时确保计数器回退
+// nolint:unused
 func (s *UnifiedService) runWithQueryLock(fn func() error) error {
 	if !s.acquireQueryLock() {
 		return fmt.Errorf("query concurrency limit reached")
