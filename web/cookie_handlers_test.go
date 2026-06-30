@@ -339,7 +339,7 @@ func TestHasCookies_AllEmptyNames(t *testing.T) {
 func TestVerifyEngineSession_UnknownEngine(t *testing.T) {
 	cfg := &config.Config{}
 	s := &Server{config: cfg}
-	ok, _, hint, err := s.verifyEngineSession(nil, "cdp", "unknown_engine", "test")
+	ok, _, hint, err := s.verifyEngineSession(context.TODO(), "cdp", "unknown_engine", "test")
 	if ok {
 		t.Fatal("expected false for unknown engine")
 	}

@@ -475,7 +475,7 @@ func (m *ResourceMonitor) RecordCustomMetric(name, metricType string, value inte
 	defer m.mutex.Unlock()
 
 	key := name
-	if labels != nil && len(labels) > 0 {
+	if len(labels) > 0 {
 		for k, v := range labels {
 			key += ":" + k + "=" + v
 		}
@@ -492,10 +492,8 @@ func (m *ResourceMonitor) RecordCustomMetric(name, metricType string, value inte
 	}
 
 	// 更新标签
-	if labels != nil {
-		for k, v := range labels {
-			metric.Labels[k] = v
-		}
+	for k, v := range labels {
+		metric.Labels[k] = v
 	}
 
 	// 更新值和时间戳
@@ -511,7 +509,7 @@ func (m *ResourceMonitor) GetCustomMetric(name string, labels map[string]string)
 	defer m.mutex.RUnlock()
 
 	key := name
-	if labels != nil && len(labels) > 0 {
+	if len(labels) > 0 {
 		for k, v := range labels {
 			key += ":" + k + "=" + v
 		}
