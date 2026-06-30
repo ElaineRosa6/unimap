@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/model"
-	"slices"
 )
 
 func defaultICPConfig() adapter.ICPConfig {

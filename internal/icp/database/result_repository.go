@@ -73,7 +73,7 @@ func (r *resultRepository) SaveResults(runID int64, results []adapter.ICPResult,
 		 service_id_raw, data_id_raw, update_rec_time, fetched_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return fmt.Errorf("failed to prepare insert: %w", err)
 	}
 	defer stmt.Close()
@@ -88,7 +88,7 @@ func (r *resultRepository) SaveResults(runID int64, results []adapter.ICPResult,
 			res.UpdateRecTime, fetchedAt,
 		)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return fmt.Errorf("failed to insert ICP result: %w", err)
 		}
 	}

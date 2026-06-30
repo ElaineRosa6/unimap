@@ -94,7 +94,7 @@ func TestDeleteAndClear(t *testing.T) {
 	}
 
 	repo.ClearHistory("")
-	items, total, _ = repo.ListHistory("", 20, 0)
+	_, total, _ = repo.ListHistory("", 20, 0)
 	if total != 0 {
 		t.Fatalf("after clear: expected 0, got %d", total)
 	}

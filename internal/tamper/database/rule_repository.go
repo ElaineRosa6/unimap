@@ -211,25 +211,25 @@ func (r *ruleRepository) DeleteRule(id int) error {
 	// 删除相关的版本记录
 	_, err = tx.Exec("DELETE FROM rule_versions WHERE rule_id = ?", id)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return fmt.Errorf("failed to delete rule versions: %w", err)
 	}
 
 	// 删除规则
 	result, err := tx.Exec("DELETE FROM rules WHERE id = ?", id)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return fmt.Errorf("failed to delete rule: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
 	if rowsAffected == 0 {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return fmt.Errorf("rule not found with id: %d", id)
 	}
 

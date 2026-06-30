@@ -85,8 +85,10 @@ hash_store/**
 screenshots/**
 !screenshots/
 !screenshots/.gitkeep
-hash_store/records/**/*.json
-!hash_store/records/.gitkeep
+internal/tamper/hash_store/**/*.json
+!internal/tamper/hash_store/.gitkeep
+internal/tamper/hash_store/records/**/*.json
+!internal/tamper/hash_store/records/.gitkeep
 
 # Python scripts
 urlive.py

@@ -465,7 +465,7 @@ func (c *FeishuAppChannel) uploadImage(ctx context.Context, imagePath string) (s
 	writer := multipart.NewWriter(&buf)
 
 	// 添加 image_type 字段
-	writer.WriteField("image_type", "message")
+	writer.WriteField("image_type", "message") //nolint:errcheck
 
 	// 添加图片文件
 	part, err := writer.CreateFormFile("image", filepath.Base(imagePath))
@@ -473,7 +473,7 @@ func (c *FeishuAppChannel) uploadImage(ctx context.Context, imagePath string) (s
 		return "", fmt.Errorf("create form file: %w", err)
 	}
 	part.Write(imageData) //nolint:errcheck
-	writer.Close()
+	writer.Close()        //nolint:errcheck
 
 	req, err := http.NewRequestWithContext(ctx, "POST",
 		"https://open.feishu.cn/open-apis/im/v1/images",

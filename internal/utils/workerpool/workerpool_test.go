@@ -20,7 +20,7 @@ func (m *MockTask) Execute() error {
 func TestNewPool(t *testing.T) {
 	pool := NewPool(5)
 	if pool == nil {
-		t.Error("NewPool should return non-nil pool")
+		t.Fatal("NewPool should return non-nil pool")
 	}
 	if pool.minConcurrency != 5 {
 		t.Errorf("Expected minConcurrency 5, got %d", pool.minConcurrency)

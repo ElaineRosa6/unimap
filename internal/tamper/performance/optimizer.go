@@ -10,7 +10,7 @@ type PerformanceOptimizer struct {
 	cache       *CacheManager
 	concurrency *ConcurrencyManager
 	metrics     *PerformanceMetrics
-	mu          sync.RWMutex
+	mu          sync.RWMutex //nolint:unused
 }
 
 // NewPerformanceOptimizer 创建性能优化器
@@ -166,6 +166,8 @@ func (cm *CacheManager) evictLRU() {
 }
 
 // evictLFU 按照LFU策略删除缓存
+//
+//nolint:unused
 func (cm *CacheManager) evictLFU() {
 	if len(cm.cache) == 0 {
 		return
