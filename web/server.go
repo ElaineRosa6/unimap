@@ -555,7 +555,7 @@ func initNotifySystem(cfg *config.Config, cfgManager *config.Manager,
 	sched *scheduler.Scheduler) *notify.Registry {
 
 	reg := notify.NewRegistry()
-	reg.Register(notify.NewLogChannel("builtin-log", true))
+	reg.Register(notify.NewLogChannel("builtin-log", true)) //nolint:errcheck
 
 	registerFeishuAppChannel(reg, cfg)
 

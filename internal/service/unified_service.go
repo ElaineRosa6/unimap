@@ -518,7 +518,7 @@ func (s *UnifiedService) processAssets(ctx context.Context, assets []model.Unifi
 	}
 
 	// 触发处理后钩子
-	s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterProcess, "process", &model.HookData{
+	s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterProcess, "process", &model.HookData{ //nolint:errcheck
 		Extra: map[string]any{
 			"original_count":  len(assets),
 			"processed_count": len(result),

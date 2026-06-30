@@ -38,7 +38,7 @@ const (
 // setWriteDeadline sets the write deadline on the connection.
 // Should be called while holding the writeMu lock.
 func setWriteDeadline(conn *websocket.Conn) {
-	conn.SetWriteDeadline(time.Now().Add(writeWait))
+	conn.SetWriteDeadline(time.Now().Add(writeWait)) //nolint:errcheck
 }
 
 func generateConnectionID() string {
@@ -104,9 +104,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 // wsSetupPingPong 设置 WebSocket ping/pong 心跳
 func wsSetupPingPong(conn *websocket.Conn, managed *managedConn, done chan struct{}) {
-	conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetReadDeadline(time.Now().Add(pongWait)) //nolint:errcheck
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(pongWait))
+		conn.SetReadDeadline(time.Now().Add(pongWait)) //nolint:errcheck
 		return nil
 	})
 	go func() {
@@ -152,7 +152,7 @@ func wsMessageLoop(s *Server, conn *websocket.Conn, connCtx context.Context, con
 				logger.Errorf("WebSocket write error: %v", err)
 			}
 		case "pong":
-			conn.SetReadDeadline(time.Now().Add(pongWait))
+			conn.SetReadDeadline(time.Now().Add(pongWait)) //nolint:errcheck
 		case "query":
 			s.handleWebSocketQuery(connCtx, connID, message, writeJSON)
 		}

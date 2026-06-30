@@ -27,7 +27,7 @@ func NewAssetPool() *AssetPool {
 
 // Get 从池中获取资产对象
 func (p *AssetPool) Get() *model.UnifiedAsset {
-	asset := p.pool.Get().(*model.UnifiedAsset)
+	asset := p.pool.Get().(*model.UnifiedAsset) //nolint:errcheck
 	// 重置对象字段
 	p.resetAsset(asset)
 	return asset
@@ -87,7 +87,7 @@ func NewSlicePool() *SlicePool {
 
 // Get 从池中获取切片
 func (p *SlicePool) Get() *[]model.UnifiedAsset {
-	slice := p.pool.Get().(*[]model.UnifiedAsset)
+	slice := p.pool.Get().(*[]model.UnifiedAsset) //nolint:errcheck
 	// 清空切片
 	*slice = (*slice)[:0]
 	return slice
@@ -118,7 +118,7 @@ func NewMapPool() *MapPool {
 
 // Get 从池中获取映射
 func (p *MapPool) Get() map[string]string {
-	m := p.pool.Get().(map[string]string)
+	m := p.pool.Get().(map[string]string) //nolint:errcheck
 	// 清空映射
 	for k := range m {
 		delete(m, k)
