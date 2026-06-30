@@ -199,7 +199,7 @@ func (r *Registry) Heartbeat(hb NodeHeartbeat) (NodeRecord, error) {
 	if hb.ActiveTasks >= 0 {
 		record.ActiveTasks = hb.ActiveTasks
 	}
-	if hb.HealthChecks != nil && len(hb.HealthChecks) > 0 {
+	if len(hb.HealthChecks) > 0 {
 		if record.HealthChecks == nil {
 			record.HealthChecks = make(map[string]bool)
 		}

@@ -175,9 +175,8 @@ func (p *UQLParser) buildAST(tokens []string) (*model.UQLNode, error) {
 
 	var parseOr func(int) (*model.UQLNode, int, error)
 	var parseAnd func(int) (*model.UQLNode, int, error)
-	var parseTerm func(int) (*model.UQLNode, int, error)
 
-	parseTerm = func(start int) (*model.UQLNode, int, error) {
+	parseTerm := func(start int) (*model.UQLNode, int, error) {
 		if start >= len(tokens) {
 			return nil, start, fmt.Errorf("unexpected end of expression")
 		}

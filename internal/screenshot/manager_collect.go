@@ -224,13 +224,13 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 	sel := getSelectors(engine)
 	var extracted string
 	if sel != nil && sel.ExtractJS != "" {
-		if err := chromedp.Run(browserCtx, chromedp.Evaluate(sel.ExtractJS, &extracted)); err != nil {
-			logger.Warnf("engine-specific extraction failed for %s: %v", engine, err)
+		if evalErr := chromedp.Run(browserCtx, chromedp.Evaluate(sel.ExtractJS, &extracted)); evalErr != nil {
+			logger.Warnf("engine-specific extraction failed for %s: %v", engine, evalErr)
 		}
 	}
 	title := ""
-	if err := chromedp.Run(browserCtx, chromedp.Title(&title)); err != nil {
-		logger.Warnf("failed to get page title: %v", err)
+	if titleErr := chromedp.Run(browserCtx, chromedp.Title(&title)); titleErr != nil {
+		logger.Warnf("failed to get page title: %v", titleErr)
 	}
 
 	collectResult := collection.CollectResult{
@@ -255,8 +255,8 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 			Total   int                      `json:"total"`
 			HasMore bool                     `json:"hasMore"`
 		}
-		if err := json.Unmarshal([]byte(extracted), &jsResult); err != nil {
-			logger.Warnf("failed to parse extracted JSON: %v", err)
+		if unmarshalErr := json.Unmarshal([]byte(extracted), &jsResult); unmarshalErr != nil {
+			logger.Warnf("failed to parse extracted JSON: %v", unmarshalErr)
 		} else {
 			collectResult.Assets = collection.ParseExtractedAssets(jsResult.Assets, engine)
 			collectResult.Total = jsResult.Total
