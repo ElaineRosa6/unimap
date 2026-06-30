@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -220,27 +219,37 @@ func (m *Manager) applyWebDefaults(config *Config) {
 	}
 }
 
+// isLoopbackBind 判断绑定地址是否仅监听回环接口。
+// 0.0.0.0 绑定所有接口（Docker/云部署常见），不应视为回环。
+func isLoopbackBind(addr string) bool {
+	switch addr {
+	case "127.0.0.1", "localhost", "::1":
+		return true
+	default:
+		return false
+	}
+}
+
 // applyAuthDefaults 应用认证默认配置（admin token + 登录凭据）
 func (m *Manager) applyAuthDefaults(config *Config) {
 	if strings.TrimSpace(config.Web.Auth.AdminToken) == "" {
-		if config.Web.BindAddress != "127.0.0.1" && config.Web.BindAddress != "localhost" {
+		if !isLoopbackBind(config.Web.BindAddress) {
 			config.Web.Auth.AdminToken = generateSecureToken(32)
 			config.Web.Auth.Enabled = true
-			fmt.Printf("[config] Generated production admin token (bind=%s): ****\n", config.Web.BindAddress)
-			fmt.Printf("[config] SAVE THIS TOKEN: it will not be shown again. Set 'admin_token' in your config file.\n")
+			logger.Infof("[config] Generated production admin token (bind=%s): ****", config.Web.BindAddress)
+			logger.Infof("[config] SAVE THIS TOKEN: it will not be shown again. Set 'admin_token' in your config file.")
 		} else {
 			token := generateSecureToken(32)
 			config.Web.Auth.AdminToken = token
 			config.Web.Auth.Enabled = true
-			fmt.Printf("[config] Generated development admin token (bind=%s): ****\n", config.Web.BindAddress)
+			logger.Infof("[config] Generated development admin token (bind=%s): ****", config.Web.BindAddress)
 		}
 	} else if !config.Web.Auth.Enabled {
 		config.Web.Auth.Enabled = true
 	}
 
-	isPublic := config.Web.BindAddress != "127.0.0.1" &&
-		config.Web.BindAddress != "localhost" &&
-		config.Web.BindAddress != "0.0.0.0"
+	// 0.0.0.0 绑定所有接口，视为公网暴露
+	isPublic := !isLoopbackBind(config.Web.BindAddress)
 
 	if strings.TrimSpace(config.Web.Auth.Username) == "" {
 		if isPublic {
@@ -254,11 +263,11 @@ func (m *Manager) applyAuthDefaults(config *Config) {
 		}
 		hash, err := HashPassword("admin")
 		if err != nil {
-			fmt.Printf("[config] WARNING: failed to hash default password: %v\n", err)
+			logger.Warnf("[config] failed to hash default password: %v", err)
 		} else {
 			config.Web.Auth.PasswordHash = hash
-			fmt.Printf("[config] Generated default login credentials: admin/admin\n")
-			fmt.Printf("[config] CHANGE THESE CREDENTIALS: set 'username' and 'password_hash' in your config file.\n")
+			logger.Infof("[config] Generated default login credentials: admin/admin")
+			logger.Infof("[config] CHANGE THESE CREDENTIALS: set 'username' and 'password_hash' in your config file.")
 		}
 	}
 }
