@@ -54,6 +54,7 @@
 			<div class="action-buttons">
 				<button type="button" class="btn btn-primary" id="btn-tamper-check">篡改检测</button>
 				<button type="button" class="btn btn-secondary" id="btn-set-baseline">设置基线</button>
+				<button type="button" class="btn btn-secondary" id="btn-list-baseline">查看基线</button>
 				<button type="button" class="btn btn-secondary" id="btn-batch-screenshot">批量截图</button>
 				<button type="button" class="btn btn-secondary" id="btn-export-json">导出JSON</button>
 				<button type="button" class="btn btn-secondary" id="btn-export-excel">导出CSV</button>
@@ -132,6 +133,9 @@
 							<option value="first_check">首次检测</option>
 							<option value="normal">正常</option>
 							<option value="tampered">篡改</option>
+							<option value="no_baseline">无基线</option>
+							<option value="unreachable">不可达</option>
+							<option value="suspicious">可疑</option>
 						</select>
 						<select id="history-mode-filter">
 							<option value="">全部模式</option>
@@ -395,6 +399,9 @@ document.addEventListener('DOMContentLoaded', function() {
 	document.getElementById('btn-refresh-history').addEventListener('click', async function() {
 		await loadHistory();
 	});
+
+	// 查看已保存的基线列表（支持首次查看与删除）
+	document.getElementById('btn-list-baseline').addEventListener('click', loadBaselineList);
 
 	async function loadHistory() {
 		try {

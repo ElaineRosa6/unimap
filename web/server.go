@@ -517,7 +517,19 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 	sched.RegisterHandler(scheduler.NewQueryRunner(srv.queryApp))
 	sched.RegisterHandler(scheduler.NewSearchScreenshotRunner(screenshotApp, screenshotMgr))
 	sched.RegisterHandler(scheduler.NewBatchScreenshotRunner(screenshotApp, screenshotMgr))
-	sched.RegisterHandler(scheduler.NewTamperCheckRunner(srv.tamperApp, nil))
+
+	// TamperCheckRunner: inject a browser allocator from the screenshot manager
+	// so scheduled tamper patrols can render JS-heavy/SPA pages. Without an
+	// allocator the detector falls back to HTTP/Fast mode and may produce empty
+	// hashes for SPA targets, causing false "tampered" or "unreachable" results.
+	// When screenshotMgr is unavailable we keep the historical nil behavior.
+	var tamperAllocFactory service.TamperAllocatorFactory
+	if screenshotMgr != nil {
+		tamperAllocFactory = func(ctx context.Context) (context.Context, context.CancelFunc, error) {
+			return screenshotMgr.NewAllocator(ctx)
+		}
+	}
+	sched.RegisterHandler(scheduler.NewTamperCheckRunner(srv.tamperApp, tamperAllocFactory))
 	sched.RegisterHandler(scheduler.NewURLReachabilityRunner(srv.monitorApp))
 	sched.RegisterHandler(scheduler.NewCookieVerifyRunner(screenshotApp, screenshotMgr))
 	sched.RegisterHandler(scheduler.NewLoginStatusCheckRunner(screenshotMgr))

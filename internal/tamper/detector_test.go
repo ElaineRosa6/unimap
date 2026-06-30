@@ -227,7 +227,7 @@ func TestComputeSHA256(t *testing.T) {
 	}
 }
 
-// 测试 normalizeDetectionMode
+// 测试 NormalizeDetectionMode
 func TestNormalizeDetectionMode(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -240,13 +240,19 @@ func TestNormalizeDetectionMode(t *testing.T) {
 		{"strict", DetectionModeStrict},
 		{"STRICT", DetectionModeStrict},
 		{"Strict", DetectionModeStrict},
+		{"security", DetectionModeSecurity},
+		{"Security", DetectionModeSecurity},
+		{"balanced", DetectionModeBalanced},
+		{"Balanced", DetectionModeBalanced},
+		{"precise", DetectionModePrecise},
+		{"Precise", DetectionModePrecise},
 		{"unknown", DetectionModeRelaxed},
 		{"invalid", DetectionModeRelaxed},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			result := normalizeDetectionMode(tt.input)
+			result := NormalizeDetectionMode(tt.input)
 			if result != tt.expected {
 				t.Errorf("expected %s, got %s", tt.expected, result)
 			}
