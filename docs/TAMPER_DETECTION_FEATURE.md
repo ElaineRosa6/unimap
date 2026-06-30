@@ -41,6 +41,20 @@
 - 对元素进行排序确保一致性
 - 支持HTML5语义化标签
 
+### 4. 检测模式
+
+`mode` 控制篡改判定的敏感度，由 `tamper.NormalizeDetectionMode` 归一化。5 种模式各有独立阈值（定义于 `internal/tamper/detector_types.go`）：
+
+| 模式 | 说明 |
+|------|------|
+| `relaxed`（默认） | 忽略易变段（head/body/header/nav/footer/scripts/styles/meta/full_content），仅对新增/删除稳定段、关键稳定段变更或 ≥2 处稳定段修改判定为篡改 |
+| `strict` | 任何变更即判定为篡改（含 simpleMD5 变更） |
+| `security` | scripts/forms/head 等安全相关段变更即判定为篡改 |
+| `balanced` | 新增/删除稳定段，或任一关键变更，或 ≥2 处稳定段修改 |
+| `precise` | 任一关键稳定段（main/article/forms）变更即判定为篡改 |
+
+> **历史问题（已于 2026-06-30 修复）**：service 层曾用 `if mode != strict { mode = relaxed }` 把 `security/balanced/precise` 静默降级为 `relaxed`，导致 UI 与定时任务的模式选择不生效。现已改为调用 `NormalizeDetectionMode` 透传全部 5 种模式。
+
 ## API接口
 
 ### 1. 篡改检测接口
@@ -51,9 +65,12 @@
 ```json
 {
     "urls": ["https://example.com", "https://example.org"],
-    "concurrency": 5
+    "concurrency": 5,
+    "mode": "relaxed"
 }
 ```
+
+`mode` 可选，取值见下方「检测模式」。
 
 响应：
 ```json
@@ -146,7 +163,7 @@ curl http://localhost:8448/api/tamper/baseline/list
 
 ## 数据存储
 
-基线数据存储在 `./hash_store/` 目录下，每个URL对应一个JSON文件。
+基线数据存储在 `utils.HashStoreDir()` 目录下（跨平台路径，见 `internal/utils/path.go`），每个URL对应一个JSON文件。
 
 文件格式：
 ```json
@@ -190,6 +207,8 @@ curl http://localhost:8448/api/tamper/baseline/list
 2. 动态内容（如时间戳、随机数）可能导致误报，系统会自动清理部分动态内容
 3. 建议在网站稳定时设置基线，避免在更新期间设置
 4. 并发数建议根据网络带宽和目标服务器承受能力设置
+5. **定时巡检与交互式检测能力对齐**（2026-06-30 修复）：定时 `tamper_check` 任务现已从 `screenshotMgr` 注入浏览器 allocator，可渲染 JS/SPA 页面，与交互式 `/api/v1/tamper/check` 能力一致。此前定时任务传 nil allocator 只能走 HTTP/Fast 模式，对 SPA 目标会拿空 hash 导致误报。
+6. **查看已存基线**：巡检页（`/monitor`）"设置基线"旁有"查看基线"按钮，可列出已保存的基线并逐条删除。
 
 ## 集成到批量截图
 

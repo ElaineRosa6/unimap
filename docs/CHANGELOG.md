@@ -2,6 +2,55 @@
 
 ---
 
+## [2026-06-30] 巡检功能逻辑缺陷修复与业务完善
+
+> **变更类型**: Bug 修复 + 业务完善
+> **涉及模块**: tamper、scheduler、service/monitor、web、templates
+> **提交**: `2bf5fe5` (develop) — PR #11 CI 全绿（ci + bridge-smoke，ubuntu/macos 双平台）
+
+### 背景
+对巡检子系统（篡改检测 + URL 可达性 + 批量截图 + 端口扫描 + ICP 巡检等定时监控任务）做全量审计，发现 4 个确认 Bug 与 4 个完善性缺口。
+
+### 修复（Tier 1 — Bug）
+
+- **篡改检测模式被强制降级**：service 层 `if mode != strict { mode = relaxed }` 把 `security/balanced/precise` 静默降级为 `relaxed`，UI 与定时任务的 5 模式选择形同虚设。导出 `NormalizeDetectionMode`，service 层改用它，5 模式全部透传。
+- **每日篡改模板无效模式**：`tmpl_daily_tamper_check` 的 `DetectMode: "full"` 不是合法检测模式，会被降级。改为 `"relaxed"`。
+- **定时篡改巡检不渲染 JS**：`TamperCheckRunner` 注册时传 nil allocator，只能走 HTTP/Fast 模式，SPA/JS 页面拿空 hash → 误报"篡改"或"不可达"。从 `screenshotMgr` 注入 allocator（nil 时保持原行为）。
+- **SSRF 拦截的 URL 未计入可达性统计**：汇总 switch 缺 `blocked` 分支，有 SSRF 拦截时 `Total ≠ Reachable+Unreachable+InvalidFormat`。新增 `Blocked` 字段与分支，`Total = Reachable+Unreachable+InvalidFormat+Blocked`。
+
+### 完善（Tier 2）
+
+- **基线刷新并发化**：`BaselineRefreshRunner` 原逐 URL 串行 `SetBaseline`，忽略 payload 的 `concurrency`。改为信号量 + WaitGroup 并发执行。
+- **"查看基线" UI 入口**：`monitor.html` 新增 `btn-list-baseline` 按钮，绑定既有的 `loadBaselineList()`。
+- **历史记录类型过滤补全**：`monitor.html` 的 `history-type-filter` 追加 `no_baseline/unreachable/suspicious` 三个选项。
+- **scheduler 帮助文档模式修正**：`scheduler.html` 的 `PARAM_HINTS.tamper_check` 由错误的 `malicious/performance/full` 改为 `security/balanced/precise`。
+
+### 涉及文件
+
+| 文件 | 变更 |
+|------|------|
+| `internal/tamper/detector_types.go` | 导出 `NormalizeDetectionMode` |
+| `internal/tamper/detector_test.go` | 模式用例补全 security/balanced/precise |
+| `internal/service/tamper_app_service.go` | 模式透传（调用 `NormalizeDetectionMode`） |
+| `internal/service/monitor_app_service.go` | 抽取 `summarizeReachability` + 新增 `Blocked` 桶 |
+| `internal/service/monitor_app_service_test.go` | 汇总不变量单测（新增） |
+| `internal/scheduler/scheduler_types.go` | 模板模式 `full` → `relaxed` |
+| `internal/scheduler/executor_runners2.go` | 基线刷新并发化 |
+| `web/server.go` | 定时篡改 allocator 注入 |
+| `web/templates/monitor.html` | 查看基线按钮 + 历史过滤补全 |
+| `web/templates/scheduler.html` | 帮助文档模式修正 |
+
+### 列为后续（架构级，本次未修）
+可达性/端口扫描告警记录缺失；告警与资源监控仅存内存重启丢失；`operation_history` 无内部写入者；定时批量截图未进 batchdb；篡改导出器死代码；无定时备份任务；篡改记录文件式无索引。
+
+### 验证结果
+- `go build ./...` 通过
+- `go test ./internal/tamper/... ./internal/service/... ./internal/scheduler/...` 全部通过
+- `go vet` + `gofmt` 干净
+- GitHub Actions CI 全绿
+
+---
+
 ## [2026-06-11] Bridge 状态语义修复 + Token 复制 + 状态抖动
 
 ### 修复
