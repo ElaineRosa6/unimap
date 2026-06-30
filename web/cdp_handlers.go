@@ -93,12 +93,12 @@ func (s *Server) handleCDPConnect(w http.ResponseWriter, r *http.Request) {
 	if err := s.startCDPChrome(baseURL); err != nil {
 		_, checked := s.resolveChromePathWithDiagnostics()
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		if encodeErr := json.NewEncoder(w).Encode(map[string]interface{}{
 			"success":             false,
 			"error":               err.Error(),
 			"chrome_path_checked": checked,
-		}); err != nil {
-			logger.Debugf("failed to encode CDP connect error response: %v", err)
+		}); encodeErr != nil {
+			logger.Debugf("failed to encode CDP connect error response: %v", encodeErr)
 		}
 		return
 	}
@@ -110,14 +110,14 @@ func (s *Server) handleCDPConnect(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if online {
-		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		if encodeErr := json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"online":  true,
 			"url":     baseURL,
 			"version": info,
 			"message": "CDP connected",
-		}); err != nil {
-			logger.Debugf("failed to encode CDP connect success response: %v", err)
+		}); encodeErr != nil {
+			logger.Debugf("failed to encode CDP connect success response: %v", encodeErr)
 		}
 		return
 	}
@@ -400,16 +400,12 @@ func (s *Server) resolveChromePathWithDiagnostics() (string, []string) {
 func (s *Server) resolveChromeFromConfigOrEnv(checked []string) (string, bool) {
 	if s.config != nil {
 		if raw := strings.TrimSpace(s.config.Screenshot.ChromePath); raw != "" {
-			checked = append(checked, "config:screenshot.chrome_path")
 			return raw, true
 		}
-		checked = append(checked, "config:screenshot.chrome_path(empty)")
 	}
 	if env := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PATH")); env != "" {
-		checked = append(checked, "env:UNIMAP_CHROME_PATH")
 		return env, true
 	}
-	checked = append(checked, "env:UNIMAP_CHROME_PATH(empty)")
 	return "", false
 }
 

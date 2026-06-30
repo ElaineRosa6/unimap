@@ -2,6 +2,7 @@ package logger
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"testing"
 
@@ -211,8 +212,8 @@ func TestCtxLogFunctions(t *testing.T) {
 	Sugar = Log.Sugar()
 
 	// Test context log functions with nil context
-	CtxDebugf(nil, "debug %s", "test")
-	CtxInfof(nil, "info %s", "test")
+	CtxDebugf(context.TODO(), "debug %s", "test")
+	CtxInfof(context.TODO(), "info %s", "test")
 	CtxWarnf(nil, "warn %s", "test")
 	CtxErrorf(nil, "error %s", "test")
 }

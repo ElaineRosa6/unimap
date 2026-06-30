@@ -403,7 +403,7 @@ func (s *Server) handleChangeUserPassword(w http.ResponseWriter, r *http.Request
 		OldPassword string `json:"old_password"`
 		NewPassword string `json:"new_password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -430,7 +430,7 @@ func (s *Server) handleChangeUserPassword(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusBadRequest, "old password is required")
 			return
 		}
-		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
+		if compareErr := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); compareErr != nil {
 			writeError(w, http.StatusUnauthorized, "incorrect old password")
 			return
 		}

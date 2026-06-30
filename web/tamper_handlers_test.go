@@ -23,19 +23,19 @@ func TestHandleTamperHistoryDelete(t *testing.T) {
 		t.Fatalf("getwd failed: %v", err)
 	}
 	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("chdir failed: %v", err)
+	if chdirErr := os.Chdir(tmpDir); chdirErr != nil {
+		t.Fatalf("chdir failed: %v", chdirErr)
 	}
 	defer func() { _ = os.Chdir(oldWD) }()
 
 	url := "https://example.com"
 	storage := tamper.NewHashStorage("./hash_store")
-	if err := storage.SaveCheckRecord(url, &tamper.CheckRecord{
+	if saveErr := storage.SaveCheckRecord(url, &tamper.CheckRecord{
 		URL:       url,
 		CheckType: "normal",
 		Timestamp: time.Now().Unix(),
-	}); err != nil {
-		t.Fatalf("save record failed: %v", err)
+	}); saveErr != nil {
+		t.Fatalf("save record failed: %v", saveErr)
 	}
 
 	recordsBase := filepath.Join("hash_store", "records")

@@ -67,6 +67,8 @@ jobs:
         run: go test -race -v -count=1 ./...
 
       - name: Run tests (coverage)
+        env:
+          CGO_ENABLED: 1
         run: go test -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload coverage

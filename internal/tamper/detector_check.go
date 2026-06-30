@@ -76,8 +76,7 @@ func (d *Detector) CheckTampering(ctx context.Context, url string) (*TamperCheck
 		URL: url, CurrentHash: currentHash, BaselineHash: baseline,
 		Tampered: false, Status: "normal", Timestamp: time.Now().Unix(),
 	}
-	checkType := "normal"
-
+	var checkType string
 	suspiciousFlags := detectMaliciousContent(currentHash.RawHTML)
 	result.SuspiciousFlags = suspiciousFlags
 

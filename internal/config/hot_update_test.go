@@ -306,7 +306,6 @@ func TestGetConfigHistory(t *testing.T) {
 	}
 
 	// Verify slice is a copy (modifying the slice doesn't affect internal state)
-	history = append(history, ConfigVersion{})
 	if len(mgr.configHistory) != 2 {
 		t.Error("GetConfigHistory should return a copy of the slice")
 	}

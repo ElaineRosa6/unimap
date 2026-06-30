@@ -114,8 +114,8 @@ func (s *Server) handleImportURLs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validateUploadMIME(safeName, header.Header.Get("Content-Type")); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "mime_mismatch", err.Error(), nil)
+	if validateErr := validateUploadMIME(safeName, header.Header.Get("Content-Type")); validateErr != nil {
+		writeAPIError(w, http.StatusBadRequest, "mime_mismatch", validateErr.Error(), nil)
 		return
 	}
 
