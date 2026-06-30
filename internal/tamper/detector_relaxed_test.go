@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -125,7 +126,27 @@ func TestRelaxed_VersionedJSFiles_NoFalsePositive(t *testing.T) {
 
 	ctx := context.Background()
 
-	baseline, err := detector.ComputePageHash(ctx, ts.URL)
+	// retryComputePageHash 对 chromedp WebSocket 超时等瞬态错误做重试
+	retryComputePageHash := func(targetURL string) (*PageHashResult, error) {
+		var result *PageHashResult
+		var err error
+		for attempt := 0; attempt < 3; attempt++ {
+			result, err = detector.ComputePageHash(ctx, targetURL)
+			if err == nil {
+				return result, nil
+			}
+			if strings.Contains(err.Error(), "websocket url timeout") ||
+				strings.Contains(err.Error(), "connection refused") {
+				t.Logf("ComputePageHash transient error (attempt %d/3): %v", attempt+1, err)
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			return nil, err
+		}
+		return result, err
+	}
+
+	baseline, err := retryComputePageHash(ts.URL)
 	require.NoError(t, err)
 	require.NoError(t, detector.SaveBaseline(ts.URL, baseline))
 

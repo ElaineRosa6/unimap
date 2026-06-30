@@ -95,8 +95,8 @@ func TestICPResultRepository_SaveResults(t *testing.T) {
 		},
 	}
 
-	if err := repo.SaveResults(runID, results, time.Now()); err != nil {
-		t.Fatalf("SaveResults failed: %v", err)
+	if saveErr := repo.SaveResults(runID, results, time.Now()); saveErr != nil {
+		t.Fatalf("SaveResults failed: %v", saveErr)
 	}
 
 	// Verify results count.

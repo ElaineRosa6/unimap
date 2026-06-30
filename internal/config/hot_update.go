@@ -144,14 +144,14 @@ func (h *HotUpdateManager) checkConfigChanges(cfg HotUpdateConfig) {
 		return
 	}
 
-	if err := yaml.Unmarshal(data, newConfig); err != nil {
-		logger.Errorf("Failed to parse config file for hot update: %v", err)
+	if unmarshalErr := yaml.Unmarshal(data, newConfig); unmarshalErr != nil {
+		logger.Errorf("Failed to parse config file for hot update: %v", unmarshalErr)
 		return
 	}
 
 	// 验证配置
-	if err := validateConfig(newConfig); err != nil {
-		logger.Errorf("Invalid config file for hot update: %v", err)
+	if validateErr := validateConfig(newConfig); validateErr != nil {
+		logger.Errorf("Invalid config file for hot update: %v", validateErr)
 		return
 	}
 
