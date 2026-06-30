@@ -308,22 +308,22 @@ func TestTamperExcelExporter_Export(t *testing.T) {
 		// 校验表头（6 列）
 		require.Len(t, expectedTamperExcelHeaders, 6)
 		for i, want := range expectedTamperExcelHeaders {
-			cell, err := excelize.CoordinatesToCellName(i+1, 1)
-			require.NoError(t, err)
-			got, err := f.GetCellValue("Tamper Detection", cell)
-			require.NoError(t, err)
+			cell, cellErr := excelize.CoordinatesToCellName(i+1, 1)
+			require.NoError(t, cellErr)
+			got, getErr := f.GetCellValue("Tamper Detection", cell)
+			require.NoError(t, getErr)
 			assert.Equal(t, want, got, "表头第 %d 列应为 %s", i+1, want)
 		}
 
 		// 校验首行数据
-		a2, err := f.GetCellValue("Tamper Detection", "A2")
-		require.NoError(t, err)
+		a2, a2Err := f.GetCellValue("Tamper Detection", "A2")
+		require.NoError(t, a2Err)
 		assert.Equal(t, "http://a.example.com", a2)
-		b2, err := f.GetCellValue("Tamper Detection", "B2")
-		require.NoError(t, err)
+		b2, b2Err := f.GetCellValue("Tamper Detection", "B2")
+		require.NoError(t, b2Err)
 		assert.Equal(t, "是", b2)
-		d2, err := f.GetCellValue("Tamper Detection", "D2")
-		require.NoError(t, err)
+		d2, d2Err := f.GetCellValue("Tamper Detection", "D2")
+		require.NoError(t, d2Err)
 		assert.Equal(t, "否", d2)
 	})
 

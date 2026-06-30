@@ -147,10 +147,10 @@ func TestExcelExporter_Export(t *testing.T) {
 		// 校验表头共 15 列且内容正确
 		require.Len(t, expectedExcelHeaders, 15)
 		for i, want := range expectedExcelHeaders {
-			cell, err := excelize.CoordinatesToCellName(i+1, 1)
-			require.NoError(t, err)
-			got, err := f.GetCellValue("Assets", cell)
-			require.NoError(t, err)
+			cell, cellErr := excelize.CoordinatesToCellName(i+1, 1)
+			require.NoError(t, cellErr)
+			got, getErr := f.GetCellValue("Assets", cell)
+			require.NoError(t, getErr)
 			assert.Equal(t, want, got, "表头第 %d 列应为 %s", i+1, want)
 		}
 
@@ -175,8 +175,8 @@ func TestExcelExporter_Export(t *testing.T) {
 				"O": asset.Source,
 			}
 			for col, want := range wantCells {
-				got, err := f.GetCellValue("Assets", fmt.Sprintf("%s%d", col, row))
-				require.NoError(t, err)
+				got, cellErr := f.GetCellValue("Assets", fmt.Sprintf("%s%d", col, row))
+				require.NoError(t, cellErr)
 				assert.Equal(t, want, got, "第 %d 行 %s 列", row, col)
 			}
 		}
@@ -198,16 +198,16 @@ func TestExcelExporter_Export(t *testing.T) {
 
 		// 仅有表头，无数据行
 		for i, want := range expectedExcelHeaders {
-			cell, err := excelize.CoordinatesToCellName(i+1, 1)
-			require.NoError(t, err)
-			got, err := f.GetCellValue("Assets", cell)
-			require.NoError(t, err)
+			cell, cellErr := excelize.CoordinatesToCellName(i+1, 1)
+			require.NoError(t, cellErr)
+			got, getErr := f.GetCellValue("Assets", cell)
+			require.NoError(t, getErr)
 			assert.Equal(t, want, got, "空表头第 %d 列", i+1)
 		}
 
 		// 第 2 行应无数据
-		got, err := f.GetCellValue("Assets", "A2")
-		require.NoError(t, err)
+		got, lastErr := f.GetCellValue("Assets", "A2")
+		require.NoError(t, lastErr)
 		assert.Empty(t, got)
 	})
 }
