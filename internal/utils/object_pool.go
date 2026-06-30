@@ -151,7 +151,7 @@ func NewInterfaceMapPool() *InterfaceMapPool {
 
 // Get 从池中获取接口映射
 func (p *InterfaceMapPool) Get() map[string]interface{} {
-	m := p.pool.Get().(map[string]interface{})
+	m := p.pool.Get().(map[string]interface{}) //nolint:errcheck // sync.Pool.Get always returns a non-nil value
 	// 清空映射
 	for k := range m {
 		delete(m, k)

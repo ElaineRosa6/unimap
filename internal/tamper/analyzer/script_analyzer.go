@@ -228,7 +228,7 @@ func (a *ScriptAnalyzer) analyzeEventBindings(script string, result *AnalysisRes
 
 		// 分析element.on事件
 		matches = a.patterns.EventBindings[2].FindStringSubmatch(line)
-		if matches != nil && len(matches) >= 2 {
+		if len(matches) >= 2 {
 			binding := BindingInfo{
 				Element: "element",
 				Event:   matches[1],

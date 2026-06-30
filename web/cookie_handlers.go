@@ -143,7 +143,7 @@ func (s *Server) handleSaveCookies(w http.ResponseWriter, r *http.Request) {
 	engineMode := s.currentScreenshotEngine()
 	if engineMode == "extension" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"engine":  "extension",
 			"message": "extension mode uses browser session; cookie injection is skipped",
@@ -152,7 +152,7 @@ func (s *Server) handleSaveCookies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"engine":  engineMode,
 	})
@@ -560,7 +560,7 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 	results := s.checkEngineLoginStatuses(r.Context(), engines, cdpConnected, extPaired)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":       true,
 		"cdp_connected": cdpConnected,
 		"ext_paired":    extPaired,
