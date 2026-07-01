@@ -78,45 +78,46 @@ type ConnectionManager struct {
 
 // Server Web服务器
 type Server struct {
-	port             int
-	httpServer       *http.Server
-	templates        *template.Template
-	service          *service.UnifiedService
-	queryApp         *service.QueryAppService
-	monitorApp       *service.MonitorAppService
-	tamperApp        *service.TamperAppService
-	screenshotApp    *service.ScreenshotAppService
-	orchestrator     *adapter.EngineOrchestrator
-	upgrader         websocket.Upgrader
-	connManager      *ConnectionManager
-	queryStatus      map[string]*QueryStatus
-	queryMutex       sync.RWMutex
-	configMutex      sync.Mutex
-	webRoot          string
-	staticVersion    string
-	screenshotMgr    *screenshot.Manager
-	screenshotRouter *screenshot.ScreenshotRouter
-	batchJobs        *batchJobStore
-	batchDB          *batchdb.Database
-	config           *config.Config
-	configManager    *config.Manager
-	chromeCmd        *os.Process
-	chromeCmdMu      sync.Mutex
-	bridge           *BridgeState
-	proxyPool        *proxypool.Pool
-	distributed      *DistributedState
-	scheduler        *scheduler.Scheduler
-	icpDB            *icpdb.Database
-	icpRepo          icpdb.ICPResultRepository
-	notifyRegistry   *notify.Registry
-	apiAuth          *auth.AuthMiddleware
-	userDB           *auth.UserDB
-	userRepo         auth.UserRepository
-	historyDB        *historydb.Database
-	historyRepo      *historydb.Repository
-	shutdownCtx      context.Context
-	shutdownCancel   context.CancelFunc
-	revocationStore  *sessionRevocationStore
+	port              int
+	httpServer        *http.Server
+	templates         *template.Template
+	service           *service.UnifiedService
+	queryApp          *service.QueryAppService
+	monitorApp        *service.MonitorAppService
+	tamperApp         *service.TamperAppService
+	screenshotApp     *service.ScreenshotAppService
+	orchestrator      *adapter.EngineOrchestrator
+	upgrader          websocket.Upgrader
+	connManager       *ConnectionManager
+	queryStatus       map[string]*QueryStatus
+	queryMutex        sync.RWMutex
+	configMutex       sync.Mutex
+	webRoot           string
+	staticVersion     string
+	screenshotMgr     *screenshot.Manager
+	screenshotRouter  *screenshot.ScreenshotRouter
+	batchJobs         *batchJobStore
+	batchDB           *batchdb.Database
+	config            *config.Config
+	configManager     *config.Manager
+	chromeCmd         *os.Process
+	chromeCmdMu       sync.Mutex
+	bridge            *BridgeState
+	proxyPool         *proxypool.Pool
+	distributed       *DistributedState
+	scheduler         *scheduler.Scheduler
+	icpDB             *icpdb.Database
+	icpRepo           icpdb.ICPResultRepository
+	notifyRegistry    *notify.Registry
+	apiAuth           *auth.AuthMiddleware
+	permissionManager *auth.PermissionManager
+	userDB            *auth.UserDB
+	userRepo          auth.UserRepository
+	historyDB         *historydb.Database
+	historyRepo       *historydb.Repository
+	shutdownCtx       context.Context
+	shutdownCancel    context.CancelFunc
+	revocationStore   *sessionRevocationStore
 }
 
 // NewServer 创建Web服务器
@@ -251,10 +252,11 @@ func newServerStruct(port int, webRoot string, templates *template.Template,
 			NodeRegistry:  nodeRegistry,
 			NodeTaskQueue: nodeTaskQueue,
 		},
-		apiAuth:         auth.NewAuthMiddleware(auth.NewAPIKeyManager(filepath.Join(utils.AppDataDir(), "api_keys.json"))),
-		shutdownCtx:     shutdownCtx,
-		shutdownCancel:  shutdownCancel,
-		revocationStore: newSessionRevocationStore(),
+		apiAuth:           auth.NewAuthMiddleware(auth.NewAPIKeyManager(filepath.Join(utils.AppDataDir(), "api_keys.json"))),
+		permissionManager: auth.NewPermissionManager(),
+		shutdownCtx:       shutdownCtx,
+		shutdownCancel:    shutdownCancel,
+		revocationStore:   newSessionRevocationStore(),
 	}
 }
 
