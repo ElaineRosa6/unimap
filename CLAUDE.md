@@ -1,6 +1,6 @@
 # UniMap — 多引擎网络空间资产查询与网页监控工具
 
-> 当前分支：`develop` | Go 1.26 | 主链路：`go build ./...`、`go test ./...`、`go test -race ./...` 均通过
+> 当前分支：`develop` | Go 1.26.4 | 主链路：`go build ./...`、`go test ./...`、`go test -race ./...` 均通过
 
 ## 项目概述
 
@@ -10,7 +10,7 @@
 
 | 类别 | 技术 |
 |------|------|
-| 语言 | Go 1.26 |
+	| 语言 | Go 1.26.4 |
 | Web | `net/http` + gorilla/websocket + go-resty |
 | GUI | Fyne v2 |
 | CLI | Cobra |
@@ -203,7 +203,19 @@ go run -tags gui ./cmd/unimap-gui
 - L-02, L-03 (Low) — CORS 死代码已清理、Scheduler CSP nonce 已添加
 
 ### High (建议合并前修复)
-无
+~~无~~ ✅ 3 项 P1 安全漏洞已修复（2026-07-01，commit `bd1a506`，CI #11 全绿）
+
+### 2026-07-01 P1 安全审计修复（3 项，HIGH 风险，commit `bd1a506`，CI #11 全绿）
+
+> 审计报告：`.audit-results/audit_report_final.md`
+
+| # | 位置 | 问题 | 修复 |
+|---|------|------|------|
+| 1 | `web/config_handlers.go` | GET/POST `/api/v1/config` 无 admin 授权，任意已登录用户可读写全局配置 | 在 `handleGetConfig`/`handleSaveConfig` 添加 `requireAdmin` 检查 |
+| 2 | `web/history_handlers.go` | GET/DELETE `/api/v1/history` 无角色/所有权检查，任意已登录用户可读/删全局历史 | 在 `handleHistorySave`/`handleHistoryListOrClear`/`handleHistoryGetOrDelete` 添加 `requireAdmin` 检查 |
+| 3 | `go.mod` | Go 1.26.0 运行时 17 个标准库 CVE（html/template、crypto/x509、net/http 等） | 升级 `go 1.26` → `go 1.26.4` |
+
+**测试**：config/history handler 测试更新 `withAdminContext` 注入 admin 认证上下文，全量 `go test ./...` 通过。
 
 ### Medium (后续迭代修复)
 1. ~~10 个文件超 800 行~~ ✅ 已全部拆分完成（最大 `metrics.go` 795 行）
