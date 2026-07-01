@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -30,9 +31,15 @@ func newServerForConfigTest() *Server {
 	return &Server{config: cfg}
 }
 
+// withAdminContext returns a copy of req with admin-token auth context injected.
+func withAdminContext(req *http.Request) *http.Request {
+	ctx := context.WithValue(req.Context(), contextKeyUserID, adminSyntheticUserID)
+	return req.WithContext(ctx)
+}
+
 func TestHandleGetConfig_MasksSecrets(t *testing.T) {
 	s := newServerForConfigTest()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	req := withAdminContext(httptest.NewRequest(http.MethodGet, "/api/v1/config", nil))
 	w := httptest.NewRecorder()
 	s.handleGetConfig(w, req)
 
@@ -67,7 +74,7 @@ func TestHandleGetConfig_MasksSecrets(t *testing.T) {
 
 func TestHandleGetConfig_RejectsNonGET(t *testing.T) {
 	s := newServerForConfigTest()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/config", nil)
+	req := withAdminContext(httptest.NewRequest(http.MethodPost, "/api/v1/config", nil))
 	w := httptest.NewRecorder()
 	s.handleGetConfig(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
@@ -85,6 +92,7 @@ func postConfig(t *testing.T, s *Server, payload map[string]interface{}) *httpte
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/json")
+	req = withAdminContext(req)
 	w := httptest.NewRecorder()
 	s.handleSaveConfig(w, req)
 	return w
@@ -215,6 +223,7 @@ func TestHandleSaveConfig_RejectsUntrustedOrigin(t *testing.T) {
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://evil.example")
 	req.Header.Set("Content-Type", "application/json")
+	req = withAdminContext(req)
 	w := httptest.NewRecorder()
 	s.handleSaveConfig(w, req)
 	if w.Code != http.StatusForbidden {

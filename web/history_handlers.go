@@ -30,6 +30,10 @@ func (s *Server) handleHistorySave(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST required", nil)
 		return
 	}
+	if ok, msg := s.requireAdmin(r); !ok {
+		writeAPIError(w, http.StatusForbidden, "forbidden", msg, nil)
+		return
+	}
 
 	var req HistorySaveRequest
 	if !decodeJSONBody(w, r, &req) {
@@ -89,6 +93,10 @@ func (s *Server) handleHistoryListOrClear(w http.ResponseWriter, r *http.Request
 		writeAPIError(w, http.StatusServiceUnavailable, "history_disabled", "history is not enabled", nil)
 		return
 	}
+	if ok, msg := s.requireAdmin(r); !ok {
+		writeAPIError(w, http.StatusForbidden, "forbidden", msg, nil)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodGet:
@@ -127,6 +135,10 @@ func (s *Server) handleHistoryListOrClear(w http.ResponseWriter, r *http.Request
 func (s *Server) handleHistoryGetOrDelete(w http.ResponseWriter, r *http.Request) {
 	if s.historyRepo == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "history_disabled", "history is not enabled", nil)
+		return
+	}
+	if ok, msg := s.requireAdmin(r); !ok {
+		writeAPIError(w, http.StatusForbidden, "forbidden", msg, nil)
 		return
 	}
 

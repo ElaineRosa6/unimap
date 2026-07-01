@@ -18,6 +18,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusServiceUnavailable, "config_not_loaded", "config not loaded", nil)
 		return
 	}
+	if ok, msg := s.requireAdmin(r); !ok {
+		writeAPIError(w, http.StatusForbidden, "forbidden", msg, nil)
+		return
+	}
 
 	s.configMutex.Lock()
 	defer s.configMutex.Unlock()
@@ -122,6 +126,10 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.config == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "config_not_loaded", "config not loaded", nil)
+		return
+	}
+	if ok, msg := s.requireAdmin(r); !ok {
+		writeAPIError(w, http.StatusForbidden, "forbidden", msg, nil)
 		return
 	}
 
