@@ -287,7 +287,7 @@ func TestExtensionProvider_CollectSearchEngineResult_LoginWall(t *testing.T) {
 // loginWallFailBridgeClient simulates the real extension behavior:
 // success=false + is_login_wall in structured data.
 type loginWallFailBridgeClient struct {
-	mockBridgeClient
+	mockBridgeClient // nolint:unused
 }
 
 func (l *loginWallFailBridgeClient) SubmitTask(ctx context.Context, task BridgeTask) error {
@@ -336,7 +336,7 @@ func TestExtensionProvider_CollectSearchEngineResult_LoginWall_SuccessFalse(t *t
 // loginWallErrorCodeClient simulates extension with success=false + error_code="login_required"
 // but no structured data is_login_wall field (text-marker fallback).
 type loginWallErrorCodeClient struct {
-	mockBridgeClient
+	mockBridgeClient // nolint:unused
 }
 
 func (l *loginWallErrorCodeClient) SubmitTask(ctx context.Context, task BridgeTask) error {

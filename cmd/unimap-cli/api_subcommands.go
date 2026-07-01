@@ -38,6 +38,28 @@ type apiScreenshotBatchResponse struct {
 	Results []map[string]interface{} `json:"results"`
 }
 
+// cliSchedulerTask is the typed response for a scheduler task.
+type cliSchedulerTask struct {
+	ID       string                 `json:"id"`
+	Name     string                 `json:"name"`
+	Type     string                 `json:"type"`
+	Enabled  bool                   `json:"enabled"`
+	CronExpr string                 `json:"cron_expr"`
+	Payload  map[string]interface{} `json:"payload,omitempty"`
+}
+
+// cliSchedulerHistoryEntry is the typed response for a scheduler history entry.
+type cliSchedulerHistoryEntry struct {
+	TaskID    string `json:"task_id"`
+	TaskName  string `json:"task_name"`
+	TaskType  string `json:"task_type"`
+	Status    string `json:"status"`
+	Result    string `json:"result"`
+	Error     string `json:"error"`
+	StartedAt string `json:"started_at"`
+	Duration  int64  `json:"duration"`
+}
+
 func runAPISubcommand(command string, args []string) bool {
 	switch strings.ToLower(strings.TrimSpace(command)) {
 	case "query":
@@ -125,10 +147,14 @@ func runAPITamperCheck(args []string) {
 		os.Exit(1)
 	}
 
-	payload := map[string]interface{}{
-		"urls":        urls,
-		"concurrency": *concurrency,
-		"mode":        strings.ToLower(strings.TrimSpace(*mode)),
+	type cliTamperRequest struct {
+		URLs        []string `json:"urls"`
+		Concurrency int      `json:"concurrency"`
+		Mode        string   `json:"mode"`
+	}
+	payload := cliTamperRequest{
+		URLs: urls, Concurrency: *concurrency,
+		Mode: strings.ToLower(strings.TrimSpace(*mode)),
 	}
 	var resp apiTamperResponse
 	if err := doJSONRequest(*apiBase, "/api/v1/tamper/check", *timeoutSec, payload, &resp); err != nil {
@@ -167,10 +193,13 @@ func runAPIScreenshotBatch(args []string) {
 		os.Exit(1)
 	}
 
-	payload := map[string]interface{}{
-		"urls":        urls,
-		"batch_id":    strings.TrimSpace(*batchID),
-		"concurrency": *concurrency,
+	type cliScreenshotRequest struct {
+		URLs        []string `json:"urls"`
+		BatchID     string   `json:"batch_id"`
+		Concurrency int      `json:"concurrency"`
+	}
+	payload := cliScreenshotRequest{
+		URLs: urls, BatchID: strings.TrimSpace(*batchID), Concurrency: *concurrency,
 	}
 	var resp apiScreenshotBatchResponse
 	if err := doJSONRequest(*apiBase, "/api/v1/screenshot/batch-urls", *timeoutSec, payload, &resp); err != nil {
@@ -318,8 +347,8 @@ func runAPIScheduler(args []string) {
 
 func schedulerList(base, prefix string, timeoutSec int) {
 	var resp struct {
-		Success bool                     `json:"success"`
-		Tasks   []map[string]interface{} `json:"tasks"`
+		Success bool               `json:"success"`
+		Tasks   []cliSchedulerTask `json:"tasks"`
 	}
 	if err := doFormRequest(base, prefix+"/tasks", timeoutSec, nil, &resp); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -328,7 +357,7 @@ func schedulerList(base, prefix string, timeoutSec int) {
 	fmt.Printf("Scheduled tasks (%d):\n", len(resp.Tasks))
 	for _, t := range resp.Tasks {
 		fmt.Printf("  %-8s %-30s %-20s enabled=%v  cron=%s\n",
-			t["id"], t["name"], t["type"], t["enabled"], t["cron_expr"])
+			t.ID, t.Name, t.Type, t.Enabled, t.CronExpr)
 	}
 }
 
@@ -354,8 +383,6 @@ func schedulerCreate(fs *flag.FlagSet, args []string, base, prefix string, timeo
 	taskType := fs.String("type", "", "Task type (e.g. icp_query, query)")
 	cron := fs.String("cron", "", "Cron expression")
 	payloadStr := fs.String("payload", "{}", "JSON payload")
-	timeout := fs.Int("timeout", 300, "Timeout in seconds")
-	maxRetries := fs.Int("retries", 1, "Max retries")
 	_ = fs.Parse(args[1:])
 
 	if *name == "" || *taskType == "" || *cron == "" {
@@ -369,23 +396,21 @@ func schedulerCreate(fs *flag.FlagSet, args []string, base, prefix string, timeo
 		os.Exit(1)
 	}
 
-	task := map[string]interface{}{
-		"name":            *name,
-		"type":            *taskType,
-		"cron_expr":       *cron,
-		"payload":         p,
-		"timeout_seconds": *timeout,
-		"max_retries":     *maxRetries,
+	task := cliSchedulerTask{
+		Name:     *name,
+		Type:     *taskType,
+		CronExpr: *cron,
+		Payload:  p,
 	}
 	var resp struct {
-		Success bool                   `json:"success"`
-		Task    map[string]interface{} `json:"task"`
+		Success bool             `json:"success"`
+		Task    cliSchedulerTask `json:"task"`
 	}
 	if err := doJSONRequest(base, prefix+"/tasks", timeoutSec, task, &resp); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Task created: id=%s name=%s type=%s\n", resp.Task["id"], resp.Task["name"], resp.Task["type"])
+	fmt.Printf("Task created: id=%s name=%s type=%s\n", resp.Task.ID, resp.Task.Name, resp.Task.Type)
 }
 
 func schedulerToggle(fs *flag.FlagSet, args []string, subcmd, base, prefix string, timeoutSec int) {
@@ -437,8 +462,8 @@ func schedulerHistory(fs *flag.FlagSet, args []string, base, prefix string, time
 	url += fmt.Sprintf("limit=%d", *limit)
 
 	var resp struct {
-		Success bool                     `json:"success"`
-		History []map[string]interface{} `json:"history"`
+		Success bool                       `json:"success"`
+		History []cliSchedulerHistoryEntry `json:"history"`
 	}
 	if err := doFormRequest(base, url, timeoutSec, nil, &resp); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -446,11 +471,11 @@ func schedulerHistory(fs *flag.FlagSet, args []string, base, prefix string, time
 	}
 	fmt.Printf("Execution history (%d records):\n", len(resp.History))
 	for _, h := range resp.History {
-		status := h["status"]
-		result := h["result"]
-		if errStr, ok := h["error"].(string); ok && errStr != "" {
-			result = errStr
+		status := h.Status
+		result := h.Result
+		if h.Error != "" {
+			result = h.Error
 		}
-		fmt.Printf("  %-20s %-10s %-15s %s\n", h["started_at"], status, h["task_type"], result)
+		fmt.Printf("  %-20s %-10s %-15s %s\n", h.StartedAt, status, h.TaskType, result)
 	}
 }

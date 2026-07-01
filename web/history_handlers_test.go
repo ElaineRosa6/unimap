@@ -45,7 +45,7 @@ func TestHandleHistorySave(t *testing.T) {
 		Results:       []interface{}{map[string]interface{}{"ip": "1.1.1.1", "port": 80}},
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/history/save", bytes.NewReader(body))
+	req := withAdminContext(httptest.NewRequest(http.MethodPost, "/api/v1/history/save", bytes.NewReader(body)))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -64,12 +64,12 @@ func TestHandleHistoryList(t *testing.T) {
 		Input:         "test",
 		Status:        "success",
 	})
-	saveReq := httptest.NewRequest(http.MethodPost, "/api/v1/history/save", bytes.NewReader(body))
+	saveReq := withAdminContext(httptest.NewRequest(http.MethodPost, "/api/v1/history/save", bytes.NewReader(body)))
 	saveReq.Header.Set("Content-Type", "application/json")
 	saveW := httptest.NewRecorder()
 	s.handleHistorySave(saveW, saveReq)
 
-	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/history", nil)
+	listReq := withAdminContext(httptest.NewRequest(http.MethodGet, "/api/v1/history", nil))
 	listW := httptest.NewRecorder()
 	s.handleHistoryListOrClear(listW, listReq)
 
@@ -87,12 +87,12 @@ func TestHandleHistoryGet(t *testing.T) {
 		Status:        "success",
 		Results:       []interface{}{map[string]interface{}{"ip": "1.1.1.1"}},
 	})
-	saveReq := httptest.NewRequest(http.MethodPost, "/api/v1/history/save", bytes.NewReader(body))
+	saveReq := withAdminContext(httptest.NewRequest(http.MethodPost, "/api/v1/history/save", bytes.NewReader(body)))
 	saveReq.Header.Set("Content-Type", "application/json")
 	saveW := httptest.NewRecorder()
 	s.handleHistorySave(saveW, saveReq)
 
-	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/history/1", nil)
+	getReq := withAdminContext(httptest.NewRequest(http.MethodGet, "/api/v1/history/1", nil))
 	getW := httptest.NewRecorder()
 	s.handleHistoryGetOrDelete(getW, getReq)
 
@@ -109,12 +109,12 @@ func TestHandleHistoryDelete(t *testing.T) {
 		Input:         "test",
 		Status:        "success",
 	})
-	saveReq := httptest.NewRequest(http.MethodPost, "/api/v1/history/save", bytes.NewReader(body))
+	saveReq := withAdminContext(httptest.NewRequest(http.MethodPost, "/api/v1/history/save", bytes.NewReader(body)))
 	saveReq.Header.Set("Content-Type", "application/json")
 	saveW := httptest.NewRecorder()
 	s.handleHistorySave(saveW, saveReq)
 
-	delReq := httptest.NewRequest(http.MethodDelete, "/api/v1/history/1", nil)
+	delReq := withAdminContext(httptest.NewRequest(http.MethodDelete, "/api/v1/history/1", nil))
 	delW := httptest.NewRecorder()
 	s.handleHistoryGetOrDelete(delW, delReq)
 

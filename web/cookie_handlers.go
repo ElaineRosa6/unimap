@@ -44,7 +44,7 @@ func (s *Server) handleImportCookieJSON(w http.ResponseWriter, r *http.Request) 
 
 	cookies, err := config.ParseCookieJSON(jsonStr, config.DefaultCookieDomain(engine))
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_cookie_json", "invalid cookie json", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "invalid_cookie_json", "invalid cookie json", nil)
 		return
 	}
 	if len(cookies) == 0 {
@@ -78,7 +78,7 @@ func (s *Server) handleImportCookieJSON(w http.ResponseWriter, r *http.Request) 
 	s.configMutex.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 		"success":      true,
 		"cookieHeader": cookiesToHeader(cookies),
 	})
@@ -124,7 +124,7 @@ func (s *Server) handleVerifyCookies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 		"query":   query,
 		"results": results,
 	})
@@ -143,7 +143,7 @@ func (s *Server) handleSaveCookies(w http.ResponseWriter, r *http.Request) {
 	engineMode := s.currentScreenshotEngine()
 	if engineMode == "extension" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"engine":  "extension",
 			"message": "extension mode uses browser session; cookie injection is skipped",
@@ -152,7 +152,7 @@ func (s *Server) handleSaveCookies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"engine":  engineMode,
 	})
@@ -560,7 +560,7 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 	results := s.checkEngineLoginStatuses(r.Context(), engines, cdpConnected, extPaired)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":       true,
 		"cdp_connected": cdpConnected,
 		"ext_paired":    extPaired,
@@ -582,9 +582,20 @@ func (s *Server) detectSessionChannels(ctx context.Context) (cdpConnected, extPa
 	return
 }
 
+// EngineLoginStatus is the typed response for engine login status check.
+type EngineLoginStatus struct {
+	Engine       string `json:"engine"`
+	LoggedIn     bool   `json:"logged_in"`
+	Reason       string `json:"reason"`
+	Title        string `json:"title,omitempty"`
+	LoginURL     string `json:"login_url,omitempty"`
+	CDPConnected bool   `json:"cdp_connected"`
+	ExtPaired    bool   `json:"ext_paired"`
+}
+
 // checkEngineLoginStatuses checks login status for each engine.
-func (s *Server) checkEngineLoginStatuses(ctx context.Context, engines []string, cdpConnected, extPaired bool) []map[string]interface{} {
-	results := make([]map[string]interface{}, 0, len(engines))
+func (s *Server) checkEngineLoginStatuses(ctx context.Context, engines []string, cdpConnected, extPaired bool) []EngineLoginStatus {
+	results := make([]EngineLoginStatus, 0, len(engines))
 	for _, engine := range engines {
 		results = append(results, s.checkSingleEngineLogin(ctx, engine, cdpConnected, extPaired))
 	}
@@ -592,19 +603,25 @@ func (s *Server) checkEngineLoginStatuses(ctx context.Context, engines []string,
 }
 
 // checkSingleEngineLogin checks login status for a single engine.
-func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpConnected, extPaired bool) map[string]interface{} {
+func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpConnected, extPaired bool) EngineLoginStatus {
 	loginURL := ""
 	if s.screenshotMgr != nil {
 		loginURL = s.screenshotMgr.EngineLoginURL(engine)
 	}
 	cookieSet := s.engineCookieConfigured(engine)
 
+	base := EngineLoginStatus{
+		Engine:       engine,
+		LoginURL:     loginURL,
+		CDPConnected: cdpConnected,
+		ExtPaired:    extPaired,
+	}
+
 	// API Key 引擎（如 Shodan）：有 Key 即视为已就绪，无需浏览器登录
 	if engine == "shodan" && cookieSet {
-		return map[string]interface{}{
-			"engine": engine, "logged_in": true, "reason": "api_key_configured",
-			"login_url": loginURL, "cdp_connected": cdpConnected, "ext_paired": extPaired,
-		}
+		base.LoggedIn = true
+		base.Reason = "api_key_configured"
+		return base
 	}
 
 	if !cdpConnected && !extPaired {
@@ -612,10 +629,8 @@ func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpC
 		if cookieSet {
 			reason = "cookie_configured"
 		}
-		return map[string]interface{}{
-			"engine": engine, "logged_in": false, "reason": reason,
-			"login_url": loginURL, "cdp_connected": cdpConnected, "ext_paired": extPaired,
-		}
+		base.Reason = reason
+		return base
 	}
 
 	loggedIn, reason := false, "no_session"
@@ -638,10 +653,9 @@ func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpC
 		reason = "cdp_connected"
 	}
 
-	return map[string]interface{}{
-		"engine": engine, "logged_in": loggedIn, "reason": reason, "title": "",
-		"login_url": loginURL, "cdp_connected": cdpConnected, "ext_paired": extPaired,
-	}
+	base.LoggedIn = loggedIn
+	base.Reason = reason
+	return base
 }
 
 // engineCookieConfigured checks if cookies are configured for the given engine.

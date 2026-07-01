@@ -225,8 +225,9 @@ func TestPoolReport(t *testing.T) {
 			t.Fatal("expected proxy to be selected")
 		}
 		if addr == "http://p1" {
-			// This could happen if round-robin lands on p1 first but it's in cooldown
-			// The important thing is that some proxy is returned
+			// p1 理论上应处于 cooldown，但 round-robin 仍可能先落到 p1。
+			// 本用例关注的是"总能返回某个代理"，p1 的 cooldown 行为由其他用例覆盖。
+			t.Logf("returned p1 despite cooldown (round-robin ordering); acceptable")
 		}
 	})
 

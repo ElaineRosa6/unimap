@@ -63,11 +63,11 @@ type ZoomEyeItem struct {
 
 // ZoomEyeSearchResponse is the ZoomEye v2 search API response.
 type ZoomEyeSearchResponse struct {
-	Code    int    `json:"code"`
-	Error   string `json:"error"`
-	Message string `json:"message"`
-	Total   int    `json:"total"`
-	Query   string `json:"query"`
+	Code    int               `json:"code"`
+	Error   string            `json:"error"`
+	Message string            `json:"message"`
+	Total   int               `json:"total"`
+	Query   string            `json:"query"`
 	Data    []json.RawMessage `json:"data"`
 }
 
@@ -154,7 +154,8 @@ func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
 		"title":       "title",
 		"header":      "http.header",
 		"port":        "port",
-		"protocol":    "service",
+		"protocol":    "protocol",
+		"service":     "service",
 		"ip":          "ip",
 		"country":     "country",
 		"region":      "subdivisions",
@@ -169,7 +170,6 @@ func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
 		"banner":      "banner",
 		"server":      "http.header.server",
 		"host":        "hostname",
-		"url":         "site",
 		"status_code": "http.header.status_code",
 		"cert":        "ssl",
 	}
@@ -284,10 +284,10 @@ func parseZoomEyeSearchResponse(body []byte, page, pageSize int, engineName stri
 
 // Normalize 标准化结果
 func (z *ZoomEyeAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
-	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	if raw == nil || len(raw.RawData) == 0 {
-		return assets, nil
+		return []model.UnifiedAsset{}, nil
 	}
+	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	for _, item := range raw.RawData {
 		it, ok := item.(*ZoomEyeItem)
 		if !ok {

@@ -289,21 +289,17 @@ func TestGetThresholdStats(t *testing.T) {
 	tm.RecordScanResult("https://b.com", false, true)
 
 	stats := tm.GetThresholdStats()
-	if stats["total_sites"] != 2 {
-		t.Errorf("expected 2 sites, got %v", stats["total_sites"])
+	if stats.TotalSites != 2 {
+		t.Errorf("expected 2 sites, got %v", stats.TotalSites)
 	}
-	if stats["total_scans"] != 2 {
-		t.Errorf("expected 2 scans, got %v", stats["total_scans"])
+	if stats.TotalScans != 2 {
+		t.Errorf("expected 2 scans, got %v", stats.TotalScans)
 	}
-	if stats["total_false_positives"] != 1 {
-		t.Errorf("expected 1 false positive, got %v", stats["total_false_positives"])
+	if stats.TotalFalsePositives != 1 {
+		t.Errorf("expected 1 false positive, got %v", stats.TotalFalsePositives)
 	}
-	rate, ok := stats["overall_false_positive_rate"]
-	if !ok {
-		t.Error("expected false positive rate")
-	}
-	if rate.(float64) != 0.5 {
-		t.Errorf("expected 0.5 false positive rate, got %v", rate)
+	if stats.OverallFalsePositiveRate != 0.5 {
+		t.Errorf("expected 0.5 false positive rate, got %v", stats.OverallFalsePositiveRate)
 	}
 }
 

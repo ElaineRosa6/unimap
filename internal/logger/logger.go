@@ -2,18 +2,20 @@ package logger
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
-	"github.com/natefinch/lumberjack"
 	unierror "github.com/unimap/project/internal/error"
 	"github.com/unimap/project/internal/requestid"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
@@ -32,6 +34,35 @@ var (
 	// asyncRunning 异步日志运行状态
 	asyncRunning atomic.Bool
 )
+
+// stdoutSyncer 包装 os.Stdout，过滤掉对管道/终端执行 Sync 时的良性错误。
+// Linux/macOS 上对 os.Stdout（管道或 /dev/stdout）调用 Sync 会返回
+// EINVAL/ENOSYS/ENOTTY —— 这并非真实错误（管道与终端本就不支持 fsync），
+// 应用退出时调用 Sync() 不应据此报错。文件句柄的 Sync 错误仍会如实返回。
+var stdoutSyncer zapcore.WriteSyncer = benignSyncWriteSyncer{zapcore.AddSync(os.Stdout)}
+
+// benignSyncWriteSyncer 包装一个 WriteSyncer，仅过滤 Sync 的良性错误。
+type benignSyncWriteSyncer struct{ zapcore.WriteSyncer }
+
+// Sync 调用底层 WriteSyncer 的 Sync，忽略对管道/终端 Sync 的良性 errno。
+func (w benignSyncWriteSyncer) Sync() error {
+	if err := w.WriteSyncer.Sync(); err != nil && !isBenignSyncErr(err) {
+		return err
+	}
+	return nil
+}
+
+// isBenignSyncErr 判断是否为对管道/终端 Sync 的良性错误（可忽略）。
+func isBenignSyncErr(err error) bool {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		switch pe.Err {
+		case syscall.EINVAL, syscall.ENOSYS, syscall.ENOTTY:
+			return true
+		}
+	}
+	return false
+}
 
 // Level 日志级别
 type Level string
@@ -54,7 +85,7 @@ type logEntry struct {
 	level   zapcore.Level
 	msg     string
 	fields  []zap.Field
-	callers []zapcore.EntryCaller
+	callers []zapcore.EntryCaller // nolint:unused
 }
 
 // Config 日志配置
@@ -270,7 +301,7 @@ func newCore(level zap.AtomicLevel, encoding string, file string, rotate bool, m
 		// 确保目录存在（使用 filepath.Dir 兼容 Windows）
 		fileDir := filepath.Dir(file)
 		if fileDir != "" && fileDir != "." {
-			os.MkdirAll(fileDir, 0755)
+			_ = os.MkdirAll(fileDir, 0755)
 		}
 
 		var writer zapcore.WriteSyncer
@@ -289,7 +320,7 @@ func newCore(level zap.AtomicLevel, encoding string, file string, rotate bool, m
 			f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 			if err != nil {
 				// 文件创建失败，使用标准输出
-				writer = zapcore.AddSync(os.Stdout)
+				writer = stdoutSyncer
 			} else {
 				// 保存文件句柄以便关闭
 				fileHandle = f
@@ -300,11 +331,11 @@ func newCore(level zap.AtomicLevel, encoding string, file string, rotate bool, m
 		// 同时输出到文件和标准输出
 		writeSyncer = zapcore.NewMultiWriteSyncer(
 			writer,
-			zapcore.AddSync(os.Stdout),
+			stdoutSyncer,
 		)
 	} else {
 		// 只输出到标准输出
-		writeSyncer = zapcore.AddSync(os.Stdout)
+		writeSyncer = stdoutSyncer
 	}
 
 	return zapcore.NewCore(encoder, writeSyncer, level)
@@ -468,7 +499,6 @@ func CtxErrorWithDetails(ctx context.Context, err error, msg string, fields ...z
 	}
 
 	rid := requestid.FromContext(ctx)
-	fields = append(fields, zap.String("request_id", rid))
 
 	if ue, ok := err.(*unierror.UnimapError); ok {
 		// 使用结构化日志记录统一错误

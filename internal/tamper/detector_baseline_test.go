@@ -2,7 +2,9 @@ package tamper
 
 import (
 	"context"
-	"os/exec"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -265,8 +267,8 @@ func TestDetector_GetCheckStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCheckStats failed: %v", err)
 	}
-	if stats["total_checks"] != 0 {
-		t.Errorf("expected 0 total checks, got %d", stats["total_checks"])
+	if stats.TotalChecks != 0 {
+		t.Errorf("expected 0 total checks, got %d", stats.TotalChecks)
 	}
 }
 
@@ -288,22 +290,28 @@ func TestDetector_DeleteCheckRecords(t *testing.T) {
 // --- Detector CheckTampering Tests ---
 
 func TestDetector_CheckTampering_NoBaseline(t *testing.T) {
-	// This test requires Chrome/CDP to be available
-	if _, err := exec.LookPath("chrome"); err != nil {
-		if _, err := exec.LookPath("google-chrome"); err != nil {
-			t.Skip("Chrome not available, skipping CDP-dependent test")
-		}
-	}
+	// 用本地 httptest server 提供可加载的页面。
+	// 采用 HTTP Fast 模式（不走 chromedp）以避免 CI 环境下 chromedp 的
+	// "websocket url timeout reached" 不稳定；本用例只验证"无 baseline 时
+	// CheckTampering 正常返回"，与渲染引擎无关。
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<!DOCTYPE html><html><head><title>No Baseline</title></head>
+<body><main><h1>Test</h1></main></body></html>`)
+	}))
+	defer ts.Close()
 
 	dir := t.TempDir()
-	d := NewDetector(DetectorConfig{BaseDir: dir})
+	d := NewDetector(DetectorConfig{
+		BaseDir:         dir,
+		PerformanceMode: PerformanceModeFast,
+	})
 
 	ctx := context.Background()
-	result, err := d.CheckTampering(ctx, "https://no-baseline.com")
+	result, err := d.CheckTampering(ctx, ts.URL)
 	if err != nil {
 		t.Fatalf("CheckTampering failed: %v", err)
 	}
-	// Without Chrome, ComputePageHash will fail, returning an error
+	// Without baseline, ComputePageHash succeeds and status defaults to normal.
 	if result != nil {
 		t.Logf("CheckTampering returned status: %s", result.Status)
 	}

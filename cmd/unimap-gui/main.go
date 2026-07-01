@@ -27,9 +27,10 @@ import (
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/tamper"
+	"github.com/unimap/project/internal/utils"
 )
 
-const configPath = "configs/config.yaml"
+var configPath = utils.DefaultConfigPath()
 
 // AppState 应用状态
 type AppState struct {
@@ -69,8 +70,8 @@ func main() {
 		Config:        cfg,
 		QueryResults:  []model.UnifiedAsset{},
 		Service:       svc,
-		Detector:      tamper.NewDetector(tamper.DetectorConfig{BaseDir: "./hash_store"}),
-		TamperStorage: tamper.NewHashStorage("./hash_store"),
+		Detector:      tamper.NewDetector(tamper.DetectorConfig{BaseDir: utils.HashStoreDir()}),
+		TamperStorage: tamper.NewHashStorage(utils.HashStoreDir()),
 		ScreenshotMgr: buildScreenshotManager(cfg),
 	}
 
@@ -161,7 +162,9 @@ func buildQueryResultTable(window fyne.Window, state *AppState) *widget.Table {
 	t := widget.NewTable(
 		func() (int, int) {
 			rows := 1
-			if len(state.QueryResults) > 0 { rows = len(state.QueryResults) + 1 }
+			if len(state.QueryResults) > 0 {
+				rows = len(state.QueryResults) + 1
+			}
 			return rows, 9
 		},
 		func() fyne.CanvasObject {
@@ -175,25 +178,45 @@ func buildQueryResultTable(window fyne.Window, state *AppState) *widget.Table {
 			label.TextStyle = fyne.TextStyle{}
 			if id.Row == 0 {
 				label.TextStyle = fyne.TextStyle{Bold: true}
-				if id.Col >= 0 && id.Col < len(headers) { label.SetText(headers[id.Col]) }
+				if id.Col >= 0 && id.Col < len(headers) {
+					label.SetText(headers[id.Col])
+				}
 				return
 			}
 			if len(state.QueryResults) == 0 {
-				if id.Col == 0 { label.SetText("暂无结果") } else { label.SetText("") }
+				if id.Col == 0 {
+					label.SetText("暂无结果")
+				} else {
+					label.SetText("")
+				}
 				return
 			}
 			rowIdx := id.Row - 1
-			if rowIdx < 0 || rowIdx >= len(state.QueryResults) { label.SetText(""); return }
+			if rowIdx < 0 || rowIdx >= len(state.QueryResults) {
+				label.SetText("")
+				return
+			}
 			a := state.QueryResults[rowIdx]
 			vals := []string{a.IP, fmt.Sprintf("%d", a.Port), a.Protocol, a.Host, a.URL, a.Title, a.Server, a.CountryCode, a.Source}
-			if id.Col < len(vals) { label.SetText(vals[id.Col]) }
+			if id.Col < len(vals) {
+				label.SetText(vals[id.Col])
+			}
 		},
 	)
-	t.SetColumnWidth(0, 130); t.SetColumnWidth(1, 70); t.SetColumnWidth(2, 70)
-	t.SetColumnWidth(3, 160); t.SetColumnWidth(4, 220); t.SetColumnWidth(5, 200)
-	t.SetColumnWidth(6, 120); t.SetColumnWidth(7, 70); t.SetColumnWidth(8, 80)
+	t.SetColumnWidth(0, 130)
+	t.SetColumnWidth(1, 70)
+	t.SetColumnWidth(2, 70)
+	t.SetColumnWidth(3, 160)
+	t.SetColumnWidth(4, 220)
+	t.SetColumnWidth(5, 200)
+	t.SetColumnWidth(6, 120)
+	t.SetColumnWidth(7, 70)
+	t.SetColumnWidth(8, 80)
 	t.OnSelected = func(id widget.TableCellID) {
-		if id.Row == 0 { t.Unselect(id); return }
+		if id.Row == 0 {
+			t.Unselect(id)
+			return
+		}
 		rowIdx := id.Row - 1
 		if rowIdx >= 0 && rowIdx < len(state.QueryResults) {
 			showAssetDetails(window, state.QueryResults[rowIdx])
@@ -208,20 +231,35 @@ func buildQueryButtons(window fyne.Window, state *AppState, queryEntry *widget.E
 ) (startBtn, exportJSONBtn, exportExcelBtn, clearBtn *widget.Button) {
 	setBusy := func(busy bool, start, clear, ej, ee *widget.Button) {
 		if busy {
-			statusLabel.SetText("正在查询..."); progressBar.Show()
-			start.Disable(); clear.Disable(); ej.Disable(); ee.Disable()
+			statusLabel.SetText("正在查询...")
+			progressBar.Show()
+			start.Disable()
+			clear.Disable()
+			ej.Disable()
+			ee.Disable()
 			return
 		}
-		progressBar.Hide(); start.Enable(); clear.Enable()
-		if len(state.QueryResults) > 0 { ej.Enable(); ee.Enable() }
+		progressBar.Hide()
+		start.Enable()
+		clear.Enable()
+		if len(state.QueryResults) > 0 {
+			ej.Enable()
+			ee.Enable()
+		}
 	}
 
 	startBtn = widget.NewButtonWithIcon("立即查询", theme.MediaPlayIcon(), func() {
 		query := strings.TrimSpace(queryEntry.Text)
-		if query == "" { dialog.ShowError(fmt.Errorf("请输入查询语句"), window); return }
+		if query == "" {
+			dialog.ShowError(fmt.Errorf("请输入查询语句"), window)
+			return
+		}
 		limit := parseQueryLimit(limitEntry.Text)
 		engines := collectEnabledEngines(state)
-		if len(engines) == 0 { dialog.ShowError(fmt.Errorf("请至少选择一个引擎"), window); return }
+		if len(engines) == 0 {
+			dialog.ShowError(fmt.Errorf("请至少选择一个引擎"), window)
+			return
+		}
 		setBusy(true, startBtn, clearBtn, exportJSONBtn, exportExcelBtn)
 		go func() {
 			defer setBusy(false, startBtn, clearBtn, exportJSONBtn, exportExcelBtn)
@@ -244,22 +282,38 @@ func buildQueryButtons(window fyne.Window, state *AppState, queryEntry *widget.E
 	startBtn.Importance = widget.HighImportance
 
 	clearBtn = widget.NewButtonWithIcon("清空结果", theme.ContentClearIcon(), func() {
-		state.QueryResults = nil; resultCountLabel.SetText(""); statusLabel.SetText("就绪")
-		exportJSONBtn.Disable(); exportExcelBtn.Disable(); resultTable.Refresh()
+		state.QueryResults = nil
+		resultCountLabel.SetText("")
+		statusLabel.SetText("就绪")
+		exportJSONBtn.Disable()
+		exportExcelBtn.Disable()
+		resultTable.Refresh()
 	})
 	exportJSONBtn = widget.NewButtonWithIcon("JSON", theme.DocumentSaveIcon(), func() {
 		dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
-			if err != nil || writer == nil { return }
+			if err != nil || writer == nil {
+				return
+			}
 			defer writer.Close()
-			if err := exporter.NewJSONExporter().Export(state.QueryResults, writer.URI().Path()); err != nil { dialog.ShowError(err, window) } else { dialog.ShowInformation("成功", "导出完成", window) }
+			if err := exporter.NewJSONExporter().Export(state.QueryResults, writer.URI().Path()); err != nil {
+				dialog.ShowError(err, window)
+			} else {
+				dialog.ShowInformation("成功", "导出完成", window)
+			}
 		}, window)
 	})
 	exportJSONBtn.Disable()
 	exportExcelBtn = widget.NewButtonWithIcon("Excel", theme.DocumentCreateIcon(), func() {
 		dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
-			if err != nil || writer == nil { return }
+			if err != nil || writer == nil {
+				return
+			}
 			defer writer.Close()
-			if err := exporter.NewExcelExporter().Export(state.QueryResults, writer.URI().Path()); err != nil { dialog.ShowError(err, window) } else { dialog.ShowInformation("成功", "导出完成", window) }
+			if err := exporter.NewExcelExporter().Export(state.QueryResults, writer.URI().Path()); err != nil {
+				dialog.ShowError(err, window)
+			} else {
+				dialog.ShowInformation("成功", "导出完成", window)
+			}
 		}, window)
 	})
 	exportExcelBtn.Disable()
@@ -268,19 +322,33 @@ func buildQueryButtons(window fyne.Window, state *AppState, queryEntry *widget.E
 
 func parseQueryLimit(text string) int {
 	v := strings.TrimSpace(text)
-	if v == "" { return 100 }
+	if v == "" {
+		return 100
+	}
 	parsed, err := strconv.Atoi(v)
-	if err != nil || parsed <= 0 { return 100 }
-	if parsed > 2000 { return 2000 }
+	if err != nil || parsed <= 0 {
+		return 100
+	}
+	if parsed > 2000 {
+		return 2000
+	}
 	return parsed
 }
 
 func collectEnabledEngines(state *AppState) []string {
 	var engines []string
-	if state.Config.Engines.Fofa.Enabled { engines = append(engines, "fofa") }
-	if state.Config.Engines.Hunter.Enabled { engines = append(engines, "hunter") }
-	if state.Config.Engines.Quake.Enabled { engines = append(engines, "quake") }
-	if state.Config.Engines.Zoomeye.Enabled { engines = append(engines, "zoomeye") }
+	if state.Config.Engines.Fofa.Enabled {
+		engines = append(engines, "fofa")
+	}
+	if state.Config.Engines.Hunter.Enabled {
+		engines = append(engines, "hunter")
+	}
+	if state.Config.Engines.Quake.Enabled {
+		engines = append(engines, "quake")
+	}
+	if state.Config.Engines.Zoomeye.Enabled {
+		engines = append(engines, "zoomeye")
+	}
 	return engines
 }
 

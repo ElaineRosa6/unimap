@@ -67,12 +67,9 @@ func (c *DingTalkChannel) Send(ctx context.Context, n TaskNotification) error {
 		markdown += fmt.Sprintf("\n- 错误: %s", n.Error)
 	}
 
-	body := map[string]interface{}{
-		"msgtype": "markdown",
-		"markdown": map[string]string{
-			"title": title,
-			"text":  markdown,
-		},
+	body := DingTalkMarkdownBody{
+		MsgType:  "markdown",
+		Markdown: DingTalkMarkdown{Title: title, Text: markdown},
 	}
 
 	sendURL := c.baseURL
@@ -165,27 +162,31 @@ func (c *FeishuChannel) Send(ctx context.Context, n TaskNotification) error {
 }
 
 // buildFeishuBody 构建飞书消息卡片 body
-func (c *FeishuChannel) buildFeishuBody(n TaskNotification) map[string]interface{} {
+func (c *FeishuChannel) buildFeishuBody(n TaskNotification) FeishuCardBody {
 	statusEmoji := map[string]string{"success": "✅", "failed": "❌", "timeout": "⏰"}
 	emoji := statusEmoji[n.Status]
 	template := "blue"
-	if n.Status == "failed" { template = "red" } else if n.Status == "timeout" { template = "orange" }
+	if n.Status == "failed" {
+		template = "red"
+	} else if n.Status == "timeout" {
+		template = "orange"
+	}
 	title := fmt.Sprintf("%s **[UniMap]** 定时任务 **[%s]** %s", emoji, n.TaskName, statusLabel(n.Status))
 
 	elements := buildFeishuPayloadElements(n)
 
-	return map[string]interface{}{
-		"msg_type": "interactive",
-		"card": map[string]interface{}{
-			"header":   map[string]interface{}{"title": map[string]interface{}{"tag": "plain_text", "content": title}, "template": template},
-			"elements": elements,
+	return FeishuCardBody{
+		MsgType: "interactive",
+		Card: FeishuCard{
+			Header:   FeishuCardHeader{Title: FeishuTextElement{Tag: "plain_text", Content: title}, Template: template},
+			Elements: elements,
 		},
 	}
 }
 
 // buildFeishuPayloadElements 构建飞书卡片内容元素
-func buildFeishuPayloadElements(n TaskNotification) []map[string]interface{} {
-	var elements []map[string]interface{}
+func buildFeishuPayloadElements(n TaskNotification) []FeishuCardElement {
+	var elements []FeishuCardElement
 	if n.Payload != nil {
 		payloadFields := []struct{ key, label string }{
 			{"urls", "目标"}, {"query", "查询"}, {"queries", "查询"}, {"engines", "引擎"}, {"engine", "引擎"},
@@ -204,42 +205,65 @@ func buildFeishuPayloadElements(n TaskNotification) []map[string]interface{} {
 			}
 		}
 		if len(lines) > 0 {
-			elements = append(elements, map[string]interface{}{"tag": "markdown", "content": strings.Join(lines, "\n")})
+			elements = append(elements, FeishuMarkdownElement(strings.Join(lines, "\n")))
 		}
 	}
-	elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0)})
+	elements = append(elements, FeishuMarkdownElement(fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0)))
 	if n.Result != "" {
-		elements = append(elements, map[string]interface{}{"tag": "hr"})
-		elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**执行结果**:\n%s", n.Result)})
+		elements = append(elements, FeishuHRElement())
+		elements = append(elements, FeishuMarkdownElement(fmt.Sprintf("**执行结果**:\n%s", n.Result)))
 	}
 	if n.Error != "" {
-		elements = append(elements, map[string]interface{}{"tag": "hr"})
-		elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**错误**: %s", n.Error)})
+		elements = append(elements, FeishuHRElement())
+		elements = append(elements, FeishuMarkdownElement(fmt.Sprintf("**错误**: %s", n.Error)))
 	}
 	return elements
 }
 
 // sendFeishuRequest 发送飞书请求并验证响应
-func (c *FeishuChannel) sendFeishuRequest(ctx context.Context, body map[string]interface{}) error {
+func (c *FeishuChannel) sendFeishuRequest(ctx context.Context, body FeishuCardBody) error {
+	var data []byte
 	if c.secret != "" {
 		if len(c.secret) > 3 && c.secret[0] == '$' && c.secret[1] == '{' && c.secret[len(c.secret)-1] == '}' {
 			return fmt.Errorf("feishu secret is an unresolved placeholder: %s — set the environment variable or use the raw value", c.secret)
 		}
 		ts := TimestampNow() / 1000
 		sign, err := FeishuSign(c.secret, ts)
-		if err != nil { return fmt.Errorf("feishu sign error: %w", err) }
-		body["timestamp"] = fmt.Sprintf("%d", ts)
-		body["sign"] = sign
+		if err != nil {
+			return fmt.Errorf("feishu sign error: %w", err)
+		}
+		data, err = json.Marshal(struct {
+			FeishuCardBody
+			Timestamp string `json:"timestamp"`
+			Sign      string `json:"sign"`
+		}{body, fmt.Sprintf("%d", ts), sign})
+		if err != nil {
+			return fmt.Errorf("marshal feishu body: %w", err)
+		}
+	} else {
+		var err error
+		data, err = json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("marshal feishu body: %w", err)
+		}
 	}
-	data, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewBuffer(data))
-	if err != nil { return fmt.Errorf("create feishu request: %w", err) }
+	if err != nil {
+		return fmt.Errorf("create feishu request: %w", err)
+	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	resp, err := c.client.Do(req)
-	if err != nil { return fmt.Errorf("send feishu: %w", err) }
+	if err != nil {
+		return fmt.Errorf("send feishu: %w", err)
+	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 { return fmt.Errorf("feishu returned status %d", resp.StatusCode) }
-	var feishuResp struct { Code int `json:"code"`; Msg string `json:"msg"` }
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("feishu returned status %d", resp.StatusCode)
+	}
+	var feishuResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
 	if err := json.NewDecoder(resp.Body).Decode(&feishuResp); err == nil && feishuResp.Code != 0 {
 		return fmt.Errorf("feishu api error: code=%d msg=%s", feishuResp.Code, feishuResp.Msg)
 	}
@@ -287,11 +311,9 @@ func (c *WeComChannel) Send(ctx context.Context, n TaskNotification) error {
 		markdown += fmt.Sprintf("\n> 错误: %s", n.Error)
 	}
 
-	body := map[string]interface{}{
-		"msgtype": "markdown",
-		"markdown": map[string]string{
-			"content": markdown,
-		},
+	body := WeComMarkdownBody{
+		MsgType:  "markdown",
+		Markdown: WeComMarkdown{Content: markdown},
 	}
 
 	data, _ := json.Marshal(body)
@@ -363,10 +385,10 @@ func NewFeishuAppChannel(appID, appSecret, chatID string, enabled bool) *FeishuA
 			return dialer.DialContext(ctx, "tcp4", addr)
 		},
 		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout:  15 * time.Second,
-		MaxIdleConns:           10,
-		MaxIdleConnsPerHost:    5,
-		IdleConnTimeout:        90 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+		MaxIdleConns:          10,
+		MaxIdleConnsPerHost:   5,
+		IdleConnTimeout:       90 * time.Second,
 	}
 	return &FeishuAppChannel{
 		appID:     appID,
@@ -443,15 +465,15 @@ func (c *FeishuAppChannel) uploadImage(ctx context.Context, imagePath string) (s
 	writer := multipart.NewWriter(&buf)
 
 	// 添加 image_type 字段
-	writer.WriteField("image_type", "message")
+	writer.WriteField("image_type", "message") //nolint:errcheck
 
 	// 添加图片文件
 	part, err := writer.CreateFormFile("image", filepath.Base(imagePath))
 	if err != nil {
 		return "", fmt.Errorf("create form file: %w", err)
 	}
-	part.Write(imageData)
-	writer.Close()
+	part.Write(imageData) //nolint:errcheck
+	writer.Close()        //nolint:errcheck
 
 	req, err := http.NewRequestWithContext(ctx, "POST",
 		"https://open.feishu.cn/open-apis/im/v1/images",
@@ -486,7 +508,7 @@ func (c *FeishuAppChannel) uploadImage(ctx context.Context, imagePath string) (s
 }
 
 // sendMessage 发送消息到群
-func (c *FeishuAppChannel) sendMessage(ctx context.Context, body map[string]interface{}) error {
+func (c *FeishuAppChannel) sendMessage(ctx context.Context, body FeishuAppMessage) error {
 	token, err := c.getToken(ctx)
 	if err != nil {
 		return err
@@ -530,14 +552,20 @@ func (c *FeishuAppChannel) Send(ctx context.Context, n TaskNotification) error {
 	elements := buildFeishuAppPayloadElements(ctx, c, n)
 	title := buildFeishuAppTitle(n)
 	template := "blue"
-	if n.Status == "failed" { template = "red" } else if n.Status == "timeout" { template = "orange" }
-	card := map[string]interface{}{
-		"header":   map[string]interface{}{"title": map[string]interface{}{"tag": "plain_text", "content": title}, "template": template},
-		"elements": elements,
+	if n.Status == "failed" {
+		template = "red"
+	} else if n.Status == "timeout" {
+		template = "orange"
+	}
+	card := FeishuCard{
+		Header:   FeishuCardHeader{Title: FeishuTextElement{Tag: "plain_text", Content: title}, Template: template},
+		Elements: elements,
 	}
 	cardJSON, _ := json.Marshal(card)
-	return c.sendMessage(ctx, map[string]interface{}{
-		"receive_id": c.chatID, "msg_type": "interactive", "content": string(cardJSON),
+	return c.sendMessage(ctx, FeishuAppMessage{
+		ReceiveID: c.chatID,
+		MsgType:   "interactive",
+		Content:   string(cardJSON),
 	})
 }
 
@@ -546,36 +574,40 @@ func buildFeishuAppTitle(n TaskNotification) string {
 	return fmt.Sprintf("%s [UniMap] 定时任务 [%s] %s", statusEmoji[n.Status], n.TaskName, statusLabel(n.Status))
 }
 
-func buildFeishuAppPayloadElements(ctx context.Context, c *FeishuAppChannel, n TaskNotification) []map[string]interface{} {
-	var elements []map[string]interface{}
+func buildFeishuAppPayloadElements(ctx context.Context, c *FeishuAppChannel, n TaskNotification) []FeishuCardElement {
+	var elements []FeishuCardElement
 	if n.Payload != nil {
 		fields := []string{"urls", "query", "queries", "engines", "engine", "detection_mode", "low_threshold", "format", "ports", "max_age_days", "alert_type", "duration_minutes", "task_type", "type", "file_pattern"}
 		var lines []string
 		for _, f := range fields {
-			if v, ok := n.Payload[f]; ok { lines = append(lines, fmt.Sprintf("**%s**: %v", f, v)) }
+			if v, ok := n.Payload[f]; ok {
+				lines = append(lines, fmt.Sprintf("**%s**: %v", f, v))
+			}
 		}
-		if len(lines) > 0 { elements = append(elements, map[string]interface{}{"tag": "markdown", "content": strings.Join(lines, "\n")}) }
+		if len(lines) > 0 {
+			elements = append(elements, FeishuMarkdownElement(strings.Join(lines, "\n")))
+		}
 	}
-	elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0)})
+	elements = append(elements, FeishuMarkdownElement(fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0)))
 	if len(n.ImagePaths) > 0 {
-		elements = append(elements, map[string]interface{}{"tag": "hr"})
-		elements = append(elements, map[string]interface{}{"tag": "markdown", "content": "**截图预览**:"})
+		elements = append(elements, FeishuHRElement())
+		elements = append(elements, FeishuMarkdownElement("**截图预览**:"))
 		for i, imgPath := range n.ImagePaths {
 			imageKey, err := c.uploadImage(ctx, imgPath)
 			if err != nil {
-				elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("⚠️ 截图 #%d 上传失败", i+1)})
+				elements = append(elements, FeishuMarkdownElement(fmt.Sprintf("⚠️ 截图 #%d 上传失败", i+1)))
 				continue
 			}
-			elements = append(elements, map[string]interface{}{"tag": "img", "img_key": imageKey, "alt": map[string]interface{}{"tag": "plain_text", "content": fmt.Sprintf("截图 #%d", i+1)}})
+			elements = append(elements, FeishuImageElement(imageKey, fmt.Sprintf("截图 #%d", i+1)))
 		}
 	}
 	if n.Result != "" {
-		elements = append(elements, map[string]interface{}{"tag": "hr"})
-		elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**执行结果**:\n%s", n.Result)})
+		elements = append(elements, FeishuHRElement())
+		elements = append(elements, FeishuMarkdownElement(fmt.Sprintf("**执行结果**:\n%s", n.Result)))
 	}
 	if n.Error != "" {
-		elements = append(elements, map[string]interface{}{"tag": "hr"})
-		elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**错误**: %s", n.Error)})
+		elements = append(elements, FeishuHRElement())
+		elements = append(elements, FeishuMarkdownElement(fmt.Sprintf("**错误**: %s", n.Error)))
 	}
 	return elements
 }

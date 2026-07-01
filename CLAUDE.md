@@ -1,6 +1,6 @@
 # UniMap — 多引擎网络空间资产查询与网页监控工具
 
-> 当前分支：`develop` | Go 1.26 | 主链路：`go build ./...`、`go test ./...`、`go test -race ./...` 均通过
+> 当前分支：`develop` | Go 1.26.4 | 主链路：`go build ./...`、`go test ./...`、`go test -race ./...` 均通过
 
 ## 项目概述
 
@@ -10,7 +10,7 @@
 
 | 类别 | 技术 |
 |------|------|
-| 语言 | Go 1.26 |
+	| 语言 | Go 1.26.4 |
 | Web | `net/http` + gorilla/websocket + go-resty |
 | GUI | Fyne v2 |
 | CLI | Cobra |
@@ -139,7 +139,11 @@ go run -tags gui ./cmd/unimap-gui
 - UA 池轮换（8 UA）、SSL 跳过、重定向记录
 - 端口联动：基线端口记录 + 变化检测（默认 29 端口）
 
-### 定时任务系统 (20 种 Runner)
+**2026-06-30 巡检审计修复**（commit `2bf5fe5`）：
+- **模式降级 Bug 已修**：service 层曾用 `if mode != strict { mode = relaxed }` 把 `security/balanced/precise` 静默降级为 `relaxed`，UI/定时任务的模式选择不生效。已导出 `tamper.NormalizeDetectionMode`，5 模式全部透传。
+- **定时篡改巡检渲染 JS**：`TamperCheckRunner` 曾传 nil allocator 只能 HTTP/Fast 模式，SPA 目标拿空 hash 误报。已从 `screenshotMgr` 注入 allocator，与交互式 `/api/v1/tamper/check` 能力对齐。
+
+### 定时任务系统 (22 种 Runner)
 - Cron 表达式创建、启停、编辑、删除
 - **一次性/延迟执行**：`ScheduleType` 支持 `"once"`（指定时间）/`"delay"`（延迟 N 秒）/`"cron"`（循环），执行后自动禁用
 - 执行历史追踪、持久化
@@ -199,7 +203,19 @@ go run -tags gui ./cmd/unimap-gui
 - L-02, L-03 (Low) — CORS 死代码已清理、Scheduler CSP nonce 已添加
 
 ### High (建议合并前修复)
-无
+~~无~~ ✅ 3 项 P1 安全漏洞已修复（2026-07-01，commit `bd1a506`，CI #11 全绿）
+
+### 2026-07-01 P1 安全审计修复（3 项，HIGH 风险，commit `bd1a506`，CI #11 全绿）
+
+> 审计报告：`.audit-results/audit_report_final.md`
+
+| # | 位置 | 问题 | 修复 |
+|---|------|------|------|
+| 1 | `web/config_handlers.go` | GET/POST `/api/v1/config` 无 admin 授权，任意已登录用户可读写全局配置 | 在 `handleGetConfig`/`handleSaveConfig` 添加 `requireAdmin` 检查 |
+| 2 | `web/history_handlers.go` | GET/DELETE `/api/v1/history` 无角色/所有权检查，任意已登录用户可读/删全局历史 | 在 `handleHistorySave`/`handleHistoryListOrClear`/`handleHistoryGetOrDelete` 添加 `requireAdmin` 检查 |
+| 3 | `go.mod` | Go 1.26.0 运行时 17 个标准库 CVE（html/template、crypto/x509、net/http 等） | 升级 `go 1.26` → `go 1.26.4` |
+
+**测试**：config/history handler 测试更新 `withAdminContext` 注入 admin 认证上下文，全量 `go test ./...` 通过。
 
 ### Medium (后续迭代修复)
 1. ~~10 个文件超 800 行~~ ✅ 已全部拆分完成（最大 `metrics.go` 795 行）
@@ -227,14 +243,14 @@ go run -tags gui ./cmd/unimap-gui
 5. ~~**CleanHunterFields 调用链断裂**~~ ✅ 已修复（2026-06-16，解析、L1 fallback、Web payload 统一调用）
 
 #### Medium（4 项）
-6. **653 处 `map[string]interface{}`** — 含测试文件（~293）、Web 响应（~80）、collection/parser（~80）等。
+6. ~~**653 处 `map[string]interface{}`**~~ ✅ **已完结，不再继续**。Phase 1-18 完成（653→406，减少 38%）。剩余 406 处为**合理保留的动态数据用法**：Web 响应构造（268，Go 惯用 JSON 模式）、collection/parser（51，浏览器扩展动态数据）、scheduler/adapter（56，动态 payload/外部 API）、其他小包（31，Extra 扩展点/测试/泛型池）。**禁止再做此重构——强行类型化会降低代码可读性且无收益。**
 8. **L2 Hook 设计冻结** — 仅当 L1/L3 telemetry 证明收益时启动。
 9. ~~**web/ flaky test**~~ ✅ 已修复（2026-06-16，`TestClassifyBatchURLsPreservesOriginalIndices` 改为稳定输入并通过 `-race` 复核）
 10. ~~**定时任务缺少简易定时功能**~~ ✅ 已修复（2026-06-16，新增 `ScheduleType` 字段支持 `"once"`/`"delay"`/`"cron"` 三种模式，⏳ 审计中）
 
 #### 长期项（2 项，需架构级改造，按需启动）
 - **L2 Hook** — 设计冻结。仅当 L1/L3 telemetry 证明收益时启动。
-- **新引擎端到端闭环** — Censys/DayDayMap 适配器代码存在。✅ API Key 已配置并验证通过（2026-06-23，commit fa314ed）：DayDayMap curl 200 OK（关键字搜索），Censys v3 单 IP 查询 200 OK（免费版限制）。（BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除）
+- **新引擎端到端闭环** — Censys/DayDayMap 适配器代码存在。✅ API Key 已配置并验证通过（2026-06-23，commit fa314ed）：DayDayMap curl 200 OK（关键字搜索），Censys v3 单 IP 查询 200 OK（免费版限制）。✅ **2026-06-27 真机 API 验证**：DayDayMap `port=80` 返回 5 条资产，Censys `ip=8.8.8.8` 返回 3 条资产。Extension 采集 DOM 选择器已定义，需真机浏览器测试。（BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除）
 
 #### Low（3 项）
 11. ~~**countGoroutines() 空桩** — `router_test.go:400` 硬编码 `return 0`。~~ ✅ 已修复（2026-06-17，改用 `runtime.NumGoroutine()`，goroutine leak 检测增加 5 协程容差，20 次 `-race` 运行均通过）
@@ -299,6 +315,93 @@ go run -tags gui ./cmd/unimap-gui
 - header 渐变、卡片层次阴影、按钮渐变+悬浮、body 微纹理
 - settings cfg-* 按钮渐变、toggle 统一 accent、卡片 hover 浮升
 
+### 2026-06-27 安全审计修复（28/28 项全部闭环）
+
+> 审计原始报告：`.audit-results/SECURITY_AUDIT_2026-06-27.md`
+
+#### P0 — Critical（3 项，✅ 全部修复）
+
+| ID | 位置 | 问题 | 修复 |
+|----|------|------|------|
+| FINDING-001 | `web/server.go:914` | 认证中间件在非 loopback 部署时未强制启用 | ✅ `logger.Fatalf` fail-closed 启动 |
+| FINDING-002 | `web/metrics.go:33` | Prometheus `/metrics` 无认证暴露 | ✅ 添加 admin token 认证 + 非 loopback 禁止 |
+| FINDING-003 | `web/backup_handlers.go:12` | 备份端点缺少管理员角色校验 | ✅ 添加 `requireAdmin`（auth 启用时） |
+
+#### P1 — High（14 项，✅ 13 项代码修复，2 项需手动配置）
+
+| ID | 位置 | 问题 | 修复 |
+|----|------|------|------|
+| FINDING-004 | `web/login_handlers.go:94` | 登录时序侧信道可枚举用户 | ✅ 始终执行 bcrypt（含 dummy hash 防时序差异） |
+| FINDING-005 | `configs/config.yaml:188` | 飞书 app_secret 明文存储 | ⚠️ 需手动配置 `$ENC$v2:` 加密 |
+| FINDING-006 | `configs/config.yaml:4` | 全部生产 API Key 明文存储 | ⚠️ 需手动配置加密 + pre-commit 防护 |
+| FINDING-007 | `internal/auth/api_key.go:243` | API Key 哈希使用无盐 SHA-256 | ✅ 改为 `salt$hash` 格式，向后兼容旧格式 |
+| FINDING-008 | `internal/error/error.go:83` | 错误结构体 JSON tag 泄露内部路径 | ✅ `StackTrace`/`OriginalErr` 改为 `json:"-"` |
+| FINDING-009 | `internal/distributed/registry.go:325` | GetHealthyNodes 返回活引用 | ✅ 返回深拷贝（`copyNodeRecord`） |
+| FINDING-010 | `internal/config/config_defaults.go:228` | Admin Token 前 4 字符打印到 stdout | ✅ 改为 `****` 掩码 |
+| FINDING-011 | `web/node_task_handlers.go:33` | 8+ 处 API 响应泄露原始 `err.Error()` | ✅ 全部改用 `sanitizeError()` 或通用错误消息 |
+| FINDING-012 | `web/http_helpers.go:325` | DNS 解析 5 秒超时可被用于慢速 DoS | ✅ 降至 2 秒 |
+| FINDING-013 | `web/screenshot_handlers.go:386` | 搜索引擎截图缺少 Origin/CSRF 检查 | ✅ 添加 `requireTrustedRequest` |
+| FINDING-014 | `web/query_handlers.go:169` | page_size 无上限，可致 OOM | ✅ 上限 500 |
+| FINDING-015 | `web/websocket_handlers.go:72` | WebSocket 连接数无限制 | ✅ 最大 100 连接 + 64KB 读取限制 |
+| FINDING-016 | `internal/config/config.go:31` | 配置指针泄漏绕过 RWMutex | ✅ `GetConfig()` 返回深拷贝（YAML round-trip） |
+| FINDING-017 | `web/query_handlers.go:533` | 遗留密码修改缺少管理员角色校验 | ✅ 多用户模式下添加 `requireAdmin` |
+
+#### P2 — Medium（11 项，✅ 全部修复）
+
+| 修复项 | 说明 |
+|--------|------|
+| lumberjack 重复版本 | ✅ `github.com/natefinch/lumberjack` v1 → `gopkg.in/natefinch/lumberjack.v2` |
+| UUID 依赖过旧 | ✅ `google/uuid` v1.1.2 → v1.6.0 |
+| panic recovery 缺少 Stack | ✅ 5 处 panic recovery 添加 `runtime.Stack` 堆栈输出 |
+| WebSocket 读取无限制 | ✅ `SetReadLimit(64KB)` |
+| writeError 格式不一致 | ✅ `writeError` 改用 `writeAPIError` 统一信封格式 |
+| 配置泄漏 (go.mod) | ✅ `go mod tidy` 清理未使用的 v1 依赖 |
+| CSRF token 未轮换 | ✅ 登录成功后刷新 CSRF token 防重放攻击 |
+| CSP unsafe-hashes | ✅ 移除 `'unsafe-hashes'`，仅保留 nonce 策略 |
+| TLS 配置未验证 | ✅ 非 loopback 部署时启动日志提醒配置 TLS 反向代理 |
+| Session Secure 标志 | ✅ 已有 `isSecure()` 自动检测 TLS/X-Forwarded-Proto |
+
+#### 安全亮点（已确认安全）
+
+SQL 注入防护 ✅ | bcrypt 密码哈希 ✅ | 常量时间比较 ✅ | Session AES-GCM 加密 ✅ | CSRF 双提交 ✅ | 登录暴力破解防护 ✅ | 路径遍历多层防护 ✅ | SSRF urlguard ✅ | html/template 自动转义 ✅ | 优雅关闭 ✅ | 认证 fail-closed ✅ | API Key 加盐哈希 ✅
+
+### 2026-06-30 巡检功能审计与逻辑缺陷修复（commit `2bf5fe5`，CI 全绿）
+
+> 决策记录：`docs/DECISIONS/0003-patrol-inspection-audit-and-fixes.md` | 记忆：`topics/project_patrol-inspection-audit.md`
+
+三个 Explore agent 全量审计巡检子系统（篡改检测 + URL 可达性 + 批量截图 + 端口扫描 + ICP 巡检 + 基线刷新）。识别 4 确认 Bug + 4 完善性缺口，全部修复；7 架构级缺口列为后续。
+
+#### Tier 1 — 确认 Bug（✅ 全部修复）
+
+| # | 问题 | 修复 |
+|---|------|------|
+| 1 | **篡改模式被强制降级**：service 层 `if mode != strict { relaxed }` 把 security/balanced/precise 静默降级，UI/定时任务 5 模式选择形同虚设 | 导出 `NormalizeDetectionMode`，service 层改用它，5 模式全透传 |
+| 2 | **每日篡改模板无效模式**：`tmpl_daily_tamper_check` `DetectMode:"full"` 非合法模式 | 改为 `"relaxed"` |
+| 3 | **定时篡改巡检不渲染 JS**：`TamperCheckRunner` 传 nil allocator，SPA 页面拿空 hash 误报 | 从 `screenshotMgr` 注入 allocator（nil 时保持原行为） |
+| 4 | **可达性统计缺 blocked 桶**：SSRF 拦截的 URL 无汇总分支，`Total` 对不上 | `URLReachabilitySummary` 加 `Blocked` 字段 + switch 分支，`Total = Reachable+Unreachable+InvalidFormat+Blocked` |
+
+#### Tier 2 — 完善性修复（✅ 全部完成）
+
+| # | 问题 | 修复 |
+|---|------|------|
+| 5 | 基线刷新串行执行，忽略 payload concurrency | `BaselineRefreshRunner` 信号量+WaitGroup 并发化 |
+| 6 | "查看基线"无 UI 入口 | `monitor.html` 加 `btn-list-baseline` 绑定 `loadBaselineList()` |
+| 7 | 历史类型过滤缺 no_baseline/unreachable/suspicious | `monitor.html` 下拉补全 3 选项 |
+| 8 | scheduler 帮助文档模式错误 | `scheduler.html` `malicious/performance/full` → `security/balanced/precise` |
+
+#### 关键教训（写入记忆）
+- **两层能力语义割裂**：下层（detector）提供更丰富能力时，上层（service）不能擅自收窄语义而不导出/复用下层的归一化逻辑。
+- **定时路径与交互路径能力不对等**：审计定时/后台任务时，必须比对它与交互式入口的能力是否对等（allocator、proxy、SSRF 校验等）。
+
+#### 列为后续的架构级缺口（本次未修，需设计决策）
+1. 可达性/端口扫描未产生告警记录（`AlertTypeReachability` 定义但无人触发）
+2. 告警与资源监控仅存内存，重启丢失
+3. `operation_history` 表无内部写入者（仅客户端 POST）
+4. 定时批量截图结果未进 `batchdb`
+5. 篡改导出器无生产调用方（死代码）
+6. 无定时备份任务类型
+7. 篡改记录文件式无索引（量大时查询慢）
+
 ### 2026-06-17 新引擎代码基础设施全量补齐 + countGoroutines 空桩修复
 
 #### Phase 3.3：`countGoroutines()` 空桩修复
@@ -331,8 +434,8 @@ go run -tags gui ./cmd/unimap-gui
 | **ZoomEye** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（选择器已更新） | ✅ | ✅ **已验证（2026-06-17）** | ✅ **已验证** | ✅ title 清理已修（commit 7e619f8） |
 | Quake | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Shodan** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **已验证（2026-06-17）** | ✅ **已验证** | ⚠️ timestamp 选择器为空（需真机调试，commit 50dc187 已修字段流） |
-| Censys | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ✅ **通过（2026-06-23, v3 单 IP）** | ⏳ 需真机采集 | ⏳ | ⏳ |
-| DayDayMap | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ✅ **通过（2026-06-23, 关键字搜索）** | ⏳ 需真机采集 | ⏳ | ⏳ |
+| Censys | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ✅ **通过（2026-06-23, v3 单 IP）** | ✅ **2026-06-27 API 验证** | ⏳ 需真机采集 | ⏳ |
+| DayDayMap | ✅ | ✅ | ✅ | ✅ **新** | ✅ **新** | ✅ | ✅ **通过（2026-06-23, 关键字搜索）** | ✅ **2026-06-27 API 验证** | ⏳ 需真机采集 | ⏳ |
 
 **验证**：`go build ./...` / `go vet ./...` / `go test -race ./...` 全部通过（33/33 包）
 
@@ -411,6 +514,13 @@ go run -tags gui ./cmd/unimap-gui
 4. ~~**Quake 响应解析**~~ ✅ 已修复（2026-06-21）
 5. ~~**前端 API 错误显示**~~ ✅ 已修复（2026-06-21，10 项）
 6. ~~**查询结果表格不渲染**~~ ✅ 已修复（2026-06-21）
+7. ~~**CI 收尾（2026-06-26→2026-06-29，已闭环）~~ ✅：
+   - `.gitattributes` 强制 LF + `renormalize` + `gofmt -w .`
+   - `CGO_ENABLED=1` 显式设置在 test job
+   - 依赖升级：`golang.org/x/image@v0.43.0`、`golang.org/x/net@v0.55.0`、`github.com/redis/go-redis/v9@v9.6.3`
+   - `govulncheck ./...` 0 漏洞
+   - `go build -tags gui ./cmd/unimap-gui` 修复 `apiTamperHistoryItem` → `guiTamperHistoryRecord` 类型名不匹配（`monitor_native.go:610,647`）
+   - 验证：本地 `build`/`vet`/`race`/`gofmt`/`Extension JS syntax`/`govulncheck` 全部通过
 
 ### 2026-06-20 移除 BinaryEdge/Onyphe/GreyNoise 三引擎（commit fb6dcdb）
 
@@ -427,7 +537,7 @@ adapter（git rm）/ config（struct·clone·load·defaults·validate·GetEngine
 
 **结果**：在册引擎 10 → 7。新引擎真机验证仅剩 Censys/DayDayMap。
 
-**保留（历史快照）**：`docs/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md`、`docs/REPAIR_PLAN_2026-06-16.md`、本文件 2026-06-17 Phase5 历史段。
+**保留（历史快照）**：`docs/archive/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md`、`docs/archive/REPAIR_PLAN_2026-06-16.md`、本文件 2026-06-17 Phase5 历史段。
 
 ### 2026-06-21 前端 API 显示修复 + 表格渲染修复 + Quake 适配器修复
 
@@ -477,7 +587,7 @@ adapter（git rm）/ config（struct·clone·load·defaults·validate·GetEngine
 - ✅ 批量截图 Provider 增加逐项进度回调；CDP/Extension provider 均支持完成一条即更新 job 进度。
 - ✅ `main.js` API 请求统一走 `apiFetch`；CSV/JSON 导出基于完整结果数组，不再只导出当前 DOM 页。
 - ⏸ 仍剩长期项：L-05/TD-4 强类型渐进重构；L2 Hook。
-- 📝 剩余长期项已补充评估与实施文档：`docs/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md` §7（TD-4/L2 Hook/stealth 总评估）与 `docs/EXTENSION_ANTI_SCRAPING_ARCHITECTURE.md` §11（stealth 执行方案）。
+- 📝 剩余长期项已补充评估与实施文档：`docs/archive/ENGINE_ADAPTER_IMPLEMENTATION_PLAN.md` §7（TD-4/L2 Hook/stealth 总评估）与 `docs/archive/EXTENSION_ANTI_SCRAPING_ARCHITECTURE.md` §11（stealth 执行方案）。
 
 ### 2026-06-11 安全与稳定性修复（19 项）
 - ✅ **CRITICAL** `batchJobStore.get()` → `getSnapshot()` 深拷贝，消除 progress handler 与后台 goroutine 数据竞争。

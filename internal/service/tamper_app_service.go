@@ -10,6 +10,7 @@ import (
 	"github.com/unimap/project/internal/alerting"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/tamper"
+	"github.com/unimap/project/internal/utils"
 )
 
 // TamperAllocatorFactory 用于注入浏览器 allocator，便于复用 screenshot 的 CDP/本地启动策略。
@@ -23,7 +24,7 @@ type TamperAppService struct {
 
 func NewTamperAppService(baseDir string, alertManager *alerting.Manager) *TamperAppService {
 	if strings.TrimSpace(baseDir) == "" {
-		baseDir = "./hash_store"
+		baseDir = utils.HashStoreDir()
 	}
 	return &TamperAppService{
 		baseDir:      baseDir,
@@ -60,10 +61,11 @@ func (s *TamperAppService) Check(ctx context.Context, req TamperCheckRequest, al
 	if req.Concurrency <= 0 {
 		req.Concurrency = 5
 	}
-	mode := strings.ToLower(strings.TrimSpace(req.Mode))
-	if mode != tamper.DetectionModeStrict {
-		mode = tamper.DetectionModeRelaxed
-	}
+	// NormalizeDetectionMode preserves all five supported detection modes
+	// (relaxed/strict/security/balanced/precise); previously the service layer
+	// silently downgraded security/balanced/precise to relaxed, hiding the
+	// detector's richer thresholds from both the UI and scheduled tasks.
+	mode := tamper.NormalizeDetectionMode(req.Mode)
 
 	detector, cleanup, err := s.newDetector(ctx, mode, allocatorFactory)
 	if err != nil {
@@ -219,7 +221,7 @@ func (s *TamperAppService) ListAllCheckRecords() (map[string][]*tamper.CheckReco
 }
 
 // GetCheckStats 获取检测统计信息
-func (s *TamperAppService) GetCheckStats(url string) (map[string]interface{}, error) {
+func (s *TamperAppService) GetCheckStats(url string) (tamper.CheckStats, error) {
 	detector := tamper.NewDetector(tamper.DetectorConfig{
 		BaseDir:      s.baseDir,
 		AlertManager: s.alertManager,
@@ -379,9 +381,15 @@ func buildHistoryRecord(rec *tamper.CheckRecord, recordURL, status, mode string)
 
 // limitHistoryRecords 限制历史记录数量
 func limitHistoryRecords(records []HistoryRecord, limit int) []HistoryRecord {
-	if limit <= 0 { limit = 200 }
-	if limit > 1000 { limit = 1000 }
-	if len(records) > limit { return records[:limit] }
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	if len(records) > limit {
+		return records[:limit]
+	}
 	return records
 }
 

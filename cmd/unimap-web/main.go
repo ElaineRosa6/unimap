@@ -15,10 +15,10 @@ import (
 	"github.com/unimap/project/web"
 )
 
-const configPath = "configs/config.yaml"
+var configPath = utils.DefaultConfigPath()
 
 func main() {
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	// 初始化日志系统
 	logger.Init(logger.Config{

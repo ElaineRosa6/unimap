@@ -233,7 +233,7 @@ func (s *Scheduler) AddTask(task *ScheduledTask) error {
 		delete(s.tasks, task.ID)
 		return fmt.Errorf("failed to schedule task: %w", err)
 	}
-	s.saveLocked()
+	s.saveLocked() //nolint:errcheck
 	return nil
 }
 
@@ -329,7 +329,7 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 			return fmt.Errorf("failed to schedule task: %w", err)
 		}
 	}
-	s.saveLocked()
+	s.saveLocked() //nolint:errcheck
 	return nil
 }
 
@@ -498,7 +498,6 @@ func (s *Scheduler) GetHistory(limit int, taskType string, status string) []Exec
 	return result
 }
 
-
 // hasCyclicDependency checks for cyclic dependencies in a task's dependency chain.
 func (s *Scheduler) hasCyclicDependencyLocked(taskID string, dependsOn []string) bool {
 	visiting := make(map[string]bool) // nodes in current path
@@ -538,6 +537,7 @@ func (s *Scheduler) hasCyclicDependencyLocked(taskID string, dependsOn []string)
 }
 
 // hasCyclicDependency checks for cyclic dependencies in a task's dependency chain.
+// nolint:unused
 func (s *Scheduler) hasCyclicDependency(taskID string, dependsOn []string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -743,7 +743,9 @@ func (s *Scheduler) runTaskHandler(handler TaskHandler, payload *model.TaskPaylo
 	var err error
 	func() {
 		defer func() {
-			if r := recover(); r != nil { err = fmt.Errorf("panic in runner: %v", r) }
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic in runner: %v", r)
+			}
 		}()
 		result, err = handler.Execute(ctx, payload)
 	}()
@@ -759,10 +761,14 @@ func (s *Scheduler) finalizeTaskExecution(task *ScheduledTask, record ExecutionR
 	if t, ok := s.tasks[task.ID]; ok {
 		now := time.Now()
 		t.LastRunAt = &now
-		if next := s.getNextRunTime(task.ID); !next.IsZero() { t.NextRunAt = &next }
+		if next := s.getNextRunTime(task.ID); !next.IsZero() {
+			t.NextRunAt = &next
+		}
 	}
 	s.history = append(s.history, record)
-	if len(s.history) > s.maxHistory { s.history = s.history[len(s.history)-s.maxHistory:] }
+	if len(s.history) > s.maxHistory {
+		s.history = s.history[len(s.history)-s.maxHistory:]
+	}
 	s.mu.Unlock()
 
 	s.updateMetrics()
@@ -887,6 +893,7 @@ func (s *Scheduler) getNextRunTime(taskID string) time.Time {
 }
 
 // saveAsync persists data to disk in a background goroutine.
+// nolint:unused
 func (s *Scheduler) saveAsync() {
 	go func() {
 		defer func() {
@@ -934,4 +941,3 @@ func (s *Scheduler) Stop() {
 func (s *Scheduler) generateID() string {
 	return uuid.New().String()
 }
-

@@ -366,10 +366,7 @@ func detectCDNByHTTPHeaders(ctx context.Context, targetURL string, pool *proxypo
 			}
 		}
 	}
-	if isLikelyCDNString(strings.ToLower(strings.TrimSpace(resp.Header.Get("Server")))) {
-		return true
-	}
-	return false
+	return isLikelyCDNString(strings.ToLower(strings.TrimSpace(resp.Header.Get("Server"))))
 }
 
 func scanHostPorts(ctx context.Context, ips []string, ports []int) (map[string][]int, error) {

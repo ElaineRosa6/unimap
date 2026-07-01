@@ -27,11 +27,14 @@ func NewManager(path string) *Manager {
 	}
 }
 
-// GetConfig 获取配置 (thread-safe)
+// GetConfig 获取配置 (thread-safe) — 返回深拷贝，防止外部修改
 func (m *Manager) GetConfig() *Config {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.config
+	if m.config == nil {
+		return nil
+	}
+	return copyConfig(m.config)
 }
 
 // SetConfig replaces the current config (thread-safe).
@@ -52,7 +55,6 @@ func (m *Manager) applyDefaults(config *Config) {
 	m.applyCacheDefaults(config)
 	m.applyMiscDefaults(config)
 }
-
 
 // IsValid 检查配置是否有效
 func (m *Manager) IsValid() bool {
@@ -272,4 +274,17 @@ func HashPassword(password string) (string, error) {
 // CheckPassword compares a password against a bcrypt hash.
 func CheckPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+}
+
+// copyConfig creates a deep copy of Config via YAML round-trip.
+func copyConfig(src *Config) *Config {
+	data, err := yaml.Marshal(src)
+	if err != nil {
+		return src
+	}
+	var dst Config
+	if err := yaml.Unmarshal(data, &dst); err != nil {
+		return src
+	}
+	return &dst
 }

@@ -63,31 +63,36 @@ func (e *ExcelExporter) Export(assets []model.UnifiedAsset, filepath string) err
 		return fmt.Errorf("failed to create sheet: %w", err)
 	}
 
+	// setCell 写入单元格值，忽略不可恢复的错误（excelize 在写入普通值时极少失败）
+	setCell := func(cell string, value interface{}) {
+		_ = f.SetCellValue(sheetName, cell, value)
+	}
+
 	// 设置表头
 	headers := []string{"IP", "Port", "Protocol", "Host", "URL", "Title", "Server", "Status Code", "Country", "Region", "City", "ASN", "Org", "ISP", "Source"}
 	for i, header := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		f.SetCellValue(sheetName, cell, header)
+		setCell(cell, header)
 	}
 
 	// 写入数据
 	for i, asset := range assets {
 		row := i + 2 // 从第2行开始（第1行是表头）
-		f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), asset.IP)
-		f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), asset.Port)
-		f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), asset.Protocol)
-		f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), asset.Host)
-		f.SetCellValue(sheetName, fmt.Sprintf("E%d", row), asset.URL)
-		f.SetCellValue(sheetName, fmt.Sprintf("F%d", row), asset.Title)
-		f.SetCellValue(sheetName, fmt.Sprintf("G%d", row), asset.Server)
-		f.SetCellValue(sheetName, fmt.Sprintf("H%d", row), asset.StatusCode)
-		f.SetCellValue(sheetName, fmt.Sprintf("I%d", row), asset.CountryCode)
-		f.SetCellValue(sheetName, fmt.Sprintf("J%d", row), asset.Region)
-		f.SetCellValue(sheetName, fmt.Sprintf("K%d", row), asset.City)
-		f.SetCellValue(sheetName, fmt.Sprintf("L%d", row), asset.ASN)
-		f.SetCellValue(sheetName, fmt.Sprintf("M%d", row), asset.Org)
-		f.SetCellValue(sheetName, fmt.Sprintf("N%d", row), asset.ISP)
-		f.SetCellValue(sheetName, fmt.Sprintf("O%d", row), asset.Source)
+		setCell(fmt.Sprintf("A%d", row), asset.IP)
+		setCell(fmt.Sprintf("B%d", row), asset.Port)
+		setCell(fmt.Sprintf("C%d", row), asset.Protocol)
+		setCell(fmt.Sprintf("D%d", row), asset.Host)
+		setCell(fmt.Sprintf("E%d", row), asset.URL)
+		setCell(fmt.Sprintf("F%d", row), asset.Title)
+		setCell(fmt.Sprintf("G%d", row), asset.Server)
+		setCell(fmt.Sprintf("H%d", row), asset.StatusCode)
+		setCell(fmt.Sprintf("I%d", row), asset.CountryCode)
+		setCell(fmt.Sprintf("J%d", row), asset.Region)
+		setCell(fmt.Sprintf("K%d", row), asset.City)
+		setCell(fmt.Sprintf("L%d", row), asset.ASN)
+		setCell(fmt.Sprintf("M%d", row), asset.Org)
+		setCell(fmt.Sprintf("N%d", row), asset.ISP)
+		setCell(fmt.Sprintf("O%d", row), asset.Source)
 	}
 
 	// 设置默认活动工作表

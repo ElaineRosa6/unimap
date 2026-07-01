@@ -339,7 +339,7 @@ func TestHasCookies_AllEmptyNames(t *testing.T) {
 func TestVerifyEngineSession_UnknownEngine(t *testing.T) {
 	cfg := &config.Config{}
 	s := &Server{config: cfg}
-	ok, _, hint, err := s.verifyEngineSession(nil, "cdp", "unknown_engine", "test")
+	ok, _, hint, err := s.verifyEngineSession(context.TODO(), "cdp", "unknown_engine", "test")
 	if ok {
 		t.Fatal("expected false for unknown engine")
 	}
@@ -377,5 +377,30 @@ func TestActiveBridgeLiveTokens_RecentLastSeen_One(t *testing.T) {
 	}
 	if got := s.activeBridgeLiveTokens(); got != 1 {
 		t.Fatalf("expected 1 live token with recent LastSeen, got %d", got)
+	}
+}
+
+// ============================================================
+// handleImportCookieJSON tests
+// ============================================================
+
+func TestHandleImportCookieJSON_MethodNotAllowed(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookie/import", nil)
+	w := httptest.NewRecorder()
+	s.handleImportCookieJSON(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestHandleImportCookieJSON_ConfigNil(t *testing.T) {
+	s := &Server{config: nil}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookie/import", nil)
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+	s.handleImportCookieJSON(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", w.Code)
 	}
 }

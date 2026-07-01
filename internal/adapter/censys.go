@@ -16,13 +16,13 @@ import (
 
 // CensysAdapter Censys引擎适配器
 type CensysAdapter struct {
-	client     *resty.Client
-	baseURL    string
-	apiID      string
-	apiSecret  string
-	useBearer  bool // true when using new-format personal API key (Bearer auth)
-	qps        int
-	timeout    time.Duration
+	client    *resty.Client
+	baseURL   string
+	apiID     string
+	apiSecret string
+	useBearer bool // true when using new-format personal API key (Bearer auth)
+	qps       int
+	timeout   time.Duration
 }
 
 // --- Censys v3 API response structs ---
@@ -113,16 +113,16 @@ type CensysV3HostResponse struct {
 // Each entry merges one service with host-level metadata (location, AS, DNS).
 // When a host has no services, a single entry is created with just host metadata.
 type CensysRawEntry struct {
-	IP               string          `json:"ip"`
-	Port             float64         `json:"port"`
-	ServiceName      string          `json:"service_name"`
-	HTTP             *CensysHTTP     `json:"http,omitempty"`
-	TLS              *CensysTLS      `json:"tls,omitempty"`
+	IP               string           `json:"ip"`
+	Port             float64          `json:"port"`
+	ServiceName      string           `json:"service_name"`
+	HTTP             *CensysHTTP      `json:"http,omitempty"`
+	TLS              *CensysTLS       `json:"tls,omitempty"`
 	Software         []CensysSoftware `json:"software,omitempty"`
-	Location         *CensysLocation `json:"location,omitempty"`
-	AutonomousSystem *CensysAS       `json:"autonomous_system,omitempty"`
-	DNS              *CensysDNS      `json:"dns,omitempty"`
-	LastUpdatedAt    string          `json:"last_updated_at,omitempty"`
+	Location         *CensysLocation  `json:"location,omitempty"`
+	AutonomousSystem *CensysAS        `json:"autonomous_system,omitempty"`
+	DNS              *CensysDNS       `json:"dns,omitempty"`
+	LastUpdatedAt    string           `json:"last_updated_at,omitempty"`
 }
 
 // NewCensysAdapter 创建Censys适配器
@@ -136,13 +136,13 @@ func NewCensysAdapter(baseURL, apiID, apiSecret string, qps int, timeout time.Du
 	useBearer := apiSecret == "" && strings.HasPrefix(apiID, "censys_")
 
 	return &CensysAdapter{
-		client:     client,
-		baseURL:    baseURL,
-		apiID:      apiID,
-		apiSecret:  apiSecret,
-		useBearer:  useBearer,
-		qps:        qps,
-		timeout:    timeout,
+		client:    client,
+		baseURL:   baseURL,
+		apiID:     apiID,
+		apiSecret: apiSecret,
+		useBearer: useBearer,
+		qps:       qps,
+		timeout:   timeout,
 	}
 }
 
@@ -397,10 +397,10 @@ func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName strin
 // Normalize 标准化Censys结果
 // Censys hosts have nested services[]. Each host can produce multiple UnifiedAssets (one per service).
 func (c *CensysAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
-	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	if raw == nil || len(raw.RawData) == 0 {
-		return assets, nil
+		return []model.UnifiedAsset{}, nil
 	}
+	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	for _, item := range raw.RawData {
 		entry, ok := item.(*CensysRawEntry)
 		if !ok {
@@ -529,7 +529,11 @@ func buildCensysURL(asset *model.UnifiedAsset) {
 		return
 	}
 	if asset.Protocol == "" {
-		if asset.Port == 443 { asset.Protocol = "https" } else { asset.Protocol = "http" }
+		if asset.Port == 443 {
+			asset.Protocol = "https"
+		} else {
+			asset.Protocol = "http"
+		}
 	}
 	u := &url.URL{Scheme: strings.ToLower(asset.Protocol)}
 	if asset.Host != "" {

@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/tamper"
 )
@@ -21,19 +23,19 @@ func TestHandleTamperHistoryDelete(t *testing.T) {
 		t.Fatalf("getwd failed: %v", err)
 	}
 	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("chdir failed: %v", err)
+	if chdirErr := os.Chdir(tmpDir); chdirErr != nil {
+		t.Fatalf("chdir failed: %v", chdirErr)
 	}
 	defer func() { _ = os.Chdir(oldWD) }()
 
 	url := "https://example.com"
 	storage := tamper.NewHashStorage("./hash_store")
-	if err := storage.SaveCheckRecord(url, &tamper.CheckRecord{
+	if saveErr := storage.SaveCheckRecord(url, &tamper.CheckRecord{
 		URL:       url,
 		CheckType: "normal",
 		Timestamp: time.Now().Unix(),
-	}); err != nil {
-		t.Fatalf("save record failed: %v", err)
+	}); saveErr != nil {
+		t.Fatalf("save record failed: %v", saveErr)
 	}
 
 	recordsBase := filepath.Join("hash_store", "records")
@@ -286,4 +288,32 @@ func TestTamperAllocatorFactory_NilMgr(t *testing.T) {
 	if factory != nil {
 		t.Fatal("expected nil factory when screenshotMgr is nil")
 	}
+}
+
+func TestTamperAllocatorFactory_WithProxy(t *testing.T) {
+	s := &Server{config: &config.Config{}, screenshotMgr: &screenshot.Manager{}}
+	factory := s.tamperAllocatorFactory("http://proxy:8080")
+	if factory == nil {
+		t.Fatal("expected non-nil factory")
+	}
+	ctx, cancel, err := factory(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	cancel()
+	_ = ctx
+}
+
+func TestTamperAllocatorFactory_NoProxy(t *testing.T) {
+	s := &Server{config: &config.Config{}, screenshotMgr: &screenshot.Manager{}}
+	factory := s.tamperAllocatorFactory("")
+	if factory == nil {
+		t.Fatal("expected non-nil factory")
+	}
+	ctx, cancel, err := factory(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	cancel()
+	_ = ctx
 }

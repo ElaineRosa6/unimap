@@ -266,11 +266,11 @@ func TestGetCircuitBreakerStats(t *testing.T) {
 		t.Fatal("expected fofa stats")
 	}
 
-	if fofaStats["failures"] != 2 {
-		t.Errorf("expected 2 failures, got %v", fofaStats["failures"])
+	if fofaStats.Failures != 2 {
+		t.Errorf("expected 2 failures, got %v", fofaStats.Failures)
 	}
-	if fofaStats["state"] != "closed" {
-		t.Errorf("expected closed state, got %v", fofaStats["state"])
+	if fofaStats.State != "closed" {
+		t.Errorf("expected closed state, got %v", fofaStats.State)
 	}
 }
 

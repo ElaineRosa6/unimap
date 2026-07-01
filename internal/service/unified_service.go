@@ -42,7 +42,7 @@ type UnifiedService struct {
 	cacheCleanup       time.Duration
 	cacheBackend       string
 	strategyManager    *utils.CacheStrategyManager
-	mu                 sync.RWMutex
+	mu                 sync.RWMutex                // nolint:unused
 	maxMemoryMB        int                         // 最大内存使用限制（MB）
 	maxConcurrent      int                         // 最大并发查询数
 	activeQueries      int                         // 当前活跃查询数
@@ -518,7 +518,7 @@ func (s *UnifiedService) processAssets(ctx context.Context, assets []model.Unifi
 	}
 
 	// 触发处理后钩子
-	s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterProcess, "process", &model.HookData{
+	s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterProcess, "process", &model.HookData{ //nolint:errcheck
 		Extra: map[string]any{
 			"original_count":  len(assets),
 			"processed_count": len(result),
@@ -614,19 +614,37 @@ func (s *UnifiedService) RegisterExporter(exporter plugin.ExporterPlugin, config
 	return s.pluginManager.StartPlugin(exporter.Name())
 }
 
+// EngineInfo represents a plugin engine's metadata.
+type EngineInfo struct {
+	Name        string   `json:"name"`
+	Version     string   `json:"version"`
+	Description string   `json:"description"`
+	Author      string   `json:"author"`
+	Fields      []string `json:"fields"`
+	MaxPageSize int      `json:"max_page_size"`
+}
+
+// ProcessorInfo represents a plugin processor's metadata.
+type ProcessorInfo struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	Priority    int    `json:"priority"`
+}
+
 // ListEngines 列出所有引擎
-func (s *UnifiedService) ListEngines() []map[string]interface{} {
+func (s *UnifiedService) ListEngines() []EngineInfo {
 	engines := s.pluginManager.GetRegistry().GetEnginePlugins()
-	result := make([]map[string]interface{}, 0, len(engines))
+	result := make([]EngineInfo, 0, len(engines))
 
 	for _, engine := range engines {
-		result = append(result, map[string]interface{}{
-			"name":          engine.Name(),
-			"version":       engine.Version(),
-			"description":   engine.Description(),
-			"author":        engine.Author(),
-			"fields":        engine.SupportedFields(),
-			"max_page_size": engine.MaxPageSize(),
+		result = append(result, EngineInfo{
+			Name:        engine.Name(),
+			Version:     engine.Version(),
+			Description: engine.Description(),
+			Author:      engine.Author(),
+			Fields:      engine.SupportedFields(),
+			MaxPageSize: engine.MaxPageSize(),
 		})
 	}
 
@@ -634,16 +652,16 @@ func (s *UnifiedService) ListEngines() []map[string]interface{} {
 }
 
 // ListProcessors 列出所有处理器
-func (s *UnifiedService) ListProcessors() []map[string]interface{} {
+func (s *UnifiedService) ListProcessors() []ProcessorInfo {
 	processors := s.pluginManager.GetRegistry().GetProcessorPlugins()
-	result := make([]map[string]interface{}, 0, len(processors))
+	result := make([]ProcessorInfo, 0, len(processors))
 
 	for _, processor := range processors {
-		result = append(result, map[string]interface{}{
-			"name":        processor.Name(),
-			"version":     processor.Version(),
-			"description": processor.Description(),
-			"priority":    processor.Priority(),
+		result = append(result, ProcessorInfo{
+			Name:        processor.Name(),
+			Version:     processor.Version(),
+			Description: processor.Description(),
+			Priority:    processor.Priority(),
 		})
 	}
 
@@ -693,6 +711,7 @@ func (s *UnifiedService) releaseQueryLock() {
 }
 
 // runWithQueryLock 在查询并发锁保护下执行函数，panic 时确保计数器回退
+// nolint:unused
 func (s *UnifiedService) runWithQueryLock(fn func() error) error {
 	if !s.acquireQueryLock() {
 		return fmt.Errorf("query concurrency limit reached")

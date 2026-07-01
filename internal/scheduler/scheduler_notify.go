@@ -394,10 +394,12 @@ func ValidateWebhookURLPublic(webhookURL string) error {
 	return validateWebhookURL(webhookURL)
 }
 
+// nolint:unused
 func safeWebhookClient() *http.Client {
 	return urlguard.SafeHTTPClient(urlguard.CheckOptions{}, 30*time.Second)
 }
 
+// nolint:unused
 func (s *Scheduler) sendWebhookNotification(webhookURL string, payload map[string]interface{}) {
 	go func() {
 		defer func() {

@@ -239,7 +239,7 @@ func (r *whitelistRepository) BatchCreateWhitelist(items []*Whitelist) error {
 		item.CreatedAt = now
 		_, err := tx.Exec(query, item.Type, item.Value, item.Description, item.CreatedAt)
 		if err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return fmt.Errorf("failed to create whitelist: %w", err)
 		}
 	}

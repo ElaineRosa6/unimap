@@ -78,22 +78,27 @@ func (e *TamperExcelExporter) Export(results []tamper.TamperCheckResult, filepat
 		return fmt.Errorf("failed to create sheet: %w", err)
 	}
 
+	// setCell 写入单元格值，忽略不可恢复的错误
+	setCell := func(cell string, value interface{}) {
+		_ = f.SetCellValue(sheetName, cell, value)
+	}
+
 	// 设置表头
 	headers := []string{"URL", "可达性", "网页截图", "是否被篡改", "基线时间", "检测时间"}
 	for i, header := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		f.SetCellValue(sheetName, cell, header)
+		setCell(cell, header)
 	}
 
 	// 写入数据
 	for i, result := range exportResults {
 		row := i + 2 // 从第2行开始（第1行是表头）
-		f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), result.URL)
-		f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), result.Reachable)
-		f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), result.Screenshot)
-		f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), result.Tampered)
-		f.SetCellValue(sheetName, fmt.Sprintf("E%d", row), result.BaselineTime)
-		f.SetCellValue(sheetName, fmt.Sprintf("F%d", row), result.CheckTime)
+		setCell(fmt.Sprintf("A%d", row), result.URL)
+		setCell(fmt.Sprintf("B%d", row), result.Reachable)
+		setCell(fmt.Sprintf("C%d", row), result.Screenshot)
+		setCell(fmt.Sprintf("D%d", row), result.Tampered)
+		setCell(fmt.Sprintf("E%d", row), result.BaselineTime)
+		setCell(fmt.Sprintf("F%d", row), result.CheckTime)
 	}
 
 	// 设置默认活动工作表

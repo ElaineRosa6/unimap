@@ -253,18 +253,18 @@ func TestUpdateRole(t *testing.T) {
 
 	t.Run("updates existing role", func(t *testing.T) {
 		// Use a fresh PermissionManager to avoid interference from other tests
-		pm := NewPermissionManager()
-		success := pm.UpdateRole("readonly", []Permission{PermissionRead, PermissionWrite})
+		freshPM := NewPermissionManager()
+		success := freshPM.UpdateRole("readonly", []Permission{PermissionRead, PermissionWrite})
 		if !success {
 			t.Fatal("expected update to succeed")
 		}
 		// Verify the permissions were actually updated
-		perms := pm.GetPermissions("readonly")
+		perms := freshPM.GetPermissions("readonly")
 		t.Logf("Updated readonly permissions: %v", perms)
-		if !pm.HasPermission("readonly", PermissionRead) {
+		if !freshPM.HasPermission("readonly", PermissionRead) {
 			t.Error("expected readonly to still have read permission")
 		}
-		if !pm.HasPermission("readonly", PermissionWrite) {
+		if !freshPM.HasPermission("readonly", PermissionWrite) {
 			t.Error("expected readonly to now have write permission")
 		}
 	})

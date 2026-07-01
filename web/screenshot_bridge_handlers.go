@@ -43,8 +43,8 @@ func (s *Server) handleScreenshotBridgeHealth(w http.ResponseWriter, r *http.Req
 		return
 	}
 	snap := s.buildBridgeDiagnosticSnapshot()
-	snap["success"] = true
-	snap["message"] = "bridge diagnostic ready"
+	snap.Success = true
+	snap.Message = "bridge diagnostic ready"
 	writeJSON(w, http.StatusOK, snap)
 }
 
@@ -57,7 +57,7 @@ func (s *Server) handleScreenshotBridgeStatus(w http.ResponseWriter, r *http.Req
 		return
 	}
 	snap := s.buildBridgeDiagnosticSnapshot()
-	snap["success"] = true
+	snap.Success = true
 	writeJSON(w, http.StatusOK, snap)
 }
 
@@ -196,7 +196,7 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 	if token != "" {
 		if err := s.validateBridgeCallbackSignatureIfRequired(r, rawBody, token); err != nil {
 			s.setBridgeLastError("unauthorized_bridge: invalid callback signature")
-			writeAPIError(w, http.StatusUnauthorized, "unauthorized_bridge", "invalid callback signature", err.Error())
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized_bridge", "invalid callback signature", nil)
 			return
 		}
 		s.touchBridgeToken(token)
@@ -217,7 +217,7 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 	}
 	if err := json.Unmarshal(rawBody, &req); err != nil {
 		s.setBridgeLastError("invalid_bridge_result: invalid bridge result payload")
-		writeAPIError(w, http.StatusBadRequest, "invalid_bridge_result", "invalid bridge result payload", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "invalid_bridge_result", "invalid bridge result payload", nil)
 		return
 	}
 	if strings.TrimSpace(req.RequestID) == "" {
@@ -887,7 +887,35 @@ func activeBridgeLiveTokenCount(bridge *BridgeState) int {
 	return count
 }
 
-func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
+// BridgeDiagnosticSnapshot is the typed response for bridge diagnostic status.
+type BridgeDiagnosticSnapshot struct {
+	Success          bool   `json:"success"`
+	Message          string `json:"message,omitempty"`
+	Engine           string `json:"engine"`
+	ExtensionEnabled bool   `json:"extension_enabled"`
+	PairingRequired  bool   `json:"pairing_required"`
+	ListenAddr       string `json:"listen_addr"`
+	Ready            bool   `json:"ready"`
+	BridgeConnected  bool   `json:"bridge_connected"`
+	ExtensionOnline  bool   `json:"extension_online"`
+	PairedClients    int    `json:"paired_clients"`
+	LiveClients      int    `json:"live_clients"`
+	PendingTasks     int    `json:"pending_tasks"`
+	AwaitingResults  int    `json:"awaiting_results"`
+	InFlightTasks    int    `json:"in_flight_tasks"`
+	QueueLen         int    `json:"queue_len"`
+	WorkerCount      int    `json:"worker_count"`
+	LastError        string `json:"last_error,omitempty"`
+	LastErrorAt      int64  `json:"last_error_at,omitempty"`
+	LastPairAt       int64  `json:"last_pair_at,omitempty"`
+	LastTaskPullAt   int64  `json:"last_task_pull_at,omitempty"`
+	LastCallbackAt   int64  `json:"last_callback_at,omitempty"`
+	RouterMode       string `json:"router_mode"`
+	RouterCDPHealthy bool   `json:"router_cdp_healthy"`
+	RouterExtHealthy bool   `json:"router_ext_healthy"`
+}
+
+func (s *Server) buildBridgeDiagnosticSnapshot() BridgeDiagnosticSnapshot {
 	engine := "cdp"
 	enabled := false
 	pairingRequired := true
@@ -931,29 +959,29 @@ func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
 	lastCallbackAt := s.bridge.LastCallbackAt
 	s.bridge.mu.Unlock()
 
-	return map[string]interface{}{
-		"engine":             engine,
-		"extension_enabled":  enabled,
-		"pairing_required":   pairingRequired,
-		"listen_addr":        listenAddr,
-		"ready":              ready,
-		"bridge_connected":   bridgeConnected,
-		"extension_online":   extensionOnline,
-		"paired_clients":     pairedClients,
-		"live_clients":       liveClients,
-		"pending_tasks":      pending,
-		"awaiting_results":   waiters,
-		"in_flight_tasks":    inFlight,
-		"queue_len":          queueLen,
-		"worker_count":       workers,
-		"last_error":         lastErr,
-		"last_error_at":      lastAt,
-		"last_pair_at":       lastPairAt,
-		"last_task_pull_at":  lastTaskPullAt,
-		"last_callback_at":   lastCallbackAt,
-		"router_mode":        s.screenshotRouterMode(),
-		"router_cdp_healthy": s.screenshotRouterCDPHealthy(),
-		"router_ext_healthy": routerExtHealthy,
+	return BridgeDiagnosticSnapshot{
+		Engine:           engine,
+		ExtensionEnabled: enabled,
+		PairingRequired:  pairingRequired,
+		ListenAddr:       listenAddr,
+		Ready:            ready,
+		BridgeConnected:  bridgeConnected,
+		ExtensionOnline:  extensionOnline,
+		PairedClients:    pairedClients,
+		LiveClients:      liveClients,
+		PendingTasks:     pending,
+		AwaitingResults:  waiters,
+		InFlightTasks:    inFlight,
+		QueueLen:         queueLen,
+		WorkerCount:      workers,
+		LastError:        lastErr,
+		LastErrorAt:      lastAt,
+		LastPairAt:       lastPairAt,
+		LastTaskPullAt:   lastTaskPullAt,
+		LastCallbackAt:   lastCallbackAt,
+		RouterMode:       s.screenshotRouterMode(),
+		RouterCDPHealthy: s.screenshotRouterCDPHealthy(),
+		RouterExtHealthy: routerExtHealthy,
 	}
 }
 

@@ -201,7 +201,9 @@ func (r *Router) buildMux() http.Handler {
 	mux := http.NewServeMux()
 	for _, route := range r.routes {
 		handler := http.Handler(route.Handler)
-		if route.RateLimited { handler = rateLimitMiddleware(handler) }
+		if route.RateLimited {
+			handler = rateLimitMiddleware(handler)
+		}
 		handler = r.server.apiAuth.OptionalAPIKey()(handler)
 		mux.Handle(route.Method+" "+route.Pattern, handler)
 	}

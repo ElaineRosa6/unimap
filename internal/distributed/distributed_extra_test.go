@@ -39,6 +39,10 @@ func TestSnapshotManager_StartStop(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	mgr.Stop()
 	mgr.Stop() // idempotent
+	// Wait for the background goroutine to finish saving the final snapshot.
+	// Without this, the goroutine may still be writing to the TempDir when
+	// t.TempDir() cleanup runs, causing "directory not empty" on macOS.
+	time.Sleep(200 * time.Millisecond)
 }
 
 func TestSnapshotManager_Save(t *testing.T) {

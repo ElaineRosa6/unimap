@@ -25,6 +25,7 @@ vendor/
 # Test coverage
 *.out
 coverage.html
+coverage_web.dat
 
 # OS/IDE
 .DS_Store
@@ -84,8 +85,13 @@ hash_store/**
 screenshots/**
 !screenshots/
 !screenshots/.gitkeep
-hash_store/records/**/*.json
-!hash_store/records/.gitkeep
+internal/tamper/hash_store/**/*.json
+!internal/tamper/hash_store/.gitkeep
+internal/tamper/hash_store/records/**/*.json
+!internal/tamper/hash_store/records/.gitkeep
+
+# Python scripts
+urlive.py
 
 # Claude memory
 memory/
@@ -98,6 +104,7 @@ data/
 
 # Backup test files
 internal/backup/backups/*.tar.gz
+web/backups/
 
 # Node.js
 node_modules/

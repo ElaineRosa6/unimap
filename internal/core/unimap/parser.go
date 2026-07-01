@@ -10,8 +10,8 @@ import (
 
 // UQLParser UQL查询语言解析器
 type UQLParser struct {
-	scanner *scanner.Scanner
-	current rune
+	scanner *scanner.Scanner // nolint:unused
+	current rune             // nolint:unused
 }
 
 // NewUQLParser 创建解析器
@@ -175,9 +175,8 @@ func (p *UQLParser) buildAST(tokens []string) (*model.UQLNode, error) {
 
 	var parseOr func(int) (*model.UQLNode, int, error)
 	var parseAnd func(int) (*model.UQLNode, int, error)
-	var parseTerm func(int) (*model.UQLNode, int, error)
 
-	parseTerm = func(start int) (*model.UQLNode, int, error) {
+	parseTerm := func(start int) (*model.UQLNode, int, error) {
 		if start >= len(tokens) {
 			return nil, start, fmt.Errorf("unexpected end of expression")
 		}

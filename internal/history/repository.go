@@ -40,13 +40,13 @@ func (r *Repository) CreateResults(historyID int64, results []OperationResult) e
 	}
 	stmt, err := tx.Prepare(`INSERT INTO operation_results (history_id, data) VALUES (?, ?)`)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return fmt.Errorf("failed to prepare statement: %w", err)
 	}
 	defer stmt.Close()
 	for _, res := range results {
 		if _, err := stmt.Exec(historyID, res.Data); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return fmt.Errorf("failed to insert operation_result: %w", err)
 		}
 	}

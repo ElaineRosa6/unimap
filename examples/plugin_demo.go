@@ -105,8 +105,8 @@ func main() {
 	processors := svc.ListProcessors()
 	for _, proc := range processors {
 		fmt.Printf("  - %s (v%s) [优先级: %d]\n",
-			proc["name"], proc["version"], proc["priority"])
-		fmt.Printf("    %s\n", proc["description"])
+			proc.Name, proc.Version, proc.Priority)
+		fmt.Printf("    %s\n", proc.Description)
 	}
 
 	// 5. 模拟查询和数据处理

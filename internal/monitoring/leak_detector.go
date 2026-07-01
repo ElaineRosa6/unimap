@@ -179,8 +179,17 @@ func (d *LeakDetector) ClearDetectedLeaks() {
 	d.detectedLeaks = make([]ResourceLeak, 0)
 }
 
+// LeakReport is the typed report returned by GetLeakReport.
+type LeakReport struct {
+	TotalActiveResources int            `json:"total_active_resources"`
+	TotalDetectedLeaks   int            `json:"total_detected_leaks"`
+	DetectedLeaks        []ResourceLeak `json:"detected_leaks"`
+	ActiveResources      []ResourceLeak `json:"active_resources"`
+	MaxLeakDuration      time.Duration  `json:"max_leak_duration"`
+}
+
 // GetLeakReport 获取泄漏报告
-func (d *LeakDetector) GetLeakReport() map[string]interface{} {
+func (d *LeakDetector) GetLeakReport() LeakReport {
 	d.mutex.RLock()
 	activeCount := len(d.acquiredResources)
 	leakCount := len(d.detectedLeaks)
@@ -193,15 +202,13 @@ func (d *LeakDetector) GetLeakReport() map[string]interface{} {
 	maxLeakDuration := d.maxLeakDuration
 	d.mutex.RUnlock()
 
-	report := map[string]interface{}{
-		"total_active_resources": activeCount,
-		"total_detected_leaks":   leakCount,
-		"detected_leaks":         leaks,
-		"active_resources":       activeResources,
-		"max_leak_duration":      maxLeakDuration,
+	return LeakReport{
+		TotalActiveResources: activeCount,
+		TotalDetectedLeaks:   leakCount,
+		DetectedLeaks:        leaks,
+		ActiveResources:      activeResources,
+		MaxLeakDuration:      maxLeakDuration,
 	}
-
-	return report
 }
 
 // getStackTrace 获取堆栈信息

@@ -50,7 +50,7 @@ func TestHandleWebSocketQuery_WithEngines_SendsQueryStart(t *testing.T) {
 		return nil
 	}
 
-	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
+	s.handleWebSocketQuery(context.TODO(), "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
 
 	mu.Lock()
 	msgs := make([]map[string]interface{}, len(messages))
@@ -88,7 +88,7 @@ func TestHandleWebSocketQuery_SendsQueryID(t *testing.T) {
 		return nil
 	}
 
-	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
+	s.handleWebSocketQuery(context.TODO(), "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
 
 	mu.Lock()
 	msgs := make([]map[string]interface{}, len(messages))
@@ -127,7 +127,7 @@ func TestHandleWebSocketQuery_QueryIDTracked(t *testing.T) {
 		return nil
 	}
 
-	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
+	s.handleWebSocketQuery(context.TODO(), "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
 
 	mu.Lock()
 	msgs := make([]map[string]interface{}, len(messages))
@@ -271,7 +271,7 @@ func TestHandleWebSocketQuery_PingPongMessages(t *testing.T) {
 		orchestrator: orch,
 		queryStatus:  make(map[string]*QueryStatus),
 	}
-	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "ping"}, writeJSON)
+	s.handleWebSocketQuery(context.TODO(), "test-conn", map[string]interface{}{"query": "ping"}, writeJSON)
 
 	// 由于没有引擎，应该返回 query_error
 	if len(messages) != 1 {
@@ -427,7 +427,7 @@ func TestHandleWebSocketQuery_EmptyQuery_ReturnsError(t *testing.T) {
 	}
 
 	s := &Server{}
-	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": ""}, writeJSON)
+	s.handleWebSocketQuery(context.TODO(), "test-conn", map[string]interface{}{"query": ""}, writeJSON)
 
 	if len(messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(messages))
@@ -449,7 +449,7 @@ func TestHandleWebSocketQuery_NoEngines_ReturnsError(t *testing.T) {
 	s := &Server{
 		orchestrator: adapter.NewEngineOrchestrator(),
 	}
-	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "country=\"CN\""}, writeJSON)
+	s.handleWebSocketQuery(context.TODO(), "test-conn", map[string]interface{}{"query": "country=\"CN\""}, writeJSON)
 
 	if len(messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(messages))

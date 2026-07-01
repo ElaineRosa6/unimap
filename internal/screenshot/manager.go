@@ -360,21 +360,21 @@ func (m *Manager) CheckEngineLoginStatus(ctx context.Context, engine, query stri
 
 	if m.isCDPMode() {
 		// CDP connected → open page in the same browser session, check for login wall
-		ctx, cancel := context.WithTimeout(ctx, m.timeout)
+		loginCtx, cancel := context.WithTimeout(ctx, m.timeout)
 		defer cancel()
 
-		allocCtx, allocCancel, err := m.newAllocator(ctx)
+		allocCtx, allocCancel, err := m.newAllocator(loginCtx)
 		if err != nil {
 			return &EngineLoginStatus{Engine: engine, LoggedIn: false, Reason: "no_session", LoginURL: loginURL, Error: err.Error()}, nil
 		}
 		defer allocCancel()
 
-		ctx, taskCancel := chromedp.NewContext(allocCtx)
+		cdpCtx, taskCancel := chromedp.NewContext(allocCtx)
 		defer taskCancel()
 
 		title := ""
 		html := ""
-		if err := m.loadPageContent(ctx, searchURL, nil, &title, &html); err != nil {
+		if err := m.loadPageContent(cdpCtx, searchURL, nil, &title, &html); err != nil {
 			return &EngineLoginStatus{Engine: engine, LoggedIn: false, Reason: "load_failed", LoginURL: loginURL, Title: title, Error: err.Error()}, nil
 		}
 

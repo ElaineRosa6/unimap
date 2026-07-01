@@ -30,6 +30,10 @@ func (s *Server) handleHistorySave(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST required", nil)
 		return
 	}
+	if ok, msg := s.requireAdmin(r); !ok {
+		writeAPIError(w, http.StatusForbidden, "forbidden", msg, nil)
+		return
+	}
 
 	var req HistorySaveRequest
 	if !decodeJSONBody(w, r, &req) {
@@ -54,7 +58,7 @@ func (s *Server) handleHistorySave(w http.ResponseWriter, r *http.Request) {
 
 	id, err := s.historyRepo.CreateHistory(h)
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+		writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 		return
 	}
 
@@ -72,7 +76,7 @@ func (s *Server) handleHistorySave(w http.ResponseWriter, r *http.Request) {
 			results[i] = history.OperationResult{Data: string(data)}
 		}
 		if err := s.historyRepo.CreateResults(id, results); err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 			return
 		}
 	}
@@ -89,6 +93,10 @@ func (s *Server) handleHistoryListOrClear(w http.ResponseWriter, r *http.Request
 		writeAPIError(w, http.StatusServiceUnavailable, "history_disabled", "history is not enabled", nil)
 		return
 	}
+	if ok, msg := s.requireAdmin(r); !ok {
+		writeAPIError(w, http.StatusForbidden, "forbidden", msg, nil)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodGet:
@@ -101,7 +109,7 @@ func (s *Server) handleHistoryListOrClear(w http.ResponseWriter, r *http.Request
 
 		items, total, err := s.historyRepo.ListHistory(opType, limit, offset)
 		if err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -113,7 +121,7 @@ func (s *Server) handleHistoryListOrClear(w http.ResponseWriter, r *http.Request
 	case http.MethodDelete:
 		opType := r.URL.Query().Get("type")
 		if err := s.historyRepo.ClearHistory(opType); err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
@@ -127,6 +135,10 @@ func (s *Server) handleHistoryListOrClear(w http.ResponseWriter, r *http.Request
 func (s *Server) handleHistoryGetOrDelete(w http.ResponseWriter, r *http.Request) {
 	if s.historyRepo == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "history_disabled", "history is not enabled", nil)
+		return
+	}
+	if ok, msg := s.requireAdmin(r); !ok {
+		writeAPIError(w, http.StatusForbidden, "forbidden", msg, nil)
 		return
 	}
 
@@ -145,7 +157,7 @@ func (s *Server) handleHistoryGetOrDelete(w http.ResponseWriter, r *http.Request
 	case http.MethodGet:
 		h, err := s.historyRepo.GetHistory(id)
 		if err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 			return
 		}
 		if h == nil {
@@ -154,7 +166,7 @@ func (s *Server) handleHistoryGetOrDelete(w http.ResponseWriter, r *http.Request
 		}
 		results, err := s.historyRepo.GetResults(id)
 		if err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -165,7 +177,7 @@ func (s *Server) handleHistoryGetOrDelete(w http.ResponseWriter, r *http.Request
 
 	case http.MethodDelete:
 		if err := s.historyRepo.DeleteHistory(id); err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", err.Error(), nil)
+			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})

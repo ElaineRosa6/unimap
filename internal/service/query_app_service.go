@@ -359,7 +359,18 @@ type CombinedBrowserRouter interface {
 	CollectAndCaptureSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, string, error)
 }
 
-func checkCDPStatus(ctx context.Context, baseURL string) (bool, map[string]interface{}, error) {
+// CDPStatusInfo is the typed response from Chrome DevTools Protocol /json/version.
+type CDPStatusInfo struct {
+	Browser              string `json:"Browser"`
+	ProtocolVersion      string `json:"Protocol-Version"`
+	UserAgent            string `json:"User-Agent"`
+	V8Version            string `json:"V8-Version"`
+	WebKitVersion        string `json:"WebKit-Version"`
+	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+}
+
+// nolint:unused
+func checkCDPStatus(ctx context.Context, baseURL string) (bool, *CDPStatusInfo, error) {
 	baseURL = normalizeCDPBaseURL(baseURL)
 	if baseURL == "" {
 		return false, nil, fmt.Errorf("cdp url is empty")
@@ -382,12 +393,12 @@ func checkCDPStatus(ctx context.Context, baseURL string) (bool, map[string]inter
 		return false, nil, fmt.Errorf("unexpected status: %s", resp.Status)
 	}
 
-	var info map[string]interface{}
+	var info CDPStatusInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		return false, nil, err
 	}
 
-	return true, info, nil
+	return true, &info, nil
 }
 
 func normalizeCDPBaseURL(raw string) string {

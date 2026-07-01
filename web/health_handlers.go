@@ -85,26 +85,35 @@ func (s *Server) handleHealthReady(w http.ResponseWriter, r *http.Request) {
 		status = "degraded"
 	}
 
-	resp := map[string]interface{}{
-		"status":  status,
-		"version": appversion.Full(),
-		"time":    time.Now().UTC().Format(time.RFC3339),
-		"checks":  checks,
+	resp := struct {
+		Status  string      `json:"status"`
+		Version string      `json:"version"`
+		Time    string      `json:"time"`
+		Checks  interface{} `json:"checks,omitempty"`
+	}{
+		Status:  status,
+		Version: appversion.Full(),
+		Time:    time.Now().UTC().Format(time.RFC3339),
+		Checks:  checks,
 	}
 
 	if status != "ok" {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleHealthLive 存活检查：进程是否存活
 func (s *Server) handleHealthLive(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "ok",
-		"version": appversion.Full(),
-		"time":    time.Now().UTC().Format(time.RFC3339),
+	_ = json.NewEncoder(w).Encode(struct {
+		Status  string `json:"status"`
+		Version string `json:"version"`
+		Time    string `json:"time"`
+	}{
+		Status:  "ok",
+		Version: appversion.Full(),
+		Time:    time.Now().UTC().Format(time.RFC3339),
 	})
 }
 

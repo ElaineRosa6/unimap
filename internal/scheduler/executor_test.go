@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"context"
 	"testing"
 
 	"github.com/unimap/project/internal/model"
@@ -215,7 +216,7 @@ func TestReadURLsFromFile(t *testing.T) {
 	// 测试空文件
 	t.Run("empty file", func(t *testing.T) {
 		r := NewURLImportRunner(importDir)
-		_, err := r.Execute(nil, &model.TaskPayload{Extra: map[string]any{"file_pattern": "nonexistent.txt"}})
+		_, err := r.Execute(context.TODO(), &model.TaskPayload{Extra: map[string]any{"file_pattern": "nonexistent.txt"}})
 		// 应该返回错误但不会panic
 		if err != nil {
 			t.Logf("Expected error for non-existent file: %v", err)

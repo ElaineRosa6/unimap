@@ -51,7 +51,7 @@ func (d *Detector) ListAllCheckRecords() (map[string][]*CheckRecord, error) {
 }
 
 // GetCheckStats delegates to the underlying storage.
-func (d *Detector) GetCheckStats(url string) (map[string]interface{}, error) {
+func (d *Detector) GetCheckStats(url string) (CheckStats, error) {
 	return d.storage.GetCheckStats(url)
 }
 
@@ -76,8 +76,7 @@ func (d *Detector) CheckTampering(ctx context.Context, url string) (*TamperCheck
 		URL: url, CurrentHash: currentHash, BaselineHash: baseline,
 		Tampered: false, Status: "normal", Timestamp: time.Now().Unix(),
 	}
-	checkType := "normal"
-
+	var checkType string
 	suspiciousFlags := detectMaliciousContent(currentHash.RawHTML)
 	result.SuspiciousFlags = suspiciousFlags
 

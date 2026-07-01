@@ -140,6 +140,7 @@ func (f *FofaAdapter) translateNode(node *model.UQLNode) string {
 }
 
 // safeRowField safely extracts a field from a row by index, returning nil if out of bounds.
+// nolint:unused
 func safeRowField(row []interface{}, idx int) interface{} {
 	if idx < len(row) {
 		return row[idx]
@@ -202,28 +203,28 @@ func fofaRowToItem(row []interface{}, fieldNames []string) *FofaItem {
 // mapField 映射统一字段到FOFA字段
 func (f *FofaAdapter) mapField(field string) string {
 	mapping := map[string]string{
-		"body":        "body",
-		"title":       "title",
-		"header":      "header",
-		"port":        "port",
-		"protocol":    "protocol",
-		"ip":          "ip",
-		"country":     "country",
-		"region":      "region",
-		"city":        "city",
-		"asn":         "asn",
-		"org":         "org",
+		"body":     "body",
+		"title":    "title",
+		"header":   "header",
+		"port":     "port",
+		"protocol": "protocol",
+		"ip":       "ip",
+		"country":  "country",
+		"region":   "region",
+		"city":     "city",
+		"asn":      "asn",
+		"org":      "org",
 		// "isp" removed — FOFA has no isp field (B-1a)
-		"domain":      "domain",
-		"host":        "host",
-		"server":      "server",
-		"status_code": "status_code",
-		"os":          "os",
-		"app":         "app",
+		"domain":          "domain",
+		"host":            "host",
+		"server":          "server",
+		"status_code":     "status_code",
+		"os":              "os",
+		"app":             "app",
 		"cert":            "cert",
 		"cert.subject.cn": "cert.subject.cn",
 		"cert.issuer.cn":  "cert.issuer.cn",
-		"url":         "host",
+		"url":             "host",
 	}
 
 	if mapped, ok := mapping[field]; ok {
@@ -360,10 +361,10 @@ func parseFofaSearchResponse(body []byte, activeFields string, page, pageSize in
 
 // Normalize 标准化FOFA结果
 func (f *FofaAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
-	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	if raw == nil || len(raw.RawData) == 0 {
-		return assets, nil
+		return []model.UnifiedAsset{}, nil
 	}
+	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	for _, item := range raw.RawData {
 		data, ok := item.(*FofaItem)
 		if !ok {
@@ -382,20 +383,20 @@ func normalizeFofaItem(item *FofaItem) *model.UnifiedAsset {
 		return nil
 	}
 	asset := &model.UnifiedAsset{
-		Source:     "fofa",
-		IP:         item.IP,
-		Port:       int(item.Port),
-		Protocol:   item.Protocol,
-		Host:       item.Domain,
-		Title:      item.Title,
-		Server:     item.Server,
+		Source:      "fofa",
+		IP:          item.IP,
+		Port:        int(item.Port),
+		Protocol:    item.Protocol,
+		Host:        item.Domain,
+		Title:       item.Title,
+		Server:      item.Server,
 		CountryCode: item.Country,
-		Region:     item.Region,
-		City:       item.City,
-		ASN:        item.ASN,
-		Org:        item.Org,
-		ISP:        item.ISP,
-		StatusCode: int(item.StatusCode),
+		Region:      item.Region,
+		City:        item.City,
+		ASN:         item.ASN,
+		Org:         item.Org,
+		ISP:         item.ISP,
+		StatusCode:  int(item.StatusCode),
 	}
 	// Body snippet: prefer body field, fall back to header
 	snippet := item.Body
@@ -421,7 +422,11 @@ func normalizeFofaItem(item *FofaItem) *model.UnifiedAsset {
 // buildFofaURL 从 IP/Port/Protocol 构建 URL
 func buildFofaURL(asset *model.UnifiedAsset) {
 	if asset.Protocol == "" {
-		if asset.Port == 443 { asset.Protocol = "https" } else { asset.Protocol = "http" }
+		if asset.Port == 443 {
+			asset.Protocol = "https"
+		} else {
+			asset.Protocol = "http"
+		}
 	}
 	u := &url.URL{Scheme: asset.Protocol}
 	if asset.Host != "" {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +34,7 @@ import (
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/utils"
 )
 
 // 查询状态
@@ -76,45 +78,46 @@ type ConnectionManager struct {
 
 // Server Web服务器
 type Server struct {
-	port             int
-	httpServer       *http.Server
-	templates        *template.Template
-	service          *service.UnifiedService
-	queryApp         *service.QueryAppService
-	monitorApp       *service.MonitorAppService
-	tamperApp        *service.TamperAppService
-	screenshotApp    *service.ScreenshotAppService
-	orchestrator     *adapter.EngineOrchestrator
-	upgrader         websocket.Upgrader
-	connManager      *ConnectionManager
-	queryStatus      map[string]*QueryStatus
-	queryMutex       sync.RWMutex
-	configMutex      sync.Mutex
-	webRoot          string
-	staticVersion    string
-	screenshotMgr    *screenshot.Manager
-	screenshotRouter *screenshot.ScreenshotRouter
-	batchJobs        *batchJobStore
-	batchDB          *batchdb.Database
-	config           *config.Config
-	configManager    *config.Manager
-	chromeCmd        *os.Process
-	chromeCmdMu      sync.Mutex
-	bridge           *BridgeState
-	proxyPool        *proxypool.Pool
-	distributed      *DistributedState
-	scheduler        *scheduler.Scheduler
-	icpDB            *icpdb.Database
-	icpRepo          icpdb.ICPResultRepository
-	notifyRegistry   *notify.Registry
-	apiAuth          *auth.AuthMiddleware
-	userDB           *auth.UserDB
-	userRepo         auth.UserRepository
-	historyDB        *historydb.Database
-	historyRepo      *historydb.Repository
-	shutdownCtx      context.Context
-	shutdownCancel   context.CancelFunc
-	revocationStore  *sessionRevocationStore
+	port              int
+	httpServer        *http.Server
+	templates         *template.Template
+	service           *service.UnifiedService
+	queryApp          *service.QueryAppService
+	monitorApp        *service.MonitorAppService
+	tamperApp         *service.TamperAppService
+	screenshotApp     *service.ScreenshotAppService
+	orchestrator      *adapter.EngineOrchestrator
+	upgrader          websocket.Upgrader
+	connManager       *ConnectionManager
+	queryStatus       map[string]*QueryStatus
+	queryMutex        sync.RWMutex
+	configMutex       sync.Mutex
+	webRoot           string
+	staticVersion     string
+	screenshotMgr     *screenshot.Manager
+	screenshotRouter  *screenshot.ScreenshotRouter
+	batchJobs         *batchJobStore
+	batchDB           *batchdb.Database
+	config            *config.Config
+	configManager     *config.Manager
+	chromeCmd         *os.Process
+	chromeCmdMu       sync.Mutex
+	bridge            *BridgeState
+	proxyPool         *proxypool.Pool
+	distributed       *DistributedState
+	scheduler         *scheduler.Scheduler
+	icpDB             *icpdb.Database
+	icpRepo           icpdb.ICPResultRepository
+	notifyRegistry    *notify.Registry
+	apiAuth           *auth.AuthMiddleware
+	permissionManager *auth.PermissionManager
+	userDB            *auth.UserDB
+	userRepo          auth.UserRepository
+	historyDB         *historydb.Database
+	historyRepo       *historydb.Repository
+	shutdownCtx       context.Context
+	shutdownCancel    context.CancelFunc
+	revocationStore   *sessionRevocationStore
 }
 
 // NewServer 创建Web服务器
@@ -227,7 +230,7 @@ func newServerStruct(port int, webRoot string, templates *template.Template,
 		service:       unifiedSvc,
 		queryApp:      service.NewQueryAppService(unifiedSvc, orchestrator),
 		monitorApp:    service.NewMonitorAppService(proxyPool),
-		tamperApp:     service.NewTamperAppService("./hash_store", alertManager),
+		tamperApp:     service.NewTamperAppService(utils.HashStoreDir(), alertManager),
 		screenshotApp: screenshotApp,
 		orchestrator:  orchestrator,
 		upgrader:      upgrader,
@@ -249,10 +252,11 @@ func newServerStruct(port int, webRoot string, templates *template.Template,
 			NodeRegistry:  nodeRegistry,
 			NodeTaskQueue: nodeTaskQueue,
 		},
-		apiAuth:         auth.NewAuthMiddleware(auth.NewAPIKeyManager("./data/api_keys.json")),
-		shutdownCtx:     shutdownCtx,
-		shutdownCancel:  shutdownCancel,
-		revocationStore: newSessionRevocationStore(),
+		apiAuth:           auth.NewAuthMiddleware(auth.NewAPIKeyManager(filepath.Join(utils.AppDataDir(), "api_keys.json"))),
+		permissionManager: auth.NewPermissionManager(),
+		shutdownCtx:       shutdownCtx,
+		shutdownCancel:    shutdownCancel,
+		revocationStore:   newSessionRevocationStore(),
 	}
 }
 
@@ -321,7 +325,7 @@ func loadEngineCookies(mgr *screenshot.Manager, cfg *config.Config) {
 
 // initScreenshotAppService creates the screenshot app service from config and manager.
 func initScreenshotAppService(cfg *config.Config, screenshotMgr *screenshot.Manager) *service.ScreenshotAppService {
-	screenshotBaseDir := "./screenshots"
+	screenshotBaseDir := utils.ScreenshotsDir()
 	if cfg != nil && strings.TrimSpace(cfg.Screenshot.BaseDir) != "" {
 		screenshotBaseDir = strings.TrimSpace(cfg.Screenshot.BaseDir)
 	}
@@ -370,7 +374,7 @@ func initDistributedNodes(cfg *config.Config) (*distributed.Registry, *distribut
 	}
 
 	registry := distributed.NewRegistry(heartbeatTimeout)
-	taskQueue := distributed.NewTaskQueueWithPath("./data/distributed_tasks.json")
+	taskQueue := distributed.NewTaskQueueWithPath(filepath.Join(utils.AppDataDir(), "distributed_tasks.json"))
 	registry.SetTaskQueue(taskQueue)
 	taskQueue.SetDefaultMaxReassign(maxReassign)
 
@@ -453,7 +457,7 @@ func initHistoryDatabase(srv *Server, cfg *config.Config) {
 // initScreenshotBatchDB initializes the screenshot batch job metadata database.
 // On failure it logs a warning and leaves batchJobs as memory-only (graceful degradation).
 func initScreenshotBatchDB(srv *Server) {
-	dbPath := "./data/screenshot_batches.db"
+	dbPath := filepath.Join(utils.AppDataDir(), "screenshot_batches.db")
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		logger.Warnf("screenshot batch DB dir create failed (%s): %v", dbPath, err)
 		return
@@ -475,7 +479,7 @@ func initScreenshotBatchDB(srv *Server) {
 
 // initUserDatabase initializes the user database on the server.
 func initUserDatabase(srv *Server) {
-	userDBPath := "./data/users.db"
+	userDBPath := filepath.Join(utils.AppDataDir(), "users.db")
 	if err := os.MkdirAll(filepath.Dir(userDBPath), 0o755); err != nil {
 		logger.Warnf("user DB dir create failed (%s): %v", userDBPath, err)
 		return
@@ -506,27 +510,42 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 		maxHistory = cfg.Scheduler.MaxHistory
 	}
 
-	sched := scheduler.NewScheduler("./data/scheduler_tasks.json", "./data/scheduler_history.json", maxHistory)
+	sched := scheduler.NewScheduler(
+		filepath.Join(utils.AppDataDir(), "scheduler_tasks.json"),
+		filepath.Join(utils.AppDataDir(), "scheduler_history.json"),
+		maxHistory)
 
 	// 高优先级 Runner (ST-01 ~ ST-08)
 	sched.RegisterHandler(scheduler.NewQueryRunner(srv.queryApp))
 	sched.RegisterHandler(scheduler.NewSearchScreenshotRunner(screenshotApp, screenshotMgr))
 	sched.RegisterHandler(scheduler.NewBatchScreenshotRunner(screenshotApp, screenshotMgr))
-	sched.RegisterHandler(scheduler.NewTamperCheckRunner(srv.tamperApp, nil))
+
+	// TamperCheckRunner: inject a browser allocator from the screenshot manager
+	// so scheduled tamper patrols can render JS-heavy/SPA pages. Without an
+	// allocator the detector falls back to HTTP/Fast mode and may produce empty
+	// hashes for SPA targets, causing false "tampered" or "unreachable" results.
+	// When screenshotMgr is unavailable we keep the historical nil behavior.
+	var tamperAllocFactory service.TamperAllocatorFactory
+	if screenshotMgr != nil {
+		tamperAllocFactory = func(ctx context.Context) (context.Context, context.CancelFunc, error) {
+			return screenshotMgr.NewAllocator(ctx)
+		}
+	}
+	sched.RegisterHandler(scheduler.NewTamperCheckRunner(srv.tamperApp, tamperAllocFactory))
 	sched.RegisterHandler(scheduler.NewURLReachabilityRunner(srv.monitorApp))
 	sched.RegisterHandler(scheduler.NewCookieVerifyRunner(screenshotApp, screenshotMgr))
 	sched.RegisterHandler(scheduler.NewLoginStatusCheckRunner(screenshotMgr))
 	sched.RegisterHandler(scheduler.NewDistributedSubmitRunner(nodeTaskQueue))
 
 	// 中优先级 Runner (ST-09 ~ ST-16)
-	sched.RegisterHandler(scheduler.NewExportRunner(srv.queryApp, orchestrator, "./data/exports"))
+	sched.RegisterHandler(scheduler.NewExportRunner(srv.queryApp, orchestrator, utils.AppDataDir("exports")))
 	sched.RegisterHandler(scheduler.NewPortScanRunner(srv.monitorApp))
 	sched.RegisterHandler(scheduler.NewScreenshotCleanupRunner(screenshotApp, 30))
 	sched.RegisterHandler(scheduler.NewTamperCleanupRunner(srv.tamperApp, 90))
 	sched.RegisterHandler(scheduler.NewQuotaMonitorRunner(orchestrator, 10))
 	sched.RegisterHandler(scheduler.NewAlertSummaryRunner(alertManager))
 	sched.RegisterHandler(scheduler.NewBaselineRefreshRunner(srv.tamperApp))
-	sched.RegisterHandler(scheduler.NewURLImportRunner("./data/imports"))
+	sched.RegisterHandler(scheduler.NewURLImportRunner(utils.AppDataDir("imports")))
 
 	// 低优先级 Runner (ST-17 ~ ST-20)
 	sched.RegisterHandler(scheduler.NewPluginHealthRunner(unifiedSvc))
@@ -536,7 +555,7 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 
 	// ICP Runner (ST-21 ~ ST-22)
 	sched.RegisterHandler(scheduler.NewICPQueryRunner(srv.icpConfigProvider, srv.icpRepo, alertManager))
-	sched.RegisterHandler(scheduler.NewICPImportRunner("./data/icp_imports", sched))
+	sched.RegisterHandler(scheduler.NewICPImportRunner(utils.AppDataDir("icp_imports"), sched))
 
 	if err := sched.Load(); err != nil {
 		logger.Warnf("Failed to load scheduled tasks: %v", err)
@@ -550,7 +569,7 @@ func initNotifySystem(cfg *config.Config, cfgManager *config.Manager,
 	sched *scheduler.Scheduler) *notify.Registry {
 
 	reg := notify.NewRegistry()
-	reg.Register(notify.NewLogChannel("builtin-log", true))
+	reg.Register(notify.NewLogChannel("builtin-log", true)) //nolint:errcheck
 
 	registerFeishuAppChannel(reg, cfg)
 
@@ -820,7 +839,6 @@ func isWebRoot(dir string) bool {
 	return true
 }
 
-
 // icpConfigProvider returns a snapshot of the current ICP config for the scheduler runner.
 func (s *Server) icpConfigProvider() adapter.ICPConfig {
 	s.configMutex.Lock()
@@ -855,6 +873,9 @@ func (s *Server) Start() error {
 	logger.Infof("Web server started at http://%s:%d", s.bindAddr(), s.port)
 	logger.Infof("Registered %d routes", len(router.GetRoutes()))
 	logger.Infof("Web security config loaded: cors_origins=%d rate_limit_enabled=%t max_body_bytes=%d", len(allowedOrigins), rateLimitEnabled, maxBodyBytes)
+	if bindAddr := s.bindAddr(); bindAddr != "127.0.0.1" && bindAddr != "localhost" {
+		logger.Warnf("⚠️  Server bound to %s (non-loopback). Ensure a reverse proxy with TLS terminates HTTPS in front of this server.", bindAddr)
+	}
 	return s.httpServer.ListenAndServe()
 }
 
@@ -916,7 +937,7 @@ func (s *Server) buildServerMiddlewareChain(mux http.Handler, rateLimitEnabled b
 		handler = s.adminAuthMiddleware()(handler)
 		logger.Infof("Web auth enabled: admin token authentication active")
 	} else if bindAddr := s.bindAddr(); bindAddr != "127.0.0.1" && bindAddr != "localhost" {
-		logger.Warnf("⚠️  WARNING: Admin auth is DISABLED and server is bound to %s (non-loopback). All API endpoints are publicly accessible!", bindAddr)
+		logger.Fatalf("FATAL: Admin auth is DISABLED and server is bound to %s (non-loopback). Refusing to start to prevent unauthenticated access. Set web.auth.enabled=true or bind to loopback.", bindAddr)
 	}
 	handler = metricsMiddleware(handler)
 	handler = auditMiddleware(handler)
@@ -1094,7 +1115,9 @@ func (s *Server) bindAddr() string {
 func (s *Server) cleanupStaleQueries() {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("panic in cleanupStaleQueries: %v", r)
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			logger.Errorf("panic in cleanupStaleQueries: %v\n%s", r, buf[:n])
 		}
 	}()
 	ticker := time.NewTicker(10 * time.Minute)
@@ -1121,7 +1144,9 @@ func (s *Server) cleanupStaleQueries() {
 func (s *Server) cleanupStaleBridgeTokens() {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("panic in cleanupStaleBridgeTokens: %v", r)
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			logger.Errorf("panic in cleanupStaleBridgeTokens: %v\n%s", r, buf[:n])
 		}
 	}()
 	ticker := time.NewTicker(5 * time.Minute)
@@ -1157,7 +1182,9 @@ func (s *Server) cleanupStaleBridgeTokens() {
 func (s *Server) cleanupStaleBatchJobs() {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("panic in cleanupStaleBatchJobs: %v", r)
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			logger.Errorf("panic in cleanupStaleBatchJobs: %v\n%s", r, buf[:n])
 		}
 	}()
 	ticker := time.NewTicker(15 * time.Minute)

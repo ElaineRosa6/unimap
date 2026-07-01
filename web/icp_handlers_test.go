@@ -352,9 +352,9 @@ func TestHandleICPQuery_MultiTypePartialFailure(t *testing.T) {
 		Success bool `json:"success"`
 		Total   int  `json:"total"`
 		Groups  []struct {
-			Type    string `json:"type"`
-			Total   int    `json:"total"`
-			Error   string `json:"error"`
+			Type    string        `json:"type"`
+			Total   int           `json:"total"`
+			Error   string        `json:"error"`
 			Results []interface{} `json:"results"`
 		} `json:"groups"`
 	}
@@ -548,5 +548,171 @@ func TestHandleICPQuery_SkipsErrorGroups(t *testing.T) {
 	}
 	if repo.savedRuns[0].QueryType != "web" {
 		t.Fatalf("expected only web run saved, got %q", repo.savedRuns[0].QueryType)
+	}
+}
+
+// ============================================================
+// compareICPResults tests
+// ============================================================
+
+func TestCompareICPResults_EmptyPrevious(t *testing.T) {
+	latest := []*icpdb.ICPResultRow{{Domain: "a.com", Licence: "ICP1"}}
+	changes := compareICPResults(latest, nil)
+	if changes != nil {
+		t.Fatalf("expected nil changes for empty previous, got %v", changes)
+	}
+}
+
+func TestCompareICPResults_NewDomain(t *testing.T) {
+	latest := []*icpdb.ICPResultRow{{Domain: "new.com", Licence: "ICP1"}}
+	previous := []*icpdb.ICPResultRow{{Domain: "old.com", Licence: "ICP1"}}
+	changes := compareICPResults(latest, previous)
+	// new.com is new (+1), old.com is removed (+1) = 2 changes
+	if len(changes) != 2 {
+		t.Fatalf("expected 2 changes (new + removed), got %d", len(changes))
+	}
+	found := false
+	for _, c := range changes {
+		if c.Field == "_new" && c.Domain == "new.com" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected _new change for new.com")
+	}
+}
+
+func TestCompareICPResults_FieldChange(t *testing.T) {
+	latest := []*icpdb.ICPResultRow{{Domain: "a.com", Licence: "new-licence", UnitName: "New Co"}}
+	previous := []*icpdb.ICPResultRow{{Domain: "a.com", Licence: "old-licence", UnitName: "New Co"}}
+	changes := compareICPResults(latest, previous)
+	if len(changes) != 1 {
+		t.Fatalf("expected 1 change, got %d", len(changes))
+	}
+	if changes[0].Field != "licence" {
+		t.Fatalf("expected field licence, got %s", changes[0].Field)
+	}
+	if changes[0].Old != "old-licence" {
+		t.Fatalf("expected old value old-licence, got %s", changes[0].Old)
+	}
+	if changes[0].New != "new-licence" {
+		t.Fatalf("expected new value new-licence, got %s", changes[0].New)
+	}
+}
+
+func TestCompareICPResults_NoChanges(t *testing.T) {
+	latest := []*icpdb.ICPResultRow{{Domain: "a.com", Licence: "ICP1"}}
+	previous := []*icpdb.ICPResultRow{{Domain: "a.com", Licence: "ICP1"}}
+	changes := compareICPResults(latest, previous)
+	if len(changes) != 0 {
+		t.Fatalf("expected 0 changes, got %d", len(changes))
+	}
+}
+
+func TestCompareICPResults_EmptyDomain(t *testing.T) {
+	latest := []*icpdb.ICPResultRow{{Domain: "", Licence: "ICP1"}}
+	previous := []*icpdb.ICPResultRow{{Domain: "a.com", Licence: "ICP1"}}
+	changes := compareICPResults(latest, previous)
+	// Empty domain in latest is skipped, but previous has a.com which won't match
+	if len(changes) > 2 {
+		t.Fatalf("expected at most 2 changes, got %d", len(changes))
+	}
+}
+
+// ============================================================
+// handleICPCompare tests
+// ============================================================
+
+func TestHandleICPCompare_RepoNil(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/icp/compare?keyword=test.com", nil)
+	w := httptest.NewRecorder()
+	s.handleICPCompare(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", w.Code)
+	}
+}
+
+func TestHandleICPCompare_MissingKeyword(t *testing.T) {
+	s := &Server{icpRepo: newMockICPRepo()}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/icp/compare", nil)
+	w := httptest.NewRecorder()
+	s.handleICPCompare(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestHandleICPCompare_Success(t *testing.T) {
+	repo := newMockICPRepo()
+	s := &Server{icpRepo: repo}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/icp/compare?keyword=a.com&type=web", nil)
+	w := httptest.NewRecorder()
+	s.handleICPCompare(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["success"] != true {
+		t.Fatal("expected success=true")
+	}
+}
+
+// ============================================================
+// handleICPHistory tests
+// ============================================================
+
+func TestHandleICPHistory_RepoNil(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/icp/history?task_id=123", nil)
+	w := httptest.NewRecorder()
+	s.handleICPHistory(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", w.Code)
+	}
+}
+
+func TestHandleICPHistory_MissingParam(t *testing.T) {
+	s := &Server{icpRepo: newMockICPRepo()}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/icp/history", nil)
+	w := httptest.NewRecorder()
+	s.handleICPHistory(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestHandleICPHistory_MethodNotAllowed(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/icp/history?task_id=123", nil)
+	w := httptest.NewRecorder()
+	s.handleICPHistory(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+// ============================================================
+// handleICPHistoryResults tests
+// ============================================================
+
+func TestHandleICPHistoryResults_RepoNil(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/icp/history/1/results", nil)
+	w := httptest.NewRecorder()
+	s.handleICPHistoryResults(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", w.Code)
+	}
+}
+
+func TestHandleICPHistoryResults_InvalidID(t *testing.T) {
+	s := &Server{icpRepo: newMockICPRepo()}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/icp/history/abc/results", nil)
+	w := httptest.NewRecorder()
+	s.handleICPHistoryResults(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }

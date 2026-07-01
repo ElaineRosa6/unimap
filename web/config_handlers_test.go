@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -30,9 +31,15 @@ func newServerForConfigTest() *Server {
 	return &Server{config: cfg}
 }
 
+// withAdminContext returns a copy of req with admin-token auth context injected.
+func withAdminContext(req *http.Request) *http.Request {
+	ctx := context.WithValue(req.Context(), contextKeyUserID, adminSyntheticUserID)
+	return req.WithContext(ctx)
+}
+
 func TestHandleGetConfig_MasksSecrets(t *testing.T) {
 	s := newServerForConfigTest()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	req := withAdminContext(httptest.NewRequest(http.MethodGet, "/api/v1/config", nil))
 	w := httptest.NewRecorder()
 	s.handleGetConfig(w, req)
 
@@ -67,7 +74,7 @@ func TestHandleGetConfig_MasksSecrets(t *testing.T) {
 
 func TestHandleGetConfig_RejectsNonGET(t *testing.T) {
 	s := newServerForConfigTest()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/config", nil)
+	req := withAdminContext(httptest.NewRequest(http.MethodPost, "/api/v1/config", nil))
 	w := httptest.NewRecorder()
 	s.handleGetConfig(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
@@ -85,6 +92,7 @@ func postConfig(t *testing.T, s *Server, payload map[string]interface{}) *httpte
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/json")
+	req = withAdminContext(req)
 	w := httptest.NewRecorder()
 	s.handleSaveConfig(w, req)
 	return w
@@ -215,6 +223,7 @@ func TestHandleSaveConfig_RejectsUntrustedOrigin(t *testing.T) {
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://evil.example")
 	req.Header.Set("Content-Type", "application/json")
+	req = withAdminContext(req)
 	w := httptest.NewRecorder()
 	s.handleSaveConfig(w, req)
 	if w.Code != http.StatusForbidden {
@@ -238,9 +247,9 @@ func TestIsMaskedSecret(t *testing.T) {
 	}{
 		{"", false},
 		{"abc1234567890def", false},
-		{"abc1****0def", true},  // matches maskAPIKey output (4+****+4)
-		{"****", true},          // pure asterisks still counted as masked
-		{"abc****def", false},   // 3-char prefix doesn't match maskAPIKey format
+		{"abc1****0def", true},   // matches maskAPIKey output (4+****+4)
+		{"****", true},           // pure asterisks still counted as masked
+		{"abc****def", false},    // 3-char prefix doesn't match maskAPIKey format
 		{"mykey****real", false}, // real key containing **** should not be rejected
 	}
 	for _, tc := range tests {
@@ -271,12 +280,12 @@ func TestApplyEngineSections_InvalidEngineType(t *testing.T) {
 func TestApplySingleEngineSection_Fofa(t *testing.T) {
 	cfg := &config.Config{}
 	eng := map[string]interface{}{
-		"enabled":    true,
-		"api_key":    "new-fofa-key",
+		"enabled":      true,
+		"api_key":      "new-fofa-key",
 		"api_base_url": "https://fofa.example.com",
-		"email":      "test@example.com",
-		"qps":        float64(5),
-		"timeout":    float64(60),
+		"email":        "test@example.com",
+		"qps":          float64(5),
+		"timeout":      float64(60),
 	}
 	applySingleEngineSection(cfg, "fofa", eng)
 	if !cfg.Engines.Fofa.Enabled {
@@ -498,5 +507,78 @@ func TestApplyShodanFields_NoTimeout(t *testing.T) {
 	// Shodan doesn't have timeout field - should not be changed
 	if cfg.Engines.Shodan.Timeout != 30 {
 		t.Fatalf("Shodan timeout should not change, got %d", cfg.Engines.Shodan.Timeout)
+	}
+}
+
+func TestApplyNotificationsSection_NilConfig(t *testing.T) {
+	applyNotificationsSection(nil, map[string]interface{}{})
+}
+
+func TestApplyNotificationsSection_Enabled(t *testing.T) {
+	cfg := &config.Config{}
+	data := map[string]interface{}{
+		"enabled": true,
+	}
+	applyNotificationsSection(cfg, data)
+	if !cfg.Notifications.Enabled {
+		t.Fatal("expected notifications enabled")
+	}
+}
+
+func TestApplyNotificationsSection_FeishuApp(t *testing.T) {
+	cfg := &config.Config{}
+	data := map[string]interface{}{
+		"enabled": true,
+		"feishu_app": map[string]interface{}{
+			"app_id":     "test-app-id",
+			"app_secret": "test-secret",
+			"chat_id":    "test-chat-id",
+		},
+	}
+	applyNotificationsSection(cfg, data)
+	if !cfg.Notifications.Enabled {
+		t.Fatal("expected notifications enabled")
+	}
+	if cfg.Notifications.FeishuApp == nil {
+		t.Fatal("expected feishu_app to be initialized")
+	}
+	if cfg.Notifications.FeishuApp.AppID != "test-app-id" {
+		t.Fatalf("expected app_id test-app-id, got %s", cfg.Notifications.FeishuApp.AppID)
+	}
+	if cfg.Notifications.FeishuApp.AppSecret != "test-secret" {
+		t.Fatalf("expected app_secret test-secret, got %s", cfg.Notifications.FeishuApp.AppSecret)
+	}
+	if cfg.Notifications.FeishuApp.ChatID != "test-chat-id" {
+		t.Fatalf("expected chat_id test-chat-id, got %s", cfg.Notifications.FeishuApp.ChatID)
+	}
+}
+
+func TestApplyNotificationsSection_PreserveMaskedSecret(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Notifications.FeishuApp = &struct {
+		AppID     string `yaml:"app_id"`
+		AppSecret string `yaml:"app_secret"`
+		ChatID    string `yaml:"chat_id"`
+	}{AppSecret: "old-secret"}
+
+	data := map[string]interface{}{
+		"feishu_app": map[string]interface{}{
+			"app_secret": "********",
+		},
+	}
+	applyNotificationsSection(cfg, data)
+	if cfg.Notifications.FeishuApp.AppSecret != "old-secret" {
+		t.Fatalf("expected secret preserved, got %s", cfg.Notifications.FeishuApp.AppSecret)
+	}
+}
+
+func TestApplyNotificationsSection_InvalidFeishuAppType(t *testing.T) {
+	cfg := &config.Config{}
+	data := map[string]interface{}{
+		"feishu_app": "not-a-map",
+	}
+	applyNotificationsSection(cfg, data)
+	if cfg.Notifications.FeishuApp != nil {
+		t.Fatal("feishu_app should not be initialized for invalid type")
 	}
 }

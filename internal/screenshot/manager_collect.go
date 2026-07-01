@@ -204,33 +204,33 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 
 	l1Result, l1Ch := collectViaNetworkOnContext(browserCtx, engine, query)
 	if l1Ch != nil {
-		if err := chromedp.Run(browserCtx, network.Enable()); err != nil {
-			logger.Warnf("enable network failed on %s: %v", engine, err)
+		if enableErr := chromedp.Run(browserCtx, network.Enable()); enableErr != nil {
+			logger.Warnf("enable network failed on %s: %v", engine, enableErr)
 		}
 	}
 
 	// 单次导航
-	if err := chromedp.Run(browserCtx, chromedp.Navigate(searchURL)); err != nil {
-		return nil, "", fmt.Errorf("navigate to search URL failed: %w", err)
+	if navErr := chromedp.Run(browserCtx, chromedp.Navigate(searchURL)); navErr != nil {
+		return nil, "", fmt.Errorf("navigate to search URL failed: %w", navErr)
 	}
-	if err := chromedp.Run(browserCtx, chromedp.WaitReady("body", chromedp.ByQuery)); err != nil {
-		logger.Warnf("wait for body failed on %s: %v", engine, err)
+	if waitErr := chromedp.Run(browserCtx, chromedp.WaitReady("body", chromedp.ByQuery)); waitErr != nil {
+		logger.Warnf("wait for body failed on %s: %v", engine, waitErr)
 	}
-	if err := chromedp.Run(browserCtx, chromedp.Sleep(3*time.Second)); err != nil {
-		return nil, "", err
+	if sleepErr := chromedp.Run(browserCtx, chromedp.Sleep(3*time.Second)); sleepErr != nil {
+		return nil, "", sleepErr
 	}
 
 	// 采集数据
 	sel := getSelectors(engine)
 	var extracted string
 	if sel != nil && sel.ExtractJS != "" {
-		if err := chromedp.Run(browserCtx, chromedp.Evaluate(sel.ExtractJS, &extracted)); err != nil {
-			logger.Warnf("engine-specific extraction failed for %s: %v", engine, err)
+		if evalErr := chromedp.Run(browserCtx, chromedp.Evaluate(sel.ExtractJS, &extracted)); evalErr != nil {
+			logger.Warnf("engine-specific extraction failed for %s: %v", engine, evalErr)
 		}
 	}
 	title := ""
-	if err := chromedp.Run(browserCtx, chromedp.Title(&title)); err != nil {
-		logger.Warnf("failed to get page title: %v", err)
+	if titleErr := chromedp.Run(browserCtx, chromedp.Title(&title)); titleErr != nil {
+		logger.Warnf("failed to get page title: %v", titleErr)
 	}
 
 	collectResult := collection.CollectResult{
@@ -255,8 +255,8 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 			Total   int                      `json:"total"`
 			HasMore bool                     `json:"hasMore"`
 		}
-		if err := json.Unmarshal([]byte(extracted), &jsResult); err != nil {
-			logger.Warnf("failed to parse extracted JSON: %v", err)
+		if unmarshalErr := json.Unmarshal([]byte(extracted), &jsResult); unmarshalErr != nil {
+			logger.Warnf("failed to parse extracted JSON: %v", unmarshalErr)
 		} else {
 			collectResult.Assets = collection.ParseExtractedAssets(jsResult.Assets, engine)
 			collectResult.Total = jsResult.Total

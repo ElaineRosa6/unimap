@@ -495,9 +495,206 @@ func TestWriteError(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
-	var resp model.APIResponse
+	var resp map[string]interface{}
 	json.NewDecoder(rec.Body).Decode(&resp)
-	if resp.Error != "test error" {
-		t.Fatalf("expected error message, got %v", resp.Error)
+	if resp["success"] != false {
+		t.Fatalf("expected success=false, got %v", resp["success"])
+	}
+}
+
+// ============================================================
+// handleGetUser tests
+// ============================================================
+
+func TestHandleGetUser_Unauthorized(t *testing.T) {
+	s := &Server{userRepo: newMockUserRepo()}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/1", nil)
+	s.handleGetUser(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestHandleGetUser_InvalidID(t *testing.T) {
+	repo := newMockUserRepo()
+	repo.Create("admin", "hash", "admin")
+	s := &Server{userRepo: repo}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/abc", nil)
+	req.SetPathValue("id", "abc")
+	ctx := contextWithUserID(req.Context(), 1)
+	req = req.WithContext(ctx)
+	s.handleGetUser(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleGetUser_Forbidden(t *testing.T) {
+	repo := newMockUserRepo()
+	admin, _ := repo.Create("admin", "hash", "admin")
+	repo.Create("other", "hash", "operator")
+	s := &Server{userRepo: repo}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/1", nil)
+	req.SetPathValue("id", "1")
+	// non-admin (ID=2) tries to view admin (ID=1)
+	ctx := contextWithUserID(req.Context(), 2)
+	req = req.WithContext(ctx)
+	s.handleGetUser(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 (non-admin viewing other), got %d", rec.Code)
+	}
+	_ = admin
+}
+
+func TestHandleGetUser_NotFound(t *testing.T) {
+	repo := newMockUserRepo()
+	admin, _ := repo.Create("admin", "hash", "admin")
+	s := &Server{userRepo: repo}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/999", nil)
+	req.SetPathValue("id", "999")
+	ctx := contextWithUserID(req.Context(), admin.ID)
+	req = req.WithContext(ctx)
+	s.handleGetUser(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestHandleGetUser_Success(t *testing.T) {
+	repo := newMockUserRepo()
+	admin, _ := repo.Create("admin", "hash", "admin")
+	s := &Server{userRepo: repo}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/1", nil)
+	req.SetPathValue("id", "1")
+	ctx := contextWithUserID(req.Context(), admin.ID)
+	req = req.WithContext(ctx)
+	s.handleGetUser(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp struct {
+		Success bool           `json:"success"`
+		Data    model.UserInfo `json:"data"`
+	}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if !resp.Success {
+		t.Fatal("expected success=true")
+	}
+	if resp.Data.Username != "admin" {
+		t.Fatalf("expected username admin, got %s", resp.Data.Username)
+	}
+}
+
+func TestHandleGetUser_NonAdminViewSelf(t *testing.T) {
+	repo := newMockUserRepo()
+	self, _ := repo.Create("self", "hash", "operator")
+	s := &Server{userRepo: repo}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/1", nil)
+	req.SetPathValue("id", "1")
+	ctx := contextWithUserID(req.Context(), self.ID)
+	req = req.WithContext(ctx)
+	s.handleGetUser(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (non-admin viewing self), got %d", rec.Code)
+	}
+}
+
+// ============================================================
+// handleDeleteUser tests
+// ============================================================
+
+func TestHandleDeleteUser_InvalidID(t *testing.T) {
+	repo := newMockUserRepo()
+	admin, _ := repo.Create("admin", "hash", "admin")
+	s := &Server{userRepo: repo}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/abc", nil)
+	req.SetPathValue("id", "abc")
+	ctx := contextWithUserID(req.Context(), admin.ID)
+	req = req.WithContext(ctx)
+	s.handleDeleteUser(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleDeleteUser_CannotDeleteSelf(t *testing.T) {
+	repo := newMockUserRepo()
+	admin, _ := repo.Create("admin", "hash", "admin")
+	s := &Server{userRepo: repo}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/1", nil)
+	req.SetPathValue("id", "1")
+	ctx := contextWithUserID(req.Context(), admin.ID)
+	req = req.WithContext(ctx)
+	s.handleDeleteUser(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleDeleteUser_NotFound(t *testing.T) {
+	repo := newMockUserRepo()
+	admin, _ := repo.Create("admin", "hash", "admin")
+	s := &Server{userRepo: repo}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/999", nil)
+	req.SetPathValue("id", "999")
+	ctx := contextWithUserID(req.Context(), admin.ID)
+	req = req.WithContext(ctx)
+	s.handleDeleteUser(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestHandleDeleteUser_Success(t *testing.T) {
+	repo := newMockUserRepo()
+	admin, _ := repo.Create("admin", "hash", "admin")
+	victim, _ := repo.Create("victim", "hash", "operator")
+	s := &Server{userRepo: repo}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/2", nil)
+	req.SetPathValue("id", "2")
+	ctx := contextWithUserID(req.Context(), admin.ID)
+	req = req.WithContext(ctx)
+	s.handleDeleteUser(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	_, err := repo.GetByID(victim.ID)
+	if err != nil {
+		t.Fatalf("expected user to be deleted, got error: %v", err)
+	}
+}
+
+// ============================================================
+// handleListUsers tests
+// ============================================================
+
+func TestHandleListUsers_Empty(t *testing.T) {
+	repo := newMockUserRepo()
+	admin, _ := repo.Create("admin", "hash", "admin")
+	s := &Server{userRepo: repo}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
+	ctx := contextWithUserID(req.Context(), admin.ID)
+	req = req.WithContext(ctx)
+	s.handleListUsers(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp struct {
+		Success bool `json:"success"`
+	}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if !resp.Success {
+		t.Fatal("expected success=true")
 	}
 }

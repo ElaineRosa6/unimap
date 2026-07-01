@@ -196,7 +196,7 @@ func (d *SEODetector) detectRedirects(html string, result *SEOAnalysisResult) {
 	for i, line := range lines {
 		// 检测meta refresh重定向
 		matches := d.patterns.RedirectPatterns[0].FindStringSubmatch(line)
-		if matches != nil && len(matches) >= 2 {
+		if len(matches) >= 2 {
 			redirect := RedirectInfo{
 				Type:   "meta_refresh",
 				URL:    matches[1],
@@ -210,7 +210,7 @@ func (d *SEODetector) detectRedirects(html string, result *SEOAnalysisResult) {
 		// 检测JavaScript重定向
 		for j := 1; j < len(d.patterns.RedirectPatterns); j++ {
 			matches := d.patterns.RedirectPatterns[j].FindStringSubmatch(line)
-			if matches != nil && len(matches) >= 2 {
+			if len(matches) >= 2 {
 				var redirectType string
 				switch j {
 				case 1:

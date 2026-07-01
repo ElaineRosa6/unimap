@@ -228,4 +228,3 @@ func isRemoteDebuggerAvailable(remoteURL string) bool {
 	defer resp.Body.Close()
 	return resp.StatusCode == http.StatusOK
 }
-
