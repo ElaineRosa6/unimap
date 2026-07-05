@@ -223,12 +223,54 @@ func TestFeishuChannel_Send_Success(t *testing.T) {
 	}
 }
 
+func TestFeishuChannel_Send_WithSecret_SignInURL(t *testing.T) {
+	var receivedBody FeishuCardBody
+	var receivedURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedURL = r.URL.String()
+		json.NewDecoder(r.Body).Decode(&receivedBody)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ch, err := NewFeishuChannel("test-feishu", server.URL+"/hook/123", "my-secret-key", true, true)
+	if err != nil {
+		t.Fatalf("failed to create channel: %v", err)
+	}
+
+	n := TaskNotification{
+		TaskID: "t1", TaskName: "test", TaskType: "query",
+		Status: "success", Result: "ok", Duration: 1200,
+	}
+	if err := ch.Send(context.Background(), n); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 签名必须在 URL query 参数中，不在 body 中
+	if !strings.Contains(receivedURL, "timestamp=") {
+		t.Errorf("expected timestamp in URL query, got %s", receivedURL)
+	}
+	if !strings.Contains(receivedURL, "sign=") {
+		t.Errorf("expected sign in URL query, got %s", receivedURL)
+	}
+	// body 中不应包含 timestamp/sign 字段
+	raw, _ := json.Marshal(receivedBody)
+	if strings.Contains(string(raw), "timestamp") {
+		t.Errorf("body should not contain timestamp, got %s", string(raw))
+	}
+	if strings.Contains(string(raw), "sign") {
+		t.Errorf("body should not contain sign, got %s", string(raw))
+	}
+	if receivedBody.MsgType != "interactive" {
+		t.Errorf("expected msg_type interactive, got %v", receivedBody.MsgType)
+	}
+}
+
 func TestFeishuChannel_Sign(t *testing.T) {
 	sign, err := FeishuSign("test-secret", 1234567890)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	const want = "qCaOcLimil1ehZl6GzN2CUL6wgdt4onZPxvw8V+3TzA="
+	const want = "0HZcMEuXNQC4ngFmzdvjzA6LgrQHsbiep3IthsD3KHg="
 	if sign != want {
 		t.Fatalf("unexpected sign: got %q want %q", sign, want)
 	}

@@ -803,6 +803,8 @@ const QUERY_CLIENT_TIMEOUT_MS = 5 * 60 * 1000;
 const QUERY_CLIENT_TIMEOUT_LABEL = '5 分钟';
 let currentAssets = []; // P2-2: 当前查询结果数据（用于分页渲染）
 let filteredAssets = null; // P2-2: 筛选后的子集（null 表示未筛选）
+let probeCache = {}; // url → is_web (populated by batch probe after results arrive)
+let probeInFlight = false; // batch probe in progress flag
 
 // ============================================================
 // 登录状态检测
@@ -880,53 +882,83 @@ function updateEngineLoginStatus(engines) {
 		if (!statusEl) return;
 
 		if (engine.logged_in) {
-			statusEl.textContent = '\u2713 已登录';
-			statusEl.className = 'engine-status-text logged-in';
-			if (loginBtn) loginBtn.style.display = 'none';
-		} else {
-			anyNotLoggedIn = true;
-			switch (engine.reason) {
-				case 'cookie_configured':
-					statusEl.textContent = 'Cookie 已配置（headless 模式）';
-					statusEl.className = 'engine-status-text logged-in';
-					break;
-				case 'login_required':
-					statusEl.textContent = '需要登录';
-					statusEl.className = 'engine-status-text not-logged-in';
-					if (loginBtn) {
-						loginBtn.href = engine.login_url || '#';
-						loginBtn.style.display = 'inline-block';
-					}
-					break;
-				case 'no_session':
-					statusEl.textContent = '无浏览器会话';
-					statusEl.className = 'engine-status-text no-session';
-					if (loginBtn) {
-						loginBtn.href = engine.login_url || '#';
-						loginBtn.style.display = 'inline-block';
-					}
-					break;
-				case 'browser_session':
-					statusEl.textContent = '✓ 已登录';
-					statusEl.className = 'engine-status-text logged-in';
-					break;
-				case 'page_too_short':
-					statusEl.textContent = '页面加载异常';
-					statusEl.className = 'engine-status-text not-logged-in';
-					if (loginBtn) {
-						loginBtn.href = engine.login_url || '#';
-						loginBtn.style.display = 'inline-block';
-					}
-					break;
-				case 'extension_paired_session_unverified':
-					statusEl.textContent = '扩展已配对（登录未验证）';
-					statusEl.className = 'engine-status-text not-logged-in';
-					break;
-				default:
-					statusEl.textContent = engine.error || '状态未知';
-					statusEl.className = 'engine-status-text no-session';
+				statusEl.textContent = '\u2713 已登录';
+				statusEl.className = 'engine-status-text logged-in';
+				if (loginBtn) loginBtn.style.display = 'none';
+			} else {
+				// 某些 reason 虽然 logged_in=false，但实际已就绪，不应触发展开 Cookie 区域
+				var effectivelyLoggedIn = false;
+				switch (engine.reason) {
+					case 'api_key_configured':
+					case 'cookie_configured':
+					case 'browser_session':
+					case 'cdp_connected':
+					case 'ext_connected':
+						effectivelyLoggedIn = true;
+						break;
+				}
+				if (!effectivelyLoggedIn) {
+					anyNotLoggedIn = true;
+				}
+				switch (engine.reason) {
+					case 'api_key_configured':
+						statusEl.textContent = 'API Key 已配置';
+						statusEl.className = 'engine-status-text logged-in';
+						if (loginBtn) loginBtn.style.display = 'none';
+						break;
+					case 'cookie_configured':
+						statusEl.textContent = 'Cookie 已配置（headless 模式）';
+						statusEl.className = 'engine-status-text logged-in';
+						break;
+					case 'login_required':
+						statusEl.textContent = '需要登录';
+						statusEl.className = 'engine-status-text not-logged-in';
+						if (loginBtn) {
+							loginBtn.href = engine.login_url || '#';
+							loginBtn.style.display = 'inline-block';
+						}
+						break;
+					case 'no_session':
+						statusEl.textContent = '无浏览器会话';
+						statusEl.className = 'engine-status-text no-session';
+						if (loginBtn) {
+							loginBtn.href = engine.login_url || '#';
+							loginBtn.style.display = 'inline-block';
+						}
+						break;
+					case 'browser_session':
+						statusEl.textContent = '✓ 已登录';
+						statusEl.className = 'engine-status-text logged-in';
+						break;
+					case 'cdp_session_unverified':
+						statusEl.textContent = 'CDP 会话未验证';
+						statusEl.className = 'engine-status-text no-session';
+						break;
+					case 'cdp_connected':
+						statusEl.textContent = 'CDP 已连接';
+						statusEl.className = 'engine-status-text logged-in';
+						break;
+					case 'ext_connected':
+						statusEl.textContent = '扩展已连接';
+						statusEl.className = 'engine-status-text logged-in';
+						break;
+					case 'page_too_short':
+						statusEl.textContent = '页面加载异常';
+						statusEl.className = 'engine-status-text not-logged-in';
+						if (loginBtn) {
+							loginBtn.href = engine.login_url || '#';
+							loginBtn.style.display = 'inline-block';
+						}
+						break;
+					case 'extension_paired_session_unverified':
+						statusEl.textContent = '扩展已配对（登录未验证）';
+						statusEl.className = 'engine-status-text not-logged-in';
+						break;
+					default:
+						statusEl.textContent = engine.error || engine.reason || '状态未知';
+						statusEl.className = 'engine-status-text no-session';
+				}
 			}
-		}
 	});
 
 	// 自动折叠/展开逻辑
@@ -1703,9 +1735,11 @@ function showResults(data) {
 			initResultsActionDelegation();
 		} catch(e) { console.error('results init:', e); }
 		try {
-			// P2-2: 渲染第一页数据
-			renderAssetRows(0, 50);
-		} catch(e) { console.error('renderAssetRows:', e); }
+				// P2-2: 渲染第一页数据
+				renderAssetRows(0, 50);
+			} catch(e) { console.error('renderAssetRows:', e); }
+			// 后台批量探测所有资产的 URL，缓存结果供"跳转"按钮使用
+			try { probeAssetsAfterResults(assets); } catch(e) { console.error('probeAssetsAfterResults:', e); }
 	}
 }
 
@@ -1755,12 +1789,36 @@ function assetToRowHTML(asset) {
 	const statusCode = pickGlobal(asset, 'status_code', 'statusCode', 'StatusCode');
 	const source = pickGlobal(asset, 'source', 'Source');
 	const targetURL = pickGlobal(asset, 'url', 'URL');
-	const engineHref = escapeAttr(getEngineLink(source, ip));
+	// Decide whether to link directly to the target or fall back to an engine
+	// search. Relying solely on the engine-reported protocol is unreliable, so
+	// we also check well-known port mappings as a hint.
+	const scheme = (protocol || '').toLowerCase();
+	const portNum = parseInt(port, 10);
+	const isKnownWebPort = !isNaN(portNum) && (
+		portNum === 80 || portNum === 443 || portNum === 8000 || portNum === 8080 ||
+		portNum === 8443 || portNum === 8888 || portNum === 9000 || portNum === 9090 ||
+		portNum === 3000 || portNum === 4200 || portNum === 5173 || portNum === 3001 ||
+		portNum === 5000 || portNum === 7000 || portNum === 8081 || portNum === 8880 ||
+		portNum === 9443 || portNum === 11434 || portNum === 15672
+	);
+	const isKnownNonWebPort = !isNaN(portNum) && (
+		portNum === 22 || portNum === 23 || portNum === 3389 || portNum === 5900 ||
+		portNum === 3306 || portNum === 5432 || portNum === 6379 || portNum === 27017 ||
+		portNum === 1433 || portNum === 1521 || portNum === 11211 || portNum === 2375 ||
+		portNum === 2376 || portNum === 1434 || portNum === 1522 || portNum === 4848 ||
+		portNum === 6080 || portNum === 8444 || portNum === 9200 || portNum === 9300
+	);
+	const isWebProtocol = scheme === 'http' || scheme === 'https';
+	const likelyWeb = isWebProtocol || isKnownWebPort;
+	const definitelyNonWeb = !isWebProtocol && isKnownNonWebPort;
+	const shouldDirectLink = targetURL && likelyWeb && !definitelyNonWeb;
+	const jumpHref = shouldDirectLink ? escapeAttr(targetURL) : escapeAttr(getEngineLink(source, ip));
+	const fallbackHref = escapeAttr(getEngineLink(source, ip));
 	const methodBadge = renderCollectionMethodBadge(asset);
 	return `<tr data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}" data-protocol="${escapeAttr(protocol)}" data-host="${escapeAttr(host)}" data-title="${escapeAttr(title)}" data-server="${escapeAttr(server)}" data-status="${escapeAttr(statusCode)}" data-source="${escapeAttr(source)}" data-url="${escapeAttr(targetURL)}">
-		<td>${escapeHtml(ip)}</td><td>${escapeHtml(port)}</td><td>${escapeHtml(protocol)}</td><td>${escapeHtml(host)}</td><td>${escapeHtml(title)}</td><td>${escapeHtml(server)}</td><td>${escapeHtml(statusCode)}</td><td>${escapeHtml(source)}${methodBadge}</td>
-		<td><button type="button" class="btn btn-sm btn-info btn-detail" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}">详情</button> <button type="button" class="btn btn-sm btn-success btn-copy" data-ip="${escapeAttr(ip)}">复制IP</button> <a href="${engineHref}" target="_blank" class="btn btn-sm btn-primary">跳转</a> <button type="button" class="btn btn-sm btn-warning btn-screenshot" data-url="${escapeAttr(targetURL)}" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}" data-protocol="${escapeAttr(protocol)}">截图</button></td>
-	</tr>`;
+			<td>${escapeHtml(ip)}</td><td>${escapeHtml(port)}</td><td>${escapeHtml(protocol)}</td><td>${escapeHtml(host)}</td><td>${escapeHtml(title)}</td><td>${escapeHtml(server)}</td><td>${escapeHtml(statusCode)}</td><td>${escapeHtml(source)}${methodBadge}</td>
+			<td><div class="result-actions"><button type="button" class="action-btn action-detail btn-detail" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}">详情</button> <button type="button" class="action-btn action-copy btn-copy" data-ip="${escapeAttr(ip)}">复制IP</button> <button type="button" class="action-btn action-goto btn-goto" data-url="${jumpHref}" data-fallback="${fallbackHref}">跳转</button> <button type="button" class="action-btn action-screenshot btn-screenshot" data-url="${escapeAttr(targetURL)}" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}" data-protocol="${escapeAttr(protocol)}">截图</button></div></td>
+		</tr>`;
 }
 
 // P2-2: 全局 pick 函数（供 renderAssetRows 使用）
@@ -1772,6 +1830,45 @@ function pickGlobal(obj, ...keys) {
 	return '';
 }
 
+// probeAssetsAfterResults collects URLs from the first page of results and
+// sends a batch probe request to the backend. The cache (probeCache) is then
+// used by the "跳转" button to instantly decide whether to open the target
+// directly or fall back to an engine search.
+function probeAssetsAfterResults(assets) {
+	if (!assets || !assets.length || probeInFlight) return;
+
+	// Collect unique http/https URLs from the first 50 assets
+	const seen = new Set();
+	const urls = [];
+	for (let i = 0; i < Math.min(assets.length, 50); i++) {
+		const url = pickGlobal(assets[i], 'url', 'URL');
+		if (!url) continue;
+		const scheme = (pickGlobal(assets[i], 'protocol', 'Protocol') || '').toLowerCase();
+		if (scheme !== 'http' && scheme !== 'https') continue;
+		if (seen.has(url)) continue;
+		seen.add(url);
+		urls.push(url);
+	}
+	if (!urls.length) return;
+
+	probeInFlight = true;
+	apiFetch('/api/v1/url/probe-web-batch', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ urls: urls })
+	}).then(function(resp) { return resp.json(); })
+	.then(function(data) {
+		if (data && data.results) {
+			Object.assign(probeCache, data.results);
+		}
+	})
+	.catch(function(err) {
+		console.warn('probe batch failed:', err);
+	})
+	.finally(function() {
+		probeInFlight = false;
+	});
+}
 
 // 处理工具栏操作
 function handleToolbarAction(action) {
@@ -2406,6 +2503,20 @@ function initAssetActionDelegation() {
 			var port = btn.getAttribute('data-port');
 			var proto = btn.getAttribute('data-protocol');
 			viewScreenshot(url, ip, port, proto);
+		} else if (btn.classList.contains('btn-goto')) {
+			var targetUrl = btn.getAttribute('data-url');
+			var fallbackUrl = btn.getAttribute('data-fallback');
+			if (!targetUrl) return;
+			// Read cached probe result; if not cached yet, open direct URL as
+			// best-effort (probe may still be in flight).
+			var isWeb = probeCache[targetUrl];
+			if (isWeb === undefined && !probeInFlight) {
+				// Cache miss and no probe running — try direct, fall back on failure
+				window.open(targetUrl, '_blank');
+				return;
+			}
+			var href = isWeb ? targetUrl : (fallbackUrl || targetUrl);
+			window.open(href, '_blank');
 		}
 	});
 }
@@ -2895,11 +3006,11 @@ function showMessage(message, type = 'info', duration = 3000) {
 	}, duration);
 }
 
-// 获取引擎跳转链接
+// 获取引擎跳转链接（用于非 Web 服务的 fallback）
 function getEngineLink(source, ip) {
 	if (!ip) return '#';
+	const primarySource = (source || '').split(',')[0].trim().toLowerCase();
 	const query = `ip="${ip}"`;
-	// Base64 encode
 	let b64 = "";
 	try {
 		b64 = btoa(query);
@@ -2907,12 +3018,14 @@ function getEngineLink(source, ip) {
 		console.error("Base64 encode failed", e);
 		return "#";
 	}
-	
-	switch(source ? source.toLowerCase() : '') {
+	switch (primarySource) {
 		case 'fofa': return `https://fofa.info/result?qbase64=${b64}`;
 		case 'hunter': return `https://hunter.qianxin.com/list?searchValue=${b64}`;
 		case 'quake': return `https://quake.360.net/quake/#/searchResult?searchVal=${encodeURIComponent(query)}`;
-		case 'zoomeye': return `https://www.zoomeye.org/searchResult?q=${encodeURIComponent('ip:"'+ip+'"')}`;
+		case 'zoomeye': return `https://www.zoomeye.org/searchResult?q=${encodeURIComponent('ip:"' + ip + '"')}`;
+		case 'shodan': return `https://www.shodan.io/search?query=${encodeURIComponent('ip:"' + ip + '"')}`;
+		case 'censys': return `https://search.censys.io/search?resource=hosts&q=${encodeURIComponent('ip:' + ip)}`;
+		case 'daydaymap': return `https://www.daydaymap.com/search?q=${encodeURIComponent('ip:"' + ip + '"')}`;
 		default: return '#';
 	}
 }

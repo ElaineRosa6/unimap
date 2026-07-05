@@ -390,6 +390,12 @@ func engineDomain(engine string) string {
 		return "quake.360.net"
 	case "zoomeye":
 		return "zoomeye.org"
+	case "shodan":
+		return "shodan.io"
+	case "censys":
+		return "censys.io"
+	case "daydaymap":
+		return "daydaymap.com"
 	default:
 		return ""
 	}
@@ -415,6 +421,14 @@ func judgeLoginByCookieNames(engine string, byName map[string]string) bool {
 	case "zoomeye":
 		// ZoomEye login cookie
 		return strings.TrimSpace(byName["_xsrf"]) != "" || strings.TrimSpace(byName["session"]) != ""
+	case "shodan":
+		return strings.TrimSpace(byName["dotcom_user"]) != ""
+	case "censys":
+		// Censys is API-key based; no browser session cookie marker.
+		return false
+	case "daydaymap":
+		// DayDayMap is API-key based; no browser session cookie marker.
+		return false
 	default:
 		return false
 	}
@@ -556,7 +570,7 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 	}
 
 	cdpConnected, extPaired := s.detectSessionChannels(r.Context())
-	engines := []string{"fofa", "hunter", "zoomeye", "quake", "shodan"} // 核心 5 引擎，新引擎待 API Key 后补充
+	engines := []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"} // 全部引擎
 	results := s.checkEngineLoginStatuses(r.Context(), engines, cdpConnected, extPaired)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -617,8 +631,8 @@ func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpC
 		ExtPaired:    extPaired,
 	}
 
-	// API Key 引擎（如 Shodan）：有 Key 即视为已就绪，无需浏览器登录
-	if engine == "shodan" && cookieSet {
+	// API Key 引擎（Shodan / Censys / DayDayMap）：有 Key/凭证 即视为已就绪，无需浏览器登录
+	if cookieSet {
 		base.LoggedIn = true
 		base.Reason = "api_key_configured"
 		return base
@@ -676,6 +690,10 @@ func (s *Server) engineCookieConfigured(engine string) bool {
 		return hasCookies(s.config.Engines.Zoomeye.Cookies)
 	case "shodan":
 		return strings.TrimSpace(s.config.Engines.Shodan.APIKey) != ""
+	case "censys":
+		return strings.TrimSpace(s.config.Engines.Censys.APIID) != "" && strings.TrimSpace(s.config.Engines.Censys.APISecret) != ""
+	case "daydaymap":
+		return strings.TrimSpace(s.config.Engines.Daydaymap.APIKey) != ""
 	}
 	return false
 }

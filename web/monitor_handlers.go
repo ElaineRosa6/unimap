@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -258,6 +260,95 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 		"ports":   response.Ports,
 		"results": response.Results,
 	})
+}
+
+// handleProbeWebService sends a lightweight HTTP HEAD request to the target
+// URL and returns whether it behaves like a real web service.
+func (s *Server) handleProbeWebService(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
+
+	var req struct {
+		URL string `json:"url"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		writeAPIError(w, http.StatusBadRequest, "invalid_url", "url is required", nil)
+		return
+	}
+
+	parsed, err := url.Parse(req.URL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"is_web": false})
+		return
+	}
+
+	isWeb := probeWebService(r.Context(), req.URL)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"is_web": isWeb})
+}
+
+// handleProbeWebServiceBatch probes multiple URLs concurrently and returns a
+// map of url→is_web. This is called once when query results arrive so the
+// "跳转" button can use cached results without per-click latency.
+func (s *Server) handleProbeWebServiceBatch(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+		return
+	}
+
+	var req struct {
+		URLs []string `json:"urls"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+
+	results := make(map[string]bool, len(req.URLs))
+	for _, u := range req.URLs {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		parsed, err := url.Parse(u)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			results[u] = false
+			continue
+		}
+		results[u] = probeWebService(r.Context(), u)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"results": results})
+}
+
+// probeWebService returns true if the URL responds to an HTTP HEAD request
+// within the timeout. Uses no-cors mode so cross-origin probes don't fail on
+// CORS — an opaque response still proves the port speaks HTTP.
+func probeWebService(ctx context.Context, targetURL string) bool {
+	client := &http.Client{Timeout: 3 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, targetURL, nil)
+	if err != nil {
+		return false
+	}
+	// Prevent the request from following redirects — we only care whether the
+	// server speaks HTTP at all.
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	// Any HTTP status code (even 4xx/5xx) means the port serves HTTP.
+	return resp.StatusCode > 0
 }
 
 // parseExcelFile 解析Excel文件

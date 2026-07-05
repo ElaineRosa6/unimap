@@ -404,3 +404,30 @@ func TestHandleImportCookieJSON_ConfigNil(t *testing.T) {
 		t.Fatalf("expected 503, got %d", w.Code)
 	}
 }
+
+// ============================================================
+// judgeLoginByCookieNames tests
+// ============================================================
+
+func TestJudgeLoginByCookieNames_Shodan(t *testing.T) {
+	if !judgeLoginByCookieNames("shodan", map[string]string{"dotcom_user": "admin"}) {
+		t.Error("expected logged_in for shodan with dotcom_user cookie")
+	}
+	if judgeLoginByCookieNames("shodan", map[string]string{}) {
+		t.Error("expected not logged_in for shodan with empty cookies")
+	}
+}
+
+func TestJudgeLoginByCookieNames_Censys(t *testing.T) {
+	// Censys is API-key based; no browser session cookie marker.
+	if judgeLoginByCookieNames("censys", map[string]string{"anything": "value"}) {
+		t.Error("expected not logged_in for censys (API-key only)")
+	}
+}
+
+func TestJudgeLoginByCookieNames_DayDayMap(t *testing.T) {
+	// DayDayMap is API-key based; no browser session cookie marker.
+	if judgeLoginByCookieNames("daydaymap", map[string]string{"anything": "value"}) {
+		t.Error("expected not logged_in for daydaymap (API-key only)")
+	}
+}

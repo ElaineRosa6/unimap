@@ -108,8 +108,10 @@
 							<td>{{.StatusCode}}</td>
 							<td>{{.Source}}</td>
 							<td>
-								<button type="button" class="btn-sm btn-outline-primary btn-detail" data-ip="{{.IP}}" data-port="{{.Port}}">详情</button>
-								<button type="button" class="btn-sm btn-outline-secondary btn-copy" data-ip="{{.IP}}">复制</button>
+								<div class="result-actions">
+									<button type="button" class="action-btn action-detail btn-detail" data-ip="{{.IP}}" data-port="{{.Port}}">详情</button>
+									<button type="button" class="action-btn action-copy btn-copy" data-ip="{{.IP}}">复制</button>
+								</div>
 							</td>
 						</tr>
 						{{end}}

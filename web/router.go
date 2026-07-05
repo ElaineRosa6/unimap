@@ -121,6 +121,8 @@ func (r *Router) registerImportRoutes() {
 	r.addAPIRoute("import-urls", "POST", "/api/import/urls", s.handleImportURLs, true)
 	r.addAPIRoute("url-reachability", "POST", "/api/url/reachability", s.handleURLReachability, true)
 	r.addAPIRoute("url-port-scan", "POST", "/api/url/port-scan", s.handleURLPortScan, true)
+	r.addAPIRoute("url-probe-web", "POST", "/api/url/probe-web", s.handleProbeWebService, true)
+	r.addAPIRoute("url-probe-web-batch", "POST", "/api/url/probe-web-batch", s.handleProbeWebServiceBatch, true)
 }
 
 func (r *Router) registerNodeRoutes() {

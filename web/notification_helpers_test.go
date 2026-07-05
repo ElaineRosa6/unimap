@@ -95,8 +95,10 @@ func TestEngineDomain(t *testing.T) {
 		{"fofa", "fofa.info"},
 		{"quake", "quake.360.net"},
 		{"zoomeye", "zoomeye.org"},
+		{"shodan", "shodan.io"},
+		{"censys", "censys.io"},
+		{"daydaymap", "daydaymap.com"},
 		{"unknown", ""},
-		{"shodan", ""},
 	}
 	for _, tt := range tests {
 		got := engineDomain(tt.engine)

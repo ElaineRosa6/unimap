@@ -477,6 +477,81 @@ footer {
 	font-size: 12px;
 }
 
+/* ============================================================
+   Result row action buttons (results page table)
+   ============================================================ */
+.result-actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: nowrap;
+}
+
+.result-actions .action-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 10px;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	font-size: 12px;
+	font-weight: 500;
+	font-family: var(--font-sans);
+	cursor: pointer;
+	transition: all var(--duration-fast) var(--ease);
+	white-space: nowrap;
+	line-height: 1.5;
+	text-decoration: none;
+}
+
+.action-detail {
+	background: #eef2ff;
+	color: #4f46e5;
+	border-color: #c7d2fe;
+}
+.action-detail:hover {
+	background: #e0e7ff;
+	border-color: #4f46e5;
+	box-shadow: 0 1px 4px rgba(79, 70, 229, 0.2);
+}
+
+.action-copy {
+	background: #f0fdf4;
+	color: #16a34a;
+	border-color: #bbf7d0;
+}
+.action-copy:hover {
+	background: #dcfce7;
+	border-color: #16a34a;
+	box-shadow: 0 1px 4px rgba(22, 163, 74, 0.2);
+}
+
+.action-goto {
+	background: #fffbeb;
+	color: #d97706;
+	border-color: #fef3c7;
+}
+.action-goto:hover {
+	background: #fef3c7;
+	border-color: #d97706;
+	box-shadow: 0 1px 4px rgba(217, 119, 6, 0.2);
+}
+
+.action-screenshot {
+	background: #ecfeff;
+	color: #0891b2;
+	border-color: #cffafe;
+}
+.action-screenshot:hover {
+	background: #cffafe;
+	border-color: #0891b2;
+	box-shadow: 0 1px 4px rgba(8, 145, 178, 0.2);
+}
+
+.result-actions .action-btn:active {
+	transform: scale(0.96);
+}
+
 .btn:active {
 	transform: scale(0.98);
 }

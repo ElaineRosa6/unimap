@@ -78,7 +78,7 @@ func (c *DingTalkChannel) Send(ctx context.Context, n TaskNotification) error {
 		if len(c.secret) > 3 && c.secret[0] == '$' && c.secret[1] == '{' && c.secret[len(c.secret)-1] == '}' {
 			return fmt.Errorf("dingtalk secret is an unresolved placeholder: %s — set the environment variable or use the raw value", c.secret)
 		}
-		ts := TimestampNow() / 1000
+		ts := TimestampNow()
 		sign, err := DingTalkSign(c.secret, ts)
 		if err != nil {
 			return fmt.Errorf("dingtalk sign error: %w", err)
@@ -223,31 +223,33 @@ func buildFeishuPayloadElements(n TaskNotification) []FeishuCardElement {
 // sendFeishuRequest 发送飞书请求并验证响应
 func (c *FeishuChannel) sendFeishuRequest(ctx context.Context, body FeishuCardBody) error {
 	var data []byte
+	sendURL := c.url
 	if c.secret != "" {
 		if len(c.secret) > 3 && c.secret[0] == '$' && c.secret[1] == '{' && c.secret[len(c.secret)-1] == '}' {
 			return fmt.Errorf("feishu secret is an unresolved placeholder: %s — set the environment variable or use the raw value", c.secret)
 		}
-		ts := TimestampNow() / 1000
+		ts := TimestampNow()
 		sign, err := FeishuSign(c.secret, ts)
 		if err != nil {
 			return fmt.Errorf("feishu sign error: %w", err)
 		}
-		data, err = json.Marshal(struct {
-			FeishuCardBody
-			Timestamp string `json:"timestamp"`
-			Sign      string `json:"sign"`
-		}{body, fmt.Sprintf("%d", ts), sign})
+		// 飞书自定义机器人要求 timestamp + sign 作为 URL query 参数（与钉钉一致），
+		// 不能放在请求 body 中，否则服务端验签失败。
+		u, err := url.Parse(sendURL)
 		if err != nil {
-			return fmt.Errorf("marshal feishu body: %w", err)
+			return fmt.Errorf("parse feishu URL: %w", err)
 		}
-	} else {
-		var err error
-		data, err = json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("marshal feishu body: %w", err)
-		}
+		q := u.Query()
+		q.Set("timestamp", fmt.Sprintf("%d", ts))
+		q.Set("sign", sign)
+		u.RawQuery = q.Encode()
+		sendURL = u.String()
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewBuffer(data))
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal feishu body: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", sendURL, bytes.NewBuffer(data))
 	if err != nil {
 		return fmt.Errorf("create feishu request: %w", err)
 	}

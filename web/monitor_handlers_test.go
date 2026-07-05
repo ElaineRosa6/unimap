@@ -2,12 +2,15 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/unimap/project/internal/service"
 )
@@ -276,6 +279,56 @@ func TestHandleURLPortScan_NoMonitorApp_Returns503(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", rec.Code)
+	}
+}
+
+func TestHandleProbeWebService_MissingURL(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/probe-web", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleProbeWebService(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleProbeWebService_InvalidScheme(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{"url": "ftp://example.com"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/probe-web", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleProbeWebService(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"is_web":false`) {
+		t.Fatalf("expected is_web=false for ftp scheme, got %s", rec.Body.String())
+	}
+}
+
+func TestProbeWebService_LocalhostHTTP(t *testing.T) {
+	// Start a tiny HTTP server on a random port
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer ln.Close()
+	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	url := "http://" + ln.Addr().String()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if !probeWebService(ctx, url) {
+		t.Error("expected probeWebService to return true for a live HTTP server")
 	}
 }
 
