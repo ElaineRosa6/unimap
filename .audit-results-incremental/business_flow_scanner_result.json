@@ -1,0 +1,209 @@
+{
+  "project_root": "D:\\Project\\Go_project\\unimap",
+  "files_scanned": 340,
+  "total_findings": 17,
+  "severity_distribution": {
+    "P0": 0,
+    "P1": 0,
+    "P2": 17
+  },
+  "category_distribution": {
+    "unfinished_branch": 12,
+    "dead_end_case": 5
+  },
+  "business_flows": {
+    "unfinished_branches": 12,
+    "dead_end_cases": 5,
+    "state_machine_gaps": 0,
+    "missing_idempotency_markers": 0
+  },
+  "findings": [
+    {
+      "file": "internal\\logger\\logger_test.go",
+      "line": 215,
+      "severity": "P2",
+      "category": "unfinished_branch",
+      "description": "TODO/FIXME marker in business code — incomplete implementation",
+      "suggestion": "Resolve the marker before shipping or convert to a tracked issue",
+      "code_snippet": "CtxDebugf(context.TODO(), \"debug %s\", \"test\")",
+      "is_heuristic": false,
+      "source": "stdlib-regex"
+    },
+    {
+      "file": "internal\\logger\\logger_test.go",
+      "line": 216,
+      "severity": "P2",
+      "category": "unfinished_branch",
+      "description": "TODO/FIXME marker in business code — incomplete implementation",
+      "suggestion": "Resolve the marker before shipping or convert to a tracked issue",
+      "code_snippet": "CtxInfof(context.TODO(), \"info %s\", \"test\")",
+      "is_heuristic": false,
+      "source": "stdlib-regex"
+    },
+    {
+      "file": "internal\\logger\\logger_test.go",
+      "line": 217,
+      "severity": "P2",
+      "category": "unfinished_branch",
+      "description": "TODO/FIXME marker in business code — incomplete implementation",
+      "suggestion": "Resolve the marker before shipping or convert to a tracked issue",
+      "code_snippet": "CtxWarnf(context.TODO(), \"warn %s\", \"test\")",
+      "is_heuristic": false,
+      "source": "stdlib-regex"
+    },
+    {
+      "file": "internal\\logger\\logger_test.go",
+      "line": 218,
+      "severity": "P2",
+      "category": "unfinished_branch",
+      "description": "TODO/FIXME marker in business code — incomplete implementation",
+      "suggestion": "Resolve the marker before shipping or convert to a tracked issue",
+      "code_snippet": "CtxErrorf(context.TODO(), \"error %s\", \"test\")",
+      "is_heuristic": false,
+      "source": "stdlib-regex"
+    },
+    {
+      "file": "internal\\scheduler\\executor_test.go",
+      "line": 219,
+      "severity": "P2",
+      "category": "unfinished_branch",
+      "description": "TODO/FIXME marker in business code — incomplete implementation",
+      "suggestion": "Resolve the marker before shipping or convert to a tracked issue",
+      "code_snippet": "_, err := r.Execute(context.TODO(), &model.TaskPayload{Extra: map[string]any{\"file_pattern\": \"nonexistent.txt\"}})",
+      "is_heuristic": false,
+      "source": "stdlib-regex"
+    },
+    {
+      "file": "tools\\extension-screenshot\\test_collect_pw.js",
+      "line": 177,
+      "severity": "P2",
+      "category": "dead_end_case",
+      "description": "switch with 4 cases but no default — unhandled values fall through silently",
+      "suggestion": "Add a default case that either handles the unexpected value, logs it, or returns a clear error",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "metric": 4
+    },
+    {
+      "file": "web\\cookie_handlers_test.go",
+      "line": 342,
+      "severity": "P2",
+      "category": "unfinished_branch",
+      "description": "TODO/FIXME marker in business code — incomplete implementation",
+      "suggestion": "Resolve the marker before shipping or convert to a tracked issue",
+      "code_snippet": "ok, _, hint, err := s.verifyEngineSession(context.TODO(), \"cdp\", \"unknown_engine\", \"test\")",
+      "is_heuristic": false,
+      "source": "stdlib-regex"
+    },
+    {
+      "file": "web\\websocket_handlers_test.go",
+      "line": 53,
+      "severity": "P2",
+      "category": "unfinished_branch",
+      "description": "TODO/FIXME marker in business code — incomplete implementation",
+      "suggestion": "Resolve the marker before shipping or convert to a tracked issue",
+      "code_snippet": "s.handleWebSocketQuery(context.TODO(), \"test-conn\", map[string]interface{}{\"query\": \"test\", \"engines\": \"quake\"}, writeJSON)",
+      "is_heuristic": false,
+      "source": "stdlib-regex"
+    },
+    {
+      "file": "web\\websocket_handlers_test.go",
+      "line": 91,
+      "severity": "P2",
+      "category": "unfinished_branch",
+      "description": "TODO/FIXME marker in business code — incomplete implementation",
+      "suggestion": "Resolve the marker before shipping or convert to a tracked issue",
+      "code_snippet": "s.handleWebSocketQuery(context.TODO(), \"test-conn\", map[string]interface{}{\"query\": \"test\", \"engines\": \"quake\"}, writeJSON)",
+      "is_heuristic": false,
+      "source": "stdlib-regex"
+    },
+    {
+      "file": "web\\websocket_handlers_test.go",
+      "line": 130,
+      "severity": "P2",
+      "category": "unfinished_branch",
+      "description": "TODO/FIXME marker in business code — incomplete implementation",
+      "suggestion": "Resolve the marker before shipping or convert to a tracked issue",
+      "code_snippet": "s.handleWebSocketQuery(context.TODO(), \"test-conn\", map[string]interface{}{\"query\": \"test\", \"engines\": \"quake\"}, writeJSON)",
+      "is_heuristic": false,
+      "source": "stdlib-regex"
+    },
+    {
+      "file": "web\\websocket_handlers_test.go",
+      "line": 274,
+      "severity": "P2",
+      "category": "unfinished_branch",
+      "description": "TODO/FIXME marker in business code — incomplete implementation",
+      "suggestion": "Resolve the marker before shipping or convert to a tracked issue",
+      "code_snippet": "s.handleWebSocketQuery(context.TODO(), \"test-conn\", map[string]interface{}{\"query\": \"ping\"}, writeJSON)",
+      "is_heuristic": false,
+      "source": "stdlib-regex"
+    },
+    {
+      "file": "web\\websocket_handlers_test.go",
+      "line": 430,
+      "severity": "P2",
+      "category": "unfinished_branch",
+      "description": "TODO/FIXME marker in business code — incomplete implementation",
+      "suggestion": "Resolve the marker before shipping or convert to a tracked issue",
+      "code_snippet": "s.handleWebSocketQuery(context.TODO(), \"test-conn\", map[string]interface{}{\"query\": \"\"}, writeJSON)",
+      "is_heuristic": false,
+      "source": "stdlib-regex"
+    },
+    {
+      "file": "web\\websocket_handlers_test.go",
+      "line": 452,
+      "severity": "P2",
+      "category": "unfinished_branch",
+      "description": "TODO/FIXME marker in business code — incomplete implementation",
+      "suggestion": "Resolve the marker before shipping or convert to a tracked issue",
+      "code_snippet": "s.handleWebSocketQuery(context.TODO(), \"test-conn\", map[string]interface{}{\"query\": \"country=\\\"CN\\\"\"}, writeJSON)",
+      "is_heuristic": false,
+      "source": "stdlib-regex"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 891,
+      "severity": "P2",
+      "category": "dead_end_case",
+      "description": "switch with 5 cases but no default — unhandled values fall through silently",
+      "suggestion": "Add a default case that either handles the unexpected value, logs it, or returns a clear error",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "metric": 5
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1135,
+      "severity": "P2",
+      "category": "dead_end_case",
+      "description": "switch with 5 cases but no default — unhandled values fall through silently",
+      "suggestion": "Add a default case that either handles the unexpected value, logs it, or returns a clear error",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "metric": 5
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1471,
+      "severity": "P2",
+      "category": "dead_end_case",
+      "description": "switch with 3 cases but no default — unhandled values fall through silently",
+      "suggestion": "Add a default case that either handles the unexpected value, logs it, or returns a clear error",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "metric": 3
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1877,
+      "severity": "P2",
+      "category": "dead_end_case",
+      "description": "switch with 3 cases but no default — unhandled values fall through silently",
+      "suggestion": "Add a default case that either handles the unexpected value, logs it, or returns a clear error",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "metric": 3
+    }
+  ]
+}

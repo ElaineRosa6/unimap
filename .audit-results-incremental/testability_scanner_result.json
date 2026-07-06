@@ -1,0 +1,245 @@
+{
+  "project_root": "D:\\Project\\Go_project\\unimap",
+  "total_findings": 22,
+  "coverage": {
+    "coverage_source": "go-test-cover",
+    "is_heuristic": false,
+    "overall_percent": 0.0,
+    "per_file": {}
+  },
+  "test_inventory": {
+    "total_test_files": 142,
+    "total_source_files": 198,
+    "sources_with_tests": 182,
+    "sources_without_tests": 16,
+    "test_source_ratio": 0.717
+  },
+  "findings": [
+    {
+      "file": "internal\\config\\config_coverage_test.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "test_low_assertion_density",
+      "description": "Test file has 19 assertions across 449 lines (density 0.042)",
+      "suggestion": "Add more assertions to strengthen test coverage",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "metric": 0.0423
+    },
+    {
+      "file": "internal\\service\\monitor_app_service_test.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "test_low_assertion_density",
+      "description": "Test file has 2 assertions across 68 lines (density 0.029)",
+      "suggestion": "Add more assertions to strengthen test coverage",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "metric": 0.0294
+    },
+    {
+      "file": "internal\\tamper\\analyzer\\accuracy_test.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "test_low_assertion_density",
+      "description": "Test file has 12 assertions across 355 lines (density 0.034)",
+      "suggestion": "Add more assertions to strengthen test coverage",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "metric": 0.0338
+    },
+    {
+      "file": "web\\alerting_e2e_test.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "test_low_assertion_density",
+      "description": "Test file has 7 assertions across 169 lines (density 0.041)",
+      "suggestion": "Add more assertions to strengthen test coverage",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "metric": 0.0414
+    },
+    {
+      "file": "web\\history_handlers_test.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "test_low_assertion_density",
+      "description": "Test file has 6 assertions across 124 lines (density 0.048)",
+      "suggestion": "Add more assertions to strengthen test coverage",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "metric": 0.0484
+    },
+    {
+      "file": "web\\websocket_helpers_test.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "test_low_assertion_density",
+      "description": "Test file has 4 assertions across 147 lines (density 0.027)",
+      "suggestion": "Add more assertions to strengthen test coverage",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "metric": 0.0272
+    },
+    {
+      "file": "cmd\\unimap-gui\\cjk_theme_darwin.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "cmd\\unimap-gui\\cjk_theme_gui.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "cmd\\unimap-gui\\cjk_theme_linux.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "cmd\\unimap-gui\\cjk_theme_other.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "cmd\\unimap-gui\\cjk_theme_windows.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "cmd\\unimap-gui\\main.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "cmd\\unimap-gui\\main_nogui.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "cmd\\unimap-gui\\monitor_native.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "cmd\\unimap-web\\main.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "examples\\plugin_demo.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "internal\\metrics\\metrics.go",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "tools\\extension-screenshot\\test_collect.js",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "tools\\extension-screenshot\\test_collect_pw.js",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "tools\\extension-screenshot\\test_extract_console.js",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "tools\\extension-screenshot\\test_extraction_node.js",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    },
+    {
+      "file": "urlive.py",
+      "line": 1,
+      "severity": "P2",
+      "category": "untested_source",
+      "description": "Source file has no associated test file",
+      "suggestion": "Create a test file covering this module's public API",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic"
+    }
+  ]
+}

@@ -1,0 +1,3195 @@
+{
+  "project_root": "D:/Project/Go_project/unimap",
+  "languages": {
+    "YAML": 5,
+    "Shell": 9,
+    "JSON": 627,
+    "Python": 1,
+    "Go": 326,
+    "JavaScript": 13,
+    "HTML": 15,
+    "CSS": 2
+  },
+  "frameworks": [
+    {
+      "name": "Go Module",
+      "version": "N/A"
+    }
+  ],
+  "total_files": 1367,
+  "file_type_distribution": {
+    "no_ext": 8,
+    ".example": 2,
+    ".yml": 3,
+    ".bat": 1,
+    ".sh": 9,
+    ".md": 155,
+    ".out": 1,
+    ".mod": 1,
+    ".sum": 1,
+    ".conf": 1,
+    ".json": 627,
+    ".exe": 4,
+    ".py": 1,
+    ".go": 326,
+    ".yaml": 2,
+    ".db": 4,
+    ".db-shm": 4,
+    ".db-wal": 4,
+    ".log": 3,
+    ".docx": 1,
+    ".xlsx": 4,
+    ".js": 13,
+    ".html": 15,
+    ".gz": 146,
+    ".png": 23,
+    ".ps1": 6,
+    ".css": 2
+  },
+  "config_files": [
+    ".\\docker-compose.yml",
+    ".\\Dockerfile",
+    ".\\go.mod",
+    ".\\go.sum",
+    ".\\nginx.conf"
+  ],
+  "structural_issues": [
+    {
+      "severity": "P1",
+      "category": "testing",
+      "issue": "No test directories found",
+      "impact": "No automated test coverage",
+      "suggestion": "Add test directories and implement unit/integration tests"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'cmd\\unimap-cli' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'cmd\\unimap-cli'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'cmd\\unimap-gui' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'cmd\\unimap-gui'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'cmd\\unimap-web' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'cmd\\unimap-web'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'docs\\test_reports' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'docs\\test_reports'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\adapter' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\adapter'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\alerting' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\alerting'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\appversion' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\appversion'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\auth' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\auth'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\backup' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\backup'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\collection' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\collection'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\config' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\config'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\core\\unimap' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\core\\unimap'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\distributed' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\distributed'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\error' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\error'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\exporter' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\exporter'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\history' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\history'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\icp\\database' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\icp\\database'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\logger' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\logger'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\metrics' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\metrics'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\model' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\model'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\monitoring' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\monitoring'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\notify' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\notify'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\plugin' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\plugin'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\plugin\\processors' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\plugin\\processors'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\proxypool' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\proxypool'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\requestid' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\requestid'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\scheduler' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\scheduler'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\screenshot' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\screenshot'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\screenshot\\batchdb' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\screenshot\\batchdb'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\service' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\service'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\tamper' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\tamper'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\tamper\\analyzer' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\tamper\\analyzer'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\tamper\\database' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\tamper\\database'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\tamper\\decoder' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\tamper\\decoder'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\tamper\\fingerprint' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\tamper\\fingerprint'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\tamper\\performance' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\tamper\\performance'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\tamper\\priority' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\tamper\\priority'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\tamper\\threshold' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\tamper\\threshold'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\utils' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\utils'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\utils\\circuitbreaker' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\utils\\circuitbreaker'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\utils\\degradation' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\utils\\degradation'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\utils\\urlguard' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\utils\\urlguard'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'internal\\utils\\workerpool' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'internal\\utils\\workerpool'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'tools\\extension-screenshot' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'tools\\extension-screenshot'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'tools\\extension-screenshot\\src' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'tools\\extension-screenshot\\src'"
+    },
+    {
+      "severity": "P2",
+      "category": "testing",
+      "issue": "Source directory 'web\\static\\js' has no sibling or nested test directory",
+      "impact": "Code in this directory is likely untested",
+      "suggestion": "Add tests/ or __tests__/ alongside 'web\\static\\js'"
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'bytes' is imported by 26 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "bytes",
+      "importer_count": 26
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'url' is imported by 26 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "url",
+      "importer_count": 26
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'model' is imported by 84 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "model",
+      "importer_count": 84
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'httptest' is imported by 57 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "httptest",
+      "importer_count": 57
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'testing' is imported by 142 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "testing",
+      "importer_count": 142
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'filepath' is imported by 55 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "filepath",
+      "importer_count": 55
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'config' is imported by 40 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "config",
+      "importer_count": 40
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'adapter' is imported by 23 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "adapter",
+      "importer_count": 23
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'logger' is imported by 66 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "logger",
+      "importer_count": 66
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'utils' is imported by 27 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "utils",
+      "importer_count": 27
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'screenshot' is imported by 25 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "screenshot",
+      "importer_count": 25
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'sort' is imported by 20 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "sort",
+      "importer_count": 20
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'sync' is imported by 78 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "sync",
+      "importer_count": 78
+    },
+    {
+      "file": null,
+      "line": null,
+      "severity": "P2",
+      "category": "god_module",
+      "description": "Module 'net' is imported by 20 files (threshold 20) — god-module / change-magnet",
+      "suggestion": "Split the module into cohesive submodules. A module imported everywhere has accumulated unrelated responsibilities and changes ripple across the codebase",
+      "is_heuristic": true,
+      "source": "stdlib-heuristic",
+      "module": "net",
+      "importer_count": 20
+    }
+  ],
+  "has_frontend": false,
+  "has_backend": true,
+  "has_dockerfile": true,
+  "has_ci_cd": true,
+  "has_tests": false,
+  "test_dirs": [],
+  "dependency_graph": {
+    "urlive.py": [
+      "concurrent",
+      "datetime",
+      "hashlib",
+      "http",
+      "io",
+      "pandas",
+      "random",
+      "re",
+      "socket",
+      "ssl",
+      "struct",
+      "sys",
+      "threading",
+      "time",
+      "urllib"
+    ],
+    "cmd\\unimap-cli\\api_subcommands.go": [
+      "bytes",
+      "flag",
+      "fmt",
+      "http",
+      "io",
+      "json",
+      "model",
+      "os",
+      "strings",
+      "time",
+      "url"
+    ],
+    "cmd\\unimap-cli\\api_subcommands_test.go": [
+      "http",
+      "httptest",
+      "strings",
+      "testing",
+      "url"
+    ],
+    "cmd\\unimap-cli\\cli_test.go": [
+      "config",
+      "filepath",
+      "http",
+      "httptest",
+      "json",
+      "model",
+      "os",
+      "testing"
+    ],
+    "cmd\\unimap-cli\\main.go": [
+      "adapter",
+      "appversion",
+      "config",
+      "context",
+      "csv",
+      "exporter",
+      "flag",
+      "fmt",
+      "logger",
+      "model",
+      "os",
+      "service",
+      "strings",
+      "time",
+      "utils"
+    ],
+    "cmd\\unimap-gui\\cjk_theme_darwin.go": [],
+    "cmd\\unimap-gui\\cjk_theme_gui.go": [
+      "color",
+      "filepath",
+      "log",
+      "os",
+      "theme",
+      "v2"
+    ],
+    "cmd\\unimap-gui\\cjk_theme_linux.go": [],
+    "cmd\\unimap-gui\\cjk_theme_other.go": [],
+    "cmd\\unimap-gui\\cjk_theme_windows.go": [],
+    "cmd\\unimap-gui\\main.go": [
+      "adapter",
+      "app",
+      "appversion",
+      "config",
+      "container",
+      "context",
+      "dialog",
+      "exporter",
+      "fmt",
+      "layout",
+      "model",
+      "screenshot",
+      "service",
+      "strconv",
+      "strings",
+      "tamper",
+      "theme",
+      "time",
+      "url",
+      "utils",
+      "v2",
+      "widget"
+    ],
+    "cmd\\unimap-gui\\main_nogui.go": [
+      "appversion",
+      "fmt"
+    ],
+    "cmd\\unimap-gui\\monitor_native.go": [
+      "bytes",
+      "container",
+      "context",
+      "dialog",
+      "errors",
+      "exec",
+      "filepath",
+      "fmt",
+      "http",
+      "io",
+      "json",
+      "layout",
+      "net",
+      "os",
+      "runtime",
+      "screenshot",
+      "sort",
+      "strconv",
+      "strings",
+      "sync",
+      "tamper",
+      "theme",
+      "time",
+      "url",
+      "v2",
+      "widget",
+      "x509"
+    ],
+    "cmd\\unimap-web\\main.go": [
+      "adapter",
+      "appversion",
+      "config",
+      "context",
+      "fmt",
+      "logger",
+      "os",
+      "service",
+      "time",
+      "utils",
+      "web"
+    ],
+    "docs\\test_reports\\settings_script.js": [],
+    "examples\\plugin_demo.go": [
+      "context",
+      "fmt",
+      "log",
+      "model",
+      "plugin",
+      "processors",
+      "service"
+    ],
+    "internal\\adapter\\adapter.go": [
+      "context",
+      "fmt",
+      "model",
+      "regexp",
+      "strings",
+      "url"
+    ],
+    "internal\\adapter\\adapter_test.go": [
+      "context",
+      "http",
+      "httptest",
+      "model",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\adapter\\censys.go": [
+      "context",
+      "fmt",
+      "json",
+      "model",
+      "net",
+      "strings",
+      "time",
+      "url",
+      "utils",
+      "v2"
+    ],
+    "internal\\adapter\\censys_test.go": [
+      "context",
+      "http",
+      "httptest",
+      "model",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\adapter\\daydaymap.go": [
+      "base64",
+      "context",
+      "fmt",
+      "json",
+      "model",
+      "strings",
+      "time",
+      "utils",
+      "v2"
+    ],
+    "internal\\adapter\\daydaymap_test.go": [
+      "context",
+      "http",
+      "httptest",
+      "model",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\adapter\\fofa.go": [
+      "base64",
+      "context",
+      "fmt",
+      "json",
+      "logger",
+      "model",
+      "strings",
+      "time",
+      "url",
+      "utils",
+      "v2"
+    ],
+    "internal\\adapter\\hunter.go": [
+      "base64",
+      "context",
+      "fmt",
+      "json",
+      "logger",
+      "model",
+      "strings",
+      "sync",
+      "time",
+      "url",
+      "utils",
+      "v2"
+    ],
+    "internal\\adapter\\hunter_test.go": [
+      "context",
+      "testing",
+      "time"
+    ],
+    "internal\\adapter\\icp.go": [
+      "context",
+      "fmt",
+      "json",
+      "metrics",
+      "model",
+      "requestid",
+      "simplifiedchinese",
+      "strings",
+      "sync",
+      "time",
+      "transform",
+      "utf8",
+      "v2"
+    ],
+    "internal\\adapter\\orchestrator.go": [
+      "fmt",
+      "logger",
+      "model",
+      "strings",
+      "sync",
+      "time",
+      "utils"
+    ],
+    "internal\\adapter\\orchestrator_circuit.go": [
+      "logger",
+      "strings",
+      "sync",
+      "time"
+    ],
+    "internal\\adapter\\orchestrator_circuit_test.go": [
+      "context",
+      "fmt",
+      "model",
+      "sync",
+      "testing",
+      "time"
+    ],
+    "internal\\adapter\\orchestrator_search.go": [
+      "context",
+      "fmt",
+      "logger",
+      "metrics",
+      "model",
+      "strings",
+      "sync",
+      "time",
+      "utils",
+      "workerpool"
+    ],
+    "internal\\adapter\\orchestrator_test.go": [
+      "context",
+      "fmt",
+      "model",
+      "sync",
+      "testing"
+    ],
+    "internal\\adapter\\quake.go": [
+      "context",
+      "fmt",
+      "json",
+      "logger",
+      "model",
+      "strings",
+      "time",
+      "utils",
+      "v2"
+    ],
+    "internal\\adapter\\shodan.go": [
+      "context",
+      "fmt",
+      "json",
+      "logger",
+      "model",
+      "strings",
+      "time",
+      "url",
+      "utils",
+      "v2"
+    ],
+    "internal\\adapter\\web_only_base.go": [
+      "collection",
+      "context",
+      "fmt",
+      "model"
+    ],
+    "internal\\adapter\\zoomeye.go": [
+      "base64",
+      "context",
+      "fmt",
+      "json",
+      "logger",
+      "model",
+      "strings",
+      "time",
+      "utils",
+      "v2"
+    ],
+    "internal\\alerting\\channels.go": [
+      "bytes",
+      "fmt",
+      "http",
+      "json",
+      "logger",
+      "urlguard",
+      "utils"
+    ],
+    "internal\\alerting\\channels_test.go": [
+      "http",
+      "httptest",
+      "json",
+      "testing",
+      "time"
+    ],
+    "internal\\alerting\\manager.go": [
+      "fmt",
+      "logger",
+      "sync",
+      "time",
+      "uuid"
+    ],
+    "internal\\alerting\\manager_test.go": [
+      "testing",
+      "time"
+    ],
+    "internal\\alerting\\types.go": [
+      "time"
+    ],
+    "internal\\alerting\\webhook_e2e_test.go": [
+      "http",
+      "httptest",
+      "json",
+      "testing",
+      "time"
+    ],
+    "internal\\appversion\\appversion.go": [
+      "fmt"
+    ],
+    "internal\\appversion\\appversion_test.go": [
+      "strings",
+      "testing"
+    ],
+    "internal\\auth\\api_key.go": [
+      "base64",
+      "error",
+      "errors",
+      "filepath",
+      "fmt",
+      "hex",
+      "json",
+      "os",
+      "rand",
+      "sha256",
+      "strings",
+      "sync",
+      "time"
+    ],
+    "internal\\auth\\api_key_test.go": [
+      "error",
+      "filepath",
+      "http",
+      "httptest",
+      "os",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\auth\\middleware.go": [
+      "http",
+      "json",
+      "strings"
+    ],
+    "internal\\auth\\permission.go": [
+      "error",
+      "sync"
+    ],
+    "internal\\auth\\permission_test.go": [
+      "testing"
+    ],
+    "internal\\auth\\user_db.go": [
+      "fmt",
+      "go-sqlite3",
+      "sql",
+      "time"
+    ],
+    "internal\\auth\\user_db_test.go": [
+      "filepath",
+      "testing"
+    ],
+    "internal\\backup\\backup.go": [
+      "filepath",
+      "fmt",
+      "gzip",
+      "io",
+      "logger",
+      "os",
+      "sort",
+      "strings",
+      "tar",
+      "time"
+    ],
+    "internal\\backup\\backup_test.go": [
+      "filepath",
+      "os",
+      "testing",
+      "time"
+    ],
+    "internal\\collection\\parser.go": [
+      "model",
+      "net",
+      "regexp",
+      "strconv",
+      "strings"
+    ],
+    "internal\\collection\\parser_test.go": [
+      "model",
+      "testing"
+    ],
+    "internal\\collection\\types.go": [
+      "context",
+      "model"
+    ],
+    "internal\\config\\config.go": [
+      "bcrypt",
+      "big",
+      "filepath",
+      "fmt",
+      "os",
+      "rand",
+      "strings",
+      "sync",
+      "yaml.v3"
+    ],
+    "internal\\config\\config_coverage_test.go": [
+      "assert",
+      "filepath",
+      "os",
+      "testing"
+    ],
+    "internal\\config\\config_defaults.go": [
+      "filepath",
+      "logger",
+      "strings",
+      "utils"
+    ],
+    "internal\\config\\config_load.go": [
+      "fmt",
+      "os",
+      "strings",
+      "yaml.v3"
+    ],
+    "internal\\config\\config_test.go": [
+      "assert",
+      "os",
+      "testing",
+      "utils"
+    ],
+    "internal\\config\\config_types.go": [],
+    "internal\\config\\config_validate.go": [
+      "fmt",
+      "strings",
+      "urlguard"
+    ],
+    "internal\\config\\cookies.go": [
+      "json",
+      "strings"
+    ],
+    "internal\\config\\hot_update.go": [
+      "fmt",
+      "logger",
+      "sync",
+      "time",
+      "yaml.v3"
+    ],
+    "internal\\config\\hot_update_test.go": [
+      "filepath",
+      "os",
+      "testing",
+      "time"
+    ],
+    "internal\\config\\notify_secret.go": [
+      "aes",
+      "base64",
+      "cipher",
+      "fmt",
+      "io",
+      "logger",
+      "os",
+      "rand",
+      "sha256",
+      "strings",
+      "sync"
+    ],
+    "internal\\config\\notify_secret_test.go": [
+      "strings",
+      "testing"
+    ],
+    "internal\\config\\watcher.go": [
+      "fmt",
+      "hex",
+      "json",
+      "os",
+      "sha256",
+      "time"
+    ],
+    "internal\\core\\unimap\\merger.go": [
+      "adapter",
+      "fmt",
+      "model",
+      "sort",
+      "strings",
+      "sync",
+      "utils"
+    ],
+    "internal\\core\\unimap\\merger_test.go": [
+      "model",
+      "testing"
+    ],
+    "internal\\core\\unimap\\parser.go": [
+      "fmt",
+      "model",
+      "scanner",
+      "strings"
+    ],
+    "internal\\core\\unimap\\parser_edge_test.go": [
+      "model",
+      "strings",
+      "testing"
+    ],
+    "internal\\core\\unimap\\parser_test.go": [
+      "testing"
+    ],
+    "internal\\distributed\\distributed_extra_test.go": [
+      "filepath",
+      "os",
+      "testing",
+      "time"
+    ],
+    "internal\\distributed\\failover_test.go": [
+      "fmt",
+      "testing",
+      "time"
+    ],
+    "internal\\distributed\\registry.go": [
+      "fmt",
+      "logger",
+      "runtime",
+      "sort",
+      "strings",
+      "sync",
+      "time"
+    ],
+    "internal\\distributed\\scheduler.go": [
+      "atomic",
+      "sort",
+      "strings"
+    ],
+    "internal\\distributed\\snapshot.go": [
+      "filepath",
+      "fmt",
+      "json",
+      "logger",
+      "os",
+      "sync",
+      "time"
+    ],
+    "internal\\distributed\\task_queue.go": [
+      "filepath",
+      "fmt",
+      "json",
+      "logger",
+      "model",
+      "os",
+      "rand",
+      "runtime",
+      "sort",
+      "strings",
+      "sync",
+      "time"
+    ],
+    "internal\\distributed\\task_queue_test.go": [
+      "testing",
+      "time"
+    ],
+    "internal\\distributed\\types.go": [
+      "time"
+    ],
+    "internal\\error\\error.go": [
+      "fmt",
+      "runtime",
+      "strings"
+    ],
+    "internal\\error\\error_test.go": [
+      "assert",
+      "errors",
+      "fmt",
+      "require",
+      "strings",
+      "testing"
+    ],
+    "internal\\exporter\\exporter.go": [
+      "fmt",
+      "json",
+      "logger",
+      "model",
+      "os",
+      "v2"
+    ],
+    "internal\\exporter\\exporter_test.go": [
+      "assert",
+      "filepath",
+      "fmt",
+      "json",
+      "model",
+      "os",
+      "require",
+      "strconv",
+      "testing",
+      "v2"
+    ],
+    "internal\\exporter\\tamper_exporter.go": [
+      "fmt",
+      "json",
+      "logger",
+      "os",
+      "tamper",
+      "time",
+      "v2"
+    ],
+    "internal\\exporter\\tamper_exporter_test.go": [
+      "assert",
+      "filepath",
+      "json",
+      "os",
+      "require",
+      "tamper",
+      "testing",
+      "time",
+      "v2"
+    ],
+    "internal\\history\\database.go": [
+      "fmt",
+      "go-sqlite3",
+      "sql"
+    ],
+    "internal\\history\\models.go": [
+      "time"
+    ],
+    "internal\\history\\repository.go": [
+      "fmt",
+      "sql",
+      "time"
+    ],
+    "internal\\history\\repository_test.go": [
+      "filepath",
+      "os",
+      "testing"
+    ],
+    "internal\\icp\\database\\migration.go": [
+      "fmt",
+      "logger",
+      "sort",
+      "time"
+    ],
+    "internal\\icp\\database\\result_repository.go": [
+      "adapter",
+      "fmt",
+      "json",
+      "sql",
+      "time"
+    ],
+    "internal\\icp\\database\\schema.go": [
+      "fmt",
+      "go-sqlite3",
+      "sql",
+      "time"
+    ],
+    "internal\\icp\\database\\schema_test.go": [
+      "adapter",
+      "testing",
+      "time"
+    ],
+    "internal\\logger\\alert_hook.go": [
+      "sync",
+      "time"
+    ],
+    "internal\\logger\\alert_hook_test.go": [
+      "sync",
+      "testing",
+      "time"
+    ],
+    "internal\\logger\\logger.go": [
+      "atomic",
+      "context",
+      "error",
+      "errors",
+      "filepath",
+      "lumberjack.v2",
+      "os",
+      "requestid",
+      "strings",
+      "sync",
+      "syscall",
+      "time",
+      "zap",
+      "zapcore"
+    ],
+    "internal\\logger\\logger_extra_test.go": [
+      "assert",
+      "bytes",
+      "context",
+      "filepath",
+      "os",
+      "runtime",
+      "testing",
+      "time",
+      "zap",
+      "zapcore"
+    ],
+    "internal\\logger\\logger_test.go": [
+      "assert",
+      "bytes",
+      "context",
+      "os",
+      "testing",
+      "zap",
+      "zapcore"
+    ],
+    "internal\\metrics\\metrics.go": [
+      "prometheus",
+      "runtime",
+      "strconv",
+      "time"
+    ],
+    "internal\\model\\api_responses.go": [],
+    "internal\\model\\bridge_payload.go": [],
+    "internal\\model\\plugin_types.go": [],
+    "internal\\model\\scheduler_payload.go": [],
+    "internal\\model\\unimap.go": [
+      "context"
+    ],
+    "internal\\model\\unimap_test.go": [
+      "json",
+      "testing"
+    ],
+    "internal\\monitoring\\leak_detector.go": [
+      "logger",
+      "runtime",
+      "sync",
+      "time"
+    ],
+    "internal\\monitoring\\monitoring_test.go": [
+      "testing",
+      "time"
+    ],
+    "internal\\monitoring\\resource_monitor.go": [
+      "logger",
+      "runtime",
+      "sort",
+      "sync",
+      "time"
+    ],
+    "internal\\notify\\bot_channels.go": [
+      "bytes",
+      "context",
+      "filepath",
+      "fmt",
+      "http",
+      "json",
+      "multipart",
+      "net",
+      "os",
+      "strings",
+      "time",
+      "url",
+      "urlguard"
+    ],
+    "internal\\notify\\bot_types.go": [],
+    "internal\\notify\\channels.go": [
+      "bytes",
+      "context",
+      "fmt",
+      "http",
+      "json",
+      "log",
+      "time",
+      "urlguard"
+    ],
+    "internal\\notify\\channels_test.go": [
+      "bytes",
+      "context",
+      "filepath",
+      "fmt",
+      "http",
+      "httptest",
+      "json",
+      "multipart",
+      "os",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\notify\\message.go": [
+      "time"
+    ],
+    "internal\\notify\\registry.go": [
+      "fmt",
+      "logger",
+      "sync"
+    ],
+    "internal\\notify\\signature.go": [
+      "base64",
+      "fmt",
+      "hmac",
+      "sha256",
+      "time",
+      "url"
+    ],
+    "internal\\plugin\\example_engine_plugin.go": [
+      "atomic",
+      "context",
+      "fmt",
+      "model"
+    ],
+    "internal\\plugin\\hooks.go": [
+      "fmt",
+      "model",
+      "sync"
+    ],
+    "internal\\plugin\\manager.go": [
+      "context",
+      "fmt",
+      "logger",
+      "model",
+      "sort",
+      "sync",
+      "time"
+    ],
+    "internal\\plugin\\plugin.go": [
+      "context",
+      "fmt",
+      "model",
+      "sync"
+    ],
+    "internal\\plugin\\plugin_extra_test.go": [
+      "context",
+      "model",
+      "testing"
+    ],
+    "internal\\plugin\\plugin_test.go": [
+      "context",
+      "model",
+      "testing"
+    ],
+    "internal\\plugin\\processors\\processors.go": [
+      "context",
+      "fmt",
+      "model",
+      "plugin",
+      "strings"
+    ],
+    "internal\\plugin\\processors\\processors_test.go": [
+      "context",
+      "model",
+      "plugin",
+      "testing"
+    ],
+    "internal\\plugin\\processors\\validation.go": [
+      "context",
+      "fmt",
+      "model",
+      "net",
+      "plugin",
+      "regexp",
+      "strings"
+    ],
+    "internal\\plugin\\processors\\validation_test.go": [
+      "context",
+      "model",
+      "net",
+      "plugin",
+      "testing"
+    ],
+    "internal\\proxypool\\pool.go": [
+      "atomic",
+      "strings",
+      "sync",
+      "time"
+    ],
+    "internal\\proxypool\\pool_test.go": [
+      "testing",
+      "time"
+    ],
+    "internal\\requestid\\requestid.go": [
+      "atomic",
+      "context",
+      "hex",
+      "rand",
+      "strings",
+      "time"
+    ],
+    "internal\\requestid\\requestid_test.go": [
+      "context",
+      "strings",
+      "testing"
+    ],
+    "internal\\scheduler\\e2e_test.go": [
+      "context",
+      "fmt",
+      "model",
+      "sync",
+      "testing",
+      "time"
+    ],
+    "internal\\scheduler\\executor.go": [
+      "adapter",
+      "atomic",
+      "context",
+      "distributed",
+      "exporter",
+      "filepath",
+      "fmt",
+      "json",
+      "logger",
+      "model",
+      "os",
+      "screenshot",
+      "service",
+      "strings",
+      "time"
+    ],
+    "internal\\scheduler\\executor_extra_test.go": [
+      "adapter",
+      "alerting",
+      "context",
+      "distributed",
+      "filepath",
+      "model",
+      "os",
+      "screenshot",
+      "service",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\scheduler\\executor_helpers.go": [
+      "model",
+      "simplifiedchinese",
+      "strings",
+      "transform",
+      "utf8"
+    ],
+    "internal\\scheduler\\executor_icp_test.go": [
+      "adapter",
+      "context",
+      "fmt",
+      "http",
+      "httptest",
+      "json",
+      "model",
+      "slices",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\scheduler\\executor_runners2.go": [
+      "adapter",
+      "alerting",
+      "bufio",
+      "context",
+      "csv",
+      "database",
+      "filepath",
+      "fmt",
+      "http",
+      "io",
+      "logger",
+      "model",
+      "os",
+      "rand",
+      "screenshot",
+      "service",
+      "strings",
+      "sync",
+      "time",
+      "urlguard"
+    ],
+    "internal\\scheduler\\executor_test.go": [
+      "context",
+      "model",
+      "testing"
+    ],
+    "internal\\scheduler\\grouping_test.go": [
+      "slices",
+      "testing"
+    ],
+    "internal\\scheduler\\scheduler.go": [
+      "context",
+      "fmt",
+      "json",
+      "logger",
+      "metrics",
+      "model",
+      "notify",
+      "strings",
+      "time",
+      "uuid",
+      "v3"
+    ],
+    "internal\\scheduler\\scheduler_notify.go": [
+      "bytes",
+      "context",
+      "filepath",
+      "fmt",
+      "http",
+      "json",
+      "logger",
+      "metrics",
+      "model",
+      "notify",
+      "strings",
+      "time",
+      "urlguard"
+    ],
+    "internal\\scheduler\\scheduler_stats.go": [
+      "sort"
+    ],
+    "internal\\scheduler\\scheduler_test.go": [
+      "atomic",
+      "context",
+      "filepath",
+      "model",
+      "os",
+      "testing",
+      "time"
+    ],
+    "internal\\scheduler\\scheduler_types.go": [
+      "context",
+      "fmt",
+      "model",
+      "notify",
+      "sync",
+      "time",
+      "v3"
+    ],
+    "internal\\scheduler\\scheduletype_regression_test.go": [
+      "model",
+      "testing",
+      "time"
+    ],
+    "internal\\scheduler\\store.go": [
+      "filepath",
+      "fmt",
+      "json",
+      "log",
+      "os",
+      "sync"
+    ],
+    "internal\\screenshot\\bridge_health_test.go": [
+      "context",
+      "filepath",
+      "fmt",
+      "http",
+      "httptest",
+      "strings",
+      "sync",
+      "testing",
+      "time"
+    ],
+    "internal\\screenshot\\bridge_service.go": [
+      "atomic",
+      "context",
+      "errors",
+      "fmt",
+      "metrics",
+      "strings",
+      "sync",
+      "time"
+    ],
+    "internal\\screenshot\\bridge_types.go": [
+      "context",
+      "errors",
+      "model",
+      "time"
+    ],
+    "internal\\screenshot\\dom_selectors.go": [],
+    "internal\\screenshot\\health.go": [
+      "context",
+      "http",
+      "logger",
+      "time"
+    ],
+    "internal\\screenshot\\health_extra_test.go": [
+      "context",
+      "testing",
+      "time"
+    ],
+    "internal\\screenshot\\manager.go": [
+      "base64",
+      "chromedp",
+      "context",
+      "filepath",
+      "fmt",
+      "logger",
+      "metrics",
+      "model",
+      "network",
+      "os",
+      "strings",
+      "sync",
+      "time",
+      "url"
+    ],
+    "internal\\screenshot\\manager_chrome.go": [
+      "chromedp",
+      "context",
+      "filepath",
+      "fmt",
+      "http",
+      "logger",
+      "network",
+      "os",
+      "runtime",
+      "strings",
+      "utils"
+    ],
+    "internal\\screenshot\\manager_collect.go": [
+      "chromedp",
+      "collection",
+      "context",
+      "filepath",
+      "fmt",
+      "http",
+      "json",
+      "logger",
+      "network",
+      "os",
+      "strings",
+      "sync",
+      "time"
+    ],
+    "internal\\screenshot\\manager_extra_test.go": [
+      "filepath",
+      "os",
+      "strings",
+      "testing"
+    ],
+    "internal\\screenshot\\manager_security.go": [
+      "filepath",
+      "fmt",
+      "strings"
+    ],
+    "internal\\screenshot\\manager_test.go": [
+      "testing",
+      "time"
+    ],
+    "internal\\screenshot\\network_collector.go": [
+      "chromedp",
+      "collection",
+      "context",
+      "fmt",
+      "http",
+      "io",
+      "json",
+      "logger",
+      "model",
+      "network",
+      "strings",
+      "sync",
+      "time"
+    ],
+    "internal\\screenshot\\network_collector_test.go": [
+      "testing"
+    ],
+    "internal\\screenshot\\provider.go": [
+      "collection",
+      "context"
+    ],
+    "internal\\screenshot\\provider_cdp.go": [
+      "collection",
+      "context",
+      "fmt"
+    ],
+    "internal\\screenshot\\provider_test.go": [
+      "collection",
+      "context",
+      "model",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\screenshot\\router.go": [
+      "atomic",
+      "collection",
+      "context",
+      "fmt",
+      "logger",
+      "strings",
+      "sync",
+      "time"
+    ],
+    "internal\\screenshot\\router_extension.go": [
+      "base64",
+      "collection",
+      "context",
+      "fmt",
+      "metrics",
+      "model",
+      "strings",
+      "sync",
+      "time",
+      "url"
+    ],
+    "internal\\screenshot\\router_test.go": [
+      "atomic",
+      "collection",
+      "context",
+      "model",
+      "runtime",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\screenshot\\batchdb\\database.go": [
+      "fmt",
+      "go-sqlite3",
+      "sql"
+    ],
+    "internal\\screenshot\\batchdb\\database_test.go": [
+      "filepath",
+      "os",
+      "screenshot",
+      "testing",
+      "time"
+    ],
+    "internal\\screenshot\\batchdb\\repository.go": [
+      "fmt",
+      "json",
+      "screenshot",
+      "sql",
+      "time"
+    ],
+    "internal\\service\\browser_fallback_test.go": [
+      "atomic",
+      "collection",
+      "context",
+      "errors",
+      "model",
+      "testing",
+      "unimap"
+    ],
+    "internal\\service\\monitor_app_service.go": [
+      "context",
+      "errors",
+      "fmt",
+      "http",
+      "net",
+      "proxypool",
+      "strings",
+      "sync",
+      "time",
+      "url",
+      "urlguard",
+      "workerpool",
+      "x509"
+    ],
+    "internal\\service\\monitor_app_service_test.go": [
+      "testing"
+    ],
+    "internal\\service\\monitor_port_scan_service.go": [
+      "context",
+      "fmt",
+      "http",
+      "net",
+      "proxypool",
+      "sort",
+      "strings",
+      "sync",
+      "time",
+      "url",
+      "urlguard",
+      "workerpool"
+    ],
+    "internal\\service\\monitor_port_scan_service_test.go": [
+      "context",
+      "fmt",
+      "http",
+      "net",
+      "testing",
+      "time"
+    ],
+    "internal\\service\\query_app_service.go": [
+      "adapter",
+      "collection",
+      "context",
+      "fmt",
+      "http",
+      "json",
+      "logger",
+      "screenshot",
+      "strings",
+      "sync",
+      "time",
+      "unimap"
+    ],
+    "internal\\service\\query_app_service_test.go": [
+      "collection",
+      "context",
+      "errors",
+      "model",
+      "sync",
+      "testing"
+    ],
+    "internal\\service\\screenshot_app_service.go": [
+      "context",
+      "fmt",
+      "logger",
+      "metrics",
+      "screenshot",
+      "strings",
+      "sync",
+      "time",
+      "utils"
+    ],
+    "internal\\service\\screenshot_app_service_test.go": [
+      "context",
+      "filepath",
+      "os",
+      "strings",
+      "testing"
+    ],
+    "internal\\service\\screenshot_batch_files.go": [
+      "filepath",
+      "fmt",
+      "os",
+      "sort",
+      "strings"
+    ],
+    "internal\\service\\screenshot_bridge.go": [
+      "base64",
+      "context",
+      "fmt",
+      "metrics",
+      "model",
+      "screenshot",
+      "strings",
+      "time",
+      "url"
+    ],
+    "internal\\service\\service_extra2_test.go": [
+      "adapter",
+      "collection",
+      "context",
+      "fmt",
+      "model",
+      "net",
+      "screenshot",
+      "strings",
+      "sync",
+      "testing",
+      "utils"
+    ],
+    "internal\\service\\service_extra_test.go": [
+      "atomic",
+      "config",
+      "context",
+      "model",
+      "sync",
+      "testing"
+    ],
+    "internal\\service\\tamper_app_service.go": [
+      "alerting",
+      "context",
+      "fmt",
+      "metrics",
+      "os",
+      "sort",
+      "strings",
+      "tamper",
+      "utils"
+    ],
+    "internal\\service\\unified_service.go": [
+      "adapter",
+      "collection",
+      "config",
+      "context",
+      "fmt",
+      "hex",
+      "logger",
+      "metrics",
+      "model",
+      "plugin",
+      "runtime",
+      "sha256",
+      "sort",
+      "strings",
+      "sync",
+      "time",
+      "unimap",
+      "utils"
+    ],
+    "internal\\service\\unified_service_test.go": [
+      "adapter",
+      "config",
+      "context",
+      "model",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\tamper\\detector.go": [],
+    "internal\\tamper\\detector_baseline_test.go": [
+      "context",
+      "fmt",
+      "http",
+      "httptest",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\tamper\\detector_check.go": [
+      "alerting",
+      "context",
+      "errors",
+      "fingerprint",
+      "fmt",
+      "logger",
+      "os",
+      "strings",
+      "sync",
+      "time",
+      "workerpool"
+    ],
+    "internal\\tamper\\detector_extra_test.go": [
+      "context",
+      "filepath",
+      "goquery",
+      "os",
+      "strings",
+      "testing"
+    ],
+    "internal\\tamper\\detector_hash.go": [
+      "chromedp",
+      "context",
+      "fmt",
+      "goquery",
+      "hex",
+      "http",
+      "io",
+      "logger",
+      "md5",
+      "metrics",
+      "sha256",
+      "sort",
+      "strings",
+      "sync",
+      "time",
+      "tls",
+      "utils"
+    ],
+    "internal\\tamper\\detector_portscan.go": [
+      "context",
+      "fmt",
+      "logger",
+      "net",
+      "sort",
+      "sync",
+      "time",
+      "url"
+    ],
+    "internal\\tamper\\detector_portscan_test.go": [
+      "assert",
+      "context",
+      "http",
+      "httptest",
+      "net",
+      "require",
+      "testing",
+      "time"
+    ],
+    "internal\\tamper\\detector_relaxed_test.go": [
+      "assert",
+      "atomic",
+      "chromedp",
+      "context",
+      "fmt",
+      "http",
+      "httptest",
+      "require",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\tamper\\detector_test.go": [
+      "strings",
+      "testing"
+    ],
+    "internal\\tamper\\detector_types.go": [
+      "alerting",
+      "big",
+      "context",
+      "filepath",
+      "fingerprint",
+      "fmt",
+      "json",
+      "logger",
+      "os",
+      "rand",
+      "regexp",
+      "sort",
+      "strings",
+      "sync",
+      "time",
+      "utils"
+    ],
+    "internal\\tamper\\analyzer\\accuracy_test.go": [
+      "testing"
+    ],
+    "internal\\tamper\\analyzer\\malicious_detector.go": [
+      "fmt",
+      "regexp",
+      "strings"
+    ],
+    "internal\\tamper\\analyzer\\script_analyzer.go": [
+      "fmt",
+      "regexp",
+      "strings"
+    ],
+    "internal\\tamper\\analyzer\\seo_detector.go": [
+      "fmt",
+      "regexp",
+      "strings"
+    ],
+    "internal\\tamper\\database\\database_test.go": [
+      "filepath",
+      "os",
+      "testing"
+    ],
+    "internal\\tamper\\database\\rule_repository.go": [
+      "fmt",
+      "sql",
+      "time"
+    ],
+    "internal\\tamper\\database\\schema.go": [
+      "fmt",
+      "go-sqlite3",
+      "sql",
+      "time"
+    ],
+    "internal\\tamper\\database\\whitelist_repository.go": [
+      "fmt",
+      "sql",
+      "time"
+    ],
+    "internal\\tamper\\decoder\\decoder.go": [
+      "base64",
+      "fmt",
+      "hex",
+      "regexp",
+      "strconv",
+      "strings",
+      "utf8"
+    ],
+    "internal\\tamper\\decoder\\decoder_test.go": [
+      "strings",
+      "testing"
+    ],
+    "internal\\tamper\\fingerprint\\engine.go": [
+      "embed",
+      "fmt",
+      "yaml.v3"
+    ],
+    "internal\\tamper\\fingerprint\\engine_test.go": [
+      "assert",
+      "require",
+      "testing"
+    ],
+    "internal\\tamper\\fingerprint\\rules.go": [
+      "regexp",
+      "sync"
+    ],
+    "internal\\tamper\\performance\\benchmark_test.go": [
+      "fmt",
+      "sync",
+      "testing",
+      "time"
+    ],
+    "internal\\tamper\\performance\\optimizer.go": [
+      "sync",
+      "time"
+    ],
+    "internal\\tamper\\performance\\performance_test.go": [
+      "sync",
+      "testing",
+      "time"
+    ],
+    "internal\\tamper\\priority\\rule_priority.go": [
+      "errors",
+      "fmt",
+      "sort",
+      "sync"
+    ],
+    "internal\\tamper\\priority\\rule_priority_test.go": [
+      "strings",
+      "testing"
+    ],
+    "internal\\tamper\\threshold\\dynamic_threshold.go": [
+      "fmt",
+      "sync",
+      "time"
+    ],
+    "internal\\tamper\\threshold\\dynamic_threshold_test.go": [
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\utils\\cache.go": [
+      "context",
+      "fmt",
+      "hex",
+      "json",
+      "logger",
+      "md5",
+      "model",
+      "strings",
+      "sync",
+      "time",
+      "v9"
+    ],
+    "internal\\utils\\cache_strategy.go": [
+      "fmt",
+      "logger",
+      "strings",
+      "sync",
+      "time"
+    ],
+    "internal\\utils\\cache_strategy_extra_test.go": [
+      "strings",
+      "testing",
+      "time"
+    ],
+    "internal\\utils\\cache_strategy_test.go": [
+      "testing",
+      "time"
+    ],
+    "internal\\utils\\cache_test.go": [
+      "model",
+      "testing",
+      "time"
+    ],
+    "internal\\utils\\http_client.go": [
+      "bytes",
+      "errors",
+      "http",
+      "io",
+      "net",
+      "strings",
+      "sync",
+      "time",
+      "url"
+    ],
+    "internal\\utils\\http_client_test.go": [
+      "errors",
+      "http",
+      "testing",
+      "time"
+    ],
+    "internal\\utils\\object_pool.go": [
+      "model",
+      "sync"
+    ],
+    "internal\\utils\\object_pool_test.go": [
+      "model",
+      "sync",
+      "testing"
+    ],
+    "internal\\utils\\path.go": [
+      "filepath",
+      "fmt",
+      "os"
+    ],
+    "internal\\utils\\retry.go": [
+      "fmt",
+      "rand",
+      "strings",
+      "time"
+    ],
+    "internal\\utils\\retry_test.go": [
+      "errors",
+      "testing",
+      "time"
+    ],
+    "internal\\utils\\shutdown.go": [
+      "context",
+      "logger",
+      "os",
+      "signal",
+      "sync",
+      "syscall",
+      "time"
+    ],
+    "internal\\utils\\shutdown_test.go": [
+      "context",
+      "sync",
+      "testing",
+      "time"
+    ],
+    "internal\\utils\\shutdown_unix.go": [
+      "signal",
+      "syscall"
+    ],
+    "internal\\utils\\validation.go": [
+      "bluemonday",
+      "error",
+      "http",
+      "regexp",
+      "strconv",
+      "strings",
+      "url",
+      "utf8"
+    ],
+    "internal\\utils\\validation_extra_test.go": [
+      "strings",
+      "testing"
+    ],
+    "internal\\utils\\validation_test.go": [
+      "strings",
+      "testing"
+    ],
+    "internal\\utils\\circuitbreaker\\circuit_breaker.go": [
+      "logger",
+      "sync",
+      "time"
+    ],
+    "internal\\utils\\circuitbreaker\\circuit_breaker_test.go": [
+      "testing",
+      "time"
+    ],
+    "internal\\utils\\degradation\\degradation.go": [
+      "logger",
+      "sync",
+      "time"
+    ],
+    "internal\\utils\\degradation\\degradation_test.go": [
+      "testing",
+      "time"
+    ],
+    "internal\\utils\\urlguard\\check.go": [
+      "context",
+      "fmt",
+      "http",
+      "net",
+      "strings",
+      "time",
+      "tls",
+      "url"
+    ],
+    "internal\\utils\\urlguard\\check_test.go": [
+      "http",
+      "httptest",
+      "regexp",
+      "testing",
+      "time",
+      "tls"
+    ],
+    "internal\\utils\\urlguard\\options.go": [
+      "regexp"
+    ],
+    "internal\\utils\\workerpool\\workerpool.go": [
+      "atomic",
+      "sync",
+      "time"
+    ],
+    "internal\\utils\\workerpool\\workerpool_test.go": [
+      "atomic",
+      "errors",
+      "testing",
+      "time"
+    ],
+    "tools\\extension-screenshot\\dom_inspector.js": [],
+    "tools\\extension-screenshot\\test_collect.js": [
+      "puppeteer-core"
+    ],
+    "tools\\extension-screenshot\\test_collect_pw.js": [],
+    "tools\\extension-screenshot\\test_extraction_node.js": [
+      "fs",
+      "path"
+    ],
+    "tools\\extension-screenshot\\test_extract_console.js": [],
+    "tools\\extension-screenshot\\src\\api.js": [],
+    "tools\\extension-screenshot\\src\\background.js": [],
+    "tools\\extension-screenshot\\src\\capture.js": [],
+    "tools\\extension-screenshot\\src\\options.js": [],
+    "tools\\extension-screenshot\\src\\pairing.js": [],
+    "tools\\extension-screenshot\\src\\storage.js": [],
+    "web\\alerting_e2e_test.go": [
+      "alerting",
+      "http",
+      "httptest",
+      "json",
+      "sync",
+      "testing",
+      "time"
+    ],
+    "web\\backup_handlers.go": [
+      "backup",
+      "fmt",
+      "http",
+      "os",
+      "utils"
+    ],
+    "web\\backup_handlers_test.go": [
+      "config",
+      "filepath",
+      "http",
+      "httptest",
+      "os",
+      "testing"
+    ],
+    "web\\bridge_handlers_test.go": [
+      "config",
+      "context",
+      "http",
+      "httptest",
+      "screenshot",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "web\\bridge_helpers_test.go": [
+      "bytes",
+      "color",
+      "config",
+      "filepath",
+      "fmt",
+      "image",
+      "jpeg",
+      "os",
+      "png",
+      "strings",
+      "testing"
+    ],
+    "web\\bridge_state.go": [
+      "screenshot",
+      "sync"
+    ],
+    "web\\cdp_handlers.go": [
+      "chromedp",
+      "context",
+      "exec",
+      "filepath",
+      "fmt",
+      "http",
+      "json",
+      "logger",
+      "net",
+      "network",
+      "os",
+      "runtime",
+      "service",
+      "strconv",
+      "strings",
+      "time",
+      "url"
+    ],
+    "web\\cdp_handlers_test.go": [
+      "config",
+      "http",
+      "httptest",
+      "strings",
+      "testing"
+    ],
+    "web\\cdp_util_test.go": [
+      "config",
+      "http",
+      "httptest",
+      "testing"
+    ],
+    "web\\config_handlers.go": [
+      "config",
+      "http",
+      "logger",
+      "strings"
+    ],
+    "web\\config_handlers_test.go": [
+      "bytes",
+      "config",
+      "context",
+      "http",
+      "httptest",
+      "json",
+      "strings",
+      "testing"
+    ],
+    "web\\cookie_handlers.go": [
+      "config",
+      "context",
+      "fmt",
+      "http",
+      "json",
+      "logger",
+      "screenshot",
+      "strings",
+      "time"
+    ],
+    "web\\cookie_handlers_test.go": [
+      "config",
+      "context",
+      "http",
+      "httptest",
+      "json",
+      "screenshot",
+      "strings",
+      "testing",
+      "time",
+      "url"
+    ],
+    "web\\cookie_helpers_extended_test.go": [
+      "testing"
+    ],
+    "web\\distributed_state.go": [
+      "distributed"
+    ],
+    "web\\health_distributed_test.go": [
+      "config",
+      "context",
+      "distributed",
+      "http",
+      "httptest",
+      "testing"
+    ],
+    "web\\health_handlers.go": [
+      "appversion",
+      "context",
+      "fmt",
+      "http",
+      "json",
+      "time"
+    ],
+    "web\\health_handlers_test.go": [
+      "adapter",
+      "context",
+      "http",
+      "httptest",
+      "json",
+      "testing"
+    ],
+    "web\\history_handlers.go": [
+      "history",
+      "http",
+      "json",
+      "strconv",
+      "strings"
+    ],
+    "web\\history_handlers_test.go": [
+      "bytes",
+      "filepath",
+      "history",
+      "http",
+      "httptest",
+      "json",
+      "os",
+      "testing"
+    ],
+    "web\\http_helpers.go": [
+      "bytes",
+      "context",
+      "errors",
+      "fmt",
+      "http",
+      "io",
+      "json",
+      "logger",
+      "net",
+      "simplifiedchinese",
+      "strconv",
+      "strings",
+      "sync",
+      "time",
+      "url",
+      "utf8"
+    ],
+    "web\\http_helpers_extended_test.go": [
+      "context",
+      "http",
+      "httptest",
+      "net",
+      "strings",
+      "testing"
+    ],
+    "web\\http_helpers_test.go": [
+      "bytes",
+      "http",
+      "httptest",
+      "json",
+      "testing"
+    ],
+    "web\\icp_handlers.go": [
+      "adapter",
+      "context",
+      "database",
+      "http",
+      "logger",
+      "strconv",
+      "strings",
+      "time"
+    ],
+    "web\\icp_handlers_test.go": [
+      "adapter",
+      "config",
+      "database",
+      "http",
+      "httptest",
+      "json",
+      "strings",
+      "sync",
+      "testing",
+      "time"
+    ],
+    "web\\login_handlers.go": [
+      "bcrypt",
+      "config",
+      "http",
+      "logger",
+      "strings",
+      "subtle",
+      "time"
+    ],
+    "web\\login_handlers_test.go": [
+      "config",
+      "http",
+      "httptest",
+      "strings",
+      "testing"
+    ],
+    "web\\metrics.go": [
+      "http",
+      "metrics",
+      "promhttp",
+      "subtle",
+      "time"
+    ],
+    "web\\metrics_test.go": [
+      "config",
+      "http",
+      "httptest",
+      "testing"
+    ],
+    "web\\middleware_audit.go": [
+      "http",
+      "logger",
+      "time"
+    ],
+    "web\\middleware_audit_test.go": [
+      "http",
+      "httptest",
+      "testing"
+    ],
+    "web\\middleware_auth.go": [
+      "context",
+      "hex",
+      "http",
+      "logger",
+      "rand",
+      "strings",
+      "subtle"
+    ],
+    "web\\middleware_auth_test.go": [
+      "config",
+      "http",
+      "httptest",
+      "testing"
+    ],
+    "web\\middleware_extended_test.go": [
+      "config",
+      "http",
+      "httptest",
+      "testing"
+    ],
+    "web\\middleware_ratelimit.go": [
+      "atomic",
+      "http",
+      "metrics",
+      "net",
+      "strconv",
+      "strings",
+      "sync",
+      "time"
+    ],
+    "web\\middleware_ratelimit_test.go": [
+      "http",
+      "httptest",
+      "strconv",
+      "sync",
+      "testing",
+      "time"
+    ],
+    "web\\middleware_requestid.go": [
+      "http",
+      "requestid"
+    ],
+    "web\\middleware_requestid_test.go": [
+      "http",
+      "httptest",
+      "requestid",
+      "testing"
+    ],
+    "web\\middleware_security.go": [
+      "base64",
+      "context",
+      "fmt",
+      "http",
+      "rand",
+      "time"
+    ],
+    "web\\middleware_security_test.go": [
+      "context",
+      "http",
+      "httptest",
+      "strings",
+      "testing"
+    ],
+    "web\\misc_handlers_test.go": [
+      "bytes",
+      "filepath",
+      "http",
+      "httptest",
+      "os",
+      "strings",
+      "testing"
+    ],
+    "web\\monitor_handlers.go": [
+      "context",
+      "csv",
+      "filepath",
+      "fmt",
+      "http",
+      "io",
+      "json",
+      "regexp",
+      "strings",
+      "time",
+      "url",
+      "v2"
+    ],
+    "web\\monitor_handlers_test.go": [
+      "bytes",
+      "context",
+      "http",
+      "httptest",
+      "json",
+      "multipart",
+      "net",
+      "service",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "web\\node_auth.go": [
+      "http",
+      "strings",
+      "subtle"
+    ],
+    "web\\node_auth_test.go": [
+      "config",
+      "http",
+      "httptest",
+      "testing"
+    ],
+    "web\\node_handlers.go": [
+      "distributed",
+      "http",
+      "model",
+      "sort",
+      "strings"
+    ],
+    "web\\node_handlers_test.go": [
+      "bytes",
+      "config",
+      "distributed",
+      "http",
+      "httptest",
+      "json",
+      "testing",
+      "time"
+    ],
+    "web\\node_task_handlers.go": [
+      "distributed",
+      "http",
+      "model",
+      "strings"
+    ],
+    "web\\node_task_handlers_test.go": [
+      "bytes",
+      "config",
+      "distributed",
+      "http",
+      "httptest",
+      "json",
+      "testing",
+      "time"
+    ],
+    "web\\notification_handlers.go": [
+      "adapter",
+      "config",
+      "http",
+      "logger",
+      "model",
+      "notify",
+      "service",
+      "strings",
+      "time",
+      "urlguard"
+    ],
+    "web\\notification_handlers_test.go": [
+      "bytes",
+      "config",
+      "filepath",
+      "http",
+      "httptest",
+      "json",
+      "strings",
+      "testing"
+    ],
+    "web\\notification_helpers_test.go": [
+      "config",
+      "testing"
+    ],
+    "web\\proxy_pool_helpers.go": [
+      "strings"
+    ],
+    "web\\proxy_pool_helpers_test.go": [
+      "testing"
+    ],
+    "web\\query_cookie_helpers_test.go": [
+      "adapter",
+      "bytes",
+      "config",
+      "distributed",
+      "http",
+      "httptest",
+      "json",
+      "model",
+      "screenshot",
+      "testing",
+      "time"
+    ],
+    "web\\query_handlers.go": [
+      "collection",
+      "config",
+      "context",
+      "fmt",
+      "http",
+      "json",
+      "logger",
+      "model",
+      "screenshot",
+      "service",
+      "strconv",
+      "strings",
+      "time"
+    ],
+    "web\\query_handlers_extended_test.go": [
+      "testing"
+    ],
+    "web\\query_handlers_test.go": [
+      "adapter",
+      "auth",
+      "collection",
+      "config",
+      "fmt",
+      "http",
+      "httptest",
+      "json",
+      "model",
+      "screenshot",
+      "service",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "web\\render.go": [
+      "http",
+      "logger"
+    ],
+    "web\\render_test.go": [
+      "http",
+      "httptest",
+      "template",
+      "testing"
+    ],
+    "web\\router.go": [
+      "filepath",
+      "http",
+      "strings"
+    ],
+    "web\\scheduler_handlers.go": [
+      "fmt",
+      "http",
+      "json",
+      "logger",
+      "model",
+      "scheduler",
+      "sort",
+      "strings",
+      "time"
+    ],
+    "web\\scheduler_handlers_test.go": [
+      "bytes",
+      "context",
+      "fmt",
+      "http",
+      "httptest",
+      "json",
+      "model",
+      "os",
+      "scheduler",
+      "testing"
+    ],
+    "web\\screenshot_bridge_handlers.go": [
+      "base64",
+      "bytes",
+      "filepath",
+      "fmt",
+      "hex",
+      "hmac",
+      "http",
+      "image",
+      "io",
+      "jpeg",
+      "json",
+      "logger",
+      "model",
+      "net",
+      "os",
+      "png",
+      "rand",
+      "regexp",
+      "screenshot",
+      "sha256",
+      "strconv",
+      "strings",
+      "subtle",
+      "time",
+      "webp"
+    ],
+    "web\\screenshot_bridge_handlers_test.go": [
+      "config",
+      "fmt",
+      "hex",
+      "hmac",
+      "http",
+      "httptest",
+      "json",
+      "sha256",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "web\\screenshot_bridge_mock.go": [
+      "context",
+      "fmt",
+      "screenshot",
+      "sync",
+      "time"
+    ],
+    "web\\screenshot_bridge_mock_test.go": [
+      "context",
+      "screenshot",
+      "testing",
+      "time"
+    ],
+    "web\\screenshot_handlers.go": [
+      "batchdb",
+      "context",
+      "filepath",
+      "fmt",
+      "http",
+      "json",
+      "logger",
+      "metrics",
+      "os",
+      "screenshot",
+      "service",
+      "strings",
+      "sync",
+      "time",
+      "url",
+      "utils"
+    ],
+    "web\\screenshot_handlers_test.go": [
+      "config",
+      "errors",
+      "filepath",
+      "http",
+      "httptest",
+      "json",
+      "os",
+      "screenshot",
+      "service",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "web\\screenshot_helpers_test.go": [
+      "config",
+      "filepath",
+      "http",
+      "httptest",
+      "strings",
+      "testing"
+    ],
+    "web\\server.go": [
+      "adapter",
+      "alerting",
+      "auth",
+      "batchdb",
+      "collection",
+      "config",
+      "context",
+      "database",
+      "distributed",
+      "filepath",
+      "fmt",
+      "history",
+      "http",
+      "json",
+      "logger",
+      "metrics",
+      "model",
+      "notify",
+      "os",
+      "proxypool",
+      "requestid",
+      "runtime",
+      "scheduler",
+      "screenshot",
+      "service",
+      "strconv",
+      "strings",
+      "subtle",
+      "sync",
+      "template",
+      "time",
+      "utils",
+      "websocket"
+    ],
+    "web\\server_helpers.go": [
+      "fmt",
+      "http",
+      "strconv",
+      "strings"
+    ],
+    "web\\server_helpers_extended_test.go": [
+      "config",
+      "testing"
+    ],
+    "web\\server_utils_test.go": [
+      "http",
+      "httptest",
+      "testing"
+    ],
+    "web\\session.go": [
+      "aes",
+      "base64",
+      "cipher",
+      "fmt",
+      "hex",
+      "http",
+      "io",
+      "logger",
+      "rand",
+      "sha256",
+      "strings",
+      "sync",
+      "time"
+    ],
+    "web\\session_test.go": [
+      "config",
+      "http",
+      "httptest",
+      "strings",
+      "testing",
+      "time"
+    ],
+    "web\\settings_handlers.go": [
+      "adapter",
+      "http"
+    ],
+    "web\\tamper_handlers.go": [
+      "context",
+      "fmt",
+      "http",
+      "json",
+      "service",
+      "strconv",
+      "strings",
+      "tamper",
+      "time",
+      "url",
+      "utils"
+    ],
+    "web\\tamper_handlers_test.go": [
+      "config",
+      "context",
+      "filepath",
+      "http",
+      "httptest",
+      "json",
+      "os",
+      "screenshot",
+      "service",
+      "strings",
+      "tamper",
+      "testing",
+      "time"
+    ],
+    "web\\user_handlers.go": [
+      "auth",
+      "bcrypt",
+      "http",
+      "json",
+      "logger",
+      "model",
+      "strconv",
+      "strings",
+      "time"
+    ],
+    "web\\user_handlers_extended_test.go": [
+      "bytes",
+      "http",
+      "httptest",
+      "json",
+      "testing"
+    ],
+    "web\\user_handlers_test.go": [
+      "auth",
+      "bytes",
+      "context",
+      "http",
+      "httptest",
+      "json",
+      "model",
+      "testing",
+      "time"
+    ],
+    "web\\websocket_handlers.go": [
+      "context",
+      "fmt",
+      "hex",
+      "http",
+      "logger",
+      "metrics",
+      "model",
+      "rand",
+      "runtime",
+      "service",
+      "strings",
+      "subtle",
+      "time",
+      "websocket"
+    ],
+    "web\\websocket_handlers_test.go": [
+      "adapter",
+      "config",
+      "context",
+      "http",
+      "httptest",
+      "os",
+      "service",
+      "sync",
+      "testing"
+    ],
+    "web\\websocket_helpers_test.go": [
+      "http",
+      "httptest",
+      "testing"
+    ],
+    "web\\web_helpers_test.go": [
+      "bytes",
+      "http",
+      "httptest",
+      "strings",
+      "testing"
+    ],
+    "web\\static\\js\\main.js": []
+  }
+}

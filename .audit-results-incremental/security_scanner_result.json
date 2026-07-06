@@ -1,0 +1,402 @@
+{
+  "project_root": "D:/Project/Go_project/unimap",
+  "files_scanned": 973,
+  "total_vulnerabilities": 43,
+  "severity_distribution": {
+    "P0": 43
+  },
+  "category_distribution": {
+    "secret_leak": 19,
+    "xss": 23,
+    "sql_injection": 1
+  },
+  "vulnerabilities": [
+    {
+      "file": ".env.example",
+      "line": 6,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret in env-style file (unquoted value)",
+      "suggestion": "Move to environment-only config; do not commit .env files",
+      "code_snippet": "FOFA_API_KEY=your_fofa_api_key_here"
+    },
+    {
+      "file": ".env.example",
+      "line": 14,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret in env-style file (unquoted value)",
+      "suggestion": "Move to environment-only config; do not commit .env files",
+      "code_snippet": "HUNTER_API_KEY=your_hunter_api_key_here"
+    },
+    {
+      "file": ".env.example",
+      "line": 28,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret in env-style file (unquoted value)",
+      "suggestion": "Move to environment-only config; do not commit .env files",
+      "code_snippet": "EMAIL_PASSWORD=your_email_password"
+    },
+    {
+      "file": ".env.example",
+      "line": 36,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret in env-style file (unquoted value)",
+      "suggestion": "Move to environment-only config; do not commit .env files",
+      "code_snippet": "WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=your_token"
+    },
+    {
+      "file": ".env.example",
+      "line": 47,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret in env-style file (unquoted value)",
+      "suggestion": "Move to environment-only config; do not commit .env files",
+      "code_snippet": "DB_PASSWORD=unimap_password"
+    },
+    {
+      "file": ".env.example",
+      "line": 63,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret in env-style file (unquoted value)",
+      "suggestion": "Move to environment-only config; do not commit .env files",
+      "code_snippet": "STORAGE_SECRET_KEY=minioadmin"
+    },
+    {
+      "file": "docs\\test_reports\\settings_script.js",
+      "line": 364,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "container.innerHTML = '<div class=\"cfg-group\"><div class=\"cfg-group-title\">已配置渠道</div>' +"
+    },
+    {
+      "file": "docs\\test_reports\\settings_script.js",
+      "line": 389,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "container.innerHTML = html;"
+    },
+    {
+      "file": "internal\\history\\repository.go",
+      "line": 69,
+      "severity": "P0",
+      "category": "sql_injection",
+      "description": "Go SQL with fmt.Sprintf - SQL injection",
+      "suggestion": "Use database/sql parameterized queries: db.Query(sql, param)",
+      "code_snippet": "countQuery := fmt.Sprintf(\"SELECT COUNT(*) FROM operation_history %s\", where)"
+    },
+    {
+      "file": "internal\\notify\\channels_test.go",
+      "line": 817,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "TenantAccessToken: \"test-token-xxx\", Expire: 7200,"
+    },
+    {
+      "file": "internal\\scheduler\\executor_icp_test.go",
+      "line": 22,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "APIKey:      \"test-key\","
+    },
+    {
+      "file": "web\\config_handlers_test.go",
+      "line": 19,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "cfg.ICP.APIKey = \"abcd1234efgh5678\""
+    },
+    {
+      "file": "web\\config_handlers_test.go",
+      "line": 22,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "cfg.Engines.Fofa.APIKey = \"secret-fofa-key\""
+    },
+    {
+      "file": "web\\config_handlers_test.go",
+      "line": 24,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "cfg.Engines.Hunter.APIKey = \"secret-hunter-key\""
+    },
+    {
+      "file": "web\\config_handlers_test.go",
+      "line": 295,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "t.Fatalf(\"expected Fofa.APIKey='new-fofa-key', got %q\", cfg.Engines.Fofa.APIKey)"
+    },
+    {
+      "file": "web\\config_handlers_test.go",
+      "line": 325,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "t.Fatalf(\"expected Hunter.APIKey='new-hunter-key', got %q\", cfg.Engines.Hunter.APIKey)"
+    },
+    {
+      "file": "web\\config_handlers_test.go",
+      "line": 352,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "t.Fatalf(\"expected Zoomeye.APIKey='new-zoomeye-key', got %q\", cfg.Engines.Zoomeye.APIKey)"
+    },
+    {
+      "file": "web\\config_handlers_test.go",
+      "line": 379,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "t.Fatalf(\"expected Quake.APIKey='new-quake-key', got %q\", cfg.Engines.Quake.APIKey)"
+    },
+    {
+      "file": "web\\config_handlers_test.go",
+      "line": 405,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "t.Fatalf(\"expected Shodan.APIKey='new-shodan-key', got %q\", cfg.Engines.Shodan.APIKey)"
+    },
+    {
+      "file": "web\\config_handlers_test.go",
+      "line": 417,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "cfg.Engines.Fofa.APIKey = \"original-key\""
+    },
+    {
+      "file": "web\\config_handlers_test.go",
+      "line": 429,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "cfg.Engines.Fofa.APIKey = \"original-key\""
+    },
+    {
+      "file": "web\\server_helpers_extended_test.go",
+      "line": 44,
+      "severity": "P0",
+      "category": "secret_leak",
+      "description": "Hardcoded secret/key/password in source code",
+      "suggestion": "Move to environment variable or secret manager",
+      "code_snippet": "s.config.ICP.APIKey = \"test-key\""
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 618,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "resultBox.innerHTML = '';"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1265,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "resultsContent.innerHTML = `"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1329,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "resultsPage.innerHTML = `"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1347,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "main.innerHTML = '';"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1389,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "resultsContent.innerHTML = '';"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1510,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "resultsContent.innerHTML ="
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1709,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "resultsContent.innerHTML = html;"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1754,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "if (!tbody || !assets || !assets.length) { if (tbody) tbody.innerHTML = ''; return; }"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1756,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "tbody.innerHTML = slice.map(asset => assetToRowHTML(asset)).join('');"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1915,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "historyList.innerHTML = '<li class=\"no-history\">加载中...</li>';"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1924,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "historyList.innerHTML = '';"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1928,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "historyList.innerHTML = '<li class=\"no-history\">无查询历史</li>';"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1961,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "historyList.innerHTML = '<li class=\"no-history\">加载失败</li>';"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 1978,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "historyList.innerHTML = '<li class=\"no-history\">无查询历史</li>';"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 2195,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "banner.innerHTML = '⚠️ 尚未配置任何引擎 API Key，请先 <a href=\"/settings#panel-engines\" style=\"color:#0056b3; font-weight:bold;\">前往设置</a> 添加引擎密钥后再进行查询。';"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 2571,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "content.innerHTML = fields.filter(f => f[1] && f[1] !== '0' && f[1] !== 'undefined').map(f => `"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 2711,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "chartContainer.innerHTML = '<div class=\"chart-placeholder\">配额趋势图暂未实现（当前页面展示的是实时配额数据）</div>';"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 3051,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "modal.innerHTML = `"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 3088,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "body.innerHTML = '<div class=\"spinner\"></div><p style=\"margin-top:10px;\">正在截取页面，可能需要几秒钟(视目标响应速度)...</p>';"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 3108,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "body.innerHTML = '';"
+    },
+    {
+      "file": "web\\static\\js\\main.js",
+      "line": 3119,
+      "severity": "P0",
+      "category": "xss",
+      "description": "innerHTML assignment - direct XSS vector",
+      "suggestion": "Use textContent or sanitize with DOMPurify",
+      "code_snippet": "body.innerHTML = `"
+    }
+  ]
+}

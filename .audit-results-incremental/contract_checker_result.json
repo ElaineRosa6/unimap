@@ -1,0 +1,1881 @@
+{
+  "project_root": "D:/Project/Go_project/unimap",
+  "frontend_api_calls": 28,
+  "backend_routes": 199,
+  "total_issues": 46,
+  "issue_type_distribution": {
+    "missing_backend_route": 28,
+    "nullable_field_unhandled": 18
+  },
+  "severity_distribution": {
+    "P1": 17,
+    "P0": 11,
+    "P2": 18
+  },
+  "frontend_calls_detail": [
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/config",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/config",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/config",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/config",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/config",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/cookies",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/cookies/verify",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/cookies/login-status",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/cookies/import",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/cdp/status",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/cdp/connect",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/screenshot/bridge/status",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/screenshot/set-mode",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/notifications/channels",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/notifications/channels",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/notifications/channels?id=",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "GET",
+      "path": "/api/notifications/channels/test",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "POST",
+      "path": " + tok() },\n\t\t\t\tbody: JSON.stringify({ section: ",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "POST",
+      "path": " + tok() },\n\t\t\t\tbody: JSON.stringify({ section: ",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "POST",
+      "path": " + tok() },\n\t\t\t\tbody: JSON.stringify({ section: ",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "POST",
+      "path": " + tok() },\n\t\t\t\tbody: JSON.stringify({ section: ",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "POST",
+      "path": " + tok() },\n\t\t\t\tbody: form.toString()\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult(",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "POST",
+      "path": " + tok() }\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult(",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "POST",
+      "path": " + tok() },\n\t\t\t\tbody: form.toString()\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult(",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "POST",
+      "path": " + tok() },\n\t\t\t\tbody: form.toString()\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult(",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "POST",
+      "path": " + tok() },\n\t\t\t\tbody: JSON.stringify({ mode: mode })\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult(",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "POST",
+      "path": " + tok() },\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tif (data.success) {\n\t\t\t\thideNotifyForm();\n\t\t\t\tloadNotifyChannelsPanel();\n\t\t\t\tshowResult(",
+      "client": "fetch"
+    },
+    {
+      "source": "docs\\test_reports\\settings_script.js",
+      "method": "POST",
+      "path": " + tok() },\n\t\t\t\tbody: JSON.stringify({\n\t\t\t\t\tid: ch.id, type: ch.type, webhook_url: ch.webhook_url,\n\t\t\t\t\tsecret: secret, allow_private_ip: document.getElementById(",
+      "client": "fetch"
+    }
+  ],
+  "backend_routes_detail": [
+    {
+      "source": "internal\\adapter\\daydaymap_test.go",
+      "method": "GET",
+      "path": "api-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\alerting\\channels_test.go",
+      "method": "GET",
+      "path": "Content-Type",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\alerting\\channels_test.go",
+      "method": "GET",
+      "path": "Content-Type",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\alerting\\channels_test.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\alerting\\webhook_e2e_test.go",
+      "method": "GET",
+      "path": "Content-Type",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\auth\\api_key_test.go",
+      "method": "GET",
+      "path": "X-API-Key-ID",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\auth\\api_key_test.go",
+      "method": "GET",
+      "path": "X-API-Key-ID",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\auth\\api_key_test.go",
+      "method": "GET",
+      "path": "X-API-Key-Permissions",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\auth\\api_key_test.go",
+      "method": "GET",
+      "path": "X-API-Key-ID",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\auth\\api_key_test.go",
+      "method": "GET",
+      "path": "X-API-Key-ID",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\auth\\api_key_test.go",
+      "method": "GET",
+      "path": "Content-Type",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\auth\\api_key_test.go",
+      "method": "GET",
+      "path": "Content-Type",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\auth\\middleware.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\auth\\middleware.go",
+      "method": "GET",
+      "path": "X-API-Key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\auth\\middleware.go",
+      "method": "GET",
+      "path": "api_key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\auth\\middleware.go",
+      "method": "GET",
+      "path": "X-API-Key-ID",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\auth\\middleware.go",
+      "method": "GET",
+      "path": "X-API-Key-Permissions",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\distributed_extra_test.go",
+      "method": "GET",
+      "path": "node1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\distributed_extra_test.go",
+      "method": "GET",
+      "path": "node1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\distributed_extra_test.go",
+      "method": "GET",
+      "path": "node1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\distributed_extra_test.go",
+      "method": "GET",
+      "path": "node1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\distributed_extra_test.go",
+      "method": "GET",
+      "path": "node2",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\distributed_extra_test.go",
+      "method": "GET",
+      "path": "newnode",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\distributed_extra_test.go",
+      "method": "GET",
+      "path": "node1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\failover_test.go",
+      "method": "GET",
+      "path": "node-1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\failover_test.go",
+      "method": "GET",
+      "path": "node-2",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\failover_test.go",
+      "method": "GET",
+      "path": "node-1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\failover_test.go",
+      "method": "GET",
+      "path": "node-2",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\failover_test.go",
+      "method": "GET",
+      "path": "node-1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\failover_test.go",
+      "method": "GET",
+      "path": "task-max",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\failover_test.go",
+      "method": "GET",
+      "path": "node-1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\failover_test.go",
+      "method": "GET",
+      "path": "task-max",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\failover_test.go",
+      "method": "GET",
+      "path": "node-a",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\distributed\\failover_test.go",
+      "method": "GET",
+      "path": "task-export",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "Content-Type",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "test-log",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "rem",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "old-ch",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "new-ch",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "X-Custom-Auth",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "new",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "bad",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "pinned-ch",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "new-ch",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "normal-ch",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "new-ch",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "ANY",
+      "path": "/open-apis/auth/v3/tenant_access_token/internal",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "ANY",
+      "path": "/open-apis/im/v1/images",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "ANY",
+      "path": "/open-apis/im/v1/messages",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "ANY",
+      "path": "/open-apis/auth/v3/tenant_access_token/internal",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "ANY",
+      "path": "/open-apis/im/v1/images",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "ANY",
+      "path": "/open-apis/im/v1/messages",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "ANY",
+      "path": "/open-apis/auth/v3/tenant_access_token/internal",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "ANY",
+      "path": "/open-apis/auth/v3/tenant_access_token/internal",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\notify\\channels_test.go",
+      "method": "ANY",
+      "path": "/open-apis/im/v1/messages",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\plugin\\plugin_extra_test.go",
+      "method": "GET",
+      "path": "example-engine",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\plugin\\plugin_extra_test.go",
+      "method": "GET",
+      "path": "example-engine",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\plugin\\plugin_test.go",
+      "method": "GET",
+      "path": "example-engine",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\scheduler\\executor_icp_test.go",
+      "method": "ANY",
+      "path": "/query/",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\scheduler\\executor_icp_test.go",
+      "method": "GET",
+      "path": "search",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\scheduler\\executor_icp_test.go",
+      "method": "ANY",
+      "path": "/query/",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\scheduler\\executor_icp_test.go",
+      "method": "GET",
+      "path": "search",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\service\\monitor_port_scan_service.go",
+      "method": "GET",
+      "path": "Server",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\service\\monitor_port_scan_service_test.go",
+      "method": "ANY",
+      "path": "/",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\service\\monitor_port_scan_service_test.go",
+      "method": "ANY",
+      "path": "/",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\tamper\\performance\\performance_test.go",
+      "method": "GET",
+      "path": "test-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\tamper\\performance\\performance_test.go",
+      "method": "GET",
+      "path": "non-existent-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\tamper\\performance\\performance_test.go",
+      "method": "DELETE",
+      "path": "delete-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\tamper\\performance\\performance_test.go",
+      "method": "GET",
+      "path": "delete-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\tamper\\performance\\performance_test.go",
+      "method": "GET",
+      "path": "key1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\tamper\\performance\\performance_test.go",
+      "method": "GET",
+      "path": "key1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\tamper\\performance\\performance_test.go",
+      "method": "GET",
+      "path": "count-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\tamper\\performance\\performance_test.go",
+      "method": "GET",
+      "path": "count-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\tamper\\performance\\performance_test.go",
+      "method": "GET",
+      "path": "count-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\utils\\cache_test.go",
+      "method": "GET",
+      "path": "test-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\utils\\cache_test.go",
+      "method": "GET",
+      "path": "non-existent-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\utils\\cache_test.go",
+      "method": "GET",
+      "path": "expire-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\utils\\cache_test.go",
+      "method": "DELETE",
+      "path": "delete-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\utils\\cache_test.go",
+      "method": "GET",
+      "path": "delete-key",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\utils\\cache_test.go",
+      "method": "GET",
+      "path": "key1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\utils\\cache_test.go",
+      "method": "GET",
+      "path": "key2",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\utils\\cache_test.go",
+      "method": "GET",
+      "path": "key1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\utils\\cache_test.go",
+      "method": "GET",
+      "path": "key1",
+      "framework": "go_http"
+    },
+    {
+      "source": "internal\\utils\\cache_test.go",
+      "method": "GET",
+      "path": "key1",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\alerting_e2e_test.go",
+      "method": "GET",
+      "path": "Content-Type",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\alerting_e2e_test.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\history_handlers.go",
+      "method": "GET",
+      "path": "type",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\history_handlers.go",
+      "method": "GET",
+      "path": "limit",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\history_handlers.go",
+      "method": "GET",
+      "path": "offset",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\history_handlers.go",
+      "method": "GET",
+      "path": "type",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers.go",
+      "method": "GET",
+      "path": "Origin",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers.go",
+      "method": "GET",
+      "path": "Referer",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers.go",
+      "method": "GET",
+      "path": "Connection",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers.go",
+      "method": "GET",
+      "path": "Upgrade",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers.go",
+      "method": "GET",
+      "path": "Origin",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers.go",
+      "method": "GET",
+      "path": "Origin",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers_test.go",
+      "method": "GET",
+      "path": "Content-Type",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers_test.go",
+      "method": "GET",
+      "path": "Content-Type",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Allow-Origin",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Allow-Origin",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Allow-Credentials",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers_test.go",
+      "method": "GET",
+      "path": "Vary",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Allow-Methods",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Max-Age",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\http_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Max-Age",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\icp_handlers.go",
+      "method": "GET",
+      "path": "page",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\icp_handlers.go",
+      "method": "GET",
+      "path": "page_size",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\icp_handlers.go",
+      "method": "GET",
+      "path": "type",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\icp_handlers.go",
+      "method": "GET",
+      "path": "search",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\icp_handlers.go",
+      "method": "GET",
+      "path": "task_id",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\icp_handlers.go",
+      "method": "GET",
+      "path": "keyword",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\icp_handlers.go",
+      "method": "GET",
+      "path": "type",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\icp_handlers.go",
+      "method": "GET",
+      "path": "limit",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\icp_handlers.go",
+      "method": "GET",
+      "path": "run_id",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\icp_handlers.go",
+      "method": "GET",
+      "path": "keyword",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\icp_handlers.go",
+      "method": "GET",
+      "path": "type",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\login_handlers.go",
+      "method": "GET",
+      "path": "X-Admin-Token",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\metrics.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\metrics.go",
+      "method": "GET",
+      "path": "X-Admin-Token",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_auth.go",
+      "method": "GET",
+      "path": "X-Admin-Token",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_auth.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_auth.go",
+      "method": "GET",
+      "path": "X-Node-Token",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_auth.go",
+      "method": "GET",
+      "path": "Accept",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_ratelimit.go",
+      "method": "GET",
+      "path": "X-Forwarded-For",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_ratelimit.go",
+      "method": "GET",
+      "path": "X-Real-IP",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_ratelimit_test.go",
+      "method": "GET",
+      "path": "X-RateLimit-Limit",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_ratelimit_test.go",
+      "method": "GET",
+      "path": "X-RateLimit-Remaining",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_ratelimit_test.go",
+      "method": "GET",
+      "path": "X-RateLimit-Reset",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_ratelimit_test.go",
+      "method": "GET",
+      "path": "X-RateLimit-Remaining",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_ratelimit_test.go",
+      "method": "GET",
+      "path": "X-RateLimit-Remaining",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_ratelimit_test.go",
+      "method": "GET",
+      "path": "Retry-After",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\middleware_security_test.go",
+      "method": "GET",
+      "path": "Content-Security-Policy",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\misc_handlers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Expose-Headers",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\misc_handlers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Expose-Headers",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\misc_handlers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Allow-Origin",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\misc_handlers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Allow-Origin",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\monitor_handlers.go",
+      "method": "GET",
+      "path": "Content-Type",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\node_auth.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\node_auth.go",
+      "method": "GET",
+      "path": "X-Node-Token",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\node_auth.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\node_auth.go",
+      "method": "GET",
+      "path": "X-Admin-Token",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\node_auth.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\node_auth.go",
+      "method": "GET",
+      "path": "X-Admin-Token",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\node_handlers.go",
+      "method": "GET",
+      "path": "node_id",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\node_handlers.go",
+      "method": "GET",
+      "path": "node_id",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\node_task_handlers.go",
+      "method": "GET",
+      "path": "task_id",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\node_task_handlers.go",
+      "method": "GET",
+      "path": "task_id",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\notification_handlers.go",
+      "method": "GET",
+      "path": "id",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\query_cookie_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Allow-Origin",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\query_cookie_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Allow-Origin",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\query_cookie_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Allow-Credentials",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\query_handlers.go",
+      "method": "GET",
+      "path": "query",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\query_handlers.go",
+      "method": "GET",
+      "path": "engine",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\query_handlers.go",
+      "method": "GET",
+      "path": "query_id",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\router.go",
+      "method": "ANY",
+      "path": "GET /static/",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\scheduler_handlers.go",
+      "method": "GET",
+      "path": "id",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\scheduler_handlers.go",
+      "method": "GET",
+      "path": "limit",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\scheduler_handlers.go",
+      "method": "GET",
+      "path": "task_type",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\scheduler_handlers.go",
+      "method": "GET",
+      "path": "status",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_bridge_handlers.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_bridge_handlers.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_bridge_handlers.go",
+      "method": "GET",
+      "path": "X-Bridge-Timestamp",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_bridge_handlers.go",
+      "method": "GET",
+      "path": "X-Bridge-Nonce",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_bridge_handlers.go",
+      "method": "GET",
+      "path": "X-Bridge-Signature",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_bridge_handlers.go",
+      "method": "GET",
+      "path": "X-Forwarded-For",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_bridge_handlers.go",
+      "method": "GET",
+      "path": "X-Real-IP",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_handlers.go",
+      "method": "GET",
+      "path": "Origin",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_handlers.go",
+      "method": "GET",
+      "path": "Referer",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_handlers.go",
+      "method": "GET",
+      "path": "engine",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_handlers.go",
+      "method": "GET",
+      "path": "query",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_handlers.go",
+      "method": "GET",
+      "path": "query_id",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_handlers.go",
+      "method": "GET",
+      "path": "job_id",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_handlers.go",
+      "method": "GET",
+      "path": "batch",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_handlers.go",
+      "method": "GET",
+      "path": "batch",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_handlers.go",
+      "method": "GET",
+      "path": "batch",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\screenshot_handlers.go",
+      "method": "GET",
+      "path": "file",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\server.go",
+      "method": "GET",
+      "path": "Origin",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\server.go",
+      "method": "GET",
+      "path": "Connection",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\server.go",
+      "method": "GET",
+      "path": "Upgrade",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\server.go",
+      "method": "GET",
+      "path": "X-Admin-Token",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\server.go",
+      "method": "GET",
+      "path": "Authorization",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\session.go",
+      "method": "GET",
+      "path": "X-Forwarded-Proto",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\tamper_handlers.go",
+      "method": "GET",
+      "path": "url",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\tamper_handlers.go",
+      "method": "GET",
+      "path": "limit",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\tamper_handlers.go",
+      "method": "GET",
+      "path": "url",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\tamper_handlers.go",
+      "method": "GET",
+      "path": "type",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\tamper_handlers.go",
+      "method": "GET",
+      "path": "mode",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\tamper_handlers.go",
+      "method": "GET",
+      "path": "q",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\tamper_handlers.go",
+      "method": "GET",
+      "path": "url",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\websocket_handlers.go",
+      "method": "GET",
+      "path": "X-WebSocket-Token",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\web_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Expose-Headers",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\web_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Max-Age",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\web_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Max-Age",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\web_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Max-Age",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\web_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Max-Age",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\web_helpers_test.go",
+      "method": "GET",
+      "path": "Access-Control-Allow-Credentials",
+      "framework": "go_http"
+    },
+    {
+      "source": "web\\web_helpers_test.go",
+      "method": "GET",
+      "path": "Content-Security-Policy",
+      "framework": "go_http"
+    }
+  ],
+  "contract_issues": [
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/config",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/config but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/config",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/config but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/config",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/config but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/config",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/config but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/config",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/config but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/cookies",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/cookies but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/cookies/verify",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/cookies/verify but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/cookies/login-status",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/cookies/login-status but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/cookies/import",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/cookies/import but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/cdp/status",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/cdp/status but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/cdp/connect",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/cdp/connect but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/screenshot/bridge/status",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/screenshot/bridge/status but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/screenshot/set-mode",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/screenshot/set-mode but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/notifications/channels",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/notifications/channels but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/notifications/channels",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/notifications/channels but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/notifications/channels?id=",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/notifications/channels?id= but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P1",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "GET",
+      "frontend_path": "/api/notifications/channels/test",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls GET /api/notifications/channels/test but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P0",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "POST",
+      "frontend_path": " + tok() },\n\t\t\t\tbody: JSON.stringify({ section: ",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls POST  + tok() },\n\t\t\t\tbody: JSON.stringify({ section:  but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P0",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "POST",
+      "frontend_path": " + tok() },\n\t\t\t\tbody: JSON.stringify({ section: ",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls POST  + tok() },\n\t\t\t\tbody: JSON.stringify({ section:  but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P0",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "POST",
+      "frontend_path": " + tok() },\n\t\t\t\tbody: JSON.stringify({ section: ",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls POST  + tok() },\n\t\t\t\tbody: JSON.stringify({ section:  but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P0",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "POST",
+      "frontend_path": " + tok() },\n\t\t\t\tbody: JSON.stringify({ section: ",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls POST  + tok() },\n\t\t\t\tbody: JSON.stringify({ section:  but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P0",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "POST",
+      "frontend_path": " + tok() },\n\t\t\t\tbody: form.toString()\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult(",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls POST  + tok() },\n\t\t\t\tbody: form.toString()\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult( but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P0",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "POST",
+      "frontend_path": " + tok() }\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult(",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls POST  + tok() }\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult( but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P0",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "POST",
+      "frontend_path": " + tok() },\n\t\t\t\tbody: form.toString()\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult(",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls POST  + tok() },\n\t\t\t\tbody: form.toString()\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult( but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P0",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "POST",
+      "frontend_path": " + tok() },\n\t\t\t\tbody: form.toString()\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult(",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls POST  + tok() },\n\t\t\t\tbody: form.toString()\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult( but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P0",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "POST",
+      "frontend_path": " + tok() },\n\t\t\t\tbody: JSON.stringify({ mode: mode })\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult(",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls POST  + tok() },\n\t\t\t\tbody: JSON.stringify({ mode: mode })\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tshowResult( but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P0",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "POST",
+      "frontend_path": " + tok() },\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tif (data.success) {\n\t\t\t\thideNotifyForm();\n\t\t\t\tloadNotifyChannelsPanel();\n\t\t\t\tshowResult(",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls POST  + tok() },\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t});\n\t\t\tvar data = await resp.json();\n\t\t\tif (data.success) {\n\t\t\t\thideNotifyForm();\n\t\t\t\tloadNotifyChannelsPanel();\n\t\t\t\tshowResult( but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "missing_backend_route",
+      "severity": "P0",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "frontend_method": "POST",
+      "frontend_path": " + tok() },\n\t\t\t\tbody: JSON.stringify({\n\t\t\t\t\tid: ch.id, type: ch.type, webhook_url: ch.webhook_url,\n\t\t\t\t\tsecret: secret, allow_private_ip: document.getElementById(",
+      "backend_file": null,
+      "backend_method": null,
+      "backend_path": null,
+      "description": "Frontend calls POST  + tok() },\n\t\t\t\tbody: JSON.stringify({\n\t\t\t\t\tid: ch.id, type: ch.type, webhook_url: ch.webhook_url,\n\t\t\t\t\tsecret: secret, allow_private_ip: document.getElementById( but no matching backend route found",
+      "suggestion": "Implement the backend endpoint or remove the frontend call"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "docs\\test_reports\\settings_script.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "tools\\extension-screenshot\\test_collect.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "tools\\extension-screenshot\\test_collect.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "tools\\extension-screenshot\\test_collect_pw.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "tools\\extension-screenshot\\test_collect_pw.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "web\\static\\js\\main.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "web\\static\\js\\main.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "web\\static\\js\\main.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "web\\static\\js\\main.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "web\\static\\js\\main.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    },
+    {
+      "type": "nullable_field_unhandled",
+      "severity": "P2",
+      "frontend_file": "web\\static\\js\\main.js",
+      "backend_file": "tools\\extension-screenshot\\src\\capture.js",
+      "description": "Backend declares 'error' as nullable/optional, but frontend accesses it without a null guard",
+      "suggestion": "Use optional chaining `?.` (`res.data.error?.value`) or a nullish coalescing fallback (`res.data.error ?? defaultValue`); add an `if (data.error)` branch if the field drives control flow",
+      "field": "error"
+    }
+  ]
+}

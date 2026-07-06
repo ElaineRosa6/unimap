@@ -1,0 +1,489 @@
+{
+  "project_root": "D:/Project/Go_project/unimap",
+  "total_dependencies": 66,
+  "ecosystem_distribution": {
+    "go": 66
+  },
+  "dependencies": [
+    {
+      "name": "fyne.io/fyne/v2",
+      "version": "2.4.3",
+      "version_spec": "v2.4.3",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/PuerkitoBio/goquery",
+      "version": "1.11.0",
+      "version_spec": "v1.11.0",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/chromedp/cdproto",
+      "version": "0.0.0-20260405000525-47a8ff65b46a",
+      "version_spec": "v0.0.0-20260405000525-47a8ff65b46a",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/chromedp/chromedp",
+      "version": "0.15.1",
+      "version_spec": "v0.15.1",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/go-resty/resty/v2",
+      "version": "2.11.0",
+      "version_spec": "v2.11.0",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/google/uuid",
+      "version": "1.6.0",
+      "version_spec": "v1.6.0",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/gorilla/websocket",
+      "version": "1.5.3",
+      "version_spec": "v1.5.3",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/mattn/go-sqlite3",
+      "version": "1.14.41",
+      "version_spec": "v1.14.41",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/microcosm-cc/bluemonday",
+      "version": "1.0.27",
+      "version_spec": "v1.0.27",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/prometheus/client_golang",
+      "version": "1.23.2",
+      "version_spec": "v1.23.2",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/redis/go-redis/v9",
+      "version": "9.6.3",
+      "version_spec": "v9.6.3",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/robfig/cron/v3",
+      "version": "3.0.1",
+      "version_spec": "v3.0.1",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/stretchr/testify",
+      "version": "1.11.1",
+      "version_spec": "v1.11.1",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "github.com/xuri/excelize/v2",
+      "version": "2.8.0",
+      "version_spec": "v2.8.0",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "go.uber.org/zap",
+      "version": "1.27.1",
+      "version_spec": "v1.27.1",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "golang.org/x/crypto",
+      "version": "0.51.0",
+      "version_spec": "v0.51.0",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "golang.org/x/image",
+      "version": "0.43.0",
+      "version_spec": "v0.43.0",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "golang.org/x/text",
+      "version": "0.38.0",
+      "version_spec": "v0.38.0",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "gopkg.in/natefinch/lumberjack.v2",
+      "version": "2.2.1",
+      "version_spec": "v2.2.1",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "gopkg.in/yaml.v3",
+      "version": "3.0.1",
+      "version_spec": "v3.0.1",
+      "ecosystem": "go",
+      "type": "direct"
+    },
+    {
+      "name": "fyne.io/systray",
+      "version": "1.10.1-0.20231115130155-104f5ef7839e",
+      "version_spec": "v1.10.1-0.20231115130155-104f5ef7839e",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/andybalholm/cascadia",
+      "version": "1.3.3",
+      "version_spec": "v1.3.3",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/aymerick/douceur",
+      "version": "0.2.0",
+      "version_spec": "v0.2.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/beorn7/perks",
+      "version": "1.0.1",
+      "version_spec": "v1.0.1",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/cespare/xxhash/v2",
+      "version": "2.3.0",
+      "version_spec": "v2.3.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/chromedp/sysutil",
+      "version": "1.1.0",
+      "version_spec": "v1.1.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/davecgh/go-spew",
+      "version": "1.1.1",
+      "version_spec": "v1.1.1",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/dgryski/go-rendezvous",
+      "version": "0.0.0-20200823014737-9f7001d12a5f",
+      "version_spec": "v0.0.0-20200823014737-9f7001d12a5f",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/fredbi/uri",
+      "version": "1.0.0",
+      "version_spec": "v1.0.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/fsnotify/fsnotify",
+      "version": "1.6.0",
+      "version_spec": "v1.6.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/fyne-io/gl-js",
+      "version": "0.0.0-20220119005834-d2da28d9ccfe",
+      "version_spec": "v0.0.0-20220119005834-d2da28d9ccfe",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/fyne-io/glfw-js",
+      "version": "0.0.0-20220120001248-ee7290d23504",
+      "version_spec": "v0.0.0-20220120001248-ee7290d23504",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/fyne-io/image",
+      "version": "0.0.0-20220602074514-4956b0afb3d2",
+      "version_spec": "v0.0.0-20220602074514-4956b0afb3d2",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/go-gl/gl",
+      "version": "0.0.0-20211210172815-726fda9656d6",
+      "version_spec": "v0.0.0-20211210172815-726fda9656d6",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/go-gl/glfw/v3.3/glfw",
+      "version": "0.0.0-20221017161538-93cebf72946b",
+      "version_spec": "v0.0.0-20221017161538-93cebf72946b",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/go-json-experiment/json",
+      "version": "0.0.0-20260214004413-d219187c3433",
+      "version_spec": "v0.0.0-20260214004413-d219187c3433",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/go-text/render",
+      "version": "0.0.0-20230619120952-35bccb6164b8",
+      "version_spec": "v0.0.0-20230619120952-35bccb6164b8",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/go-text/typesetting",
+      "version": "0.0.0-20230616162802-9c17dd34aa4a",
+      "version_spec": "v0.0.0-20230616162802-9c17dd34aa4a",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/gobwas/httphead",
+      "version": "0.1.0",
+      "version_spec": "v0.1.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/gobwas/pool",
+      "version": "0.2.1",
+      "version_spec": "v0.2.1",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/gobwas/ws",
+      "version": "1.4.0",
+      "version_spec": "v1.4.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/godbus/dbus/v5",
+      "version": "5.1.0",
+      "version_spec": "v5.1.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/gopherjs/gopherjs",
+      "version": "1.17.2",
+      "version_spec": "v1.17.2",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/gorilla/css",
+      "version": "1.0.1",
+      "version_spec": "v1.0.1",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/jsummers/gobmp",
+      "version": "0.0.0-20151104160322-e2ba15ffa76e",
+      "version_spec": "v0.0.0-20151104160322-e2ba15ffa76e",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/mohae/deepcopy",
+      "version": "0.0.0-20170929034955-c48cc78d4826",
+      "version_spec": "v0.0.0-20170929034955-c48cc78d4826",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/munnerz/goautoneg",
+      "version": "0.0.0-20191010083416-a7dc8b61c822",
+      "version_spec": "v0.0.0-20191010083416-a7dc8b61c822",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/pmezard/go-difflib",
+      "version": "1.0.0",
+      "version_spec": "v1.0.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/prometheus/client_model",
+      "version": "0.6.2",
+      "version_spec": "v0.6.2",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/prometheus/common",
+      "version": "0.66.1",
+      "version_spec": "v0.66.1",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/prometheus/procfs",
+      "version": "0.16.1",
+      "version_spec": "v0.16.1",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/richardlehane/mscfb",
+      "version": "1.0.4",
+      "version_spec": "v1.0.4",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/richardlehane/msoleps",
+      "version": "1.0.3",
+      "version_spec": "v1.0.3",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/srwiley/oksvg",
+      "version": "0.0.0-20221011165216-be6e8873101c",
+      "version_spec": "v0.0.0-20221011165216-be6e8873101c",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/srwiley/rasterx",
+      "version": "0.0.0-20220730225603-2ab79fcdd4ef",
+      "version_spec": "v0.0.0-20220730225603-2ab79fcdd4ef",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/tevino/abool",
+      "version": "1.2.0",
+      "version_spec": "v1.2.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/xuri/efp",
+      "version": "0.0.0-20230802181842-ad255f2331ca",
+      "version_spec": "v0.0.0-20230802181842-ad255f2331ca",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/xuri/nfp",
+      "version": "0.0.0-20230819163627-dc951e3ffe1a",
+      "version_spec": "v0.0.0-20230819163627-dc951e3ffe1a",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "github.com/yuin/goldmark",
+      "version": "1.5.5",
+      "version_spec": "v1.5.5",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "go.uber.org/multierr",
+      "version": "1.11.0",
+      "version_spec": "v1.11.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "go.yaml.in/yaml/v2",
+      "version": "2.4.2",
+      "version_spec": "v2.4.2",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "golang.org/x/mobile",
+      "version": "0.0.0-20230531173138-3c911d8e3eda",
+      "version_spec": "v0.0.0-20230531173138-3c911d8e3eda",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "golang.org/x/net",
+      "version": "0.55.0",
+      "version_spec": "v0.55.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "golang.org/x/sys",
+      "version": "0.45.0",
+      "version_spec": "v0.45.0",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "google.golang.org/protobuf",
+      "version": "1.36.8",
+      "version_spec": "v1.36.8",
+      "ecosystem": "go",
+      "type": "indirect"
+    },
+    {
+      "name": "honnef.co/go/js/dom",
+      "version": "0.0.0-20210725211120-f030747120f2",
+      "version_spec": "v0.0.0-20210725211120-f030747120f2",
+      "ecosystem": "go",
+      "type": "indirect"
+    }
+  ],
+  "vulnerabilities": [],
+  "risky_patterns": [],
+  "lockfile_issues": [],
+  "severity_distribution": {},
+  "npm_audit_available": false,
+  "pip_audit_available": false,
+  "govulncheck_available": false,
+  "cargo_audit_available": false,
+  "npm_audit_results": null,
+  "pip_audit_results": null,
+  "govulncheck_results": null,
+  "cargo_audit_results": null,
+  "offline_cve_coverage": [],
+  "cve_coverage": [],
+  "cve_coverage_gap": [
+    "go"
+  ],
+  "native_auditor_sources": {}
+}

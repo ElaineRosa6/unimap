@@ -1,0 +1,773 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "qa-security-audit",
+          "version": "1.11.0",
+          "informationUri": "https://github.com/anthropic/qa-security-audit",
+          "rules": [
+            {
+              "id": "testing",
+              "name": "testing",
+              "shortDescription": {
+                "text": "testing"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "missing_healthcheck",
+              "name": "missing_healthcheck",
+              "shortDescription": {
+                "text": "missing_healthcheck"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "god_module",
+              "name": "god_module",
+              "shortDescription": {
+                "text": "god_module"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "secret_history_coverage_gap",
+              "name": "secret_history_coverage_gap",
+              "shortDescription": {
+                "text": "secret_history_coverage_gap"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "dependency_cve_coverage_gap",
+              "name": "dependency_cve_coverage_gap",
+              "shortDescription": {
+                "text": "dependency_cve_coverage_gap"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "testing",
+          "level": "warning",
+          "message": {
+            "text": "No test directories found"
+          },
+          "properties": {
+            "severity": "P1",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "missing_healthcheck",
+          "level": "warning",
+          "message": {
+            "text": "No health-check endpoint found (/health, /healthz, /readyz, or Spring actuator) — orchestrators cannot determine service liveness"
+          },
+          "properties": {
+            "severity": "P1",
+            "source_scanner": "observability_scanner"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'cmd\\unimap-cli' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'cmd\\unimap-gui' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'cmd\\unimap-web' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'docs\\test_reports' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\adapter' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\alerting' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\appversion' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\auth' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\backup' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\collection' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\config' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\core\\unimap' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\distributed' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\error' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\exporter' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\history' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\icp\\database' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\logger' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\metrics' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\model' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\monitoring' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\notify' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\plugin' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\plugin\\processors' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\proxypool' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\requestid' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\scheduler' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\screenshot' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\screenshot\\batchdb' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\service' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\tamper' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\tamper\\analyzer' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\tamper\\database' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\tamper\\decoder' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\tamper\\fingerprint' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\tamper\\performance' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\tamper\\priority' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\tamper\\threshold' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\utils' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\utils\\circuitbreaker' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\utils\\degradation' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\utils\\urlguard' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'internal\\utils\\workerpool' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'tools\\extension-screenshot' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'tools\\extension-screenshot\\src' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "testing",
+          "level": "note",
+          "message": {
+            "text": "Source directory 'web\\static\\js' has no sibling or nested test directory"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'bytes' is imported by 26 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'url' is imported by 26 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'model' is imported by 84 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'httptest' is imported by 57 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'testing' is imported by 142 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'filepath' is imported by 55 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'config' is imported by 40 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'adapter' is imported by 23 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'logger' is imported by 66 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'utils' is imported by 27 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'screenshot' is imported by 25 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'sort' is imported by 20 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'sync' is imported by 78 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "god_module",
+          "level": "note",
+          "message": {
+            "text": "Module 'net' is imported by 20 files (threshold 20) — god-module / change-magnet"
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "structure_analyzer"
+          }
+        },
+        {
+          "ruleId": "secret_history_coverage_gap",
+          "level": "note",
+          "message": {
+            "text": "Git history secret scanning did not run; gitleaks/trufflehog unavailable or failed."
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "secret_history_scanner"
+          }
+        },
+        {
+          "ruleId": "dependency_cve_coverage_gap",
+          "level": "note",
+          "message": {
+            "text": "Dependency CVE detection NOT performed for ecosystem(s): go. dep_scanner has no offline CVE database for these. An empty vulnerability list is 'not checked', NOT 'clean'."
+          },
+          "properties": {
+            "severity": "P2",
+            "source_scanner": "dep_scanner"
+          }
+        }
+      ]
+    }
+  ]
+}
