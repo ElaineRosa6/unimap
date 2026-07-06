@@ -1,3 +1,11 @@
+> **Claude Code 项目记忆同步说明**
+> 
+> 本项目的完整 Claude Code 会话记忆同时保存在 C 盘客户端目录：
+> 
+> ```
+> C:\Users\ljw\.claude\projects\D--Project-Go-project-unimap\memory
+> ```
+
 # Project Memory Index
 
 ## 项目知识（从 C 盘记忆合并，2026-06-15）
