@@ -389,6 +389,101 @@ system:
 	assert.Equal(t, "debug", mgr.config.System.UserAgent)
 }
 
+func TestLoad_ResolvesNotificationAppEnvVars(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpPath := filepath.Join(tmpDir, "config_notify_env.yaml")
+
+	envs := map[string]string{
+		"TEST_FEISHU_APP_ID":     "app-id",
+		"TEST_FEISHU_APP_SECRET": "app-secret",
+		"TEST_FEISHU_CHAT_ID":    "chat-id",
+		"TEST_FEISHU_WEBHOOK":    "https://example.com/hook",
+	}
+	for k, v := range envs {
+		t.Setenv(k, v)
+	}
+
+	content := `
+notifications:
+  feishu_app:
+    app_id: "${TEST_FEISHU_APP_ID}"
+    app_secret: "${TEST_FEISHU_APP_SECRET}"
+    chat_id: "${TEST_FEISHU_CHAT_ID}"
+  channels:
+    - id: app
+      type: feishu_app
+      enabled: true
+      webhook_url: "${TEST_FEISHU_WEBHOOK}"
+      app_id: "${TEST_FEISHU_APP_ID}"
+      app_secret: "${TEST_FEISHU_APP_SECRET}"
+      chat_id: "${TEST_FEISHU_CHAT_ID}"
+`
+	err := os.WriteFile(tmpPath, []byte(content), 0644)
+	assert.NoError(t, err)
+
+	mgr := NewManager(tmpPath)
+	err = mgr.Load()
+	assert.NoError(t, err)
+	assert.NotNil(t, mgr.config.Notifications.FeishuApp)
+	assert.Equal(t, "app-id", mgr.config.Notifications.FeishuApp.AppID)
+	assert.Equal(t, "app-secret", mgr.config.Notifications.FeishuApp.AppSecret)
+	assert.Equal(t, "chat-id", mgr.config.Notifications.FeishuApp.ChatID)
+	assert.Len(t, mgr.config.Notifications.Channels, 1)
+	assert.Equal(t, "https://example.com/hook", mgr.config.Notifications.Channels[0].WebhookURL)
+	assert.Equal(t, "app-id", mgr.config.Notifications.Channels[0].AppID)
+	assert.Equal(t, "app-secret", mgr.config.Notifications.Channels[0].AppSecret)
+	assert.Equal(t, "chat-id", mgr.config.Notifications.Channels[0].ChatID)
+}
+
+func TestLoad_ResolvesSecurityRelatedEnvVars(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpPath := filepath.Join(tmpDir, "config_security_env.yaml")
+
+	envs := map[string]string{
+		"TEST_SHODAN_API_KEY":      "shodan-key",
+		"TEST_SHODAN_BASE_URL":     "https://api.shodan.io",
+		"TEST_DISTRIBUTED_ADMIN":   "distributed-admin-token",
+		"TEST_NODE_TOKEN":          "node-token",
+		"TEST_WEB_ADMIN":           "web-admin-token",
+		"TEST_ALERT_WEBHOOK_URL":   "https://alerts.example.com/hook",
+		"TEST_ALERT_WEBHOOK_TOKEN": "alert-token",
+	}
+	for k, v := range envs {
+		t.Setenv(k, v)
+	}
+
+	content := `
+engines:
+  shodan:
+    api_key: "${TEST_SHODAN_API_KEY}"
+    base_url: "${TEST_SHODAN_BASE_URL}"
+web:
+  auth:
+    admin_token: "${TEST_WEB_ADMIN}"
+distributed:
+  admin_token: "${TEST_DISTRIBUTED_ADMIN}"
+  node_auth_tokens:
+    node-a: "${TEST_NODE_TOKEN}"
+alerting:
+  webhook:
+    url: "${TEST_ALERT_WEBHOOK_URL}"
+    auth_token: "${TEST_ALERT_WEBHOOK_TOKEN}"
+`
+	err := os.WriteFile(tmpPath, []byte(content), 0644)
+	assert.NoError(t, err)
+
+	mgr := NewManager(tmpPath)
+	err = mgr.Load()
+	assert.NoError(t, err)
+	assert.Equal(t, "shodan-key", mgr.config.Engines.Shodan.APIKey)
+	assert.Equal(t, "https://api.shodan.io", mgr.config.Engines.Shodan.BaseURL)
+	assert.Equal(t, "distributed-admin-token", mgr.config.Distributed.AdminToken)
+	assert.Equal(t, "node-token", mgr.config.Distributed.NodeAuthTokens["node-a"])
+	assert.Equal(t, "web-admin-token", mgr.config.Web.Auth.AdminToken)
+	assert.Equal(t, "https://alerts.example.com/hook", mgr.config.Alerting.Webhook.URL)
+	assert.Equal(t, "alert-token", mgr.config.Alerting.Webhook.AuthToken)
+}
+
 // --- validate edge cases ---
 
 func TestValidate_WebRateLimit(t *testing.T) {
