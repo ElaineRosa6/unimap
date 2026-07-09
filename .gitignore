@@ -59,6 +59,8 @@ web_cover
 
 # Credentials
 cookies.txt
+cookie.txt
+unimap_session_cookie.txt
 # Audit output (may contain generated secrets, e.g. first-admin password)
 .audit-results/
 
