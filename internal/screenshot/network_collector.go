@@ -85,6 +85,12 @@ func (m *Manager) CollectViaNetwork(ctx context.Context, engine, query, queryID 
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	defer browserCancel()
 
+	if cookies := m.GetCookies(engine); len(cookies) > 0 {
+		if err := chromedp.Run(browserCtx, setCookieActions(cookies, searchURL)...); err != nil {
+			logger.Warnf("inject cookies failed for %s: %v", engine, err)
+		}
+	}
+
 	var mu sync.Mutex
 	captured := &networkResponse{}
 	respCh := make(chan struct{}, 1)

@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
@@ -191,22 +190,9 @@ func (m *Manager) CaptureScreenshotWithProxy(ctx context.Context, targetURL stri
 		// 需要先导航到目标域名才能设置Cookie，设置后再重新加载页面
 		actions = append(actions,
 			chromedp.Navigate(targetURL),
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				for _, cookie := range cookies {
-					err := network.SetCookie(cookie.Name, cookie.Value).
-						WithDomain(cookie.Domain).
-						WithPath(cookie.Path).
-						WithHTTPOnly(cookie.HTTPOnly).
-						WithSecure(cookie.Secure).
-						Do(ctx)
-					if err != nil {
-						logger.Warnf("Failed to set cookie %s: %v", cookie.Name, err)
-					}
-				}
-				return nil
-			}),
-			chromedp.Navigate(targetURL),
 		)
+		actions = append(actions, setCookieActions(cookies, targetURL)...)
+		actions = append(actions, chromedp.Navigate(targetURL))
 	} else {
 		if m.isCDPMode() && len(cookies) > 0 {
 			logger.Infof("Using CDP mode, skipping cookie setup (browser already logged in)")
@@ -258,22 +244,9 @@ func (m *Manager) OpenSearchEngineResult(ctx context.Context, engine, query stri
 	if len(cookies) > 0 && !m.isCDPMode() {
 		actions = append(actions,
 			chromedp.Navigate(searchURL),
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				for _, cookie := range cookies {
-					err := network.SetCookie(cookie.Name, cookie.Value).
-						WithDomain(cookie.Domain).
-						WithPath(cookie.Path).
-						WithHTTPOnly(cookie.HTTPOnly).
-						WithSecure(cookie.Secure).
-						Do(ctx)
-					if err != nil {
-						logger.Warnf("Failed to set cookie %s: %v", cookie.Name, err)
-					}
-				}
-				return nil
-			}),
-			chromedp.Navigate(searchURL),
 		)
+		actions = append(actions, setCookieActions(cookies, searchURL)...)
+		actions = append(actions, chromedp.Navigate(searchURL))
 	} else {
 		if m.isCDPMode() && len(cookies) > 0 {
 			logger.Infof("Using CDP mode, skipping cookie setup (browser already logged in)")

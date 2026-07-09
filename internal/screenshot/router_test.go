@@ -194,6 +194,46 @@ func TestRouterHealthCheck_Callback(t *testing.T) {
 	}
 }
 
+func TestRouterCollectAndCapture_ExtensionModeUsesBridgeEvenWithManager(t *testing.T) {
+	client := &mockBridgeClient{
+		awaitResult: BridgeResult{
+			Success:   true,
+			ImagePath: "/tmp/router-combined.png",
+			StructuredCollectedData: &model.BridgeCollectedData{
+				Total: 1,
+				Items: []model.CollectedDataItem{{IP: "1.2.3.4", Port: 443}},
+			},
+		},
+	}
+	svc := NewBridgeService(client, 1, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	mgr := NewManager(Config{BaseDir: t.TempDir(), Timeout: time.Second})
+	r := NewScreenshotRouter(RouterConfig{Priority: ModeExtension, Fallback: false}, nil, svc, mgr)
+	r.extHealthy.Store(true)
+
+	got, path, err := r.CollectAndCaptureSearchEngineResult(context.Background(), "fofa", "test", "q1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path != "/tmp/router-combined.png" {
+		t.Fatalf("unexpected path: %q", path)
+	}
+	if len(got) != 1 || len(got[0].Assets) != 1 {
+		t.Fatalf("expected bridge collected result, got %#v", got)
+	}
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.submitCalls) != 1 {
+		t.Fatalf("expected one bridge task, got %d", len(client.submitCalls))
+	}
+	if client.submitCalls[0].Action != "collect_and_capture" {
+		t.Fatalf("expected collect_and_capture action, got %q", client.submitCalls[0].Action)
+	}
+}
+
 // ===== ExtensionProvider open failure =====
 
 type failOpenBridgeClient struct {

@@ -24,7 +24,7 @@ type BridgeTask struct {
 	ViewportHeight int           `json:"viewport_height,omitempty"`
 	WaitStrategy   string        `json:"wait_strategy,omitempty"`
 	Timeout        time.Duration `json:"timeout"`
-	Action         string        `json:"action,omitempty"` // "screenshot" (default), "open", "collect"
+	Action         string        `json:"action,omitempty"` // "screenshot" (default), "open", "collect", "collect_and_capture"
 }
 
 // BridgeResult is the normalized extension execution result.

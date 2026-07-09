@@ -259,6 +259,47 @@ func TestExtensionProvider_CollectSearchEngineResult_BridgeStructuredData(t *tes
 	}
 }
 
+func TestExtensionProvider_CollectAndCaptureSearchEngineResult_UsesCombinedActionAndLongTimeout(t *testing.T) {
+	client := &mockBridgeClient{
+		awaitResult: BridgeResult{
+			Success:   true,
+			ImagePath: "/tmp/combined.png",
+			StructuredCollectedData: &model.BridgeCollectedData{
+				Total: 1,
+				Items: []model.CollectedDataItem{{IP: "1.2.3.4", Port: 443}},
+			},
+		},
+	}
+	svc := NewBridgeService(client, 5, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	p := NewExtensionProvider(svc, nil)
+	got, path, err := p.CollectAndCaptureSearchEngineResult(context.Background(), "fofa", "test", "q1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path != "/tmp/combined.png" {
+		t.Fatalf("unexpected image path: %q", path)
+	}
+	if len(got) != 1 || len(got[0].Assets) != 1 {
+		t.Fatalf("expected one collected asset, got %#v", got)
+	}
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.submitCalls) != 1 {
+		t.Fatalf("expected one bridge task, got %d", len(client.submitCalls))
+	}
+	task := client.submitCalls[0]
+	if task.Action != "collect_and_capture" {
+		t.Fatalf("expected collect_and_capture action, got %q", task.Action)
+	}
+	if task.Timeout != collectAndCaptureBridgeTaskTimeout {
+		t.Fatalf("expected timeout %s, got %s", collectAndCaptureBridgeTaskTimeout, task.Timeout)
+	}
+}
+
 func TestExtensionProvider_OpenSearchEngineResult_UsesOpenAction(t *testing.T) {
 	client := &mockBridgeClient{
 		awaitResult: BridgeResult{Success: true},

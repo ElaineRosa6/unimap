@@ -23,6 +23,11 @@ type bridgeJobResult struct {
 	err    error
 }
 
+const (
+	collectBridgeTaskTimeout           = 90 * time.Second
+	collectAndCaptureBridgeTaskTimeout = 120 * time.Second
+)
+
 // BridgeService provides a task queue + worker execution model for extension bridge calls.
 type BridgeService struct {
 	client         BridgeClient
@@ -113,7 +118,7 @@ func (s *BridgeService) Submit(ctx context.Context, task BridgeTask) (BridgeResu
 
 	effectiveTimeout := task.Timeout
 	if effectiveTimeout <= 0 {
-		effectiveTimeout = s.taskTimeout
+		effectiveTimeout = s.defaultTimeoutForAction(task.Action)
 	}
 	workerCtx, cancel := context.WithTimeout(ctx, effectiveTimeout)
 	defer cancel()
@@ -137,6 +142,21 @@ func (s *BridgeService) Submit(ctx context.Context, task BridgeTask) (BridgeResu
 		}
 		return BridgeResult{}, fmt.Errorf("%w: task canceled", ErrBridgeTaskCanceled)
 	}
+}
+
+func (s *BridgeService) defaultTimeoutForAction(action string) time.Duration {
+	timeout := s.taskTimeout
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "collect_and_capture":
+		if timeout < collectAndCaptureBridgeTaskTimeout {
+			return collectAndCaptureBridgeTaskTimeout
+		}
+	case "collect":
+		if timeout < collectBridgeTaskTimeout {
+			return collectBridgeTaskTimeout
+		}
+	}
+	return timeout
 }
 
 func (s *BridgeService) worker(ctx context.Context) {
