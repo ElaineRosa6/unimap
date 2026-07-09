@@ -339,7 +339,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 // handleResults 处理结果页面请求
 func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query().Get("query")
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
 	engines := []string{}
 	if engine := strings.TrimSpace(r.URL.Query().Get("engine")); engine != "" {
 		engines = []string{engine}
@@ -350,6 +350,8 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 		"query":         query,
 		"engines":       engines,
 		"assets":        []model.UnifiedAsset{},
+		"totalCount":    0,
+		"engineStats":   map[string]int{},
 		"staticVersion": s.staticVersion,
 	}) {
 		return
