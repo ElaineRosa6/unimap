@@ -197,6 +197,33 @@ go run -tags gui ./cmd/unimap-gui
 
 > 来源：2026-05-09 全量代码扫描，详见 `memory/project_remaining_issues_2026-05-09.md`
 
+### 2026-07-06 当前复核结论
+
+> 来源：`.audit-results/audit_summary.md`、`.audit-results/audit_report_final.json`、`.audit-results/issue-bridge-serial-timeout.md` 与当前代码复核；验证：`go test ./...` 通过。
+
+#### 仍需优先处理
+
+| 优先级 | 位置 | 问题 | 当前判断 |
+|---|---|---|---|
+| P1 | 外部平台密钥/管理令牌 | 已暴露过的搜索引擎、通知密钥、admin token 需要在对应平台/部署环境轮换 | 代码与本地配置已改为环境变量占位符；轮换动作需登录外部平台或更新部署环境完成 |
+
+#### 2026-07-07 已补修
+
+| 项目 | 状态 | 说明 |
+|---|---|---|
+| `probe-web` / `probe-web-batch` SSRF | ✅ 已修 | handler 先拦截内网目标，底层 `probeWebService` 改用 `urlguard.SafeHTTPClient` 做 dial-time/redirect 防护 |
+| 本地配置明文密钥 | ✅ 已迁移占位符 | `configs/config.yaml` 中引擎 API Key、Web/Distributed admin token、Feishu app secret、Webhook URL 改为 `${ENV}`；配置加载补齐 Shodan、Distributed node token、legacy alerting、Feishu app/channel 环境变量解析 |
+| WebSocket 重连状态恢复 | ✅ 已补基础恢复 | 前端重连后调用 `/api/v1/query/status` 恢复当前查询进度/终态 |
+| `operation_history` SQL WHERE 拼接反模式 | ✅ 已清理 | repository 改为显式 SQL 分支，不再 `fmt.Sprintf` 拼 WHERE |
+
+#### 已修或审计项过期
+
+| 项目 | 状态 | 说明 |
+|---|---|---|
+| Bridge `collect_and_capture` 路径旁路、Cookie 注入、extension timeout | ✅ 已修 | 2026-07-06 已完成方案 1/2/3/4A，新增 `internal/screenshot/cookie_actions.go` 与相关回归测试 |
+| `.audit-results/audit_report_final.json` 3 个 P1 | ✅ 已修 | config/history handler 已加 `requireAdmin`；`go.mod` 与本机工具链均为 Go 1.26.4 |
+| 健康检查端点缺失 | ✅ 报告过期 | 当前已有 `/health`、`/health/ready`、`/health/live` |
+
 ### ✅ 已全部修复
 - C-01 ~ C-04 (Critical)、H-01 ~ H-05 (High) — 全部闭环
 - M-02 ~ M-06, M-08, M-09 (Medium) — 全部闭环
