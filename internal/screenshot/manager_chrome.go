@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 
 	"github.com/unimap/project/internal/logger"
@@ -34,22 +33,9 @@ func (m *Manager) loadPageContent(ctx context.Context, targetURL string, cookies
 	if len(cookies) > 0 && !m.isCDPMode() {
 		actions = append(actions,
 			chromedp.Navigate(targetURL),
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				for _, cookie := range cookies {
-					err := network.SetCookie(cookie.Name, cookie.Value).
-						WithDomain(cookie.Domain).
-						WithPath(cookie.Path).
-						WithHTTPOnly(cookie.HTTPOnly).
-						WithSecure(cookie.Secure).
-						Do(ctx)
-					if err != nil {
-						logger.Warnf("Failed to set cookie %s: %v", cookie.Name, err)
-					}
-				}
-				return nil
-			}),
-			chromedp.Navigate(targetURL),
 		)
+		actions = append(actions, setCookieActions(cookies, targetURL)...)
+		actions = append(actions, chromedp.Navigate(targetURL))
 	} else {
 		if m.isCDPMode() && len(cookies) > 0 {
 			logger.Infof("Using CDP mode, skipping cookie setup (browser already logged in)")

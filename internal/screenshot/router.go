@@ -3,7 +3,6 @@ package screenshot
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -357,14 +356,14 @@ func (r *ScreenshotRouter) CollectSearchEngineResult(ctx context.Context, engine
 // CollectAndCaptureSearchEngineResult 在单次导航中同时完成数据采集和截图。
 // CDP 模式通过 Manager 完成；Extension 模式通过 collect_and_capture action 完成。
 func (r *ScreenshotRouter) CollectAndCaptureSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, string, error) {
-	if r.mgr != nil {
-		return r.mgr.CollectAndCaptureSearchEngineResult(ctx, engine, query, queryID)
-	}
-	// Extension 模式：使用 collect_and_capture action 在一次导航中完成
 	provider, err := r.resolveProvider(r.loadMode())
 	if err != nil {
 		return nil, "", err
 	}
+	if _, ok := provider.(*ExtensionProvider); !ok && r.mgr != nil {
+		return r.mgr.CollectAndCaptureSearchEngineResult(ctx, engine, query, queryID)
+	}
+	// Extension 模式：使用 collect_and_capture action 在一次导航中完成
 	extProvider, ok := provider.(*ExtensionProvider)
 	if !ok {
 		// 降级为分步调用
@@ -375,37 +374,7 @@ func (r *ScreenshotRouter) CollectAndCaptureSearchEngineResult(ctx context.Conte
 		path, captureErr := r.CaptureSearchEngineResult(ctx, engine, query, queryID)
 		return collected, path, captureErr
 	}
-	searchURL := buildSearchEngineURL(engine, query)
-	if searchURL == "" {
-		return nil, "", fmt.Errorf("unsupported engine: %s", engine)
-	}
-	result, err := extProvider.submitCollectAndCaptureTask(ctx, searchURL, queryID)
-	if err != nil {
-		return nil, "", err
-	}
-	if !result.Success {
-		errMsg := strings.TrimSpace(result.Error)
-		if errMsg == "" {
-			errMsg = "extension bridge collect+capture failed"
-		}
-		return nil, "", fmt.Errorf("%s", errMsg)
-	}
-	// Detect login wall from structured data
-	if isLoginWallDetected(result) {
-		return nil, "", fmt.Errorf("login wall detected on %s", engine)
-	}
-	// Parse collected data
-	var collected []collection.CollectResult
-	if result.StructuredCollectedData != nil {
-		cr := collection.CollectResult{
-			Engine: engine,
-		}
-		cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(
-			result.StructuredCollectedData.Items, engine, result.StructuredCollectedData.HasMore,
-		)
-		collected = append(collected, cr)
-	}
-	return collected, result.ImagePath, nil
+	return extProvider.CollectAndCaptureSearchEngineResult(ctx, engine, query, queryID)
 }
 
 // resolveProvider returns the best available Provider based on current health and fallback config.

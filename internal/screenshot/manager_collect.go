@@ -59,6 +59,12 @@ func (m *Manager) collectViaDOM(ctx context.Context, engine, query, queryID stri
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	defer browserCancel()
 
+	if cookies := m.GetCookies(engine); len(cookies) > 0 {
+		if err := chromedp.Run(browserCtx, setCookieActions(cookies, searchURL)...); err != nil {
+			logger.Warnf("inject cookies failed for %s: %v", engine, err)
+		}
+	}
+
 	if err := chromedp.Run(browserCtx, chromedp.Navigate(searchURL)); err != nil {
 		return nil, fmt.Errorf("navigate to search URL failed: %w", err)
 	}
@@ -201,6 +207,12 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	defer browserCancel()
+
+	if cookies := m.GetCookies(engine); len(cookies) > 0 {
+		if err := chromedp.Run(browserCtx, setCookieActions(cookies, searchURL)...); err != nil {
+			logger.Warnf("inject cookies failed for %s: %v", engine, err)
+		}
+	}
 
 	l1Result, l1Ch := collectViaNetworkOnContext(browserCtx, engine, query)
 	if l1Ch != nil {

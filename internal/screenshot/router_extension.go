@@ -246,6 +246,34 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 	return []collection.CollectResult{collectResult}, nil
 }
 
+func (p *ExtensionProvider) CollectAndCaptureSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, string, error) {
+	if p == nil || p.bridge == nil {
+		return nil, "", fmt.Errorf("extension provider not initialized")
+	}
+	searchURL := p.resolveSearchURL(engine, query)
+	if searchURL == "" {
+		return nil, "", fmt.Errorf("unsupported engine: %s", engine)
+	}
+
+	result, err := p.submitCollectAndCaptureTask(ctx, searchURL, queryID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	collectResult := collection.CollectResult{
+		Engine: engine, Query: query, RawURL: searchURL, Timestamp: time.Now().Unix(),
+	}
+	if isLoginWallDetected(result) {
+		return p.handleLoginWallResult(collectResult, result, engine), result.ImagePath, nil
+	}
+	if !result.Success {
+		return nil, "", collectBridgeError(result)
+	}
+
+	p.populateCollectResultFromBridge(&collectResult, result, engine)
+	return []collection.CollectResult{collectResult}, result.ImagePath, nil
+}
+
 // resolveSearchURL builds the search engine URL for collection.
 func (p *ExtensionProvider) resolveSearchURL(engine, query string) string {
 	if p.mgr != nil {
@@ -264,6 +292,7 @@ func (p *ExtensionProvider) submitCollectTask(ctx context.Context, searchURL, qu
 		BatchID:      queryID,
 		WaitStrategy: "spa",
 		Action:       "collect",
+		Timeout:      collectBridgeTaskTimeout,
 	}
 	result, err := p.bridge.Submit(ctx, task)
 	if err != nil {
@@ -280,6 +309,7 @@ func (p *ExtensionProvider) submitCollectAndCaptureTask(ctx context.Context, sea
 		BatchID:      queryID,
 		WaitStrategy: "spa",
 		Action:       "collect_and_capture",
+		Timeout:      collectAndCaptureBridgeTaskTimeout,
 	}
 	result, err := p.bridge.Submit(ctx, task)
 	if err != nil {

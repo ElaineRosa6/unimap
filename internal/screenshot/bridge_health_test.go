@@ -76,6 +76,21 @@ func TestNewBridgeService_Custom(t *testing.T) {
 	}
 }
 
+func TestBridgeService_DefaultTimeoutForLongActions(t *testing.T) {
+	svc := NewBridgeService(&mockBridgeClient{}, 5, 30*time.Second)
+	if got := svc.defaultTimeoutForAction("collect"); got != collectBridgeTaskTimeout {
+		t.Fatalf("collect timeout = %s, want %s", got, collectBridgeTaskTimeout)
+	}
+	if got := svc.defaultTimeoutForAction("collect_and_capture"); got != collectAndCaptureBridgeTaskTimeout {
+		t.Fatalf("collect_and_capture timeout = %s, want %s", got, collectAndCaptureBridgeTaskTimeout)
+	}
+
+	svc = NewBridgeService(&mockBridgeClient{}, 5, 180*time.Second)
+	if got := svc.defaultTimeoutForAction("collect_and_capture"); got != 180*time.Second {
+		t.Fatalf("configured longer timeout should win, got %s", got)
+	}
+}
+
 // ===== SetRetry =====
 
 func TestBridgeService_SetRetry(t *testing.T) {
