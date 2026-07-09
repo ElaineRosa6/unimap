@@ -58,25 +58,27 @@ func (r *Repository) ListHistory(opType string, limit, offset int) ([]OperationH
 	if limit <= 0 {
 		limit = 20
 	}
-	where := ""
-	args := []interface{}{}
-	if opType != "" {
-		where = "WHERE operation_type = ?"
-		args = append(args, opType)
-	}
 
 	var total int
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM operation_history %s", where)
-	if err := r.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("failed to count operation_history: %w", err)
+	var rows *sql.Rows
+	var err error
+	if opType != "" {
+		if err := r.db.QueryRow("SELECT COUNT(*) FROM operation_history WHERE operation_type = ?", opType).Scan(&total); err != nil {
+			return nil, 0, fmt.Errorf("failed to count operation_history: %w", err)
+		}
+		rows, err = r.db.Query(
+			"SELECT id, operation_type, input, status, total_count, summary, duration_ms, created_at FROM operation_history WHERE operation_type = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+			opType, limit, offset,
+		)
+	} else {
+		if err := r.db.QueryRow("SELECT COUNT(*) FROM operation_history").Scan(&total); err != nil {
+			return nil, 0, fmt.Errorf("failed to count operation_history: %w", err)
+		}
+		rows, err = r.db.Query(
+			"SELECT id, operation_type, input, status, total_count, summary, duration_ms, created_at FROM operation_history ORDER BY created_at DESC LIMIT ? OFFSET ?",
+			limit, offset,
+		)
 	}
-
-	query := fmt.Sprintf(
-		"SELECT id, operation_type, input, status, total_count, summary, duration_ms, created_at FROM operation_history %s ORDER BY created_at DESC LIMIT ? OFFSET ?",
-		where,
-	)
-	args = append(args, limit, offset)
-	rows, err := r.db.Query(query, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to query operation_history: %w", err)
 	}
