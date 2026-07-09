@@ -367,6 +367,21 @@
 		return '未知错误';
 	}
 
+	function formatDateTime(value) {
+		if (!value) return '-';
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return String(value);
+		return date.toLocaleString('zh-CN', {
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit',
+			hour12: false
+		}).replace(/\//g, '-');
+	}
+
 	async function loadTasks() {
 		try {
 			const res = await fetch('/api/v1/scheduler/tasks' );
@@ -391,8 +406,8 @@
 				if (t.enabled) enabled++; else disabled++;
 
 				const tr = document.createElement('tr');
-				const nextRun = t.next_run_at ? new Date(t.next_run_at).toLocaleString() : '-';
-				const lastRun = t.last_run_at ? new Date(t.last_run_at).toLocaleString() : '-';
+				const nextRun = formatDateTime(t.next_run_at);
+				const lastRun = formatDateTime(t.last_run_at);
 				const payloadStr = t.payload ? JSON.stringify(t.payload).substring(0, 60) : '';
 
 				// Schedule display
@@ -402,7 +417,7 @@
 				if (schedType === 'cron') {
 					schedInfo += ': ' + escHtml(t.cron_expr || '');
 				} else if (schedType === 'once' && t.run_at) {
-					schedInfo += ': ' + new Date(t.run_at).toLocaleString();
+					schedInfo += ': ' + formatDateTime(t.run_at);
 				} else if (schedType === 'delay' && t.delay_seconds) {
 					const m = Math.floor(t.delay_seconds / 60);
 					const s = t.delay_seconds % 60;
@@ -463,7 +478,7 @@
 				tr.innerHTML = `
 					<td>${escHtml(r.task_name)}</td>
 					<td>${escHtml(r.task_type)}</td>
-					<td>${escHtml(r.started_at)}</td>
+					<td>${escHtml(formatDateTime(r.started_at))}</td>
 					<td>${duration}</td>
 					<td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
 					<td>${escHtml(r.result || '-')}</td>

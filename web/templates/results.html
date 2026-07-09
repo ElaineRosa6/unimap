@@ -2,11 +2,19 @@
 {{template "header" (dict "ActiveNav" "index" "staticVersion" .staticVersion)}}
 
 	<main>
+		{{if .query}}
 		<section class="query-info">
 			<p><strong>查询：</strong><code>{{.query}}</code></p>
-			<p><strong>引擎：</strong>{{join .engines ", "}}</p>
+			<p><strong>引擎：</strong>{{if .engines}}{{join .engines ", "}}{{else}}未指定{{end}}</p>
 			<p><strong>结果：</strong>{{.totalCount}}</p>
 		</section>
+		{{else}}
+		<section class="empty-state-panel">
+			<h2>尚未执行查询</h2>
+			<p>返回首页输入查询语句并选择搜索引擎后，这里会展示查询结果。</p>
+			<a href="/" class="btn btn-primary">返回查询</a>
+		</section>
+		{{end}}
 
 		{{if .errors}}
 		<section class="errors">
@@ -19,6 +27,7 @@
 		</section>
 		{{end}}
 
+		{{if .engineStats}}
 		<section class="engine-stats">
 			<div class="stats-grid">
 				{{range $engine, $count := .engineStats}}
@@ -29,12 +38,14 @@
 				{{end}}
 			</div>
 		</section>
+		{{end}}
 
 		<section class="results">
+			{{if .query}}
 			<div class="export-options action-buttons">
 				<button type="button" class="btn btn-secondary" id="btn-export-csv">导出CSV</button>
 				<button type="button" class="btn btn-secondary" id="btn-export-json">导出JSON</button>
-				<button type="button" class="btn btn-secondary" id="btn-export-excel">导出CSV</button>
+				<button type="button" class="btn btn-secondary" id="btn-export-excel">导出Excel</button>
 				<a href="/" class="btn btn-secondary">返回查询</a>
 			</div>
 
@@ -79,6 +90,7 @@
 			<div class="results-stats">
 				<p>显示 <span id="displayed-count">{{len .assets}}</span> / <span id="total-count">{{.totalCount}}</span></p>
 			</div>
+			{{end}}
 
 			{{if .assets}}
 			<div class="results-table-container">
@@ -134,7 +146,9 @@
 				</div>
 			</div>
 			{{else}}
-			<p class="no-results">未找到结果</p>
+			{{if .query}}
+			<p class="no-results">未找到匹配结果，请调整查询语句或搜索引擎后重试。</p>
+			{{end}}
 			{{end}}
 		</section>
 

@@ -74,6 +74,7 @@ func (r *Router) registerQueryRoutes() {
 	r.addRoute("health-live", "GET", "/health/live", s.handleHealthLive, false)
 	r.addRoute("metrics", "GET", "/metrics", s.handleMetrics, false)
 	r.addRoute("query", "GET", "/query", s.handleQuery, true)
+	r.addRoute("query-submit", "POST", "/query", s.handleQuery, true)
 	r.addAPIRoute("api-query", "POST", "/api/query", s.handleAPIQuery, true)
 	r.addAPIRoute("query-status", "GET", "/api/query/status", s.handleQueryStatus, true)
 	r.addAPIRoute("websocket", "GET", "/api/ws", s.handleWebSocket, false)
