@@ -174,9 +174,11 @@ func TestHandleImportCookieJSON_ExtensionMode(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Distributed.Enabled = true
 	cfg.Screenshot.Engine = "extension"
+	mgr := screenshot.NewManager(screenshot.Config{BaseDir: "testdata"})
 	s := &Server{
-		config:      cfg,
-		distributed: &DistributedState{NodeRegistry: distributed.NewRegistry(60 * time.Second)},
+		config:        cfg,
+		screenshotMgr: mgr,
+		distributed:   &DistributedState{NodeRegistry: distributed.NewRegistry(60 * time.Second)},
 	}
 
 	form := "engine=fofa&cookie_json=%5B%7B%22name%22%3A%22token%22%2C%22value%22%3A%22abc123%22%2C%22domain%22%3A%22.fofa.info%22%7D%5D"
@@ -190,6 +192,12 @@ func TestHandleImportCookieJSON_ExtensionMode(t *testing.T) {
 	// Extension mode should succeed with a message about optional cookies
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for extension mode, got %d, body=%s", w.Code, w.Body.String())
+	}
+	if len(cfg.Engines.Fofa.Cookies) == 0 {
+		t.Fatal("expected extension-mode import to persist configured cookies")
+	}
+	if len(mgr.GetCookies("fofa")) == 0 {
+		t.Fatal("expected extension-mode import to update manager cookies for fallback")
 	}
 }
 
@@ -218,9 +226,11 @@ func TestHandleSaveCookies_ExtensionMode(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Distributed.Enabled = true
 	cfg.Screenshot.Engine = "extension"
+	mgr := screenshot.NewManager(screenshot.Config{BaseDir: "testdata"})
 	s := &Server{
-		config:      cfg,
-		distributed: &DistributedState{NodeRegistry: distributed.NewRegistry(60 * time.Second)},
+		config:        cfg,
+		screenshotMgr: mgr,
+		distributed:   &DistributedState{NodeRegistry: distributed.NewRegistry(60 * time.Second)},
 	}
 
 	form := "cookie_fofa=token=abc"
@@ -241,6 +251,12 @@ func TestHandleSaveCookies_ExtensionMode(t *testing.T) {
 	}
 	if resp["engine"] != "extension" {
 		t.Fatalf("expected engine=extension, got %v", resp["engine"])
+	}
+	if len(cfg.Engines.Fofa.Cookies) == 0 {
+		t.Fatal("expected extension-mode save to persist cookies")
+	}
+	if len(mgr.GetCookies("fofa")) == 0 {
+		t.Fatal("expected extension-mode save to update manager cookies for fallback")
 	}
 }
 

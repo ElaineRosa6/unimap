@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"mime/multipart"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -313,22 +312,49 @@ func TestHandleProbeWebService_InvalidScheme(t *testing.T) {
 	}
 }
 
-func TestProbeWebService_LocalhostHTTP(t *testing.T) {
-	// Start a tiny HTTP server on a random port
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to listen: %v", err)
-	}
-	defer ln.Close()
-	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
+func TestHandleProbeWebService_BlocksLocalhost(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{"url": "http://127.0.0.1:8080/admin"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/probe-web", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleProbeWebService(rec, req)
 
-	url := "http://" + ln.Addr().String()
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "blocked_url") {
+		t.Fatalf("expected blocked_url error, got %s", rec.Body.String())
+	}
+}
+
+func TestHandleProbeWebServiceBatch_BlocksLocalhost(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{"urls": []string{"http://127.0.0.1:8080/admin", "ftp://example.com"}})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/probe-web-batch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleProbeWebServiceBatch(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	bodyText := rec.Body.String()
+	if !strings.Contains(bodyText, `"http://127.0.0.1:8080/admin":false`) {
+		t.Fatalf("expected localhost result false, got %s", bodyText)
+	}
+	if !strings.Contains(bodyText, `"ftp://example.com":false`) {
+		t.Fatalf("expected invalid scheme result false, got %s", bodyText)
+	}
+}
+
+func TestProbeWebService_BlocksLocalhost(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if !probeWebService(ctx, url) {
-		t.Error("expected probeWebService to return true for a live HTTP server")
+	if probeWebService(ctx, "http://127.0.0.1:8080/admin") {
+		t.Error("expected probeWebService to reject localhost targets")
 	}
 }
 

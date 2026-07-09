@@ -25,16 +25,6 @@ func (s *Server) handleImportCookieJSON(w http.ResponseWriter, r *http.Request) 
 		writeAPIError(w, http.StatusServiceUnavailable, "config_not_loaded", "config not loaded", nil)
 		return
 	}
-	if s.currentScreenshotEngine() == "extension" {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"success":      true,
-			"cookieHeader": "",
-			"engine":       "extension",
-			"message":      "extension mode uses browser session; cookie import is optional",
-		})
-		return
-	}
-
 	engine := strings.TrimSpace(r.FormValue("engine"))
 	jsonStr := r.FormValue("cookie_json")
 	if engine == "" || strings.TrimSpace(jsonStr) == "" {
@@ -78,10 +68,15 @@ func (s *Server) handleImportCookieJSON(w http.ResponseWriter, r *http.Request) 
 	s.configMutex.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+	payload := map[string]interface{}{
 		"success":      true,
 		"cookieHeader": cookiesToHeader(cookies),
-	})
+	}
+	if s.currentScreenshotEngine() == "extension" {
+		payload["engine"] = "extension"
+		payload["message"] = "cookie stored for CDP fallback; extension session remains primary"
+	}
+	json.NewEncoder(w).Encode(payload) //nolint:errcheck
 }
 
 // handleVerifyCookies 验证Cookie是否可访问搜索结果页
@@ -146,7 +141,7 @@ func (s *Server) handleSaveCookies(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"engine":  "extension",
-			"message": "extension mode uses browser session; cookie injection is skipped",
+			"message": "cookies stored for CDP fallback; extension session remains primary",
 		})
 		return
 	}
@@ -179,6 +174,18 @@ func (s *Server) applyCookiesFromRequest(r *http.Request) {
 // Must be called with configMutex held.
 func (s *Server) applyCookiesExtensionMode(r *http.Request) {
 	changed := false
+	clear := strings.EqualFold(strings.TrimSpace(r.FormValue("clear_cookies")), "true")
+	if clear {
+		s.clearAllEngineCookies()
+		changed = true
+	}
+
+	for _, engine := range []string{"fofa", "hunter", "zoomeye", "quake"} {
+		if !clear {
+			changed = s.applySingleEngineCookie(engine, r.FormValue("cookie_"+engine)) || changed
+		}
+	}
+
 	if _, present := r.Form["proxy_server"]; present {
 		proxy := strings.TrimSpace(r.FormValue("proxy_server"))
 		if s.config.Screenshot.ProxyServer != proxy {
@@ -195,7 +202,7 @@ func (s *Server) applyCookiesExtensionMode(r *http.Request) {
 			logger.Warnf("Failed to persist extension proxy config: %v", err)
 		}
 	}
-	logger.Infof("Cookie apply mode=extension_session: skipped cookie injection, proxy update only")
+	logger.Infof("Cookie apply mode=extension_session: cookies stored for CDP fallback, extension session remains primary")
 }
 
 // applyCDPCookiesFromForm applies cookies and proxy from form values for CDP engine mode.

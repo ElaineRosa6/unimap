@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/unimap/project/internal/utils/urlguard"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -288,6 +289,10 @@ func (s *Server) handleProbeWebService(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"is_web": false})
 		return
 	}
+	if probeURLBlocked(r.Context(), parsed) {
+		writeAPIError(w, http.StatusForbidden, "blocked_url", "target url resolves to private/internal address", nil)
+		return
+	}
 
 	isWeb := probeWebService(r.Context(), req.URL)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"is_web": isWeb})
@@ -322,17 +327,35 @@ func (s *Server) handleProbeWebServiceBatch(w http.ResponseWriter, r *http.Reque
 			results[u] = false
 			continue
 		}
+		if probeURLBlocked(r.Context(), parsed) {
+			results[u] = false
+			continue
+		}
 		results[u] = probeWebService(r.Context(), u)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"results": results})
 }
 
+func probeURLBlocked(ctx context.Context, parsed *url.URL) bool {
+	if parsed == nil {
+		return true
+	}
+	if _, err := urlguard.Check(parsed.String(), urlguard.CheckOptions{}); err != nil {
+		return true
+	}
+	return isPrivateOrInternalHost(ctx, parsed.Hostname())
+}
+
 // probeWebService returns true if the URL responds to an HTTP HEAD request
-// within the timeout. Uses no-cors mode so cross-origin probes don't fail on
-// CORS — an opaque response still proves the port speaks HTTP.
+// within the timeout. The HTTP client enforces URL guard checks at dial time so
+// DNS rebinding cannot turn an initially public host into an internal target.
 func probeWebService(ctx context.Context, targetURL string) bool {
-	client := &http.Client{Timeout: 3 * time.Second}
+	parsed, err := url.Parse(targetURL)
+	if err != nil || probeURLBlocked(ctx, parsed) {
+		return false
+	}
+	client := urlguard.SafeHTTPClient(urlguard.CheckOptions{}, 3*time.Second)
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, targetURL, nil)
 	if err != nil {
 		return false
