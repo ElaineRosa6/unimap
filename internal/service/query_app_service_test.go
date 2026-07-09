@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/model"
@@ -156,5 +157,20 @@ func TestRunBrowserQueryAsync_CollectAndCaptureSkipsPreOpenForCombinedRouter(t *
 	}
 	if got := outcome.AutoCapturedPaths["fofa"]; got != "preview:/tmp/capture.png" {
 		t.Fatalf("unexpected preview path: %q", got)
+	}
+}
+
+func TestBrowserQueryWaitTimeoutForAction(t *testing.T) {
+	if got := BrowserQueryWaitTimeoutForAction("collect_and_capture"); got != BrowserCollectAndCaptureWaitTimeout {
+		t.Fatalf("collect_and_capture wait timeout = %s, want %s", got, BrowserCollectAndCaptureWaitTimeout)
+	}
+	if got := BrowserQueryWaitTimeoutForAction(" collect_and_capture "); got != BrowserCollectAndCaptureWaitTimeout {
+		t.Fatalf("trimmed collect_and_capture wait timeout = %s", got)
+	}
+	if got := BrowserQueryWaitTimeoutForAction("collect"); got != BrowserQueryWaitTimeout {
+		t.Fatalf("collect wait timeout = %s, want %s", got, BrowserQueryWaitTimeout)
+	}
+	if BrowserCollectAndCaptureWaitTimeout < 2*time.Minute {
+		t.Fatalf("collect_and_capture wait timeout should allow serial extension work, got %s", BrowserCollectAndCaptureWaitTimeout)
 	}
 }

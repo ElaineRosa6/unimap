@@ -1009,6 +1009,7 @@ function initWebSocket() {
 		wsReconnectAttempts = 0;
 		// 发送ping消息保持连接
 		startPingInterval();
+		recoverActiveQueryStatus();
 	};
 
 	wsConnection.onmessage = function(event) {
@@ -1168,6 +1169,7 @@ function handleQueryError(message) {
 	}
 
 	showResultsError(extractErrorMessage(message.error, '查询失败'));
+	currentQueryID = null;
 }
 
 // 提取错误消息文本（兼容 string 和 {code, message} 对象格式）
@@ -1277,6 +1279,38 @@ function handleQueryStart(message) {
 	}
 }
 
+function recoverActiveQueryStatus() {
+	if (!currentQueryID) {
+		return;
+	}
+	apiFetch('/api/v1/query/status?query_id=' + encodeURIComponent(currentQueryID))
+		.then(parseJsonResponse)
+		.then(function(status) {
+			if (!status || status.ID !== currentQueryID) {
+				return;
+			}
+			const progress = typeof status.Progress === 'number' ? status.Progress : 0;
+			handleProgressUpdate({ progress: progress });
+			if (status.Status === 'completed' || status.Status === 'failed') {
+				if (currentQueryTimeout) { clearTimeout(currentQueryTimeout); currentQueryTimeout = null; }
+				removeLoadingIndicator();
+				const resultsContent = document.getElementById('results-content');
+				if (resultsContent && !resultsContent.querySelector('.query-recovered-status')) {
+					const div = document.createElement('div');
+					div.className = 'query-recovered-status';
+					div.textContent = status.Status === 'completed'
+						? '查询已在连接断开期间完成，请刷新或查看历史记录获取完整结果。'
+						: '查询已在连接断开期间失败，请重新查询。';
+					resultsContent.appendChild(div);
+				}
+				currentQueryID = null;
+			}
+		})
+		.catch(function(err) {
+			console.warn('failed to recover query status:', err);
+		});
+}
+
 // 处理进度更新
 function handleProgressUpdate(message) {
 	const progress = message.progress;
@@ -1316,6 +1350,7 @@ function handleQueryComplete(message) {
 	} else {
 		showResults(results);
 	}
+	currentQueryID = null;
 }
 
 // 执行异步查询（WebSocket版本）

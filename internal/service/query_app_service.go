@@ -40,10 +40,21 @@ const (
 
 	// BrowserQueryWaitTimeout bounds how long handlers wait for optional browser collection.
 	BrowserQueryWaitTimeout = 60 * time.Second
+
+	// BrowserCollectAndCaptureWaitTimeout allows the extension bridge to process
+	// several collect+capture tasks even when the browser extension polls serially.
+	BrowserCollectAndCaptureWaitTimeout = 150 * time.Second
 )
 
 func NewQueryAppService(unified *UnifiedService, orchestrator *adapter.EngineOrchestrator) *QueryAppService {
 	return &QueryAppService{unified: unified, orchestrator: orchestrator}
+}
+
+func BrowserQueryWaitTimeoutForAction(action string) time.Duration {
+	if strings.EqualFold(strings.TrimSpace(action), "collect_and_capture") {
+		return BrowserCollectAndCaptureWaitTimeout
+	}
+	return BrowserQueryWaitTimeout
 }
 
 // ResolveEngines 解析最终要使用的引擎列表。

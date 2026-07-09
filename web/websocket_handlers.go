@@ -293,7 +293,7 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 	}()
 
 	// 等待两个查询都完成（或超时）
-	// 浏览器查询已并行化，但仍给 60 秒超时保护，避免拖慢 API 查询结果返回。
+	// 浏览器查询已并行化，但仍按 action 给超时保护，避免拖慢 API 查询结果返回。
 	var resp *service.QueryResponse
 	var queryErr error
 	var browserOutcome browserQueryOutcome
@@ -302,8 +302,9 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 	browserDone := browserQueryCh == nil
 	var browserTimer *time.Timer
 	var browserTimerCh <-chan time.Time
+	browserWaitTimeout := service.BrowserQueryWaitTimeoutForAction(browserAction)
 	if !browserDone {
-		browserTimer = time.NewTimer(service.BrowserQueryWaitTimeout)
+		browserTimer = time.NewTimer(browserWaitTimeout)
 		defer browserTimer.Stop()
 		browserTimerCh = browserTimer.C
 	}
@@ -319,7 +320,7 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 		case <-browserTimerCh:
 			// 浏览器查询超时，放弃等待，用已有结果返回
 			browserDone = true
-			logger.Warnf("browser query timed out after %s for WS query %s, returning API results only", service.BrowserQueryWaitTimeout, queryID)
+			logger.Warnf("browser query timed out after %s for WS query %s, returning API results only", browserWaitTimeout, queryID)
 		}
 	}
 	if queryErr == nil && apiCtx.Err() != nil {

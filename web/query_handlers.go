@@ -211,12 +211,13 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.queryApp.ExecuteQuery(r.Context(), query, engines, pageSize)
 	var browserOutcome browserQueryOutcome
 	if browserQueryCh != nil {
-		// 浏览器查询已并行化，但仍可能耗时较长；给 60 秒超时保护，
-		// 超时则用已有结果返回，避免浏览器采集拖慢 API 查询响应。
+		// 浏览器查询已并行化，但仍可能耗时较长；按 action 给超时保护，
+		// 超时则用已有结果返回，避免浏览器采集无限拖慢 API 查询响应。
+		waitTimeout := service.BrowserQueryWaitTimeoutForAction(browserAction)
 		select {
 		case browserOutcome = <-browserQueryCh:
-		case <-time.After(service.BrowserQueryWaitTimeout):
-			logger.Warnf("browser query timed out after %s for query %q, returning API results only", service.BrowserQueryWaitTimeout, query)
+		case <-time.After(waitTimeout):
+			logger.Warnf("browser query timed out after %s for query %q, returning API results only", waitTimeout, query)
 		}
 	}
 	if err != nil {
