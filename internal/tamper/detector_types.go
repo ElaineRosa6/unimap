@@ -479,6 +479,9 @@ func (s *HashStorage) SaveCheckRecord(url string, record *CheckRecord) error {
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to save check record: %w", err)
 	}
+	if err := s.indexCheckRecord(record); err != nil {
+		logger.Warnf("Failed to index check record %s: %v", record.ID, err)
+	}
 
 	logger.Infof("Saved check record for %s to %s", url, filePath)
 	return nil
@@ -534,6 +537,14 @@ func (s *HashStorage) LoadCheckRecords(url string, limit int) ([]*CheckRecord, e
 
 // ListAllCheckRecords lists all check records grouped by URL.
 func (s *HashStorage) ListAllCheckRecords() (map[string][]*CheckRecord, error) {
+	markerPath := filepath.Join(s.baseDir, ".check_records_indexed")
+	if _, err := os.Stat(markerPath); err == nil {
+		indexed, indexErr := s.listIndexedCheckRecords()
+		if indexErr != nil {
+			return nil, fmt.Errorf("read check record index: %w", indexErr)
+		}
+		return indexed, nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -586,7 +597,17 @@ func (s *HashStorage) ListAllCheckRecords() (map[string][]*CheckRecord, error) {
 		}
 	}
 
-	return result, nil
+	for _, records := range result {
+		for _, record := range records {
+			if err := s.indexCheckRecord(record); err != nil {
+				return nil, fmt.Errorf("index legacy check record: %w", err)
+			}
+		}
+	}
+	if err := os.WriteFile(markerPath, []byte("indexed\n"), 0o600); err != nil {
+		return nil, fmt.Errorf("write check record index marker: %w", err)
+	}
+	return s.listIndexedCheckRecords()
 }
 
 // CheckStats is the typed report returned by GetCheckStats.
