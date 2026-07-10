@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/backup"
 	"github.com/unimap/project/internal/distributed"
 	"github.com/unimap/project/internal/exporter"
 	"github.com/unimap/project/internal/logger"
@@ -451,6 +452,26 @@ func (r *DistributedSubmitRunner) Execute(ctx context.Context, payload *model.Ta
 
 // distributedIDCounter is a monotonic counter for unique distributed task IDs.
 var distributedIDCounter atomic.Int64
+
+// BackupRunner executes scheduled archives of selected application data.
+type BackupRunner struct{}
+
+func NewBackupRunner() *BackupRunner   { return &BackupRunner{} }
+func (r *BackupRunner) Type() TaskType { return TaskBackup }
+func (r *BackupRunner) Execute(_ context.Context, payload *model.TaskPayload) (string, error) {
+	sources := extractStrings(payload, "sources", []string{})
+	if len(sources) == 0 {
+		return "", fmt.Errorf("missing 'sources' in payload")
+	}
+	result, err := backup.Backup(backup.BackupConfig{
+		Sources: sources, OutputDir: extractString(payload, "output_dir", ""),
+		Prefix: extractString(payload, "prefix", "unimap"), MaxBackups: extractInt(payload, "max_backups", 7),
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("备份完成：%s（%d 字节）", result.Path, result.Size), nil
+}
 
 // generateDistributedTaskID creates a unique ID for distributed task envelopes.
 func generateDistributedTaskID() string {

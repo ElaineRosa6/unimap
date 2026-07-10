@@ -452,6 +452,7 @@ func initHistoryDatabase(srv *Server, cfg *config.Config) {
 	}
 	srv.historyDB = db
 	srv.historyRepo = historydb.NewRepository(db.DB())
+	srv.queryApp.SetHistoryRepository(srv.historyRepo)
 }
 
 // initScreenshotBatchDB initializes the screenshot batch job metadata database.
@@ -546,6 +547,7 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 	sched.RegisterHandler(scheduler.NewAlertSummaryRunner(alertManager))
 	sched.RegisterHandler(scheduler.NewBaselineRefreshRunner(srv.tamperApp))
 	sched.RegisterHandler(scheduler.NewURLImportRunner(utils.AppDataDir("imports")))
+	sched.RegisterHandler(scheduler.NewBackupRunner())
 
 	// 低优先级 Runner (ST-17 ~ ST-20)
 	sched.RegisterHandler(scheduler.NewPluginHealthRunner(unifiedSvc))
