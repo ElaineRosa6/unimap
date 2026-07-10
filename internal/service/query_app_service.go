@@ -12,6 +12,7 @@ import (
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/core/unimap"
+	"github.com/unimap/project/internal/history"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/screenshot"
 )
@@ -32,6 +33,7 @@ type BrowserQueryOutcome struct {
 type QueryAppService struct {
 	unified      *UnifiedService
 	orchestrator *adapter.EngineOrchestrator
+	historyRepo  *history.Repository
 }
 
 const (
@@ -48,6 +50,12 @@ const (
 
 func NewQueryAppService(unified *UnifiedService, orchestrator *adapter.EngineOrchestrator) *QueryAppService {
 	return &QueryAppService{unified: unified, orchestrator: orchestrator}
+}
+
+// SetHistoryRepository enables server-side persistence for every completed query.
+// It is optional so CLI-only and tests can use the service without a database.
+func (s *QueryAppService) SetHistoryRepository(repo *history.Repository) {
+	s.historyRepo = repo
 }
 
 func BrowserQueryWaitTimeoutForAction(action string) time.Duration {
@@ -88,12 +96,72 @@ func (s *QueryAppService) ExecuteQuery(ctx context.Context, query string, engine
 		ctx, cancel = context.WithTimeout(ctx, QueryExecutionTimeout)
 		defer cancel()
 	}
-	return s.unified.Query(ctx, QueryRequest{
+	startedAt := time.Now()
+	resp, err := s.unified.Query(ctx, QueryRequest{
 		Query:       query,
 		Engines:     engines,
 		PageSize:    pageSize,
 		ProcessData: true,
 	})
+	s.persistQueryHistory(query, engines, pageSize, resp, err, time.Since(startedAt))
+	return resp, err
+}
+
+func (s *QueryAppService) persistQueryHistory(query string, engines []string, pageSize int, resp *QueryResponse, queryErr error, duration time.Duration) {
+	if s.historyRepo == nil {
+		return
+	}
+	input, err := json.Marshal(map[string]interface{}{"query": query, "engines": engines, "page_size": pageSize})
+	if err != nil {
+		logger.Warnf("marshal query history input: %v", err)
+		return
+	}
+	status := "success"
+	total := 0
+	summary := map[string]interface{}{}
+	if resp != nil {
+		total = resp.TotalCount
+		summary["engine_stats"] = resp.EngineStats
+		summary["errors"] = resp.Errors
+	}
+	if queryErr != nil {
+		status = "error"
+		summary["error"] = queryErr.Error()
+	} else if resp != nil && len(resp.Errors) > 0 {
+		status = "partial"
+	}
+	summaryJSON, err := json.Marshal(summary)
+	if err != nil {
+		logger.Warnf("marshal query history summary: %v", err)
+		return
+	}
+	historyID, err := s.historyRepo.CreateHistory(&history.OperationHistory{
+		OperationType: history.OpTypeQuery,
+		Input:         string(input),
+		Status:        status,
+		TotalCount:    total,
+		Summary:       string(summaryJSON),
+		DurationMS:    duration.Milliseconds(),
+	})
+	if err != nil {
+		logger.Warnf("persist query history: %v", err)
+		return
+	}
+	if resp == nil || len(resp.Assets) == 0 {
+		return
+	}
+	results := make([]history.OperationResult, 0, len(resp.Assets))
+	for _, asset := range resp.Assets {
+		data, marshalErr := json.Marshal(asset)
+		if marshalErr != nil {
+			logger.Warnf("marshal query history result: %v", marshalErr)
+			continue
+		}
+		results = append(results, history.OperationResult{Data: string(data)})
+	}
+	if err := s.historyRepo.CreateResults(historyID, results); err != nil {
+		logger.Warnf("persist query history results: %v", err)
+	}
 }
 
 func (s *QueryAppService) translateBrowserQuery(query, engine string) (string, error) {
