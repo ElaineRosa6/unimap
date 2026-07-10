@@ -1,7 +1,10 @@
 package alerting
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -11,13 +14,50 @@ import (
 
 // Manager 告警管理器
 type Manager struct {
-	channels     []AlertChannel
-	config       AlertConfig
-	alertRecords map[string]*AlertRecord
-	mutex        sync.RWMutex
-	wg           sync.WaitGroup
-	stopCh       chan struct{}
-	closeOnce    sync.Once
+	channels        []AlertChannel
+	config          AlertConfig
+	alertRecords    map[string]*AlertRecord
+	mutex           sync.RWMutex
+	wg              sync.WaitGroup
+	stopCh          chan struct{}
+	closeOnce       sync.Once
+	persistencePath string
+}
+
+// SetPersistencePath restores and durably stores alert records when configured.
+func (m *Manager) SetPersistencePath(path string) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	m.persistencePath = path
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read alert records: %w", err)
+	}
+	return json.Unmarshal(data, &m.alertRecords)
+}
+
+func (m *Manager) persistLocked() {
+	if m.persistencePath == "" {
+		return
+	}
+	data, err := json.Marshal(m.alertRecords)
+	if err != nil {
+		logger.Warnf("marshal alert records: %v", err)
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(m.persistencePath), 0o755); err != nil {
+		logger.Warnf("create alert record dir: %v", err)
+		return
+	}
+	if err := os.WriteFile(m.persistencePath, data, 0o600); err != nil {
+		logger.Warnf("persist alert records: %v", err)
+	}
 }
 
 // NewManager 创建告警管理器
@@ -115,6 +155,7 @@ func (m *Manager) SendAlert(level AlertLevel, alertType AlertType, title, messag
 		}
 	}
 	m.alertRecords[alert.ID] = record
+	m.persistLocked()
 	// Copy channels under write lock to avoid race between Unlock/RLock gap
 	channels := make([]AlertChannel, len(m.channels))
 	copy(channels, m.channels)
@@ -309,6 +350,7 @@ func (m *Manager) AcknowledgeAlert(alertID, userID, userName, comment string) er
 		Comment:   comment,
 	}
 	record.LastModified = time.Now()
+	m.persistLocked()
 
 	return nil
 }
@@ -396,4 +438,5 @@ func (m *Manager) CleanupOldRecords(maxAge time.Duration) {
 			delete(m.alertRecords, id)
 		}
 	}
+	m.persistLocked()
 }

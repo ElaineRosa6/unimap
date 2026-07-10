@@ -390,6 +390,9 @@ func initDistributedNodes(cfg *config.Config) (*distributed.Registry, *distribut
 // initAlertManager creates the alert manager and registers configured channels.
 func initAlertManager(cfg *config.Config) *alerting.Manager {
 	mgr := alerting.NewManager()
+	if err := mgr.SetPersistencePath(filepath.Join(utils.AppDataDir(), "alerts.json")); err != nil {
+		logger.Warnf("alert persistence unavailable: %v", err)
+	}
 
 	logChannel := alerting.NewLogChannel(true)
 	mgr.RegisterChannel(logChannel)
@@ -519,7 +522,11 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 	// 高优先级 Runner (ST-01 ~ ST-08)
 	sched.RegisterHandler(scheduler.NewQueryRunner(srv.queryApp))
 	sched.RegisterHandler(scheduler.NewSearchScreenshotRunner(screenshotApp, screenshotMgr))
-	sched.RegisterHandler(scheduler.NewBatchScreenshotRunner(screenshotApp, screenshotMgr))
+	var batchRepo *batchdb.Repository
+	if srv.batchDB != nil {
+		batchRepo = batchdb.NewRepository(srv.batchDB.DB())
+	}
+	sched.RegisterHandler(scheduler.NewBatchScreenshotRunner(screenshotApp, screenshotMgr, batchRepo))
 
 	// TamperCheckRunner: inject a browser allocator from the screenshot manager
 	// so scheduled tamper patrols can render JS-heavy/SPA pages. Without an
@@ -533,14 +540,14 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 		}
 	}
 	sched.RegisterHandler(scheduler.NewTamperCheckRunner(srv.tamperApp, tamperAllocFactory))
-	sched.RegisterHandler(scheduler.NewURLReachabilityRunner(srv.monitorApp))
+	sched.RegisterHandler(scheduler.NewURLReachabilityRunner(srv.monitorApp, alertManager))
 	sched.RegisterHandler(scheduler.NewCookieVerifyRunner(screenshotApp, screenshotMgr))
 	sched.RegisterHandler(scheduler.NewLoginStatusCheckRunner(screenshotMgr))
 	sched.RegisterHandler(scheduler.NewDistributedSubmitRunner(nodeTaskQueue))
 
 	// 中优先级 Runner (ST-09 ~ ST-16)
 	sched.RegisterHandler(scheduler.NewExportRunner(srv.queryApp, orchestrator, utils.AppDataDir("exports")))
-	sched.RegisterHandler(scheduler.NewPortScanRunner(srv.monitorApp))
+	sched.RegisterHandler(scheduler.NewPortScanRunner(srv.monitorApp, alertManager))
 	sched.RegisterHandler(scheduler.NewScreenshotCleanupRunner(screenshotApp, 30))
 	sched.RegisterHandler(scheduler.NewTamperCleanupRunner(srv.tamperApp, 90))
 	sched.RegisterHandler(scheduler.NewQuotaMonitorRunner(orchestrator, 10))

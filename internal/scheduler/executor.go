@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/alerting"
 	"github.com/unimap/project/internal/backup"
 	"github.com/unimap/project/internal/distributed"
 	"github.com/unimap/project/internal/exporter"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
 )
 
@@ -122,11 +124,16 @@ func (r *SearchScreenshotRunner) Execute(ctx context.Context, payload *model.Tas
 type BatchScreenshotRunner struct {
 	screenshotSvc *service.ScreenshotAppService
 	mgr           *screenshot.Manager
+	repo          *batchdb.Repository
 }
 
 // NewBatchScreenshotRunner creates a BatchScreenshotRunner.
-func NewBatchScreenshotRunner(svc *service.ScreenshotAppService, mgr *screenshot.Manager) *BatchScreenshotRunner {
-	return &BatchScreenshotRunner{screenshotSvc: svc, mgr: mgr}
+func NewBatchScreenshotRunner(svc *service.ScreenshotAppService, mgr *screenshot.Manager, repos ...*batchdb.Repository) *BatchScreenshotRunner {
+	r := &BatchScreenshotRunner{screenshotSvc: svc, mgr: mgr}
+	if len(repos) > 0 {
+		r.repo = repos[0]
+	}
+	return r
 }
 
 func (r *BatchScreenshotRunner) Type() TaskType { return TaskBatchScreenshot }
@@ -142,6 +149,9 @@ func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload *model.Task
 	}
 
 	batchID := extractString(payload, "batch_id", "")
+	if batchID == "" {
+		batchID = fmt.Sprintf("scheduled_%d", time.Now().UnixNano())
+	}
 	concurrency := extractInt(payload, "concurrency", 5)
 
 	req := service.BatchURLsRequest{
@@ -150,9 +160,21 @@ func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload *model.Task
 		Concurrency: concurrency,
 	}
 
+	startedAt := time.Now()
+	if r.repo != nil {
+		_ = r.repo.SaveJob(&batchdb.BatchJobRecord{ID: batchID, Status: "running", Total: len(urls), StartedAt: startedAt})
+	}
 	resp, err := r.screenshotSvc.CaptureBatchURLs(ctx, r.mgr, req)
 	if err != nil {
+		if r.repo != nil {
+			endedAt := time.Now()
+			_ = r.repo.SaveJob(&batchdb.BatchJobRecord{ID: batchID, Status: "failed", Total: len(urls), Error: err.Error(), StartedAt: startedAt, EndedAt: &endedAt})
+		}
 		return "", fmt.Errorf("batch screenshot failed: %w", err)
+	}
+	if r.repo != nil {
+		endedAt := time.Now()
+		_ = r.repo.SaveJob(&batchdb.BatchJobRecord{ID: batchID, Status: "completed", Total: resp.Total, Completed: len(resp.Results), Success: resp.Success, Failed: resp.Total - resp.Success, Results: resp.Results, StartedAt: startedAt, EndedAt: &endedAt})
 	}
 
 	var b strings.Builder
@@ -239,11 +261,16 @@ func (r *TamperCheckRunner) Execute(ctx context.Context, payload *model.TaskPayl
 // URLReachabilityRunner executes scheduled URL reachability checks.
 type URLReachabilityRunner struct {
 	monitorSvc *service.MonitorAppService
+	alerts     *alerting.Manager
 }
 
 // NewURLReachabilityRunner creates a URLReachabilityRunner.
-func NewURLReachabilityRunner(svc *service.MonitorAppService) *URLReachabilityRunner {
-	return &URLReachabilityRunner{monitorSvc: svc}
+func NewURLReachabilityRunner(svc *service.MonitorAppService, alerts ...*alerting.Manager) *URLReachabilityRunner {
+	r := &URLReachabilityRunner{monitorSvc: svc}
+	if len(alerts) > 0 {
+		r.alerts = alerts[0]
+	}
+	return r
 }
 
 func (r *URLReachabilityRunner) Type() TaskType { return TaskURLReachability }
@@ -263,6 +290,13 @@ func (r *URLReachabilityRunner) Execute(ctx context.Context, payload *model.Task
 	resp, err := r.monitorSvc.CheckURLReachability(ctx, urls, concurrency)
 	if err != nil {
 		return "", fmt.Errorf("reachability check failed: %w", err)
+	}
+	if r.alerts != nil {
+		for _, item := range resp.Results {
+			if !item.Reachable {
+				r.alerts.SendWarning(alerting.AlertTypeReachability, "URL 不可达", item.Reason, item, "scheduler", item.Input)
+			}
+		}
 	}
 
 	var b strings.Builder
@@ -561,11 +595,16 @@ func (r *ExportRunner) Execute(ctx context.Context, payload *model.TaskPayload) 
 // PortScanRunner executes scheduled port scans.
 type PortScanRunner struct {
 	monitorSvc *service.MonitorAppService
+	alerts     *alerting.Manager
 }
 
 // NewPortScanRunner creates a PortScanRunner.
-func NewPortScanRunner(svc *service.MonitorAppService) *PortScanRunner {
-	return &PortScanRunner{monitorSvc: svc}
+func NewPortScanRunner(svc *service.MonitorAppService, alerts ...*alerting.Manager) *PortScanRunner {
+	r := &PortScanRunner{monitorSvc: svc}
+	if len(alerts) > 0 {
+		r.alerts = alerts[0]
+	}
+	return r
 }
 
 func (r *PortScanRunner) Type() TaskType { return TaskPortScan }
@@ -596,6 +635,13 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 	resp, err := r.monitorSvc.ScanURLPorts(ctx, urls, portNums, concurrency)
 	if err != nil {
 		return "", fmt.Errorf("port scan failed: %w", err)
+	}
+	if r.alerts != nil {
+		for _, item := range resp.Results {
+			if item.Status == "resolve_failed" || item.Status == "scan_failed" {
+				r.alerts.SendWarning(alerting.AlertTypeReachability, "端口巡检失败", item.Reason, item, "scheduler", item.Input)
+			}
+		}
 	}
 
 	var b strings.Builder
