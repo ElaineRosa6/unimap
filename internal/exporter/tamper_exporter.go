@@ -3,6 +3,7 @@ package exporter
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -19,6 +20,22 @@ type TamperExportResult struct {
 	Tampered     string `json:"tampered"`
 	BaselineTime string `json:"baseline_time"`
 	CheckTime    string `json:"check_time"`
+}
+
+// TamperHistoryExportResult is the truthful, archived-record export shape.
+type TamperHistoryExportResult struct {
+	ID               string   `json:"id"`
+	URL              string   `json:"url"`
+	Status           string   `json:"status"`
+	DetectionMode    string   `json:"detection_mode,omitempty"`
+	Tampered         bool     `json:"tampered"`
+	TamperedSegments []string `json:"tampered_segments,omitempty"`
+	ChangesCount     int      `json:"changes_count"`
+	CheckTime        string   `json:"check_time"`
+}
+
+func ExportTamperHistoryJSON(w io.Writer, records []TamperHistoryExportResult) error {
+	return json.NewEncoder(w).Encode(records)
 }
 
 // TamperExporter 篡改检测导出器接口
