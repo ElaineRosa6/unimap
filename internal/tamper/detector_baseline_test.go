@@ -88,6 +88,27 @@ func TestHashStorage_SaveAndLoadBaseline(t *testing.T) {
 	})
 }
 
+func TestHashStorage_DeleteCheckRecordsRemovesIndex(t *testing.T) {
+	storage := NewHashStorage(t.TempDir())
+	url := "https://example.test"
+	if err := storage.SaveCheckRecord(url, &CheckRecord{URL: url, CheckType: "normal"}); err != nil {
+		t.Fatalf("save check record: %v", err)
+	}
+	if _, err := storage.ListAllCheckRecords(); err != nil {
+		t.Fatalf("list check records: %v", err)
+	}
+	if err := storage.DeleteCheckRecords(url); err != nil {
+		t.Fatalf("delete check records: %v", err)
+	}
+	records, err := storage.ListAllCheckRecords()
+	if err != nil {
+		t.Fatalf("list after delete: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("expected deleted URL absent from index, got %#v", records)
+	}
+}
+
 func TestHashStorage_SaveAndLoadCheckRecords(t *testing.T) {
 	dir := t.TempDir()
 	storage := NewHashStorage(dir)

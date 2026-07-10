@@ -1755,9 +1755,6 @@ function showResults(data) {
 			browserQuery: browserQuery
 		};
 		
-		// 保存到服务端历史
-		try { saveQueryToServerHistory(data.query || '', data.engines || [], data); } catch(e) { console.error('saveQueryToServerHistory:', e); }
-
 		// 用 try/finally 保证：即使某个 init 抛异常，结果行也一定渲染，
 		// 错误折叠展开也一定绑定。否则任一 init 异常会中断后续所有绑定，
 		// 导致表格行/错误展开都不工作。
@@ -2067,43 +2064,6 @@ function getQueryHistory() {
 // 清空查询历史
 function clearQueryHistory() {
 	localStorage.removeItem('queryHistory');
-}
-
-// 保存查询到服务端历史
-function saveQueryToServerHistory(query, engines, data) {
-	if (!query || !query.trim()) return;
-	
-	const input = { query: query, engines: engines };
-	const summary = data.engineStats || data.EngineStats || {};
-	const assets = (data.assets || data.Assets || []);
-	const results = assets.slice(0, 1000).map(a => ({
-		ip: a.ip || a.IP || '',
-		port: a.port || a.Port || 0,
-		protocol: a.protocol || a.Protocol || '',
-		host: a.host || a.Host || '',
-		url: a.url || a.URL || '',
-		title: a.title || a.Title || '',
-		server: a.server || a.Server || '',
-		status_code: a.status_code || a.StatusCode || 0,
-		country_code: a.country_code || a.CountryCode || '',
-		source: a.source || a.Source || ''
-	}));
-	
-	const errors = data.errors || data.Errors || [];
-	const status = errors.length > 0 ? 'partial' : 'success';
-	
-	apiFetch('/api/v1/history/save', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			operation_type: 'query',
-			input: input,
-			status: status,
-			total_count: data.totalCount || data.TotalCount || 0,
-			summary: summary,
-			results: results
-		})
-	}).catch(err => console.error('Failed to save query history:', err));
 }
 
 // 保存查询

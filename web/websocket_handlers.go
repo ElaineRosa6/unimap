@@ -286,9 +286,7 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 	}
 	apiCh := make(chan apiResult, 1)
 	go func() {
-		resp, err := s.service.Query(apiCtx, service.QueryRequest{
-			Query: query, Engines: apiEngines, PageSize: pageSize, ProcessData: true,
-		})
+		resp, err := s.queryApp.ExecuteQuery(apiCtx, query, apiEngines, pageSize)
 		apiCh <- apiResult{resp, err}
 	}()
 

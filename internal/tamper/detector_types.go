@@ -658,7 +658,13 @@ func (s *HashStorage) DeleteCheckRecords(url string) error {
 	defer s.mu.Unlock()
 
 	recordsDir := filepath.Join(s.baseDir, "records", sanitizeFilenameForStorage(url))
-	return os.RemoveAll(recordsDir)
+	if err := os.RemoveAll(recordsDir); err != nil {
+		return err
+	}
+	if err := s.deleteIndexedCheckRecords(url); err != nil {
+		return fmt.Errorf("delete indexed check records: %w", err)
+	}
+	return nil
 }
 
 // NewDetector creates a new Detector with the given configuration.

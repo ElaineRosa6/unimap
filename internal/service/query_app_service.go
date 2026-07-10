@@ -135,32 +135,31 @@ func (s *QueryAppService) persistQueryHistory(query string, engines []string, pa
 		logger.Warnf("marshal query history summary: %v", err)
 		return
 	}
-	historyID, err := s.historyRepo.CreateHistory(&history.OperationHistory{
+	historyRecord := &history.OperationHistory{
 		OperationType: history.OpTypeQuery,
 		Input:         string(input),
 		Status:        status,
 		TotalCount:    total,
 		Summary:       string(summaryJSON),
 		DurationMS:    duration.Milliseconds(),
-	})
-	if err != nil {
-		logger.Warnf("persist query history: %v", err)
-		return
 	}
-	if resp == nil || len(resp.Assets) == 0 {
-		return
+	resultCapacity := 0
+	if resp != nil {
+		resultCapacity = len(resp.Assets)
 	}
-	results := make([]history.OperationResult, 0, len(resp.Assets))
-	for _, asset := range resp.Assets {
-		data, marshalErr := json.Marshal(asset)
-		if marshalErr != nil {
-			logger.Warnf("marshal query history result: %v", marshalErr)
-			continue
+	results := make([]history.OperationResult, 0, resultCapacity)
+	if resp != nil {
+		for _, asset := range resp.Assets {
+			data, marshalErr := json.Marshal(asset)
+			if marshalErr != nil {
+				logger.Warnf("marshal query history result: %v", marshalErr)
+				continue
+			}
+			results = append(results, history.OperationResult{Data: string(data)})
 		}
-		results = append(results, history.OperationResult{Data: string(data)})
 	}
-	if err := s.historyRepo.CreateResults(historyID, results); err != nil {
-		logger.Warnf("persist query history results: %v", err)
+	if _, err := s.historyRepo.CreateHistoryWithResults(historyRecord, results); err != nil {
+		logger.Warnf("persist query history: %v", err)
 	}
 }
 

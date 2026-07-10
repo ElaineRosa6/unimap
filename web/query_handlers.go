@@ -312,7 +312,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		ProcessData: true,
 	}
 
-	resp, err := s.service.Query(r.Context(), req)
+	resp, err := s.queryApp.ExecuteQuery(r.Context(), req.Query, req.Engines, req.PageSize)
 	if err != nil {
 		if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "error.html", map[string]interface{}{
 			"error":   fmt.Sprintf("Query failed: %v", err),
