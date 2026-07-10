@@ -171,6 +171,7 @@ func (r *Router) registerTamperRoutes() {
 	r.addAPIRoute("tamper-baseline-list", "GET", "/api/tamper/baseline/list", s.handleTamperBaselineList, true)
 	r.addAPIRoute("tamper-baseline-delete", "DELETE", "/api/tamper/baseline/delete", s.handleTamperBaselineDelete, true)
 	r.addAPIRoute("tamper-history", "GET", "/api/tamper/history", s.handleTamperHistory, true)
+	r.addAPIRoute("tamper-history-export", "GET", "/api/tamper/history/export", s.handleTamperHistoryExport, true)
 	r.addAPIRoute("tamper-history-delete", "DELETE", "/api/tamper/history/delete", s.handleTamperHistoryDelete, true)
 }
 

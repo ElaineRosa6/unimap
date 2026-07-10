@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/unimap/project/internal/exporter"
 	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/tamper"
 	"github.com/unimap/project/internal/utils"
@@ -42,6 +43,25 @@ func (s *Server) newTamperDetector(ctx context.Context, mode string) (*tamper.De
 	detector.SetAllocator(ctx, allocCtx, allocCancel)
 	cleanup = allocCancel
 	return detector, cleanup, nil
+}
+
+func (s *Server) handleTamperHistoryExport(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	filter := service.HistoryFilter{URLFilter: strings.TrimSpace(r.URL.Query().Get("url")), Limit: 10000}
+	result, err := s.tamperApp.QueryHistory(filter)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "export_history_failed", "export history failed", nil)
+		return
+	}
+	items := make([]exporter.TamperHistoryExportResult, 0, len(result.Records))
+	for _, record := range result.Records {
+		items = append(items, exporter.TamperHistoryExportResult{ID: record.ID, URL: record.URL, Status: record.Status, DetectionMode: record.DetectionMode, Tampered: record.Tampered, TamperedSegments: record.TamperedSegments, ChangesCount: record.ChangesCount, CheckTime: time.Unix(record.Timestamp, 0).Format(time.RFC3339)})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=tamper-history.json")
+	_ = exporter.ExportTamperHistoryJSON(w, items)
 }
 
 func (s *Server) tamperAllocatorFactory(proxy string) service.TamperAllocatorFactory {
