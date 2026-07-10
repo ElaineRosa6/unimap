@@ -68,3 +68,13 @@ func (s *HashStorage) listIndexedCheckRecords() (map[string][]*CheckRecord, erro
 	}
 	return result, nil
 }
+
+func (s *HashStorage) deleteIndexedCheckRecords(url string) error {
+	db, err := s.historyIndex()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	_, err = db.Exec(`DELETE FROM check_records WHERE url = ?`, url)
+	return err
+}

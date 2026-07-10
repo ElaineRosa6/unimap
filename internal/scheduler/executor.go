@@ -162,19 +162,25 @@ func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload *model.Task
 
 	startedAt := time.Now()
 	if r.repo != nil {
-		_ = r.repo.SaveJob(&batchdb.BatchJobRecord{ID: batchID, Status: "running", Total: len(urls), StartedAt: startedAt})
+		if err := r.repo.SaveJob(&batchdb.BatchJobRecord{ID: batchID, Status: "running", Total: len(urls), StartedAt: startedAt}); err != nil {
+			return "", fmt.Errorf("persist batch screenshot start: %w", err)
+		}
 	}
 	resp, err := r.screenshotSvc.CaptureBatchURLs(ctx, r.mgr, req)
 	if err != nil {
 		if r.repo != nil {
 			endedAt := time.Now()
-			_ = r.repo.SaveJob(&batchdb.BatchJobRecord{ID: batchID, Status: "failed", Total: len(urls), Error: err.Error(), StartedAt: startedAt, EndedAt: &endedAt})
+			if saveErr := r.repo.SaveJob(&batchdb.BatchJobRecord{ID: batchID, Status: "failed", Total: len(urls), Error: err.Error(), StartedAt: startedAt, EndedAt: &endedAt}); saveErr != nil {
+				return "", fmt.Errorf("batch screenshot failed: %v; persist failure: %w", err, saveErr)
+			}
 		}
 		return "", fmt.Errorf("batch screenshot failed: %w", err)
 	}
 	if r.repo != nil {
 		endedAt := time.Now()
-		_ = r.repo.SaveJob(&batchdb.BatchJobRecord{ID: batchID, Status: "completed", Total: resp.Total, Completed: len(resp.Results), Success: resp.Success, Failed: resp.Total - resp.Success, Results: resp.Results, StartedAt: startedAt, EndedAt: &endedAt})
+		if err := r.repo.SaveJob(&batchdb.BatchJobRecord{ID: batchID, Status: "completed", Total: resp.Total, Completed: len(resp.Results), Success: resp.Success, Failed: resp.Failed, Results: resp.Results, StartedAt: startedAt, EndedAt: &endedAt}); err != nil {
+			return "", fmt.Errorf("persist completed batch screenshot: %w", err)
+		}
 	}
 
 	var b strings.Builder

@@ -55,8 +55,13 @@ func (m *Manager) persistLocked() {
 		logger.Warnf("create alert record dir: %v", err)
 		return
 	}
-	if err := os.WriteFile(m.persistencePath, data, 0o600); err != nil {
+	tmpPath := m.persistencePath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		logger.Warnf("persist alert records: %v", err)
+		return
+	}
+	if err := os.Rename(tmpPath, m.persistencePath); err != nil {
+		logger.Warnf("replace persisted alert records: %v", err)
 	}
 }
 
@@ -304,8 +309,6 @@ func (m *Manager) isSilenced(alertType AlertType, source, url string) bool {
 			}
 		}
 	}
-	m.persistLocked()
-
 	return false
 }
 
@@ -370,6 +373,7 @@ func (m *Manager) SilenceAlert(alertID string, duration time.Duration) error {
 	record.Status = AlertStatusSilenced
 	record.SilenceUntil = &silenceUntil
 	record.LastModified = time.Now()
+	m.persistLocked()
 
 	return nil
 }
@@ -388,6 +392,7 @@ func (m *Manager) SilenceAlertsByType(alertType AlertType, duration time.Duratio
 			record.LastModified = time.Now()
 		}
 	}
+	m.persistLocked()
 }
 
 // ResolveAlert 解决告警

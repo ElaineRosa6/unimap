@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -49,7 +50,13 @@ func (s *Server) handleTamperHistoryExport(w http.ResponseWriter, r *http.Reques
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	filter := service.HistoryFilter{URLFilter: strings.TrimSpace(r.URL.Query().Get("url")), Limit: 10000}
+	limit := 10000
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 && value < limit {
+			limit = value
+		}
+	}
+	filter := service.HistoryFilter{URLFilter: strings.TrimSpace(r.URL.Query().Get("url")), TypeFilter: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type"))), ModeFilter: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode"))), QueryFilter: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))), Limit: limit}
 	result, err := s.tamperApp.QueryHistory(filter)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "export_history_failed", "export history failed", nil)
@@ -59,9 +66,14 @@ func (s *Server) handleTamperHistoryExport(w http.ResponseWriter, r *http.Reques
 	for _, record := range result.Records {
 		items = append(items, exporter.TamperHistoryExportResult{ID: record.ID, URL: record.URL, Status: record.Status, DetectionMode: record.DetectionMode, Tampered: record.Tampered, TamperedSegments: record.TamperedSegments, ChangesCount: record.ChangesCount, CheckTime: time.Unix(record.Timestamp, 0).Format(time.RFC3339)})
 	}
+	var body bytes.Buffer
+	if err := exporter.ExportTamperHistoryJSON(&body, items); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "export_history_failed", "export history failed", nil)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=tamper-history.json")
-	_ = exporter.ExportTamperHistoryJSON(w, items)
+	_, _ = w.Write(body.Bytes())
 }
 
 func (s *Server) tamperAllocatorFactory(proxy string) service.TamperAllocatorFactory {

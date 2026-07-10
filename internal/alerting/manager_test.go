@@ -39,6 +39,26 @@ func TestManager_PersistsAndRestoresAlertRecords(t *testing.T) {
 	}
 }
 
+func TestManager_PersistsSilencedAlert(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "alerts.json")
+	m := NewManager()
+	if err := m.SetPersistencePath(path); err != nil {
+		t.Fatal(err)
+	}
+	m.SendAlert(AlertLevelWarning, AlertTypeSystem, "title", "message", nil, "test", "")
+	records := m.GetAlertRecords()
+	if err := m.SilenceAlert(records[0].Alert.ID, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	restored := NewManager()
+	if err := restored.SetPersistencePath(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := restored.GetAlertRecords()[0].Status; got != AlertStatusSilenced {
+		t.Fatalf("expected silenced status, got %s", got)
+	}
+}
+
 func TestManager_RegisterChannel(t *testing.T) {
 	m := NewManager()
 	ch := NewLogChannel(true)

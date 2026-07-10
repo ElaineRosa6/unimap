@@ -82,6 +82,28 @@ func TestHandleTamperHistoryDelete(t *testing.T) {
 	}
 }
 
+func TestHandleTamperHistoryExport(t *testing.T) {
+	dir := t.TempDir()
+	url := "https://export.example.test"
+	storage := tamper.NewHashStorage(dir)
+	if err := storage.SaveCheckRecord(url, &tamper.CheckRecord{URL: url, CheckType: "normal", Timestamp: time.Now().Unix()}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{tamperApp: service.NewTamperAppService(dir, nil)}
+	req := httptest.NewRequest(http.MethodGet, "/api/tamper/history/export?url=https://export.example.test", nil)
+	w := httptest.NewRecorder()
+	s.handleTamperHistoryExport(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if got := w.Header().Get("Content-Disposition"); !strings.Contains(got, "tamper-history.json") {
+		t.Fatalf("unexpected content disposition %q", got)
+	}
+	if !strings.Contains(w.Body.String(), url) {
+		t.Fatalf("export missing URL: %s", w.Body.String())
+	}
+}
+
 func TestHandleTamperBaselineDeleteMethodContract(t *testing.T) {
 	s := &Server{tamperApp: service.NewTamperAppService("./hash_store", nil)}
 

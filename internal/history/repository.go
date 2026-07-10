@@ -53,6 +53,39 @@ func (r *Repository) CreateResults(historyID int64, results []OperationResult) e
 	return tx.Commit()
 }
 
+// CreateHistoryWithResults atomically stores an operation and all of its result rows.
+func (r *Repository) CreateHistoryWithResults(h *OperationHistory, results []OperationResult) (int64, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin history transaction: %w", err)
+	}
+	rollback := func(err error) (int64, error) { _ = tx.Rollback(); return 0, err }
+	result, err := tx.Exec(`INSERT INTO operation_history (operation_type, input, status, total_count, summary, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, h.OperationType, h.Input, h.Status, h.TotalCount, h.Summary, h.DurationMS, time.Now())
+	if err != nil {
+		return rollback(fmt.Errorf("insert operation_history: %w", err))
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return rollback(fmt.Errorf("history id: %w", err))
+	}
+	if len(results) > 0 {
+		stmt, err := tx.Prepare(`INSERT INTO operation_results (history_id, data) VALUES (?, ?)`)
+		if err != nil {
+			return rollback(fmt.Errorf("prepare operation_results: %w", err))
+		}
+		defer stmt.Close()
+		for _, row := range results {
+			if _, err := stmt.Exec(id, row.Data); err != nil {
+				return rollback(fmt.Errorf("insert operation_result: %w", err))
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit history transaction: %w", err)
+	}
+	return id, nil
+}
+
 // ListHistory returns operation history records, optionally filtered by type.
 func (r *Repository) ListHistory(opType string, limit, offset int) ([]OperationHistory, int, error) {
 	if limit <= 0 {
