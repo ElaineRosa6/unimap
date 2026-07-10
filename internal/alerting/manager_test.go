@@ -1,6 +1,7 @@
 package alerting
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -15,6 +16,26 @@ func TestNewManager(t *testing.T) {
 	}
 	if m.alertRecords == nil {
 		t.Fatal("expected non-nil alertRecords")
+	}
+}
+
+func TestManager_PersistsAndRestoresAlertRecords(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "alerts.json")
+	first := NewManager()
+	if err := first.SetPersistencePath(path); err != nil {
+		t.Fatalf("set persistence path: %v", err)
+	}
+	first.SendAlert(AlertLevelWarning, AlertTypeReachability, "unreachable", "timeout", nil, "test", "https://example.test")
+	if got := len(first.GetAlertRecords()); got != 1 {
+		t.Fatalf("expected one saved alert, got %d", got)
+	}
+
+	second := NewManager()
+	if err := second.SetPersistencePath(path); err != nil {
+		t.Fatalf("restore persistence path: %v", err)
+	}
+	if got := len(second.GetAlertRecords()); got != 1 {
+		t.Fatalf("expected one restored alert, got %d", got)
 	}
 }
 
