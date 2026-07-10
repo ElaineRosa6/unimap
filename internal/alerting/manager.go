@@ -304,6 +304,7 @@ func (m *Manager) isSilenced(alertType AlertType, source, url string) bool {
 			}
 		}
 	}
+	m.persistLocked()
 
 	return false
 }
@@ -401,6 +402,7 @@ func (m *Manager) ResolveAlert(alertID string) error {
 
 	record.Status = AlertStatusResolved
 	record.LastModified = time.Now()
+	m.persistLocked()
 
 	return nil
 }
