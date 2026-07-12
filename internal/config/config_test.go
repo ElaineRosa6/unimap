@@ -28,9 +28,9 @@ func TestResolveEnv(t *testing.T) {
 	result = mgr.ResolveEnv("${TEST_VAR}")
 	assert.Equal(t, "test_value", result)
 
-	// Test non-existent env var
+	// Test non-existent env var — now returns empty string (2026-07-12)
 	result = mgr.ResolveEnv("$NON_EXISTENT")
-	assert.Equal(t, "$NON_EXISTENT", result)
+	assert.Equal(t, "", result)
 
 	// Test empty string
 	result = mgr.ResolveEnv("")
@@ -239,8 +239,8 @@ func TestResolveEnvWithComplexValues(t *testing.T) {
 		{"${API_KEY}", "secret123"},
 		{"$DB_PASSWORD", "password456"},
 		{"regular_text", "regular_text"},
-		{"${NON_EXISTENT}", "${NON_EXISTENT}"},
-		{"$NON_EXISTENT", "$NON_EXISTENT"},
+		{"${NON_EXISTENT}", ""},     // 2026-07-12: unresolved env var returns empty
+		{"$NON_EXISTENT", ""},
 	}
 
 	for _, tc := range testCases {

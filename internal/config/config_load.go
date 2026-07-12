@@ -138,21 +138,25 @@ func (m *Manager) resolveEnv(config *Config) {
 	}
 }
 
-// ResolveEnv 解析环境变量
+// ResolveEnv 解析环境变量。
+// 如果值是 $VAR 或 ${VAR} 格式但对应环境变量未设置，返回空字符串（而非原始占位符），
+// 使下游能优雅跳过空配置（如未配置的 webhook URL）。
 func (m *Manager) ResolveEnv(value string) string {
-	// 检查是否包含环境变量
-	if strings.HasPrefix(value, "$") {
+	// 检查 $VAR 格式
+	if strings.HasPrefix(value, "$") && !strings.HasPrefix(value, "${") {
 		envName := strings.TrimPrefix(value, "$")
 		if envValue := os.Getenv(envName); envValue != "" {
 			return envValue
 		}
+		return "" // 环境变量未设置，返回空字符串
 	}
-	// 检查是否包含${}格式的环境变量
+	// 检查 ${VAR} 格式
 	if strings.HasPrefix(value, "${") && strings.HasSuffix(value, "}") {
 		envName := strings.TrimSuffix(strings.TrimPrefix(value, "${"), "}")
 		if envValue := os.Getenv(envName); envValue != "" {
 			return envValue
 		}
+		return "" // 环境变量未设置，返回空字符串
 	}
 	return value
 }
