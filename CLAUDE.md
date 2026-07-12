@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-多引擎统一查询平台，支持 **FOFA、Hunter、ZoomEye、Quake、Shodan** 五大搜索引擎，提供 Web / CLI / GUI 三种入口。核心能力：资产查询、截图监控、篡改检测、定时任务、分布式节点、告警通知。
+多引擎统一查询平台，支持 **FOFA（含第三方代理）、Hunter、DayDayMap、Censys、ZoomEye、Quake、Shodan** 七大搜索引擎，提供 Web / CLI / GUI 三种入口。核心能力：资产查询、截图监控、篡改检测、端口扫描、ICP 备案查询、定时任务、分布式节点、告警通知（飞书/企微/钉钉/Webhook）。
 
 ## 技术栈
 
@@ -33,7 +33,7 @@ cmd/
   unimap-gui/          GUI 入口 (fyne, -tags gui)
   unimap-web/          Web 入口 (:8448)
 internal/
-  adapter/             引擎适配 (fofa/hunter/zoomeye/quake/shodan)
+  adapter/             引擎适配 (fofa/hunter/zoomeye/quake/shodan/censys/daydaymap)
   alerting/            告警管理 (Webhook/Log, 去重/静默/频率控制)
   auth/                API Key + 权限管理
   backup/              数据备份 (基线/配置/Cookie)
@@ -187,7 +187,7 @@ go run -tags gui ./cmd/unimap-gui
 - 测试命名：`test('returns empty array when no markets match query', ...)`
 
 ### 安全
-- 禁止硬编码密钥 — 使用环境变量或 `config.yaml`
+- 密钥管理 — `config.yaml` 允许直接包含明文密钥（决策 0004），文件被 `.gitignore` 排除不会入库；环境变量 `${VAR}` 方式仍支持但不再强制
 - 所有用户输入必须验证
 - SQL 参数化查询
 - HTML 使用 `html/template` ✅
@@ -277,7 +277,7 @@ go run -tags gui ./cmd/unimap-gui
 
 #### 长期项（2 项，需架构级改造，按需启动）
 - **L2 Hook** — 设计冻结。仅当 L1/L3 telemetry 证明收益时启动。
-- **新引擎端到端闭环** — Censys/DayDayMap 适配器代码存在。✅ API Key 已配置并验证通过（2026-06-23，commit fa314ed）：DayDayMap curl 200 OK（关键字搜索），Censys v3 单 IP 查询 200 OK（免费版限制）。✅ **2026-06-27 真机 API 验证**：DayDayMap `port=80` 返回 5 条资产，Censys `ip=8.8.8.8` 返回 3 条资产。Extension 采集 DOM 选择器已定义，需真机浏览器测试。（BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除）
+- **新引擎端到端闭环** — Censys/DayDayMap 适配器已验证通过。✅ **2026-07-12 全量验证**：FOFA（第三方 fafaapi.info）15 条、Hunter 6 条、DayDayMap 13 条、Censys（Personal Access Token Bearer 认证）11 条。Shodan 需付费会员（403）、ZoomEye 额度不足（402）、Quake 服务端错误。FOFA adapter 已兼容第三方接口（email 去必填、port 字符串兼容、total 兜底）。（BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除）
 
 #### Low（3 项）
 11. ~~**countGoroutines() 空桩** — `router_test.go:400` 硬编码 `return 0`。~~ ✅ 已修复（2026-06-17，改用 `runtime.NumGoroutine()`，goroutine leak 检测增加 5 协程容差，20 次 `-race` 运行均通过）
