@@ -126,9 +126,24 @@ func SafeDialer(opts CheckOptions) *net.Dialer {
 func SafeHTTPClient(opts CheckOptions, timeout time.Duration) *http.Client {
 	opts = opts.withDefaults()
 
+	// Pre-compute proxy address so DialContext can skip the private-IP check
+	// when connecting to a local/loopback proxy (the proxy is trusted; SSRF
+	// protection for the final target is enforced by Check() and the proxy).
+	var proxyAddr string
+	if probe, _ := http.ProxyFromEnvironment(&http.Request{URL: &url.URL{Scheme: "https", Host: "example.com"}}); probe != nil {
+		proxyAddr = probe.Host
+	}
+
 	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			// When a proxy is configured, DialContext connects to the proxy
+			// server, not the final target. Skip private-IP checks for the
+			// proxy address itself — it is a trusted local endpoint.
+			if proxyAddr != "" && (addr == proxyAddr || hostPortEqual(addr, proxyAddr)) {
+				return net.DialTimeout(network, addr, 10*time.Second)
+			}
 			host, _, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, err
@@ -155,4 +170,19 @@ func SafeHTTPClient(opts CheckOptions, timeout time.Duration) *http.Client {
 			return nil
 		},
 	}
+}
+
+// hostPortEqual compares two host:port strings, normalising missing ports
+// (e.g. "127.0.0.1" vs "127.0.0.1:7897").
+func hostPortEqual(a, b string) bool {
+	ha, pa := splitHP(a)
+	hb, pb := splitHP(b)
+	return ha == hb && pa == pb
+}
+
+func splitHP(addr string) (host, port string) {
+	if h, p, err := net.SplitHostPort(addr); err == nil {
+		return h, p
+	}
+	return addr, ""
 }

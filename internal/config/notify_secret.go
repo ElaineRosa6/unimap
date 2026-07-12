@@ -36,19 +36,21 @@ func initNotifyPepper() {
 	logger.Warnf("UNIMAP_NOTIFY_PEPPER not set, using legacy pepper — set the env var for production deployments")
 }
 
-// initNotifyPepperStrict 在生产环境（非回环绑定）中要求必须设置 UNIMAP_NOTIFY_PEPPER，
-// 否则使用源码中公开的 legacy pepper 加密通知渠道密钥，等于无加密。
+// initNotifyPepperStrict 在生产环境（非回环绑定）中建议设置 UNIMAP_NOTIFY_PEPPER，
+// 否则使用源码中公开的 legacy pepper 加密通知渠道密钥。
+// 2026-07-12: 降级为 warn，允许直接在 config.yaml 中配置明文凭据。
 func initNotifyPepperStrict(bindAddr string) {
 	if env := os.Getenv(pepperEnvVar); env != "" {
 		notifyPepper = env
 		return
 	}
-	if !isLoopbackBind(bindAddr) {
-		logger.Fatalf("生产环境 (bind=%s) 必须设置环境变量 %s 来保护通知渠道密钥，"+
-			"当前使用的是源码中公开的 legacy pepper，配置文件泄露后密钥等于明文", bindAddr, pepperEnvVar)
-	}
 	notifyPepper = legacyNotifyPepper
-	logger.Warnf("UNIMAP_NOTIFY_PEPPER not set, using legacy pepper — set the env var for production deployments")
+	if !isLoopbackBind(bindAddr) {
+		logger.Warnf("生产环境 (bind=%s) 未设置 %s，使用 legacy pepper 保护通知渠道密钥；"+
+			"建议设置该环境变量以增强安全性", bindAddr, pepperEnvVar)
+	} else {
+		logger.Warnf("UNIMAP_NOTIFY_PEPPER not set, using legacy pepper — set the env var for production deployments")
+	}
 }
 
 func getNotifyPepper() string {

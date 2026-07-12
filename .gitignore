@@ -104,6 +104,9 @@ memory/
 # Runtime data
 data/
 
+# Tamper test/runtime data
+internal/tamper/data/
+
 # Backup test files
 internal/backup/backups/*.tar.gz
 web/backups/
