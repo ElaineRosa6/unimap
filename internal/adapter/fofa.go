@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -164,8 +165,13 @@ func fofaRowToItem(row []interface{}, fieldNames []string) *FofaItem {
 		case "ip":
 			item.IP, _ = v.(string)
 		case "port":
-			if f, ok := v.(float64); ok {
-				item.Port = f
+			switch v := v.(type) {
+			case float64:
+				item.Port = v
+			case string:
+				if n, err := strconv.ParseFloat(v, 64); err == nil {
+					item.Port = n
+				}
 			}
 		case "protocol":
 			item.Protocol, _ = v.(string)
@@ -192,8 +198,13 @@ func fofaRowToItem(row []interface{}, fieldNames []string) *FofaItem {
 		case "isp":
 			item.ISP, _ = v.(string)
 		case "status_code":
-			if f, ok := v.(float64); ok {
-				item.StatusCode = f
+			switch v := v.(type) {
+			case float64:
+				item.StatusCode = v
+			case string:
+				if n, err := strconv.ParseFloat(v, 64); err == nil {
+					item.StatusCode = n
+				}
 			}
 		}
 	}
@@ -247,10 +258,23 @@ func (f *FofaAdapter) searchWithFields(url, encodedQuery string, page, pageSize 
 		Get(url)
 }
 
+// isThirdPartyFOFA 判断是否使用第三方 FOFA 代理（非官方 fofa.info）
+func (f *FofaAdapter) isThirdPartyFOFA() bool {
+	return !strings.Contains(f.baseURL, "fofa.info")
+}
+
+// needsEmail 官方 FOFA 必须提供 email，第三方接口不需要
+func (f *FofaAdapter) needsEmail() bool {
+	return !f.isThirdPartyFOFA()
+}
+
 // Search 执行FOFA搜索
 func (f *FofaAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
-	if f.apiKey == "" || f.email == "" {
-		return &model.EngineResult{EngineName: f.Name(), Error: "FOFA API key or email not configured"}, nil
+	if f.apiKey == "" {
+		return &model.EngineResult{EngineName: f.Name(), Error: "FOFA API key not configured"}, nil
+	}
+	if f.needsEmail() && f.email == "" {
+		return &model.EngineResult{EngineName: f.Name(), Error: "FOFA email not configured (required for official API)"}, nil
 	}
 	var engineResult *model.EngineResult
 	err := utils.Retry(fofaSearchRetryConfig(), func() error {
@@ -352,9 +376,13 @@ func parseFofaSearchResponse(body []byte, activeFields string, page, pageSize in
 	for i, row := range resp.Results {
 		rawData[i] = fofaRowToItem(row, fieldNames)
 	}
+	total := resp.Total
+	if total == 0 && len(resp.Results) > 0 {
+		total = len(resp.Results) // 第三方 API 可能不返回 total
+	}
 	*result = &model.EngineResult{
-		EngineName: engineName, RawData: rawData, Total: resp.Total,
-		Page: page, HasMore: (page * pageSize) < resp.Total,
+		EngineName: engineName, RawData: rawData, Total: total,
+		Page: page, HasMore: (page * pageSize) < total,
 	}
 	return nil
 }
@@ -439,8 +467,11 @@ func buildFofaURL(asset *model.UnifiedAsset) {
 
 // GetQuota 获取FOFA配额信息
 func (f *FofaAdapter) GetQuota() (*model.QuotaInfo, error) {
-	if f.apiKey == "" || f.email == "" {
-		return nil, fmt.Errorf("FOFA API key or email not configured")
+	if f.apiKey == "" {
+		return nil, fmt.Errorf("FOFA API key not configured")
+	}
+	if f.needsEmail() && f.email == "" {
+		return nil, fmt.Errorf("FOFA email not configured (required for official API)")
 	}
 
 	// FOFA API endpoint for user info (contains quota)
