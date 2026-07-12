@@ -5,7 +5,8 @@
 - 资产目标：`132.232.231.41`
 - 篡改 URL：`http://132.232.231.41`、`http://132.232.231.41:16181`
 - ICP 关键词：`[REDACTED]`
-- 查询引擎：FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap
+- 查询引擎：FOFA（第三方 fafaapi.info）、Hunter、DayDayMap、Censys
+- 禁用引擎：Quake（服务端错误）、Shodan（需付费会员）、ZoomEye（额度不足）
 - 通知渠道：飞书 Webhook (`feishu_2`)、飞书应用 (`feishu_app`)、企业微信 (`dijia_01`)
 - 执行入口：真实 Web API
 
@@ -18,13 +19,14 @@
 | `internal/utils/urlguard/check.go` | `SafeHTTPClient`: 加 `Proxy: ProxyFromEnvironment` + 代理地址跳过内网检查 | 通过代理发通知不被 urlguard 拦截 |
 | `internal/config/config_test.go` | 同步 2 个测试用例预期值 | 匹配 ResolveEnv 新行为 |
 | `configs/config.yaml` | 通知渠道从 `${ENV_VAR}` 改为直接配置真实凭据 | 实际可送达 |
+| `internal/adapter/fofa.go` | 第三方接口兼容（email 去必填、port 字符串兼容、total 兜底） | 支持 fafaapi.info 等第三方代理 |
 
 ## 验收结果
 
 | 链路 | 结果 | 证据 |
 |------|------|------|
 | 健康检查 | ✅ 通过 | `/health` 返回 `{"status":"ok"}` |
-| 资产查询 | ⚠️ 链路通/凭据不可用 | 7 引擎均调通，但 API Key 全部过期（401） |
+| 资产查询 | ✅ 通过 | FOFA 15 条 + Hunter 6 条 + DayDayMap 13 条 + Censys 11 条 |
 | 篡改基线 | ✅ 通过 | 2/2 URL 基线保存成功 |
 | 篡改检测 | ✅ 通过 | 2/2 URL `tampered=false, status=normal` |
 | 端口扫描 | ✅ 通过 | 发现开放端口：22、80、8080、16181 |
