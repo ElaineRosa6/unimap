@@ -15,7 +15,7 @@
 | GUI | Fyne v2 |
 | CLI | Cobra |
 | 浏览器自动化 | chromedp (CDP protocol) |
-| 定时任务 | robfig/cron/v3 (20 种 Runner) |
+| 定时任务 | robfig/cron/v3（23 种任务类型 / Runner） |
 | 缓存 | 内存 + Redis (go-redis/v9) |
 | 存储 | SQLite, YAML |
 | HTML 解析 | goquery + goquery/b luemonday |
@@ -50,7 +50,7 @@ internal/
   plugin/              插件系统与处理管道
   proxypool/           代理池
   requestid/           请求 ID 生成
-  scheduler/           定时任务 (cron + 20 Runner + 持久化)
+  scheduler/           定时任务 (cron + 23 Runner + 持久化)
   screenshot/          截图 (CDP/Extension/ScreenshotRouter 双模式高可用)
   service/             统一服务层
   tamper/              网页篡改检测 (5 种模式)
@@ -143,7 +143,7 @@ go run -tags gui ./cmd/unimap-gui
 - **模式降级 Bug 已修**：service 层曾用 `if mode != strict { mode = relaxed }` 把 `security/balanced/precise` 静默降级为 `relaxed`，UI/定时任务的模式选择不生效。已导出 `tamper.NormalizeDetectionMode`，5 模式全部透传。
 - **定时篡改巡检渲染 JS**：`TamperCheckRunner` 曾传 nil allocator 只能 HTTP/Fast 模式，SPA 目标拿空 hash 误报。已从 `screenshotMgr` 注入 allocator，与交互式 `/api/v1/tamper/check` 能力对齐。
 
-### 定时任务系统 (22 种 Runner)
+### 定时任务系统 (23 种 Runner)
 - Cron 表达式创建、启停、编辑、删除
 - **一次性/延迟执行**：`ScheduleType` 支持 `"once"`（指定时间）/`"delay"`（延迟 N 秒）/`"cron"`（循环），执行后自动禁用
 - 执行历史追踪、持久化
@@ -201,11 +201,11 @@ go run -tags gui ./cmd/unimap-gui
 
 > 来源：`.audit-results/audit_summary.md`、`.audit-results/audit_report_final.json`、`.audit-results/issue-bridge-serial-timeout.md` 与当前代码复核；验证：`go test ./...` 通过。
 
-#### 仍需优先处理
+#### 已完成的外部处置
 
 | 优先级 | 位置 | 问题 | 当前判断 |
 |---|---|---|---|
-| P1 | 外部平台密钥/管理令牌 | 已暴露过的搜索引擎、通知密钥、admin token 需要在对应平台/部署环境轮换 | 代码与本地配置已改为环境变量占位符；轮换动作需登录外部平台或更新部署环境完成 |
+| P1 | 外部平台密钥/管理令牌 | 曾暴露过的搜索引擎、通知密钥、admin token | ✅ 已于 2026-07-13 确认在对应平台/部署环境完成轮换；仓库不保存轮换后的真实值 |
 
 #### 2026-07-07 已补修
 
@@ -221,7 +221,7 @@ go run -tags gui ./cmd/unimap-gui
 | 项目 | 状态 | 说明 |
 |---|---|---|
 | Bridge `collect_and_capture` 路径旁路、Cookie 注入、extension timeout | ✅ 已修 | 2026-07-06 已完成方案 1/2/3/4A，新增 `internal/screenshot/cookie_actions.go` 与相关回归测试 |
-| `.audit-results/audit_report_final.json` 3 个 P1 | ✅ 已修 | config/history handler 已加 `requireAdmin`；`go.mod` 与本机工具链均为 Go 1.26.4 |
+| `.audit-results/audit_report_final.json` 3 个 P1 | ✅ 已修 | config/history handler 已加 `requireAdmin`；`go.mod` 与本机工具链现为 Go 1.26.5 |
 | 健康检查端点缺失 | ✅ 报告过期 | 当前已有 `/health`、`/health/ready`、`/health/live` |
 
 ### ✅ 已全部修复
@@ -359,8 +359,8 @@ go run -tags gui ./cmd/unimap-gui
 | ID | 位置 | 问题 | 修复 |
 |----|------|------|------|
 | FINDING-004 | `web/login_handlers.go:94` | 登录时序侧信道可枚举用户 | ✅ 始终执行 bcrypt（含 dummy hash 防时序差异） |
-| FINDING-005 | `configs/config.yaml:188` | 飞书 app_secret 明文存储 | ⚠️ 需手动配置 `$ENC$v2:` 加密 |
-| FINDING-006 | `configs/config.yaml:4` | 全部生产 API Key 明文存储 | ⚠️ 需手动配置加密 + pre-commit 防护 |
+| FINDING-005 | `configs/config.yaml:188` | 飞书 app_secret 明文存储 | 历史发现；当前遵循决策 0004：本地 gitignored 配置允许直接值，仍须落实权限、备份和日志访问控制 |
+| FINDING-006 | `configs/config.yaml:4` | 全部生产 API Key 明文存储 | 历史发现；当前遵循决策 0004，真实值不得进入仓库，并保留轮换与访问控制要求 |
 | FINDING-007 | `internal/auth/api_key.go:243` | API Key 哈希使用无盐 SHA-256 | ✅ 改为 `salt$hash` 格式，向后兼容旧格式 |
 | FINDING-008 | `internal/error/error.go:83` | 错误结构体 JSON tag 泄露内部路径 | ✅ `StackTrace`/`OriginalErr` 改为 `json:"-"` |
 | FINDING-009 | `internal/distributed/registry.go:325` | GetHealthyNodes 返回活引用 | ✅ 返回深拷贝（`copyNodeRecord`） |
@@ -420,14 +420,19 @@ SQL 注入防护 ✅ | bcrypt 密码哈希 ✅ | 常量时间比较 ✅ | Sessio
 - **两层能力语义割裂**：下层（detector）提供更丰富能力时，上层（service）不能擅自收窄语义而不导出/复用下层的归一化逻辑。
 - **定时路径与交互路径能力不对等**：审计定时/后台任务时，必须比对它与交互式入口的能力是否对等（allocator、proxy、SSRF 校验等）。
 
-#### 列为后续的架构级缺口（本次未修，需设计决策）
-1. 可达性/端口扫描未产生告警记录（`AlertTypeReachability` 定义但无人触发）
-2. 告警与资源监控仅存内存，重启丢失
-3. `operation_history` 表无内部写入者（仅客户端 POST）
-4. 定时批量截图结果未进 `batchdb`
-5. 篡改导出器无生产调用方（死代码）
-6. 无定时备份任务类型
-7. 篡改记录文件式无索引（量大时查询慢）
+#### 架构级缺口的后续勘误（2026-07-13）
+
+上列为 2026-06-30 的历史快照，不应再作为当前待办：
+
+1. ✅ 可达性与端口巡检失败会通过 `AlertTypeReachability` 发出告警。
+2. ✅ 告警记录已持久化，并使用临时文件后原子替换；资源监控历史仍由 Prometheus 抓取体系承担，不另行建立应用内时序库。
+3. ✅ 查询路径由 `QueryAppService` 内部持久化到 `operation_history`；不再仅依赖客户端 POST。
+4. ✅ 定时批量截图持久化到 `batchdb`，保存失败会被记录。
+5. ✅ 篡改历史导出已有生产 handler 与回归测试。
+6. ✅ 已提供 `TaskBackup` / `BackupRunner`；发布时仍须确认该未提交工作区改动已纳入提交。
+7. ✅ 巡检历史已迁移为 SQLite 索引查询，并支持 URL、`LIMIT`/`OFFSET` 分页；HTTP API 的 `offset` 上限为 100000。
+
+仍有意延后的仅是 L2 Hook：只有当 L1/L3 telemetry 显示明确收益时才启动设计与实现。
 
 ### 2026-06-17 新引擎代码基础设施全量补齐 + countGoroutines 空桩修复
 

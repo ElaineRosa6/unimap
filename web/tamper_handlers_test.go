@@ -280,6 +280,41 @@ func TestHandleTamperHistory_Empty(t *testing.T) {
 	}
 }
 
+func TestHandleTamperHistory_UsesOffsetForStoragePagination(t *testing.T) {
+	dir := t.TempDir()
+	targetURL := "https://pagination.example.test"
+	storage := tamper.NewHashStorage(dir)
+	for _, timestamp := range []int64{100, 200, 300} {
+		if err := storage.SaveCheckRecord(targetURL, &tamper.CheckRecord{
+			URL:       targetURL,
+			CheckType: "normal",
+			Timestamp: timestamp,
+		}); err != nil {
+			t.Fatalf("save check record: %v", err)
+		}
+	}
+
+	s := &Server{tamperApp: service.NewTamperAppService(dir, nil)}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tamper/history?limit=1&offset=1", nil)
+	w := httptest.NewRecorder()
+	s.handleTamperHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var response struct {
+		Records []struct {
+			Timestamp int64 `json:"timestamp"`
+		} `json:"records"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Records) != 1 || response.Records[0].Timestamp != 200 {
+		t.Fatalf("expected second newest record (timestamp 200), got %+v", response.Records)
+	}
+}
+
 // ============================================================
 // newTamperDetector tests
 // ============================================================

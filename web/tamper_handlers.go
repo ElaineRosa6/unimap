@@ -286,6 +286,16 @@ func (s *Server) handleTamperHistory(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
+	offset := 0
+	if rawOffset := strings.TrimSpace(r.URL.Query().Get("offset")); rawOffset != "" {
+		if v, err := strconv.Atoi(rawOffset); err == nil && v > 0 {
+			const maxTamperHistoryOffset = 100000
+			if v > maxTamperHistoryOffset {
+				v = maxTamperHistoryOffset
+			}
+			offset = v
+		}
+	}
 
 	filter := service.HistoryFilter{
 		URLFilter:   strings.TrimSpace(r.URL.Query().Get("url")),
@@ -293,6 +303,7 @@ func (s *Server) handleTamperHistory(w http.ResponseWriter, r *http.Request) {
 		ModeFilter:  strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode"))),
 		QueryFilter: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))),
 		Limit:       limit,
+		Offset:      offset,
 	}
 
 	result, err := s.tamperApp.QueryHistory(filter)
