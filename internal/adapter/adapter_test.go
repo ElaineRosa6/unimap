@@ -1677,6 +1677,22 @@ func TestZoomEyeAdapter_Normalize(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects non HTTP URLs", func(t *testing.T) {
+		result := &model.EngineResult{RawData: []interface{}{
+			&ZoomEyeItem{IP: "1.2.3.4", Port: 80, Service: "http", URL: "javascript:alert(1)"},
+		}}
+		assets, err := a.Normalize(result)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(assets) != 1 {
+			t.Fatalf("expected 1 asset, got %d", len(assets))
+		}
+		if assets[0].URL != "" {
+			t.Errorf("URL = %q, want empty for a non-HTTP URL", assets[0].URL)
+		}
+	})
+
 	t.Run("no ip skipped", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
 			&ZoomEyeItem{Port: 80},

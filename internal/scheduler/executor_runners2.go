@@ -301,24 +301,38 @@ func (r *PluginHealthRunner) Execute(ctx context.Context, payload *model.TaskPay
 // --- BridgeHealthCheckRunner (ST-18) ---
 
 type BridgeHealthCheckRunner struct {
-	bridgeSvc *screenshot.BridgeService
+	bridgeSvc         *screenshot.BridgeService
+	bridgeSvcProvider func() *screenshot.BridgeService
 }
 
+// NewBridgeTokenRotateRunner preserves the legacy constructor and task key.
+// Despite its historical name, the bridge_token task performs a health check.
 func NewBridgeTokenRotateRunner(svc *screenshot.BridgeService) *BridgeHealthCheckRunner {
 	return &BridgeHealthCheckRunner{bridgeSvc: svc}
 }
 
-func (r *BridgeHealthCheckRunner) Type() TaskType { return TaskBridgeTokenRotate }
+// NewBridgeHealthCheckRunnerWithProvider resolves the bridge service only when
+// the task runs. This lets the scheduler register before screenshot mode creates
+// the extension bridge.
+func NewBridgeHealthCheckRunnerWithProvider(provider func() *screenshot.BridgeService) *BridgeHealthCheckRunner {
+	return &BridgeHealthCheckRunner{bridgeSvcProvider: provider}
+}
+
+func (r *BridgeHealthCheckRunner) Type() TaskType { return TaskBridgeHealthCheck }
 
 func (r *BridgeHealthCheckRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
-	if r.bridgeSvc == nil {
+	bridgeSvc := r.bridgeSvc
+	if r.bridgeSvcProvider != nil {
+		bridgeSvc = r.bridgeSvcProvider()
+	}
+	if bridgeSvc == nil {
 		return "", fmt.Errorf("bridge service not available")
 	}
 
-	queueLen := r.bridgeSvc.QueueLen()
-	workers := r.bridgeSvc.WorkerCount()
-	inFlight := r.bridgeSvc.InFlight()
-	started := r.bridgeSvc.IsStarted()
+	queueLen := bridgeSvc.QueueLen()
+	workers := bridgeSvc.WorkerCount()
+	inFlight := bridgeSvc.InFlight()
+	started := bridgeSvc.IsStarted()
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "截图桥接服务健康检查\n\n")

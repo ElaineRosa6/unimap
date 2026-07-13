@@ -36,13 +36,14 @@ const (
 	TaskURLImport         TaskType = "url_import"         // ST-16: URL 导入
 
 	// ST-17 ~ ST-20: 低优先级 Runner
-	TaskPluginHealth      TaskType = "plugin_health" // ST-17: 插件健康检查
-	TaskBridgeTokenRotate TaskType = "bridge_token"  // ST-18: Bridge 令牌轮换
-	TaskAlertSilence      TaskType = "alert_silence" // ST-19: 告警静默窗口
-	TaskCacheWarmup       TaskType = "cache_warmup"  // ST-20: 缓存预热
-	TaskICPQuery          TaskType = "icp_query"     // ST-21: ICP 备案查询
-	TaskICPImport         TaskType = "icp_import"    // ST-22: ICP 关键词 CSV 导入
-	TaskBackup            TaskType = "backup"        // ST-23: 配置与数据备份
+	TaskPluginHealth      TaskType = "plugin_health"       // ST-17: 插件健康检查
+	TaskBridgeHealthCheck TaskType = "bridge_token"        // ST-18: Bridge 健康检查（保留旧持久化键）
+	TaskBridgeTokenRotate TaskType = TaskBridgeHealthCheck // Deprecated: 该任务始终执行健康检查，不轮换令牌。
+	TaskAlertSilence      TaskType = "alert_silence"       // ST-19: 告警静默窗口
+	TaskCacheWarmup       TaskType = "cache_warmup"        // ST-20: 缓存预热
+	TaskICPQuery          TaskType = "icp_query"           // ST-21: ICP 备案查询
+	TaskICPImport         TaskType = "icp_import"          // ST-22: ICP 关键词 CSV 导入
+	TaskBackup            TaskType = "backup"              // ST-23: 配置与数据备份
 )
 
 // AllTaskTypes returns all supported task types.
@@ -52,7 +53,7 @@ func AllTaskTypes() []TaskType {
 		TaskURLReachability, TaskCookieVerify, TaskLoginStatusCheck, TaskDistributedSubmit,
 		TaskExport, TaskPortScan, TaskScreenshotCleanup, TaskTamperCleanup,
 		TaskQuotaMonitor, TaskAlertSummary, TaskBaselineRefresh, TaskURLImport,
-		TaskPluginHealth, TaskBridgeTokenRotate, TaskAlertSilence, TaskCacheWarmup,
+		TaskPluginHealth, TaskBridgeHealthCheck, TaskAlertSilence, TaskCacheWarmup,
 		TaskICPQuery, TaskICPImport, TaskBackup,
 	}
 }
@@ -77,7 +78,7 @@ func TaskTypeLabel(t TaskType) string {
 		TaskBaselineRefresh:   "基线刷新",
 		TaskURLImport:         "URL 导入",
 		TaskPluginHealth:      "插件健康检查",
-		TaskBridgeTokenRotate: "Bridge 健康检查",
+		TaskBridgeHealthCheck: "Bridge 健康检查",
 		TaskAlertSilence:      "告警静默窗口",
 		TaskCacheWarmup:       "缓存预热",
 		TaskICPQuery:          "ICP 备案查询",

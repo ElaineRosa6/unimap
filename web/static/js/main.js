@@ -1194,6 +1194,27 @@ function escapeAttr(value) {
 	return escapeHtml(value).replace(/`/g, '&#96;');
 }
 
+function normalizeSafeExternalURL(value) {
+	if (value === null || value === undefined) return '';
+	try {
+		const parsed = new URL(String(value).trim());
+		if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+		return parsed.href;
+	} catch (_) {
+		return '';
+	}
+}
+
+function openSafeExternalURL(value) {
+	const target = normalizeSafeExternalURL(value);
+	if (!target) {
+		showMessage('目标 URL 无效，仅支持 HTTP/HTTPS', 'warning');
+		return false;
+	}
+	window.open(target, '_blank', 'noopener,noreferrer');
+	return true;
+}
+
 function sanitizePreviewPath(path) {
 	if (!path) return '';
 	const str = String(path).trim();
@@ -1820,7 +1841,7 @@ function assetToRowHTML(asset) {
 	const server = pickGlobal(asset, 'server', 'Server');
 	const statusCode = pickGlobal(asset, 'status_code', 'statusCode', 'StatusCode');
 	const source = pickGlobal(asset, 'source', 'Source');
-	const targetURL = pickGlobal(asset, 'url', 'URL');
+	const targetURL = normalizeSafeExternalURL(pickGlobal(asset, 'url', 'URL'));
 	// Decide whether to link directly to the target or fall back to an engine
 	// search. Relying solely on the engine-reported protocol is unreliable, so
 	// we also check well-known port mappings as a hint.
@@ -1844,12 +1865,12 @@ function assetToRowHTML(asset) {
 	const likelyWeb = isWebProtocol || isKnownWebPort;
 	const definitelyNonWeb = !isWebProtocol && isKnownNonWebPort;
 	const shouldDirectLink = targetURL && likelyWeb && !definitelyNonWeb;
-	const jumpHref = shouldDirectLink ? escapeAttr(targetURL) : escapeAttr(getEngineLink(source, ip));
-	const fallbackHref = escapeAttr(getEngineLink(source, ip));
+	const jumpHref = shouldDirectLink ? targetURL : getEngineLink(source, ip);
+	const fallbackHref = getEngineLink(source, ip);
 	const methodBadge = renderCollectionMethodBadge(asset);
 	return `<tr data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}" data-protocol="${escapeAttr(protocol)}" data-host="${escapeAttr(host)}" data-title="${escapeAttr(title)}" data-server="${escapeAttr(server)}" data-status="${escapeAttr(statusCode)}" data-source="${escapeAttr(source)}" data-url="${escapeAttr(targetURL)}">
 			<td>${escapeHtml(ip)}</td><td>${escapeHtml(port)}</td><td>${escapeHtml(protocol)}</td><td>${escapeHtml(host)}</td><td>${escapeHtml(title)}</td><td>${escapeHtml(server)}</td><td>${escapeHtml(statusCode)}</td><td>${escapeHtml(source)}${methodBadge}</td>
-			<td><div class="result-actions"><button type="button" class="action-btn action-detail btn-detail" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}">详情</button> <button type="button" class="action-btn action-copy btn-copy" data-ip="${escapeAttr(ip)}">复制IP</button> <button type="button" class="action-btn action-goto btn-goto" data-url="${jumpHref}" data-fallback="${fallbackHref}">跳转</button> <button type="button" class="action-btn action-screenshot btn-screenshot" data-url="${escapeAttr(targetURL)}" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}" data-protocol="${escapeAttr(protocol)}">截图</button></div></td>
+			<td><div class="result-actions"><button type="button" class="action-btn action-detail btn-detail" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}">详情</button> <button type="button" class="action-btn action-copy btn-copy" data-ip="${escapeAttr(ip)}">复制IP</button> <button type="button" class="action-btn action-goto btn-goto" data-url="${escapeAttr(jumpHref)}" data-fallback="${escapeAttr(fallbackHref)}">跳转</button> <button type="button" class="action-btn action-screenshot btn-screenshot" data-url="${escapeAttr(targetURL)}" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}" data-protocol="${escapeAttr(protocol)}">截图</button></div></td>
 		</tr>`;
 }
 
@@ -1873,10 +1894,8 @@ function probeAssetsAfterResults(assets) {
 	const seen = new Set();
 	const urls = [];
 	for (let i = 0; i < Math.min(assets.length, 50); i++) {
-		const url = pickGlobal(assets[i], 'url', 'URL');
+		const url = normalizeSafeExternalURL(pickGlobal(assets[i], 'url', 'URL'));
 		if (!url) continue;
-		const scheme = (pickGlobal(assets[i], 'protocol', 'Protocol') || '').toLowerCase();
-		if (scheme !== 'http' && scheme !== 'https') continue;
 		if (seen.has(url)) continue;
 		seen.add(url);
 		urls.push(url);
@@ -2507,11 +2526,11 @@ function initAssetActionDelegation() {
 			var isWeb = probeCache[targetUrl];
 			if (isWeb === undefined && !probeInFlight) {
 				// Cache miss and no probe running — try direct, fall back on failure
-				window.open(targetUrl, '_blank');
+				openSafeExternalURL(targetUrl);
 				return;
 			}
 			var href = isWeb ? targetUrl : (fallbackUrl || targetUrl);
-			window.open(href, '_blank');
+			openSafeExternalURL(href);
 		}
 	});
 }
@@ -3035,6 +3054,11 @@ function viewScreenshot(url, ip, port, protocol) {
 			alert('无法获取目标URL');
 			return;
 		}
+	}
+	target = normalizeSafeExternalURL(target);
+	if (!target) {
+		showMessage('目标 URL 无效，仅支持 HTTP/HTTPS', 'warning');
+		return;
 	}
 	
 	// 创建或获取模态框

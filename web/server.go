@@ -558,7 +558,12 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 
 	// 低优先级 Runner (ST-17 ~ ST-20)
 	sched.RegisterHandler(scheduler.NewPluginHealthRunner(unifiedSvc))
-	sched.RegisterHandler(scheduler.NewBridgeTokenRotateRunner(nil)) // bridge service may be nil
+	sched.RegisterHandler(scheduler.NewBridgeHealthCheckRunnerWithProvider(func() *screenshot.BridgeService {
+		if srv == nil || srv.bridge == nil {
+			return nil
+		}
+		return srv.bridge.service()
+	}))
 	sched.RegisterHandler(scheduler.NewAlertSilenceRunner(alertManager))
 	sched.RegisterHandler(scheduler.NewCacheWarmupRunner())
 
@@ -692,8 +697,7 @@ func initScreenshotRouter(srv *Server, cfg *config.Config, screenshotProvider sc
 	}
 
 	bsr := createBridgeService(cfg, shutdownCtx)
-	srv.bridge.Mock = bsr.mock
-	srv.bridge.Service = bsr.service
+	srv.bridge.setService(bsr.mock, bsr.service)
 	screenshotApp.SetBridgeService(bsr.service)
 
 	fallback := true
@@ -736,8 +740,7 @@ func initExtensionBridge(srv *Server, cfg *config.Config,
 	mockClient := newBridgeMockClient()
 	bridgeSvc := screenshot.NewBridgeService(mockClient, cfg.Screenshot.Extension.MaxConcurrency, time.Duration(cfg.Screenshot.Extension.TaskTimeoutSeconds)*time.Second)
 	bridgeSvc.Start(shutdownCtx)
-	srv.bridge.Mock = mockClient
-	srv.bridge.Service = bridgeSvc
+	srv.bridge.setService(mockClient, bridgeSvc)
 	screenshotApp.SetBridgeService(bridgeSvc)
 }
 
