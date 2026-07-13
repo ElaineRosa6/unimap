@@ -1,6 +1,6 @@
 # UniMap — 多引擎网络空间资产查询与网页监控工具
 
-> 当前分支：`develop` | Go 1.26.4 | 主链路：`go build ./...`、`go test ./...`、`go test -race ./...` 均通过
+> 当前分支：`develop` | Go 1.26.5 | 主链路：`go build ./...`、`go test ./...`、`go test -race ./...` 均通过
 
 ## 项目概述
 
@@ -10,7 +10,7 @@
 
 | 类别 | 技术 |
 |------|------|
-	| 语言 | Go 1.26.4 |
+	| 语言 | Go 1.26.5 |
 | Web | `net/http` + gorilla/websocket + go-resty |
 | GUI | Fyne v2 |
 | CLI | Cobra |

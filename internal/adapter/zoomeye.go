@@ -411,8 +411,8 @@ func parseZoomEyeBasicFields(it *ZoomEyeItem, asset *model.UnifiedAsset) {
 	if it.ServerName != "" {
 		asset.Server = it.ServerName
 	}
-	if it.URL != "" {
-		asset.URL = it.URL
+	if targetURL := normalizeHTTPURL(it.URL); targetURL != "" {
+		asset.URL = targetURL
 	}
 	if it.Domain != "" {
 		asset.Host = it.Domain

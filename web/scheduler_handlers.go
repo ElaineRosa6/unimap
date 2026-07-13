@@ -24,6 +24,25 @@ func writeSchedulerJSONError(w http.ResponseWriter, status int, msg string) {
 	})
 }
 
+func (s *Server) requireBackupTaskAdmin(w http.ResponseWriter, r *http.Request, taskType scheduler.TaskType) bool {
+	if taskType != scheduler.TaskBackup || !s.isAuthEnabled() {
+		return true
+	}
+	if ok, msg := s.requireAdmin(r); !ok {
+		writeSchedulerJSONError(w, http.StatusForbidden, msg)
+		return false
+	}
+	return true
+}
+
+func (s *Server) requireBackupTaskAdminByID(w http.ResponseWriter, r *http.Request, id string) bool {
+	task, err := s.scheduler.GetTask(id)
+	if err != nil {
+		return true // Let the operation return its normal not-found response.
+	}
+	return s.requireBackupTaskAdmin(w, r, task.Type)
+}
+
 func validateTaskPayload(payload map[string]interface{}) error {
 	if payload == nil {
 		return nil
@@ -345,6 +364,9 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 		writeSchedulerJSONError(w, http.StatusBadRequest, "task id is required")
 		return
 	}
+	if !s.requireBackupTaskAdminByID(w, r, strings.TrimSpace(req.ID)) {
+		return
+	}
 
 	if err := s.scheduler.DeleteTask(req.ID); err != nil {
 		writeSchedulerJSONError(w, http.StatusNotFound, err.Error())
@@ -446,6 +468,9 @@ func (s *Server) handleDisableTask(w http.ResponseWriter, r *http.Request) {
 
 	if strings.TrimSpace(req.ID) == "" {
 		writeSchedulerJSONError(w, http.StatusBadRequest, "task id is required")
+		return
+	}
+	if !s.requireBackupTaskAdminByID(w, r, strings.TrimSpace(req.ID)) {
 		return
 	}
 
