@@ -2,8 +2,11 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +18,21 @@ import (
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 )
+
+type failingSchedulerAdapter struct{ name string }
+
+func (a *failingSchedulerAdapter) Name() string { return a.name }
+func (a *failingSchedulerAdapter) Translate(*model.UQLAST) (string, error) {
+	return "translated", nil
+}
+func (a *failingSchedulerAdapter) Search(context.Context, string, int, int) (*model.EngineResult, error) {
+	return nil, fmt.Errorf("authentication failed")
+}
+func (a *failingSchedulerAdapter) Normalize(*model.EngineResult) ([]model.UnifiedAsset, error) {
+	return nil, nil
+}
+func (a *failingSchedulerAdapter) GetQuota() (*model.QuotaInfo, error) { return nil, nil }
+func (a *failingSchedulerAdapter) IsWebOnly() bool                     { return false }
 
 // ===== Bridge client mock for scheduler tests =====
 
@@ -54,6 +72,24 @@ func TestQueryRunner_Execute_MissingQuery(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing") {
 		t.Errorf("error should mention 'missing': %v", err)
+	}
+}
+
+func TestQueryRunner_Execute_AllEnginesFailed(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&failingSchedulerAdapter{name: "failed-engine"})
+	r := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	_, err := r.Execute(context.Background(), &model.TaskPayload{
+		Query:   `ip="132.232.231.41"`,
+		Engines: []string{"failed-engine"},
+	})
+
+	if err == nil {
+		t.Fatal("expected all-engine failure to fail the scheduled query")
+	}
+	if !strings.Contains(err.Error(), "all query engines failed") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -260,6 +296,31 @@ func TestPortScanRunner_Execute_MissingURLs(t *testing.T) {
 	_, err := r.Execute(context.Background(), &model.TaskPayload{})
 	if err == nil {
 		t.Fatal("expected error for missing urls")
+	}
+}
+
+func TestPortScanRunner_Execute_UsesConfiguredStringPorts(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+	port := listener.Addr().(*net.TCPAddr).Port
+	r := NewPortScanRunner(service.NewMonitorAppService(nil))
+
+	result, err := r.Execute(context.Background(), &model.TaskPayload{
+		URLs: []string{"http://127.0.0.1"},
+		Extra: map[string]any{
+			"ports":       []any{strconv.Itoa(port)},
+			"concurrency": 1,
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("execute port scan: %v", err)
+	}
+	if !strings.Contains(result, fmt.Sprintf("端口 [%d]", port)) {
+		t.Fatalf("configured port was discarded: %s", result)
 	}
 }
 

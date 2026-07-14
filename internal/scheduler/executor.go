@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -630,7 +631,7 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 
 	portNums := make([]int, 0, len(ports))
 	for _, p := range ports {
-		if n := extractIntFromMap(map[string]any{"v": p}, "v", 0); n > 0 {
+		if n, err := strconv.Atoi(strings.TrimSpace(p)); err == nil && n > 0 && n <= 65535 {
 			portNums = append(portNums, n)
 		}
 	}

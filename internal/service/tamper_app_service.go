@@ -245,6 +245,7 @@ type HistoryFilter struct {
 	ModeFilter  string
 	QueryFilter string
 	Limit       int
+	Offset      int
 }
 
 // HistoryRecord 历史记录
@@ -273,6 +274,26 @@ type HistoryResult struct {
 // QueryHistory 查询检测历史记录（带过滤和排序）
 func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, error) {
 	storage := tamper.NewHashStorage(s.baseDir)
+	if canPageHistoryInStorage(filter) {
+		page, err := storage.ListCheckRecords(tamper.CheckRecordQuery{
+			URL:    strings.TrimSpace(filter.URLFilter),
+			Limit:  filter.Limit,
+			Offset: filter.Offset,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list history page: %w", err)
+		}
+		records := make([]HistoryRecord, 0, len(page.Records))
+		for _, rec := range page.Records {
+			if rec == nil || strings.TrimSpace(rec.URL) == "" {
+				continue
+			}
+			recordURL := strings.TrimSpace(rec.URL)
+			records = append(records, buildHistoryRecord(rec, recordURL, computeTamperStatus(rec), resolveDetectionMode(rec.DetectionMode)))
+		}
+		return &HistoryResult{Records: records, URLOptions: page.URLs, Count: len(records)}, nil
+	}
+
 	allRecords, err := storage.ListAllCheckRecords()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list history: %w", err)
@@ -301,7 +322,7 @@ func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, e
 	}
 
 	sort.Slice(records, func(i, j int) bool { return records[i].Timestamp > records[j].Timestamp })
-	records = limitHistoryRecords(records, filter.Limit)
+	records = limitHistoryRecords(records, filter.Limit, filter.Offset)
 
 	urlOptions := make([]string, 0, len(urlSet))
 	for u := range urlSet {
@@ -310,6 +331,12 @@ func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, e
 	sort.Strings(urlOptions)
 
 	return &HistoryResult{Records: records, URLOptions: urlOptions, Count: len(records)}, nil
+}
+
+func canPageHistoryInStorage(filter HistoryFilter) bool {
+	return strings.TrimSpace(filter.TypeFilter) == "" &&
+		strings.TrimSpace(filter.ModeFilter) == "" &&
+		strings.TrimSpace(filter.QueryFilter) == ""
 }
 
 // computeTamperStatus 计算检查记录的状态
@@ -380,17 +407,24 @@ func buildHistoryRecord(rec *tamper.CheckRecord, recordURL, status, mode string)
 }
 
 // limitHistoryRecords 限制历史记录数量
-func limitHistoryRecords(records []HistoryRecord, limit int) []HistoryRecord {
+func limitHistoryRecords(records []HistoryRecord, limit, offset int) []HistoryRecord {
 	if limit <= 0 {
 		limit = 200
 	}
 	if limit > 1000 {
 		limit = 1000
 	}
-	if len(records) > limit {
-		return records[:limit]
+	if offset < 0 {
+		offset = 0
 	}
-	return records
+	if offset >= len(records) {
+		return []HistoryRecord{}
+	}
+	end := offset + limit
+	if end > len(records) {
+		end = len(records)
+	}
+	return records[offset:end]
 }
 
 func (s *TamperAppService) newDetector(ctx context.Context, mode string, allocatorFactory TamperAllocatorFactory) (*tamper.Detector, context.CancelFunc, error) {

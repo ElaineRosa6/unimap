@@ -34,6 +34,14 @@ func setupBackupServer(t *testing.T, tmpDir string) *Server {
 }
 
 func TestHandleCreateBackup_NoConfig(t *testing.T) {
+	// Isolate every default source location. The production handler deliberately
+	// falls back to those locations when config is nil; without this isolation,
+	// developer data can turn this "no sources" test into a real backup.
+	tmpDir := t.TempDir()
+	t.Setenv("APPDATA", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+	t.Chdir(tmpDir)
+
 	s := &Server{config: nil}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/backup/create", nil)

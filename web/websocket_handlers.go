@@ -285,10 +285,14 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 		err  error
 	}
 	apiCh := make(chan apiResult, 1)
-	go func() {
-		resp, err := s.queryApp.ExecuteQuery(apiCtx, query, apiEngines, pageSize)
-		apiCh <- apiResult{resp, err}
-	}()
+	if s.queryApp == nil {
+		apiCh <- apiResult{err: fmt.Errorf("query service not initialized")}
+	} else {
+		go func() {
+			resp, err := s.queryApp.ExecuteQuery(apiCtx, query, apiEngines, pageSize)
+			apiCh <- apiResult{resp, err}
+		}()
+	}
 
 	// 等待两个查询都完成（或超时）
 	// 浏览器查询已并行化，但仍按 action 给超时保护，避免拖慢 API 查询结果返回。

@@ -10,6 +10,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/unimap/project/internal/auth"
+	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/scheduler"
 )
@@ -149,6 +151,102 @@ func TestHandleCreateTask_Success(t *testing.T) {
 	}
 	if resp["id"] == "" {
 		t.Fatal("expected non-empty task ID")
+	}
+}
+
+func TestHandleCreateTask_PreservesBackupPayloadFields(t *testing.T) {
+	storePath := t.TempDir() + "/tasks.json"
+	historyPath := t.TempDir() + "/history.json"
+	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
+	defer sched.Stop()
+	sched.RegisterHandler(scheduler.NewBackupRunner())
+
+	s := &Server{scheduler: sched}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{
+		"name":      "scheduled backup",
+		"type":      "backup",
+		"enabled":   true,
+		"cron_expr": "0 0 2 * * *",
+		"payload": map[string]interface{}{
+			"sources":     []string{"configs", "data"},
+			"output_dir":  "backups",
+			"prefix":      "nightly",
+			"max_backups": 3,
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+
+	s.handleCreateTask(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	task, err := sched.GetTask(resp["id"].(string))
+	if err != nil {
+		t.Fatalf("get created task: %v", err)
+	}
+	if task.Payload == nil || task.Payload.Extra == nil {
+		t.Fatal("backup payload extra fields were discarded")
+	}
+	if got := task.Payload.Extra["prefix"]; got != "nightly" {
+		t.Errorf("prefix = %v, want nightly", got)
+	}
+	if got := task.Payload.Extra["max_backups"]; got != float64(3) {
+		t.Errorf("max_backups = %v, want 3", got)
+	}
+	if got, ok := task.Payload.Extra["sources"].([]interface{}); !ok || len(got) != 2 {
+		t.Errorf("sources = %#v, want two entries", task.Payload.Extra["sources"])
+	}
+}
+
+func TestHandleCreateTask_BackupRequiresAdmin(t *testing.T) {
+	storePath := t.TempDir() + "/tasks.json"
+	historyPath := t.TempDir() + "/history.json"
+	sched := scheduler.NewScheduler(storePath, historyPath, 500)
+	sched.Start()
+	defer sched.Stop()
+	sched.RegisterHandler(scheduler.NewBackupRunner())
+
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	s := &Server{
+		config:    cfg,
+		scheduler: sched,
+		userRepo: &mockUserRepo{users: map[int64]*auth.User{
+			42: {ID: 42, Username: "operator", Role: "operator", Status: "active"},
+		}},
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"name":      "exfiltration attempt",
+		"type":      "backup",
+		"enabled":   true,
+		"cron_expr": "0 0 2 * * *",
+		"payload": map[string]interface{}{
+			"sources":    []string{"configs/config.yaml"},
+			"output_dir": "web/static",
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	req = req.WithContext(contextWithUserID(req.Context(), 42))
+	rec := httptest.NewRecorder()
+
+	s.handleCreateTask(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-admin backup task creation, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := len(sched.ListTasks()); got != 0 {
+		t.Fatalf("backup task was created despite authorization failure: %d tasks", got)
 	}
 }
 

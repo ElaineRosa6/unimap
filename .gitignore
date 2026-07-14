@@ -128,3 +128,4 @@ package-lock.json
 /docs/OPTIMIZATION_REMEDIATION_PLAN_*.md
 /docs/PLAN_*.md
 /docs/REVIEW_NOTIFY_FOFA_*.md
+web/hash_store/check_records.db

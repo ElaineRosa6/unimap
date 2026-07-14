@@ -2235,7 +2235,7 @@ td:first-child {
 }
 
 .login-tagline {
-	color: rgba(255, 255, 255, 0.4);
+	color: rgba(255, 255, 255, 0.62);
 	font-size: 13px;
 	line-height: 1.5;
 	margin: 0;
@@ -2252,7 +2252,7 @@ td:first-child {
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.08em;
-	color: rgba(255, 255, 255, 0.25);
+	color: rgba(255, 255, 255, 0.55);
 }
 
 .login-engines__list {
@@ -2265,9 +2265,9 @@ td:first-child {
 	font-size: 11px;
 	font-weight: 500;
 	font-family: var(--font-mono);
-	color: rgba(91, 140, 142, 0.7);
-	background: rgba(91, 140, 142, 0.08);
-	border: 1px solid rgba(91, 140, 142, 0.15);
+	color: #a5b4fc;
+	background: rgba(99, 102, 241, 0.14);
+	border: 1px solid rgba(129, 140, 248, 0.28);
 	border-radius: var(--radius-sm);
 	padding: 2px var(--space-2);
 	letter-spacing: 0.02em;
@@ -2307,7 +2307,7 @@ td:first-child {
 }
 
 .login-sub {
-	color: rgba(255, 255, 255, 0.35);
+	color: rgba(255, 255, 255, 0.62);
 	font-size: 13px;
 	margin: 0;
 }
@@ -2322,7 +2322,7 @@ td:first-child {
 	font-size: 12px;
 	text-transform: uppercase;
 	letter-spacing: 0.06em;
-	color: rgba(255, 255, 255, 0.45);
+	color: rgba(255, 255, 255, 0.65);
 }
 
 .login-card input[type="text"],
@@ -2339,7 +2339,7 @@ td:first-child {
 }
 
 .login-card input::placeholder {
-	color: rgba(255, 255, 255, 0.2);
+	color: rgba(255, 255, 255, 0.5);
 }
 
 .login-card input:focus {
@@ -2411,7 +2411,7 @@ td:first-child {
 .login-footer {
 	text-align: center;
 	font-size: 11px;
-	color: rgba(255, 255, 255, 0.2);
+	color: rgba(255, 255, 255, 0.5);
 	margin-top: var(--space-8);
 	letter-spacing: 0.02em;
 }
@@ -2541,10 +2541,18 @@ td:first-child {
 
 	header .nav-bar {
 		width: 100%;
-		justify-content: center;
+		min-width: 0;
+		max-width: 100%;
+		justify-content: flex-start;
+		overflow-x: auto;
+		overflow-y: hidden;
+		overscroll-behavior-x: contain;
+		scrollbar-width: none;
 		padding-top: var(--space-2);
 		border-top: 1px solid rgba(255, 255, 255, 0.1);
 	}
+
+	header .nav-bar::-webkit-scrollbar { display: none; }
 
 	.example-list,
 	.quota-grid,

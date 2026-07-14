@@ -1033,9 +1033,10 @@
 		for (var i = 0; i < notifyChannels.length; i++) {
 			var ch = notifyChannels[i];
 			var color = typeBadge[ch.type] || '#666';
+			var typeName = typeNames[ch.type] || escHtml(ch.type || '未知');
 			html += '<div class="cfg-row nch-row">' +
 				'<div class="nch-flex">' +
-				'<span class="nch-badge" data-badge-color="' + color + '">' + (typeNames[ch.type] || ch.type) + '</span>' +
+				'<span class="nch-badge" data-badge-color="' + color + '">' + typeName + '</span>' +
 				'<span class="nch-id">' + escHtml(ch.id) + '</span>' +
 				(ch.enabled ? '<span class="dot on ml-4"></span>' : '<span class="dot off ml-4"></span>') +
 				'</div>' +

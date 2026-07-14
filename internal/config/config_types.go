@@ -361,8 +361,27 @@ func (c *Config) Clone() *Config {
 	clone.Distributed = c.Distributed
 	clone.Distributed.NodeAuthTokens = cloneStringMap(c.Distributed.NodeAuthTokens)
 
+	// Alerting and ICP only contain value fields.
+	clone.Alerting = c.Alerting
+	clone.ICP = c.ICP
+
+	// Backup has a source slice.
+	clone.Backup = c.Backup
+	clone.Backup.Sources = cloneStringSlice(c.Backup.Sources)
+
+	// History only contains value fields.
+	clone.History = c.History
+
 	// Scheduler
 	clone.Scheduler = c.Scheduler
+
+	// Notifications have a pointer plus per-channel header maps.
+	clone.Notifications = c.Notifications
+	if c.Notifications.FeishuApp != nil {
+		feishuApp := *c.Notifications.FeishuApp
+		clone.Notifications.FeishuApp = &feishuApp
+	}
+	clone.Notifications.Channels = cloneNotificationChannelConfigs(c.Notifications.Channels)
 
 	// Cache (has map: Engines)
 	clone.Cache = c.Cache
@@ -371,6 +390,9 @@ func (c *Config) Clone() *Config {
 	// Query (has slice: BrowserFallback.Engines)
 	clone.Query = c.Query
 	clone.Query.BrowserFallback.Engines = cloneStringSlice(c.Query.BrowserFallback.Engines)
+
+	// Tamper only contains value fields.
+	clone.Tamper = c.Tamper
 
 	return clone
 }
@@ -411,6 +433,18 @@ func cloneEngineCacheMap(src map[string]EngineCacheConfig) map[string]EngineCach
 	out := make(map[string]EngineCacheConfig, len(src))
 	for k, v := range src {
 		out[k] = v
+	}
+	return out
+}
+
+func cloneNotificationChannelConfigs(src []NotificationChannelCfg) []NotificationChannelCfg {
+	if src == nil {
+		return nil
+	}
+	out := make([]NotificationChannelCfg, len(src))
+	copy(out, src)
+	for i := range out {
+		out[i].Headers = cloneStringMap(src[i].Headers)
 	}
 	return out
 }

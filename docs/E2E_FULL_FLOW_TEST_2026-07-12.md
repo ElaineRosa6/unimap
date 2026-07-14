@@ -1,12 +1,16 @@
 # UniMap 全流程功能验收（2026-07-12 最终版）
 
+> **历史验收快照**：结果仅代表 2026-07-12 的特定部署与凭证状态，不代表当前生产可用性。以下测试目标、组织名称、第三方代理和通知通道标识已脱敏；不得复用本记录中的目标或参数。
+>
+> **后续勘误（2026-07-14）**：本记录中“截图引擎不可用”仅是当日 Chrome Extension 未连接的环境状态。受控本机 Bridge 的后续成功态证据见 [`E2E_BRIDGE_SCREENSHOT_NOTIFICATION_2026-07-14.md`](E2E_BRIDGE_SCREENSHOT_NOTIFICATION_2026-07-14.md)。
+
 ## 测试范围
 
-- 资产目标：`132.232.231.41`
-- 篡改 URL：`http://132.232.231.41`、`http://132.232.231.41:16181`
-- ICP 关键词：`[REDACTED]`
-- 查询引擎：FOFA（第三方 fafaapi.info）、Hunter、DayDayMap、Censys
-- 通知渠道：飞书 Webhook (`feishu_2`)、飞书应用 (`feishu_app`)、企业微信 (`dijia_01`)
+- 资产目标：`<REDACTED_TEST_TARGET>`
+- 篡改 URL：`https://<REDACTED_TEST_TARGET>`、`https://<REDACTED_TEST_TARGET>:<PORT>`
+- ICP 关键词：`<REDACTED_TEST_KEYWORD>`
+- 查询引擎：FOFA、Hunter、DayDayMap、Censys
+- 通知渠道：飞书 Webhook、飞书应用、企业微信（通道标识已脱敏）
 
 ## 验收结果
 
@@ -31,7 +35,7 @@
 
 ### ICP 备案查询
 
-- 单位：[REDACTED]
+- 单位：`<REDACTED_TEST_ORGANIZATION>`
 - 主备案号：[REDACTED]08001197号
 - 域名（5 条）：36.147.22.12、yunyusec.com、ynydbigdata.cn、yunyusec.cn、yunyusec.net
 - 持久化：`icp_query_runs` 2 条、`icp_results` 10 条
@@ -41,24 +45,24 @@
 
 | URL | 基线 | 检测 | 结果 |
 |-----|------|------|------|
-| `http://132.232.231.41:16181` | hash=91832dd5... | hash=91832dd5... | normal（一致） |
-| `http://132.232.231.41` | hash=d3f2e1de... | hash=248dd3e2... | normal（动态内容） |
+| `<REDACTED_TEST_TARGET>:<PORT>` | hash=91832dd5... | hash=91832dd5... | normal（一致） |
+| `<REDACTED_TEST_TARGET>` | hash=d3f2e1de... | hash=248dd3e2... | normal（动态内容） |
 
 - 持久化：`/api/v1/tamper/history` 4 条记录
 
 ### 端口扫描
 
 - 开放端口：22 (SSH)、80 (HTTP)、8080、16181 (ICP)
-- 注意：直接 IP 扫描会被 CDN 检测排除，需使用带端口的 URL（如 `http://132.232.231.41:16181`）绕过
+- 注意：本次部署的直接 IP 扫描受 CDN 检测影响；这是历史环境观察，不应据此设计绕过策略。
 - 调度任务 payload 格式：`urls`（字符串数组）+ `ports`（字符串数组）
 
 ### 通知推送
 
 | 渠道 | 类型 | 状态 |
 |------|------|------|
-| feishu_2 | 飞书 Webhook | ✅ 送达 |
+| `<REDACTED_CHANNEL>` | 飞书 Webhook | ✅ 送达 |
 | feishu_app | 飞书应用 | ✅ 送达 |
-| dijia_01 | 企业微信 | ✅ 送达 |
+| `<REDACTED_CHANNEL>` | 企业微信 | ✅ 送达 |
 
 ### 定时任务调度
 

@@ -49,6 +49,42 @@ func TestUserDB_InitSchema(t *testing.T) {
 	}
 }
 
+func TestUserPersistsAfterDatabaseReopen(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "users.db")
+	firstDB, err := NewUserDB(dbPath)
+	if err != nil {
+		t.Fatalf("open first database: %v", err)
+	}
+	if err := firstDB.InitSchema(); err != nil {
+		_ = firstDB.Close()
+		t.Fatalf("initialize first database: %v", err)
+	}
+	created, err := NewUserRepository(firstDB.DB()).Create("persistence-user", "non-production-hash", "operator")
+	if err != nil {
+		_ = firstDB.Close()
+		t.Fatalf("create user: %v", err)
+	}
+	if err := firstDB.Close(); err != nil {
+		t.Fatalf("close first database: %v", err)
+	}
+
+	secondDB, err := NewUserDB(dbPath)
+	if err != nil {
+		t.Fatalf("reopen database: %v", err)
+	}
+	defer secondDB.Close()
+	if err := secondDB.InitSchema(); err != nil {
+		t.Fatalf("initialize reopened database: %v", err)
+	}
+	persisted, err := NewUserRepository(secondDB.DB()).GetByID(created.ID)
+	if err != nil {
+		t.Fatalf("get persisted user: %v", err)
+	}
+	if persisted == nil || persisted.Username != "persistence-user" || persisted.Role != "operator" || persisted.Status != "active" {
+		t.Fatalf("unexpected persisted user: %#v", persisted)
+	}
+}
+
 func TestUserRepository_CRUD(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")

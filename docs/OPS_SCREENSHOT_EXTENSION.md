@@ -1,260 +1,116 @@
 # Screenshot Extension Ops Runbook
 
-## Scope
+> 最后按代码核对：2026-07-13。适用于 `tools/extension-screenshot` manifest 0.4.1。
 
-This runbook focuses on screenshot extension bridge operations.
+## 运行边界
 
-- Engine modes: cdp, extension
-- Bridge endpoints: /api/screenshot/bridge/health, /api/screenshot/bridge/status
-- Rollback scripts:
-  - scripts/rollback_extension_to_cdp.ps1
-  - scripts/rollback_extension_to_cdp.sh
+- 扩展 Bridge 面向本机浏览器；配对、令牌轮换、任务拉取和结果回调均限制为 loopback 请求。
+- API 路径必须使用 `/api/v1/screenshot/bridge/...`。旧 `/api/screenshot/bridge/...` 已移除。
+- `health` 和 `status` 对远程请求仅返回最小信息；本机请求可获得诊断快照。
+- 未实现 `/diagnostic` 端点；不要将它加入探活、监控或自动化脚本。
 
-## Daily Checks
+## 启动与诊断
 
-1. Service health:
-   - Check Web service is reachable.
-   - Check bridge health/status endpoints.
-   - **重要提示**：服务启动后，浏览器扩展需要等待大约 1-2 分钟才能正常连接。这是因为服务需要初始化截图管理器、桥接服务等组件，确保所有 API 端点就绪后扩展才能成功配对和通信。
-2. Bridge diagnostics:
-   - ready, bridge_connected
-   - queue_len, in_flight_tasks, pending_tasks
-   - last_error, last_error_at
-3. Auth/session state:
-   - pairing_required
-   - paired_clients
-   - callback_signature_required
-4. Runtime quality:
-   - Observe bridge timeout/retry/fallback trends.
-   - Verify screenshot success ratio remains stable.
-
-## Proxy Pool Checks (Day13)
-
-1. Config sanity:
-   - network.proxy_pool.enabled
-   - network.proxy_pool.strategy=round_robin
-   - network.proxy_pool.proxies non-empty when enabled
-2. Runtime behavior:
-   - Monitor reachability response contains proxy field.
-   - Screenshot/tamper requests can complete when one proxy is down.
-3. Cooldown/fallback:
-   - Repeated proxy failures trigger cooldown.
-   - allow_direct_fallback=true allows direct requests when all proxies cool down.
-4. Regression gate:
-   - Run go test ./... after proxy_pool config changes.
-
-## Failure Triage Order
-
-1. Determine mode:
-   - screenshot.engine in config
-2. Check bridge status:
-   - Is bridge connected and ready?
-3. Check auth:
-   - Is pairing enabled? Is token expired?
-   - Is callback signature check enabled and passing?
-   - Is token rotation endpoint available and healthy?
-4. Check extension runtime:
-   - Can extension pull tasks/next?
-   - Can extension post mock/result?
-5. Check fallback behavior:
-   - fallback_to_cdp enabled?
-
-## Key API Checks
-
-PowerShell examples:
+启动服务和浏览器扩展后，在服务所在机器执行：
 
 ```powershell
-Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8448/api/screenshot/bridge/health"
-Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8448/api/screenshot/bridge/status"
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8448/api/screenshot/bridge/token/rotate" -Headers @{ Authorization = "Bearer <token>" } -ContentType "application/json" -Body '{"revoke_old":true}'
+Invoke-RestMethod http://127.0.0.1:8448/api/v1/screenshot/bridge/health
+Invoke-RestMethod http://127.0.0.1:8448/api/v1/screenshot/bridge/status
+Invoke-RestMethod http://127.0.0.1:8448/api/v1/screenshot/router/status
 ```
 
-Shell examples:
+扩展连接失败时，依次确认：
 
-```bash
-curl -fsS http://127.0.0.1:8448/api/screenshot/bridge/health
-curl -fsS http://127.0.0.1:8448/api/screenshot/bridge/status
-```
+1. 扩展配置中的服务地址指向正确的本机 UniMap 服务。
+2. 服务和扩展处于同一 host，且本机可访问 8448 端口。
+3. 配对码与 `screenshot.extension.pair_code` 一致。
+4. pairing 开启时，扩展保存的 bridge token 未过期；必要时重新配对。
+5. CDP 或 Extension 引擎健康状态是否可用。可通过 `POST /api/v1/screenshot/set-mode` 在 `cdp`、`extension`、`auto` 间切换。
 
-Signed callback header checklist (when `callback_signature_required=true`):
+## 配对与令牌
 
-1. Request includes `X-Bridge-Timestamp`, `X-Bridge-Nonce`, `X-Bridge-Signature`.
-2. Server time skew is within configured window (`callback_signature_skew_seconds`).
-3. Same nonce is not reused within nonce TTL (`callback_nonce_ttl_seconds`).
-
-Reachability sample (check proxy field):
-
-```bash
-curl -fsS -X POST http://127.0.0.1:8448/api/url/reachability \
-   -H "Content-Type: application/json" \
-   -d '{"urls":["https://example.com"],"concurrency":1}'
-```
-
-Day14 port-scan sample (CDN excluded by default):
-
-```bash
-curl -fsS -X POST http://127.0.0.1:8448/api/url/port-scan \
-   -H "Content-Type: application/json" \
-   -d '{"urls":["https://example.com"],"ports":[80,443,8080],"concurrency":1}'
-```
-
-## Day15 Pre-Implementation Checklist
-
-1. Confirm distributed mode remains disabled by default.
-2. Confirm single-node fallback path remains available for all critical flows.
-3. Prepare node auth token issuance and rotation policy.
-4. Define heartbeat timeout and offline eviction thresholds.
-5. Define D15-A/B/C release windows and rollback owners.
-
-## Day15 D15-A API Checks
-
-Register node:
-
-```bash
-curl -fsS -X POST http://127.0.0.1:8448/api/nodes/register \
-   -H "Authorization: Bearer <node-token>" \
-   -H "Content-Type: application/json" \
-   -d '{"node_id":"node-a","hostname":"worker-a","region":"cn-east","max_concurrency":3,"capabilities":["port_scan","screenshot"]}'
-```
-
-Heartbeat:
-
-```bash
-curl -fsS -X POST http://127.0.0.1:8448/api/nodes/heartbeat \
-   -H "Authorization: Bearer <node-token>" \
-   -H "Content-Type: application/json" \
-   -d '{"node_id":"node-a","current_load":1,"max_concurrency":3,"avg_latency_ms":12.5,"success_rate_5m":99.1}'
-```
-
-Status:
-
-```bash
-curl -fsS http://127.0.0.1:8448/api/nodes/status
-```
-
-## Day15 D15-B API Checks
-
-Enqueue task:
-
-```bash
-curl -fsS -X POST http://127.0.0.1:8448/api/nodes/task/enqueue \
-   -H "Content-Type: application/json" \
-   -d '{"task_id":"task-1","task_type":"port_scan","priority":10,"required_caps":["port_scan"],"payload":{"url":"https://example.com"}}'
-```
-
-Claim task:
-
-```bash
-curl -fsS -X POST http://127.0.0.1:8448/api/nodes/task/claim \
-   -H "Authorization: Bearer <node-token>" \
-   -H "Content-Type: application/json" \
-   -d '{"node_id":"node-a","caps":["port_scan"]}'
-```
-
-Submit task result:
-
-```bash
-curl -fsS -X POST http://127.0.0.1:8448/api/nodes/task/result \
-   -H "Authorization: Bearer <node-token>" \
-   -H "Content-Type: application/json" \
-   -d '{"task_id":"task-1","node_id":"node-a","status":"completed","duration_ms":32,"output":{"ok":true}}'
-```
-
-Node auth verification:
-
-1. Configure `distributed.node_auth_tokens` with `node_id -> token` mapping.
-2. Call register/heartbeat/claim/result without token and confirm `401 node_auth_failed`.
-3. Retry with `Authorization: Bearer <token>` and confirm request succeeds.
-
-Task queue status:
-
-```bash
-curl -fsS http://127.0.0.1:8448/api/nodes/task/status
-```
-
-## Day15 D15-C API Checks
-
-Network profile:
-
-```bash
-curl -fsS http://127.0.0.1:8448/api/nodes/network/profile
-```
-
-Distributed toggle verification:
-
-1. Set `distributed.enabled=false` and restart service.
-2. Verify `/api/nodes/*` endpoints return `distributed_disabled`.
-3. Set `distributed.enabled=true` and restart service.
-4. Verify register/heartbeat/task/profile endpoints become available again.
-5. If `distributed.admin_token` is set, verify `status/profile/enqueue/task-status` require `Authorization: Bearer <admin-token>`.
-
-## Day15 One-Click E2E Drill
-
-Windows PowerShell:
+配对只允许 loopback 请求：
 
 ```powershell
-./scripts/day15_distributed_e2e.ps1 -BaseUrl "http://127.0.0.1:8448" -NodeId "node-a" -NodeToken "token-a" -AdminToken "admin-token" -TaskId "task-e2e-1"
+$body = @{ client_id = 'chrome-extension'; pair_code = $env:UNIMAP_EXTENSION_PAIR_CODE } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8448/api/v1/screenshot/bridge/pair `
+  -ContentType application/json -Body $body
 ```
 
-Linux/macOS:
+成功后服务返回 `token`、`expires_in` 和 `expire_at`。将 token 仅保存在扩展本地存储。任务拉取、回调与轮换使用：
 
-```bash
-./scripts/day15_distributed_e2e.sh http://127.0.0.1:8448 node-a token-a task-e2e-1 admin-token
+```text
+Authorization: Bearer <bridge-token>
 ```
 
-Bridge strict e2e (signature + rotate) on Windows:
+令牌轮换也仅允许 loopback：
 
 ```powershell
-./scripts/bridge_e2e.ps1 -BaseUrl "http://127.0.0.1:8448" -StrictSignature -RotateToken
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8448/api/v1/screenshot/bridge/token/rotate `
+  -Headers @{ Authorization = "Bearer $env:UNIMAP_BRIDGE_TOKEN" } `
+  -ContentType application/json -Body '{"revoke_old":true}'
 ```
 
-Expected result:
+如果服务重启导致短期 token 失效，重新配对即可。管理令牌可在 loopback 本机恢复流程中被接受，但不得暴露给远程扩展或记录到日志。
 
-1. register/heartbeat/claim/result all return `success=true`.
-2. `/api/nodes/task/status` contains the submitted task and final status is `completed`.
-3. `/api/nodes/network/profile` includes the node profile record.
+## 任务协议
 
-## Day13-15 Alignment Snapshot
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET | `/api/v1/screenshot/bridge/tasks/next` | 获取一个待执行任务；无任务时返回 `task: null` |
+| POST | `/api/v1/screenshot/bridge/mock/result` | 回传任务结果 |
 
-1. Day13 proxy pool: implemented and in use.
-2. Day14 url port-scan + CDN exclusion: implemented and available.
-3. Day15 distributed nodes: implemented (D15-A/B/C), with distributed gate and node token auth.
+任务可使用 `collect`、`screenshot` 或 `collect_and_capture` 动作。扩展对三种动作执行一致的等待、懒加载与稳定性处理；不要将 `collect_and_capture` 当作未支持的私有动作。
 
-## Rollback Triggers
+当启用回调签名时，回传还必须包含 `X-Bridge-Timestamp`、`X-Bridge-Nonce` 与 `X-Bridge-Signature`。服务会验证时间窗口、nonce 重放和 body HMAC。
 
-Trigger extension -> cdp rollback when one or more conditions persist:
+## 受支持的采集目标
 
-1. bridge ready=false or bridge disconnected for more than 5 minutes.
-2. bridge timeout/retry errors continuously rising.
-3. pairing/auth cannot be recovered after refresh.
-4. extension callback path unavailable or unstable.
+当前扩展源码含 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap 的页面识别和选择器。Web 界面仅将前五个作为稳定引擎展示；后两个的 API 适配器与扩展选择器存在，但不应据此承诺 UI 已全面启用。
 
-## Hardening Config Baseline
+## 常用验证
 
-Use these values for production baseline:
+搜索页截图：
 
-1. `screenshot.extension.pairing_required=true`
-2. `screenshot.extension.callback_signature_required=true`
-3. `screenshot.extension.callback_signature_skew_seconds=300`
-4. `screenshot.extension.callback_nonce_ttl_seconds=600`
+```powershell
+Invoke-RestMethod 'http://127.0.0.1:8448/api/v1/screenshot/search-engine?engine=fofa&query=port%3D%2280%22'
+```
 
-## Rollback Procedure
+异步 URL 批量截图：
 
-1. Execute rollback script:
-   - Windows: scripts/rollback_extension_to_cdp.ps1
-   - Linux/macOS: scripts/rollback_extension_to_cdp.sh
-2. Restart service:
-   - Windows: scripts/stop.ps1 and scripts/start.ps1
-   - Linux/macOS: scripts/stop.sh and scripts/start.sh
-3. Verify mode and APIs:
-   - screenshot.engine=cdp
-   - /api/screenshot/bridge/health is reachable
-   - screenshot target/batch APIs are functional
+```powershell
+$body = @{ urls = @('https://example.com'); concurrency = 1 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8448/api/v1/screenshot/batch-urls `
+  -ContentType application/json -Body $body
+```
 
-## Post-Rollback Validation
+随后用返回的 `job_id` 调用：
 
-1. Run one target screenshot request.
-2. Run one batch-urls request.
-3. Confirm result file path is persisted.
-4. Confirm query flow remains available.
+```text
+GET /api/v1/screenshot/batch/progress?job_id=<job_id>
+```
 
+服务会拒绝私有、回环或内部目标；这是 SSRF 防护，不能通过重试或切换扩展绕过。
+
+## Bridge 查询、截图与通知联调
+
+以下显式标签测试会启动一个仅监听 `127.0.0.1:8448` 的临时服务，创建一次
+搜索截图任务，并验证 Bridge 回调、截图文件及飞书应用图片通知：
+
+```powershell
+go test -tags live_bridge_e2e ./web -run '^TestLiveBridgeSearchScreenshotNotification$' -count=1 -v
+```
+
+默认引擎为 FOFA；可在 PowerShell 设置 `UNIMAP_LIVE_BRIDGE_ENGINE` 为 `hunter`、`zoomeye`、`quake` 或 `shodan` 后执行同一命令。
+
+需要人工核验截图内容时，可将 `UNIMAP_LIVE_BRIDGE_ARTIFACT_DIR` 设为一个绝对路径。测试会以仅当前用户可读的权限保留一份 PNG 副本；未设置时，截图随临时测试目录清理。
+
+它会使用本机 `configs/config.yaml`、已配对的扩展和当前登录的搜索引擎会话，向已启用的
+`feishu_app` 渠道发送一条真实测试消息。该测试不适合 CI，也不得在未获通知接收方同意时执行；
+它不会打印凭证，且不会修改原配置或持久化任务。
+
+## 变更与回滚
+
+- 修改 Bridge API、token 或回调协议前，先更新扩展与服务端，再执行 `go test -race ./...`。
+- 将模式切回 CDP：`POST /api/v1/screenshot/set-mode`，JSON 为 `{"mode":"cdp"}`。
+- 扩展问题不能通过恢复旧 `/api/...` shim 解决；调用方必须迁移到 `/api/v1/...`。

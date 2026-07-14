@@ -208,7 +208,7 @@
 					const res = await fetch('/api/v1/users');
 					const data = await res.json();
 					if (!res.ok) {
-						usersTbody.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:#c00">' + (data.error || '加载失败') + '</td></tr>';
+						usersTbody.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:#c00">' + esc(data.error || '加载失败') + '</td></tr>';
 						return;
 					}
 					const users = (data.data && data.data.users) || [];
@@ -219,13 +219,13 @@
 					usersTbody.innerHTML = users.map(u => renderUserRow(u)).join('');
 					bindUserRowEvents();
 				} catch (err) {
-					usersTbody.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:#c00">请求失败: ' + err.message + '</td></tr>';
+					usersTbody.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:#c00">请求失败: ' + esc(err.message) + '</td></tr>';
 				}
 			}
 
 			function fmtTime(s) {
 				if (!s) return '-';
-				try { return new Date(s).toLocaleString('zh-CN'); } catch(e) { return s; }
+				try { return new Date(s).toLocaleString('zh-CN'); } catch(e) { return String(s); }
 			}
 
 			function renderUserRow(u) {
@@ -238,16 +238,17 @@
 				).join('');
 				const toggleLabel = u.status === 'active' ? '禁用' : '启用';
 				const toggleStatus = u.status === 'active' ? 'disabled' : 'active';
+				const userID = esc(u.id);
 				const delBtn = isSelf
 					? '<button class="btn btn-sm" disabled title="不能删除自己" style="opacity:.5">删除</button>'
-					: '<button class="btn btn-sm u-del" data-uid="' + u.id + '" data-name="' + esc(u.username) + '">删除</button>';
+					: '<button class="btn btn-sm u-del" data-uid="' + userID + '" data-name="' + esc(u.username) + '">删除</button>';
 				return '<tr style="border-bottom:1px solid var(--border-color,#eee)">' +
 					'<td style="padding:6px 8px">' + esc(u.username) + (isSelf ? ' <small>(你)</small>' : '') + '</td>' +
-					'<td style="padding:6px 8px"><select class="u-role" data-uid="' + u.id + '"' + (isSelf ? ' disabled style="opacity:.7"' : '') + '>' + roleSel + '</select></td>' +
+					'<td style="padding:6px 8px"><select class="u-role" data-uid="' + userID + '"' + (isSelf ? ' disabled style="opacity:.7"' : '') + '>' + roleSel + '</select></td>' +
 					'<td style="padding:6px 8px">' + statusBadge + '</td>' +
-					'<td style="padding:6px 8px">' + fmtTime(u.created_at) + '</td>' +
+					'<td style="padding:6px 8px">' + esc(fmtTime(u.created_at)) + '</td>' +
 					'<td style="padding:6px 8px;white-space:nowrap">' +
-						(isSelf ? '' : '<button class="btn btn-sm u-toggle" data-uid="' + u.id + '" data-status="' + toggleStatus + '">' + toggleLabel + '</button> ') +
+						(isSelf ? '' : '<button class="btn btn-sm u-toggle" data-uid="' + userID + '" data-status="' + toggleStatus + '">' + toggleLabel + '</button> ') +
 						delBtn +
 					'</td>' +
 				'</tr>';
@@ -277,7 +278,7 @@
 
 			function esc(s) {
 				const d = document.createElement('div');
-				d.textContent = s || '';
+				d.textContent = s === null || s === undefined ? '' : String(s);
 				return d.innerHTML;
 			}
 
@@ -304,7 +305,7 @@
 					const res = await fetch('/api/v1/users/' + id, {method: 'DELETE'});
 					if (!res.ok) {
 						let msg = '删除失败';
-						try { const d = await res.json(); msg = d.error || msg; } catch(e){}
+						try { const d = await res.json(); msg = d.error || msg; } catch(e) { console.warn('Delete user error response was not JSON:', e); }
 						showToast(msg, 'error'); return;
 					}
 					showToast('用户已删除', 'success');

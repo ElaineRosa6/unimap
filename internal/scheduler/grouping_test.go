@@ -54,6 +54,7 @@ func TestTaskTypeGroup_KnownAndUnknown(t *testing.T) {
 		{TaskQuery, "查询与采集"},
 		{TaskTamperCheck, "监控与检测"},
 		{TaskScreenshotCleanup, "维护与清理"},
+		{TaskBackup, "维护与清理"},
 		{TaskCookieVerify, "基础设施"},
 		{TaskURLImport, "导入与汇总"},
 		{TaskType("nonexistent"), "其他"},

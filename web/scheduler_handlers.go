@@ -139,6 +139,9 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	if !s.requireBackupTaskAdmin(w, r, scheduler.TaskType(req.Type)) {
+		return
+	}
 
 	if strings.TrimSpace(req.Name) == "" {
 		writeSchedulerJSONError(w, http.StatusBadRequest, "task name is required")
@@ -293,6 +296,10 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		writeSchedulerJSONError(w, http.StatusBadRequest, "task id is required")
 		return
 	}
+	if !s.requireBackupTaskAdmin(w, r, scheduler.TaskType(req.Type)) ||
+		!s.requireBackupTaskAdminByID(w, r, strings.TrimSpace(req.ID)) {
+		return
+	}
 
 	if req.Notifications != nil && len(req.Notifications.ChannelIDs) > 0 {
 		if s.notifyRegistry == nil {
@@ -402,6 +409,9 @@ func (s *Server) handleRunTaskNow(w http.ResponseWriter, r *http.Request) {
 		writeSchedulerJSONError(w, http.StatusBadRequest, "task id is required")
 		return
 	}
+	if !s.requireBackupTaskAdminByID(w, r, strings.TrimSpace(req.ID)) {
+		return
+	}
 
 	if err := s.scheduler.RunTaskNow(req.ID); err != nil {
 		writeSchedulerJSONError(w, http.StatusNotFound, err.Error())
@@ -434,6 +444,9 @@ func (s *Server) handleEnableTask(w http.ResponseWriter, r *http.Request) {
 
 	if strings.TrimSpace(req.ID) == "" {
 		writeSchedulerJSONError(w, http.StatusBadRequest, "task id is required")
+		return
+	}
+	if !s.requireBackupTaskAdminByID(w, r, strings.TrimSpace(req.ID)) {
 		return
 	}
 
@@ -522,5 +535,28 @@ func mapToTaskPayload(m map[string]any) *model.TaskPayload {
 	}
 	var p model.TaskPayload
 	_ = json.Unmarshal(raw, &p)
+
+	// TaskPayload models common fields, while individual runners also accept
+	// task-specific top-level fields. Preserve those fields in Extra so the
+	// typed conversion does not silently discard runner parameters.
+	knownFields := map[string]struct{}{
+		"query": {}, "engines": {}, "page_size": {}, "format": {},
+		"detection_mode": {}, "max_age_days": {}, "low_threshold": {},
+		"timeout_seconds": {}, "queries": {}, "type": {}, "page": {},
+		"icp_page_size": {}, "urls": {}, "url": {}, "cookie_file": {},
+		"extra": {},
+	}
+	extra := make(map[string]any, len(p.Extra)+len(m))
+	for key, value := range p.Extra {
+		extra[key] = value
+	}
+	for key, value := range m {
+		if _, known := knownFields[key]; !known {
+			extra[key] = value
+		}
+	}
+	if len(extra) > 0 {
+		p.Extra = extra
+	}
 	return &p
 }
