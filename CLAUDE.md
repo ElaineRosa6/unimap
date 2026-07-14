@@ -244,6 +244,27 @@ go run -tags gui ./cmd/unimap-gui
 
 **测试**：config/history handler 测试更新 `withAdminContext` 注入 admin 认证上下文，全量 `go test ./...` 通过。
 
+### 2026-07-10 持久化审计修复状态（8 项）
+
+> 来源：`.audit-results/PERSISTENCE_REAUDIT_2026-07-10.md`
+
+| # | 问题 | 严重度 | 状态 | 说明 |
+|---|------|--------|------|------|
+| 1 | Tamper deletion leaves SQLite rows | P1 | ✅ FIXED | `deleteIndexedCheckRecords` 清理 JSON + SQLite |
+| 2 | Alert silence persistence wired wrong | P1 | ✅ FIXED | mutation 后 persistLocked，读操作不再写 |
+| 3 | Query persistence coverage inconsistent | P1 | ✅ FIXED | WebSocket 走 ExecuteQuery 持久化 |
+| 4 | Query header/results not atomic | P2 | ✅ FIXED | `CreateHistoryWithResults` 事务 |
+| 5 | Tamper index still loads every payload | P2 | ✅ FIXED | 审计报告为旧结论；当前有 `WHERE url = ?` + `LIMIT/OFFSET` |
+| 6 | Alert JSON writes not crash-safe | P2 | ❌ NOT FIXED | `persistLocked()` 仍用 `os.WriteFile` 直接写，缺 temp+rename 原子替换（待 Codex 修复） |
+| 7 | Scheduled screenshot SaveJob errors ignored | P2 | ✅ FIXED | 错误已检查 |
+| 8 | Tamper export contract incomplete | P2 | ⚠️ PARTIAL | 过滤参数已补齐，handler 测试已加但组合覆盖待加强 |
+
+**遗留项（1 项 P2）**：
+- Alert JSON crash-safe：`internal/alerting/manager.go:59` — 改为 temp file + `os.Rename`
+
+### 2026-07-13 审计安全漏洞修复（17 文件）
+- adapter 层加固、ZoomEye cookie 校验、scheduler 备份任务鉴权、bridge 状态管理、前端静态资源 CSP 调整
+
 ### Medium (后续迭代修复)
 1. ~~10 个文件超 800 行~~ ✅ 已全部拆分完成（最大 `metrics.go` 795 行）
 2. ~~34 个函数超 50 行~~ ✅ 已拆分完成（191→144，最大 `plugin_demo.go:main` 183 行为示例文件）
