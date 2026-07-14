@@ -1,511 +1,129 @@
 # UniMap 运维 Runbook
 
-> **创建日期：** 2026-04-15
-> **维护者：** UniMap Team
-> **更新频率：** 每次架构变更后更新
+> 最后按代码核对：2026-07-13。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
 
----
+## 0. 先确认服务与认证
 
-## 1. Chrome 崩溃
-
-### 症状
-- 截图功能全部失败
-- 日志中出现 `cdp` 连接错误或 Chrome 进程退出
-- `/api/screenshot/*` 返回 500 错误
-
-### 诊断步骤
-1. 检查 Chrome 进程是否存在：
-   ```bash
-   ps aux | grep chrome
-   # Windows: tasklist | findstr chrome
-   ```
-2. 查看系统日志中的 Chrome 崩溃信息：
-   ```bash
-   journalctl -u unimap-web --since "1 hour ago" | grep -i chrome
-   ```
-3. 检查 Chrome 数据目录是否损坏：
-   ```bash
-   ls -la /tmp/chrome-user-data/  # 或配置中的 userDataDir
-   ```
-
-### 恢复操作
-1. **自动恢复**：UniMap 会自动尝试重新连接 CDP。如果配置的 `RemoteDebugURL` 可用，会自动重建连接。
-2. **手动恢复**：
-   ```bash
-   # 杀掉残留的 Chrome 进程
-   pkill -f "chrome.*remote-debugging"
-   # 重启 UniMap
-   systemctl restart unimap-web
-   ```
-3. **预防措施**：
-   - 确保系统内存充足（Chrome 每个标签页约 100-300MB）
-   - 在 Docker 中运行时设置 `--shm-size=2g`
-   - 监控 `goroutine` 数量，异常增长可能表示资源泄漏
-
----
-
-## 2. Bridge 断连
-
-### 症状
-- Extension 模式截图失败
-- 日志中出现 `bridge websocket disconnected`
-- `/api/screenshot/bridge/*` 返回连接错误
-
-### 诊断步骤
-1. 检查 Bridge WebSocket 连接状态：
-   ```bash
-   curl -s http://localhost:8448/api/health | jq '.bridge'
-   ```
-2. 检查 Bridge Token 是否有效：
-   ```bash
-   # 查看当前 token 状态
-   journalctl -u unimap-web --since "30 min ago" | grep -i "bridge.*token"
-   ```
-3. 检查网络连通性：
-   ```bash
-   curl -v http://localhost:8448/api/screenshot/bridge/ping
-   ```
-
-### 恢复操作
-1. **自动恢复**：Bridge 服务内置重试机制，通常会在 30s 内自动重连。
-2. **令牌轮换**（如果 Token 过期）：
-   ```bash
-   # 重启 Bridge 服务以生成新 token
-   curl -X POST http://localhost:8448/api/screenshot/bridge/restart
-   ```
-3. **手动恢复**：
-   ```bash
-   systemctl restart unimap-web
-   ```
-4. **预防措施**：
-   - 定期检查 Bridge 日志中的 token 轮换频率
-   - 如果频繁断连，检查网络稳定性和防火墙规则
-
----
-
-## 3. Cookie 失效
-
-### 症状
-- 搜索引擎截图返回登录页面
-- 登录状态检测显示 `not_logged_in`
-- 截图显示"请登录后查看"等提示
-
-### 诊断步骤
-1. 逐引擎检测登录状态：
-   ```bash
-   curl -s http://localhost:8448/api/health | jq '.engines'
-   ```
-2. 查看 Cookie 存储目录：
-   ```bash
-   ls -la hash_store/
-   cat hash_store/www_baidu_com.json | jq '.cookies | length'
-   ```
-3. 通过定时任务手动验证：
-   - 访问 `/scheduler` 页面
-   - 创建 `Cookie 验证` 类型任务立即执行
-
-### 恢复操作
-1. **重新导入 Cookie**：
-   - 访问 Web 界面的 Cookie 管理页面
-   - 从浏览器导出最新 Cookie 并导入
-2. **API 方式**：
-   ```bash
-   curl -X POST http://localhost:8448/api/cookies/verify \
-     -H 'Content-Type: application/json' \
-     -d '{"engines": ["fofa", "hunter", "quake", "zoomeye"]}'
-   ```
-3. **预防措施**：
-   - 创建定时任务定期验证 Cookie 有效性（建议每天一次）
-   - 配置告警：当 Cookie 验证失败时发送通知
-
----
-
-## 4. 节点失联
-
-### 症状
-- 分布式任务长时间处于 `PENDING` 或 `ASSIGNED` 状态
-- 节点列表中显示节点为 `offline`
-- 任务领取后无结果返回
-
-### 诊断步骤
-1. 检查节点健康状态：
-   ```bash
-   curl -s http://localhost:8448/api/distributed/nodes | jq '.[] | {id, online, last_heartbeat}'
-   ```
-2. 检查心跳超时配置：
-   ```bash
-   cat config.yaml | grep -A3 "distributed:"
-   # 默认心跳超时: 30s
-   ```
-3. 检查网络连通性：
-   ```bash
-   # 从主节点 ping 工作节点
-   ping <node-ip>
-   # 检查端口连通性
-   nc -zv <node-ip> <node-port>
-   ```
-4. 查看任务队列状态：
-   ```bash
-   curl -s http://localhost:8448/api/distributed/tasks | jq '{total, pending, claimed}'
-   ```
-
-### 恢复操作
-1. **自动故障转移**：系统在检测到节点 offline 后，会自动将该节点领取的任务释放回 `PENDING` 状态，其他健康节点可领取。
-2. **节点重启**：
-   ```bash
-   # 在工作节点上
-   systemctl restart unimap-node
-   ```
-3. **手动重新分配**：
-   ```bash
-   # 强制将超时任务标记为 PENDING
-   curl -X POST http://localhost:8448/api/distributed/tasks/reassign
-   ```
-4. **预防措施**：
-   - 监控节点心跳间隔，设置告警阈值（超过 60s 未心跳）
-   - 确保网络带宽和延迟满足要求
-   - 配置至少 2 个工作节点实现高可用
-
----
-
-## 5. 磁盘满
-
-### 症状
-- 截图保存失败，日志中出现 `no space left on device`
-- 导出文件无法写入
-- 系统整体响应变慢
-
-### 诊断步骤
-1. 检查磁盘使用情况：
-   ```bash
-   df -h
-   du -sh ./screenshots/ ./data/ ./hash_store/ ./logs/ 2>/dev/null
-   ```
-2. 检查大文件：
-   ```bash
-   find ./screenshots/ -name "*.png" -mtime +30 | wc -l
-   du -sh ./screenshots/*/ 2>/dev/null | sort -rh | head -20
-   ```
-3. 检查日志文件大小：
-   ```bash
-   du -sh *.log 2>/dev/null
-   ```
-
-### 恢复操作
-1. **清理过期截图**（推荐）：
-   - 访问 `/scheduler` 页面
-   - 创建 `截图清理` 任务，设置 `max_age_days: 30`
-   - 立即执行
-2. **手动清理**：
-   ```bash
-   # 删除 30 天前的截图
-   find ./screenshots/ -name "*.png" -mtime +30 -delete
-   # 清理空的批次目录
-   find ./screenshots/ -type d -empty -delete
-   ```
-3. **清理篡改检测记录**：
-   - 创建 `篡改记录清理` 定时任务，设置 `max_age_days: 90`
-4. **扩容**：
-   ```bash
-   # Docker 环境
-   docker-compose down
-   # 增加挂载的磁盘容量
-   docker-compose up -d
-   ```
-5. **预防措施**：
-   - 创建定时清理任务（截图 30 天，篡改记录 90 天）
-   - 监控磁盘使用率，设置告警阈值 > 80%
-   - 配置日志轮转（logrotate）
-
----
-
-## 6. Redis 不可用
-
-### 症状
-- 缓存命中率骤降
-- 日志中出现 `redis: connection refused` 或 `redis: timeout`
-- 查询响应时间明显增加
-
-### 诊断步骤
-1. 检查 Redis 连接状态：
-   ```bash
-   redis-cli ping
-   # 应返回 PONG
-   ```
-2. 检查 Redis 配置：
-   ```bash
-   cat config.yaml | grep -A5 "redis:"
-   ```
-3. 检查缓存降级状态：
-   ```bash
-   journalctl -u unimap-web --since "1 hour ago" | grep -i "redis\|cache\|fallback"
-   ```
-
-### 恢复操作
-1. **自动降级**：系统检测到 Redis 不可用时，会自动降级到内存缓存（in-memory cache）。功能不受影响，但多实例间缓存不共享。
-2. **重启 Redis**：
-   ```bash
-   systemctl restart redis
-   # Docker 环境
-   docker-compose restart redis
-   ```
-3. **验证恢复**：
-   ```bash
-   redis-cli ping  # 应返回 PONG
-   # 观察日志中是否出现 cache fallback 停止
-   journalctl -u unimap-web -f | grep cache
-   ```
-4. **预防措施**：
-   - 在 Grafana 中监控缓存命中率，低于 50% 时告警
-   - Redis 配置持久化（RDB 或 AOF）
-   - 如果生产环境强依赖 Redis，考虑配置 Redis Sentinel 或 Cluster
-
----
-
-## 附录：常用诊断命令
-
-```bash
-# 服务状态
-systemctl status unimap-web
-
-# 实时日志
-journalctl -u unimap-web -f
-
-# 健康检查
-curl -s http://localhost:8448/api/health | jq
-
-# 查看所有定时任务
-curl -s http://localhost:8448/api/scheduler/tasks | jq
-
-# 查看执行历史
-curl -s 'http://localhost:8448/api/scheduler/history?limit=10' | jq
-
-# Goroutine 数量（Go 运行时）
-curl -s http://localhost:8448/debug/pprof/goroutine?debug=1 | head -5
-
-# 内存使用
-curl -s http://localhost:8448/debug/pprof/heap?debug=1 | head -20
+```powershell
+Invoke-RestMethod http://127.0.0.1:8448/health
+Invoke-RestMethod http://127.0.0.1:8448/health/ready
+Invoke-RestMethod http://127.0.0.1:8448/health/live
 ```
 
-## 附录：关键指标告警阈值
+生产环境如启用了认证，按部署方式带上会话、API Key 或管理令牌。Prometheus 指标端点是 `/metrics`：启用认证时必须携带管理令牌；未认证的非 loopback 部署会被拒绝。
 
-| 指标 | 警告阈值 | 严重阈值 | 检查频率 |
-|------|---------|---------|---------|
-| 查询 P95 延迟 | > 30s | > 60s | 1 min |
-| 缓存命中率 | < 50% | < 20% | 5 min |
-| 截图成功率 | < 90% | < 70% | 5 min |
-| 节点在线率 | < 80% | < 50% | 1 min |
-| Goroutine 数 | > 1000 | > 5000 | 5 min |
-| 内存使用 | > 80% | > 95% | 1 min |
-| 磁盘使用 | > 80% | > 90% | 15 min |
-| Redis 连接 | 不可用 | 不可用 | 1 min |
-| 浏览器降级失败率 | > 30% | > 50% | 5 min |
-
----
-
-## 7. 通知未收到
-
-### 症状
-- 定时任务执行成功/失败/超时，但配置的钉钉/飞书/企微群没有收到推送消息
-- 日志中可能出现 `notify.* failed` 或 `channel not registered` 警告
-
-### 诊断步骤
-
-#### 7.1 确认全局通知已启用
-
-```bash
-cat config.yaml | grep -A5 "notifications:"
-# 应看到 enabled: true
+```powershell
+Invoke-RestMethod http://127.0.0.1:8448/metrics -Headers @{ 'X-Admin-Token' = $env:UNIMAP_ADMIN_TOKEN }
 ```
 
-如果 `notifications.enabled: false`，所有通知都不会发送（无论任务级开关如何配置）。
+不要把管理令牌、Bridge token 或引擎 Key 写入命令历史、工单或日志。
 
-#### 7.2 确认渠道已正确配置且启用
+## 1. 服务无法启动
 
-```bash
-curl -s http://localhost:8448/api/notifications/channels | jq '.channels[] | {id, type, enabled}'
+1. 检查配置路径与环境变量占位符：默认配置是 `configs/config.yaml`，示例为 `configs/config.yaml.example`。
+2. 确认端口未被占用：`Get-NetTCPConnection -LocalPort 8448 -ErrorAction SilentlyContinue`。
+3. 检查日志中的配置、数据库和浏览器初始化错误。
+4. 最小校验：`go test -race ./...`，然后 `go run ./cmd/unimap-web`。
+
+非 loopback 监听且 Web 认证未启用时，服务会 fail-closed；这是预期安全行为，应该修正部署配置而不是绕过认证。
+
+## 2. 查询失败、无结果或某引擎不可用
+
+1. 先确认登录状态：`GET /api/v1/cookies/login-status`。
+2. 使用 API 查询时发送表单字段 `query`、可选 `engines` 与 `page_size`；不要发送旧文档中的 JSON `limit/offset/timeout` 请求体。
+3. `page_size` 最大为 500。查询状态使用 `GET /api/v1/query/status?query_id=...`。
+4. 检查目标引擎 API Key、Cookie、额度和网络连通性。当前 Web UI 展示核心五引擎；Censys/DayDayMap 已有适配器但不属于稳定 UI 列表。
+
+## 3. Chrome/CDP 或截图失败
+
+检查 CDP：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8448/api/v1/cdp/status
 ```
 
-检查点：
-- 渠道 `id` 是否与任务 `channel_ids` 中的一致
-- `enabled` 是否为 `true`
-- `webhook_url` 是否完整且可访问
+检查截图路由：
 
-#### 7.3 确认任务级通知配置
-
-```bash
-curl -s http://localhost:8448/api/scheduler/tasks | jq '.[] | select(.notifications != null) | {id, name, notifications}'
+```powershell
+Invoke-RestMethod http://127.0.0.1:8448/api/v1/screenshot/router/status
 ```
 
-检查点：
-- `notifications.enabled` 是否为 `true`（任务级总开关）
-- `notifications.on_success` / `on_failure` / `on_timeout` 是否匹配当前事件
-- `notifications.channel_ids` 是否包含已注册的渠道 ID
+可将模式切换为 `cdp`、`extension` 或 `auto`：
 
-#### 7.4 检查日志中的通知发送记录
-
-```bash
-journalctl -u unimap-web --since "1 hour ago" | grep -iE "notify.*failed|notify.*success|channel not registered|channel disabled"
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8448/api/v1/screenshot/set-mode `
+  -ContentType application/json -Body '{"mode":"auto"}'
 ```
 
-关键日志：
-- `channel not registered: <id>` → 渠道 ID 未在全局配置中注册
-- `channel disabled: <id>` → 渠道已注册但 enabled=false
-- `notify.* failed: ...` → 发送失败，查看具体错误信息
+单站截图使用 `POST /api/v1/screenshot`，请求体仅需 `{"url":"https://example.com"}`。目标 URL 被校验为公网 HTTP/HTTPS 地址；被拒绝的内网、loopback 或私有地址不是截图服务故障。
 
-#### 7.5 测试通知渠道连通性
+## 4. 浏览器扩展无法配对或截图
 
-```bash
-# 钉钉
-curl -X POST "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"msgtype":"text","text":{"content":"UniMap 通知测试"}}'
+1. 扩展和服务应运行在同一台机器的 loopback 环境。
+2. 在服务本机检查：
 
-# 飞书
-curl -X POST "https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_HOOK" \
-  -H 'Content-Type: application/json' \
-  -d '{"msg_type":"text","content":{"text":"UniMap 通知测试"}}'
+```powershell
+Invoke-RestMethod http://127.0.0.1:8448/api/v1/screenshot/bridge/health
+Invoke-RestMethod http://127.0.0.1:8448/api/v1/screenshot/bridge/status
 ```
 
-如果直接请求也失败，说明 webhook URL 或 Token 有问题，不是 UniMap 的 bug。
+3. 用 `POST /api/v1/screenshot/bridge/pair` 配对，JSON 为 `client_id` 和 `pair_code`。如果开启 pairing，后续 task/result/rotate 请求需 `Authorization: Bearer <bridge-token>`。
+4. bridge token 过期或服务重启后，在 loopback 下重新配对；管理令牌只可作为本机恢复路径使用，不应配置到远程扩展。
+5. 不要探测不存在的 `/diagnostic` 端点。完整协议见 [截图扩展运维说明](OPS_SCREENSHOT_EXTENSION.md)。
 
-#### 7.6 手动触发重载
+## 5. 批量截图、文件或任务进度异常
 
-如果刚修改了 `config.yaml` 中的通知配置，通知注册表可能还没读到最新值：
+- 异步 URL 批量截图：`POST /api/v1/screenshot/batch-urls`，JSON：`urls`、可选 `batch_id`、`concurrency`。
+- 进度：`GET /api/v1/screenshot/batch/progress?job_id=...`。
+- 文件：`GET /api/v1/screenshot/batches/files?batch=...`。
+- 删除批次：`DELETE /api/v1/screenshot/batches/delete?batch=...`。
 
-```bash
-curl -X POST http://localhost:8448/api/notifications/reload
+`batch_id` 是创建请求中的可选 JSON 字段；列文件和删除时的查询参数叫 `batch`。
+
+## 6. 巡检、篡改检测或基线异常
+
+支持的模式只有：`strict`、`relaxed`、`security`、`balanced`、`precise`。`malicious`、`performance`、`full` 是历史名称，不能再用于新请求。
+
+- 检测：`POST /api/v1/tamper/check`，JSON：`urls`、可选 `concurrency`、`mode`。
+- 设置基线：`POST /api/v1/tamper/baseline`。
+- 删除基线：`DELETE /api/v1/tamper/baseline/delete?url=...`。
+- 历史：`GET /api/v1/tamper/history?limit=...&offset=...&url=...&type=...&mode=...&q=...`；`limit` 最大 1000，`offset` 最大 100000。
+- 导出：`GET /api/v1/tamper/history/export`，支持同样的过滤参数。
+
+这些 URL 也会进行 SSRF 防护。对于 SPA 目标，先确认截图/浏览器能力可用，再判断空 hash 或不可达结果。
+
+## 7. 调度器与通知
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8448/api/v1/scheduler/tasks
+Invoke-RestMethod http://127.0.0.1:8448/api/v1/scheduler/history
 ```
 
-### 恢复操作
+创建任务的端点是 `POST /api/v1/scheduler/tasks/create`，不是旧的 `/api/scheduler/tasks`。一次性、延迟和 cron 任务分别通过 `schedule_type` 的 `once`、`delay`、`cron` 表示。通知通道从 `GET /api/v1/notifications/channels` 查看，并可用 `/api/v1/notifications/channels/test` 验证。
 
-1. **补全配置**：根据诊断结果补充缺失的配置项
-2. **重载通知渠道**：`POST /api/notifications/reload`
-3. **重启服务**（如果热更新不生效）：
-   ```bash
-   systemctl restart unimap-web
-   ```
+## 8. 分布式节点不可用
 
-### 预防措施
+分布式接口只在 `distributed.enabled=true` 时可用；否则返回 `distributed_disabled`。没有单独的 `unimap-node` 可执行文件，节点应通过现有 HTTP 协议集成。
 
-- 创建通知渠道后，手动触发一次任务验证消息能收到
-- 监控通知发送成功率，低于 90% 时告警
-- 定期检查 webhook URL 是否仍然有效（Token 过期等）
-- 通知密钥（`secret`）变更时同步更新配置并重载
-
----
-
-## 8. 浏览器降级查询失败
-
-> ⚠️ **browser_fallback 默认关闭（`enabled: false`）**
-> - 关闭原因：浏览器查询消耗更多 CPU/内存、结果精度不如 API 直查、可能触发目标站点反爬机制
-> - 开启前请确认：服务器资源充足、已设置合理速率限制、了解降级查询结果精度低于 API
-> - 推荐仅在 API 额度耗尽或无 API Key 的场景下开启
-
-### 症状
-- API 查询失败后浏览器降级未触发
-- 浏览器降级采集无结果
-- 日志出现 `browser fallback triggered` 但无资产
-
-### 诊断步骤
-
-#### 8.1 检查浏览器降级配置是否启用
-
-```bash
-cat config.yaml | grep -A10 "browser_fallback:"
-# 应看到 enabled: true
+```powershell
+Invoke-RestMethod http://127.0.0.1:8448/api/v1/nodes/status -Headers @{ 'X-Admin-Token' = $env:UNIMAP_DISTRIBUTED_ADMIN_TOKEN }
+Invoke-RestMethod http://127.0.0.1:8448/api/v1/nodes/network/profile -Headers @{ 'X-Admin-Token' = $env:UNIMAP_DISTRIBUTED_ADMIN_TOKEN }
 ```
 
-如果 `query.browser_fallback.enabled: false`，降级功能完全关闭。
+注册、心跳、领取和结果回传应使用对应节点令牌；状态、任务队列管理使用分布式管理令牌。
 
-#### 8.2 检查引擎白名单
+## 9. 备份、配置或历史记录
 
-```bash
-cat config.yaml | grep -A5 "browser_fallback:" | grep "engines:"
+- 配置读取/保存：`GET`/`POST /api/v1/config`，需要管理员。
+- 备份：`POST /api/v1/backup/create`、`GET /api/v1/backup/list`。
+- 操作历史：`POST /api/v1/history/save`、`GET`/`DELETE /api/v1/history`，需要管理员。
+
+备份文件和本地配置可能包含敏感数据；限制文件系统权限，并通过受控部署流程恢复。
+
+## 10. 变更后检查清单
+
+```powershell
+go test -race ./...
 ```
 
-确认目标引擎（如 `fofa`、`hunter`）在白名单中。不在白名单中的引擎即使 API 失败也不会触发降级。
-
-#### 8.3 检查触发条件开关
-
-```bash
-cat config.yaml | grep -A10 "browser_fallback:"
-```
-
-确认 `on_api_error` 和 `on_empty_result` 的配置：
-- `on_api_error: true` — API 返回错误时触发降级
-- `on_empty_result: true` — API 返回空结果时触发降级
-- 两个都为 false 时，降级永远不会触发
-
-#### 8.4 检查浏览器 Runtime 是否可用
-
-```bash
-# 检查 CDP 连接
-curl -s http://localhost:8448/api/screenshot/bridge/status | jq
-
-# 检查 Extension 桥接状态
-curl -s http://localhost:8448/api/health | jq '.bridge'
-```
-
-如果 CDP 和 Extension 都不可用，浏览器降级无法执行采集。
-
-#### 8.5 查看降级相关日志
-
-```bash
-journalctl -u unimap-web --since "1 hour ago" | grep -iE "browser fallback triggered|browser fallback failed"
-```
-
-关键日志：
-- `browser fallback triggered for engine <name>` — 降级已触发
-- `browser fallback failed for engine <name>: <error>` — 降级执行失败，查看具体错误
-
-#### 8.6 检查 Prometheus 指标
-
-```bash
-curl -s http://localhost:8448/metrics | grep browser_fallback
-```
-
-关键指标：
-- `unimap_browser_fallback_triggered_total` — 降级触发总次数
-- `unimap_browser_fallback_failure_total` — 降级失败总次数
-
-### 恢复操作
-
-1. **DOM 选择器失效**：如果搜索引擎页面结构变化导致解析失败，暂时从白名单移除该引擎：
-   ```yaml
-   query:
-     browser_fallback:
-       engines:
-         - hunter  # 移除失效的引擎
-   ```
-
-2. **浏览器 Runtime 不可用**：
-   - 检查 Chrome 是否安装且可访问
-   - 检查 Extension 桥接是否连接（参考「2. Bridge 断连」）
-   - 检查 CDP 配置（参考「1. Chrome 崩溃」）
-
-3. **紧急回滚**：完全关闭浏览器降级功能：
-   ```yaml
-   query:
-     browser_fallback:
-       enabled: false
-   ```
-
-### 预防措施
-
-- 监控 `unimap_browser_fallback_failure_total`，失败率 >50% 时告警
-- 定期检查 DOM 选择器是否需要更新（搜索引擎页面改版后）
-- 默认关闭浏览器降级，只在确认可用后逐步开启
-- 在测试环境验证降级功能后再部署到生产环境
-
----
-
-## 附录：通知渠道类型对照
-
-| 类型 | 官方文档 | 签名支持 | 消息格式 |
-|------|---------|---------|---------|
-| `dingtalk` | https://open.dingtalk.com/document/group/customize-robot-security-settings | HMAC-SHA256 | Markdown |
-| `feishu` | https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot | HMAC-SHA256 | 富文本卡片 |
-| `wecom` | https://developer.work.weixin.qq.com/document/path/91770 | 无 | Markdown |
-| `webhook` | 通用 | 无 | 通用 JSON |
-
+随后至少验证 `/health`、受影响的 `/api/v1/...` 路由，以及相关 UI 流程。修改路由、认证或 Bridge 协议时，同步更新 [API 文档](API.md) 和本 Runbook。

@@ -128,12 +128,16 @@
 		container.style.display = '';
 
 		// Summary cards
-		const s = data.summary;
+		const s = data.summary || {};
+		const total = Number(s.total) || 0;
+		const scanned = Number(s.scanned) || 0;
+		const cdnExcluded = Number(s.cdnExcluded) || 0;
+		const failed = (Number(s.invalidFormat) || 0) + (Number(s.resolveFailed) || 0) + (Number(s.scanFailed) || 0);
 		const summaryHtml = `
-			<div class="summary-card"><div class="count">${s.total}</div><div class="label">总 URL</div></div>
-			<div class="summary-card"><div class="count">${s.scanned}</div><div class="label">已扫描</div></div>
-			<div class="summary-card"><div class="count">${s.cdnExcluded}</div><div class="label">CDN 排除</div></div>
-			<div class="summary-card"><div class="count">${s.invalidFormat + s.resolveFailed + s.scanFailed}</div><div class="label">失败</div></div>
+			<div class="summary-card"><div class="count">${total}</div><div class="label">总 URL</div></div>
+			<div class="summary-card"><div class="count">${scanned}</div><div class="label">已扫描</div></div>
+			<div class="summary-card"><div class="count">${cdnExcluded}</div><div class="label">CDN 排除</div></div>
+			<div class="summary-card"><div class="count">${failed}</div><div class="label">失败</div></div>
 		`;
 		document.getElementById('scan-summary').innerHTML = summaryHtml;
 
@@ -149,11 +153,11 @@
 			const ports = [];
 			if (r.open_ports) {
 				Object.entries(r.open_ports).forEach(([ip, portList]) => {
-					portList.forEach(p => ports.push(`<span class="port-badge">${escHtml(ip)}:${p}</span>`));
+				portList.forEach(p => ports.push(`<span class="port-badge">${escHtml(ip)}:${escHtml(p)}</span>`));
 				});
 			}
 			const statusClass = r.status === 'scanned' ? 'status-enabled' : 'status-disabled';
-			const statusLabel = {scanned:'已扫描', cdn_excluded:'CDN排除', resolve_failed:'解析失败', scan_failed:'扫描失败', invalid_format:'格式错误'}[r.status] || r.status;
+			const statusLabel = {scanned:'已扫描', cdn_excluded:'CDN排除', resolve_failed:'解析失败', scan_failed:'扫描失败', invalid_format:'格式错误'}[r.status] || escHtml(r.status || '未知');
 
 			tr.innerHTML = `
 				<td>${escHtml(r.input)}</td>

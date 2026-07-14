@@ -251,10 +251,15 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 		logger.CtxWarnf(ctx, "post-query hook failed: %v", err)
 	}
 
-	return &QueryResponse{
+	resp := &QueryResponse{
 		Assets: allAssets, TotalCount: len(allAssets),
 		EngineStats: engineStats, Errors: queryErrors,
-	}, nil
+	}
+	if len(engineStats) == 0 && len(queryErrors) > 0 {
+		queryStatus = "error"
+		return resp, fmt.Errorf("all query engines failed: %s", strings.Join(queryErrors, "; "))
+	}
+	return resp, nil
 }
 
 // validateQueryRequest 验证查询请求参数

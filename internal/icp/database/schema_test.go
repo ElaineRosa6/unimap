@@ -59,6 +59,59 @@ func TestICPResultRepository_SaveAndQueryRun(t *testing.T) {
 	}
 }
 
+func TestICPResultsPersistAfterDatabaseReopen(t *testing.T) {
+	dbPath := t.TempDir() + "/icp.db"
+	firstDB, err := NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("open first database: %v", err)
+	}
+	if err := firstDB.InitSchema(); err != nil {
+		_ = firstDB.Close()
+		t.Fatalf("initialize first database: %v", err)
+	}
+	firstRepo := NewICPResultRepository(firstDB.DB())
+	run := &ICPQueryRun{
+		TaskID: "reopen-task", QueryKeyword: "example.test", QueryType: "web",
+		Page: 1, PageSize: 20, TotalRecords: 1, ResultCount: 1, StartedAt: time.Now(),
+	}
+	runID, err := firstRepo.SaveRun(run)
+	if err != nil {
+		_ = firstDB.Close()
+		t.Fatalf("save query run: %v", err)
+	}
+	if err := firstRepo.SaveResults(runID, []adapter.ICPResult{{Domain: "example.test", Licence: "ICP-REOPEN"}}, time.Now()); err != nil {
+		_ = firstDB.Close()
+		t.Fatalf("save query results: %v", err)
+	}
+	if err := firstDB.Close(); err != nil {
+		t.Fatalf("close first database: %v", err)
+	}
+
+	secondDB, err := NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("reopen database: %v", err)
+	}
+	defer secondDB.Close()
+	if err := secondDB.InitSchema(); err != nil {
+		t.Fatalf("initialize reopened database: %v", err)
+	}
+	secondRepo := NewICPResultRepository(secondDB.DB())
+	runs, err := secondRepo.GetRunsByTaskID("reopen-task", 10)
+	if err != nil {
+		t.Fatalf("get persisted runs: %v", err)
+	}
+	if len(runs) != 1 || runs[0].ID != runID {
+		t.Fatalf("unexpected persisted runs: %#v", runs)
+	}
+	results, err := secondRepo.GetResultsByRunID(runID)
+	if err != nil {
+		t.Fatalf("get persisted results: %v", err)
+	}
+	if len(results) != 1 || results[0].Domain != "example.test" || results[0].Licence != "ICP-REOPEN" {
+		t.Fatalf("unexpected persisted results: %#v", results)
+	}
+}
+
 func TestICPResultRepository_SaveResults(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()

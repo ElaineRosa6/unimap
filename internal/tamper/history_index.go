@@ -10,6 +10,21 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// CheckRecordQuery selects a page of tamper check records. URL is optional;
+// an empty URL selects records across all monitored targets.
+type CheckRecordQuery struct {
+	URL    string
+	Limit  int
+	Offset int
+}
+
+// CheckRecordPage is a timestamp-descending page of check records.
+type CheckRecordPage struct {
+	Records []*CheckRecord
+	Total   int
+	URLs    []string
+}
+
 func (s *HashStorage) historyIndex() (*sql.DB, error) {
 	if err := os.MkdirAll(s.baseDir, 0o755); err != nil {
 		return nil, err
@@ -67,6 +82,110 @@ func (s *HashStorage) listIndexedCheckRecords() (map[string][]*CheckRecord, erro
 		return nil, fmt.Errorf("iterate check record index: %w", err)
 	}
 	return result, nil
+}
+
+// ListCheckRecords returns a page of records from the SQLite index. It keeps
+// selection, ordering, counting, and pagination in the storage layer so
+// callers do not need to load every payload before serving a history page.
+func (s *HashStorage) ListCheckRecords(query CheckRecordQuery) (CheckRecordPage, error) {
+	query = normalizeCheckRecordQuery(query)
+	markerPath := filepath.Join(s.baseDir, ".check_records_indexed")
+	if _, err := os.Stat(markerPath); err == nil {
+		return s.listIndexedCheckRecordPage(query)
+	}
+
+	if _, err := s.ListAllCheckRecords(); err != nil {
+		return CheckRecordPage{}, fmt.Errorf("initialize check record index: %w", err)
+	}
+	return s.listIndexedCheckRecordPage(query)
+}
+
+func normalizeCheckRecordQuery(query CheckRecordQuery) CheckRecordQuery {
+	if query.Limit <= 0 {
+		query.Limit = 200
+	}
+	if query.Limit > 1000 {
+		query.Limit = 1000
+	}
+	if query.Offset < 0 {
+		query.Offset = 0
+	}
+	return query
+}
+
+func (s *HashStorage) listIndexedCheckRecordPage(query CheckRecordQuery) (CheckRecordPage, error) {
+	db, err := s.historyIndex()
+	if err != nil {
+		return CheckRecordPage{}, err
+	}
+	defer db.Close()
+
+	where := ""
+	args := make([]any, 0, 3)
+	if query.URL != "" {
+		where = " WHERE url = ?"
+		args = append(args, query.URL)
+	}
+
+	var total int
+	if err := db.QueryRow("SELECT COUNT(*) FROM check_records"+where, args...).Scan(&total); err != nil {
+		return CheckRecordPage{}, fmt.Errorf("count indexed check records: %w", err)
+	}
+	urls, err := listIndexedCheckRecordURLs(db, query, total)
+	if err != nil {
+		return CheckRecordPage{}, err
+	}
+
+	pageArgs := append(args, query.Limit, query.Offset)
+	rows, err := db.Query("SELECT payload FROM check_records"+where+" ORDER BY timestamp DESC LIMIT ? OFFSET ?", pageArgs...)
+	if err != nil {
+		return CheckRecordPage{}, err
+	}
+	defer rows.Close()
+
+	page := CheckRecordPage{Records: make([]*CheckRecord, 0, query.Limit), Total: total, URLs: urls}
+	for rows.Next() {
+		var payload string
+		if err := rows.Scan(&payload); err != nil {
+			return CheckRecordPage{}, err
+		}
+		var record CheckRecord
+		if err := json.Unmarshal([]byte(payload), &record); err != nil {
+			continue
+		}
+		page.Records = append(page.Records, &record)
+	}
+	if err := rows.Err(); err != nil {
+		return CheckRecordPage{}, fmt.Errorf("iterate indexed check record page: %w", err)
+	}
+	return page, nil
+}
+
+func listIndexedCheckRecordURLs(db *sql.DB, query CheckRecordQuery, total int) ([]string, error) {
+	if query.URL != "" {
+		if total == 0 {
+			return nil, nil
+		}
+		return []string{query.URL}, nil
+	}
+
+	rows, err := db.Query(`SELECT DISTINCT url FROM check_records ORDER BY url`)
+	if err != nil {
+		return nil, fmt.Errorf("list indexed check record URLs: %w", err)
+	}
+	defer rows.Close()
+	urls := make([]string, 0)
+	for rows.Next() {
+		var url string
+		if err := rows.Scan(&url); err != nil {
+			return nil, err
+		}
+		urls = append(urls, url)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate indexed check record URLs: %w", err)
+	}
+	return urls, nil
 }
 
 func (s *HashStorage) deleteIndexedCheckRecords(url string) error {

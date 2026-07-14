@@ -54,6 +54,56 @@ func TestCreateAndListHistory(t *testing.T) {
 	}
 }
 
+func TestHistoryAndResultsPersistAfterDatabaseReopen(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "history.db")
+	firstDB, err := NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("open first database: %v", err)
+	}
+	if err := firstDB.InitSchema(); err != nil {
+		_ = firstDB.Close()
+		t.Fatalf("initialize first database: %v", err)
+	}
+	firstRepo := NewRepository(firstDB.DB())
+	id, err := firstRepo.CreateHistoryWithResults(&OperationHistory{
+		OperationType: OpTypeQuery,
+		Input:         `{"query":"port=443"}`,
+		Status:        "success",
+		TotalCount:    1,
+	}, []OperationResult{{Data: `{"ip":"203.0.113.10","port":443}`}})
+	if err != nil {
+		_ = firstDB.Close()
+		t.Fatalf("save history and results: %v", err)
+	}
+	if err := firstDB.Close(); err != nil {
+		t.Fatalf("close first database: %v", err)
+	}
+
+	secondDB, err := NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("reopen database: %v", err)
+	}
+	defer secondDB.Close()
+	if err := secondDB.InitSchema(); err != nil {
+		t.Fatalf("initialize reopened database: %v", err)
+	}
+	secondRepo := NewRepository(secondDB.DB())
+	history, err := secondRepo.GetHistory(id)
+	if err != nil {
+		t.Fatalf("get persisted history: %v", err)
+	}
+	if history == nil || history.Input != `{"query":"port=443"}` {
+		t.Fatalf("unexpected persisted history: %#v", history)
+	}
+	results, err := secondRepo.GetResults(id)
+	if err != nil {
+		t.Fatalf("get persisted results: %v", err)
+	}
+	if len(results) != 1 || results[0].Data != `{"ip":"203.0.113.10","port":443}` {
+		t.Fatalf("unexpected persisted results: %#v", results)
+	}
+}
+
 func TestCreateAndGetResults(t *testing.T) {
 	repo := setupTestDB(t)
 

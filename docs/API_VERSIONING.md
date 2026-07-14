@@ -2,7 +2,7 @@
 
 日期：2026-05-31
 
-状态：✅ 已完成 — 旧路径 shim 已于 2026-06-09 提前移除 (commit `24a37f7`)。以下文档保留作为历史参考，实际代码已不再包含 `deprecateMiddleware` 和 legacy 路由注册。
+状态：✅ 已完成 — 旧路径 shim 已于 2026-06-09 提前移除 (commit `24a37f7`)。以下内容是实施前设计快照，含已删除的 `deprecateMiddleware` 和 legacy 路由示例；不得用于当前集成。当前契约见 [API.md](API.md)。
 
 ## 1. 背景
 

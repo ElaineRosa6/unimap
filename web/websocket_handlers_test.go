@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
@@ -154,6 +155,37 @@ func TestHandleWebSocketQuery_QueryIDTracked(t *testing.T) {
 
 	if !exists {
 		t.Fatalf("expected query %s to be tracked in queryStatus", queryID)
+	}
+}
+
+func TestExecuteWSQueryAsync_NilQueryServiceReturnsError(t *testing.T) {
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+	defer shutdownCancel()
+	s := &Server{
+		queryStatus: map[string]*QueryStatus{
+			"q1": {ID: "q1", Query: "test", Engines: []string{"quake"}, Status: "running"},
+		},
+		shutdownCtx: shutdownCtx,
+		connManager: &ConnectionManager{connections: make(map[string]*managedConn)},
+	}
+	var complete map[string]interface{}
+
+	s.executeWSQueryAsync(context.Background(), "test-conn", "q1", "test", []string{"quake"}, []string{"quake"}, 50, false, "", func(v interface{}) error {
+		if message, ok := v.(map[string]interface{}); ok {
+			complete = message
+		}
+		return nil
+	})
+
+	if complete == nil || complete["type"] != "query_complete" {
+		t.Fatalf("expected query_complete message, got %#v", complete)
+	}
+	status, ok := complete["status"].(QueryStatus)
+	if !ok {
+		t.Fatalf("expected QueryStatus, got %T", complete["status"])
+	}
+	if status.Status != "error" || len(status.Errors) == 0 || !strings.Contains(status.Errors[0], "query service not initialized") {
+		t.Fatalf("expected initialization error status, got %#v", status)
 	}
 }
 

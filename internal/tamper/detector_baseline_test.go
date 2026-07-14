@@ -109,6 +109,40 @@ func TestHashStorage_DeleteCheckRecordsRemovesIndex(t *testing.T) {
 	}
 }
 
+func TestHashStorage_ListCheckRecordsFiltersAndPaginatesIndexedRecords(t *testing.T) {
+	storage := NewHashStorage(t.TempDir())
+	primaryURL := "https://primary.example.test"
+	otherURL := "https://other.example.test"
+	for _, record := range []*CheckRecord{
+		{ID: "primary-newest", URL: primaryURL, Timestamp: 300},
+		{ID: "primary-middle", URL: primaryURL, Timestamp: 200},
+		{ID: "primary-oldest", URL: primaryURL, Timestamp: 100},
+		{ID: "other-newest", URL: otherURL, Timestamp: 400},
+	} {
+		if err := storage.SaveCheckRecord(record.URL, record); err != nil {
+			t.Fatalf("save check record: %v", err)
+		}
+	}
+	if _, err := storage.ListAllCheckRecords(); err != nil {
+		t.Fatalf("initialize check record index: %v", err)
+	}
+
+	page, err := storage.ListCheckRecords(CheckRecordQuery{
+		URL:    primaryURL,
+		Limit:  1,
+		Offset: 1,
+	})
+	if err != nil {
+		t.Fatalf("list paginated check records: %v", err)
+	}
+	if page.Total != 3 {
+		t.Fatalf("total = %d, want 3", page.Total)
+	}
+	if len(page.Records) != 1 || page.Records[0].ID != "primary-middle" {
+		t.Fatalf("unexpected page: %#v", page.Records)
+	}
+}
+
 func TestHashStorage_SaveAndLoadCheckRecords(t *testing.T) {
 	dir := t.TempDir()
 	storage := NewHashStorage(dir)

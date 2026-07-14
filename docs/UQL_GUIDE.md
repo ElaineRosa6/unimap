@@ -1,6 +1,6 @@
 # UniMap 统一查询语言 (UQL) 用户手册
 
-UniMap 使用一套统一的查询语言 (UQL, Unified Query Language) 来屏蔽不同网络空间搜索引擎（FOFA, Hunter, ZoomEye, Quake）之间的语法差异。您只需编写一次 UQL 查询，系统会自动将其“翻译”为各引擎能理解的原生语法并并行执行。
+UniMap 使用一套统一的查询语言 (UQL, Unified Query Language) 来屏蔽不同网络空间搜索引擎之间的语法差异。稳定 Web UI 支持 FOFA、Hunter、ZoomEye、Quake、Shodan；服务端和 CLI 还可在配置可用时注册 Censys、DayDayMap。您只需编写一次 UQL 查询，系统会自动将其翻译为引擎原生语法并并行执行。
 
 ## 1. 基础语法
 
@@ -43,6 +43,8 @@ app="nginx" && country="CN"
 | **isp** | 运营商 | isp | ip.isp | isp | isp |
 | **os** | 操作系统 | os | os | os | os |
 | **asn** | 自治系统号 | asn | ip.asn | asn | asn |
+
+> 不同引擎并不保证每个字段和操作符的语义完全相同；Shodan、Censys、DayDayMap 的字段覆盖也不同。需要精确翻译时，以适配器测试和 [搜索引擎语法基准](SEARCH_ENGINE_SYNTAX.md) 为准。
 
 ---
 

@@ -59,7 +59,7 @@
 
 ### 1. 篡改检测接口
 
-**POST** `/api/tamper/check`
+**POST** `/api/v1/tamper/check`
 
 请求体：
 ```json
@@ -103,7 +103,7 @@
 
 ### 2. 设置基线接口
 
-**POST** `/api/tamper/baseline`
+**POST** `/api/v1/tamper/baseline`
 
 请求体：
 ```json
@@ -115,34 +115,29 @@
 
 ### 3. 获取基线列表
 
-**GET** `/api/tamper/baseline/list`
+**GET** `/api/v1/tamper/baseline/list`
 
 响应：
 ```json
 {
     "success": true,
-    "urls": ["https_example_com"],
+    "urls": ["https://example.com"],
     "count": 1
 }
 ```
 
 ### 4. 删除基线
 
-**POST** `/api/tamper/baseline/delete`
+**DELETE** `/api/v1/tamper/baseline/delete?url=https%3A%2F%2Fexample.com`
 
-请求体：
-```json
-{
-    "url": "https://example.com"
-}
-```
+URL 通过查询参数传递，不接收 JSON 请求体。
 
 ## 使用示例
 
 ### 1. 设置基线
 
 ```bash
-curl -X POST http://localhost:8448/api/tamper/baseline \
+curl -X POST http://localhost:8448/api/v1/tamper/baseline \
   -H "Content-Type: application/json" \
   -d '{"urls": ["https://www.baidu.com"], "concurrency": 3}'
 ```
@@ -150,7 +145,7 @@ curl -X POST http://localhost:8448/api/tamper/baseline \
 ### 2. 检测篡改
 
 ```bash
-curl -X POST http://localhost:8448/api/tamper/check \
+curl -X POST http://localhost:8448/api/v1/tamper/check \
   -H "Content-Type: application/json" \
   -d '{"urls": ["https://www.baidu.com"], "concurrency": 3}'
 ```
@@ -158,7 +153,7 @@ curl -X POST http://localhost:8448/api/tamper/check \
 ### 3. 查看基线列表
 
 ```bash
-curl http://localhost:8448/api/tamper/baseline/list
+curl http://localhost:8448/api/v1/tamper/baseline/list
 ```
 
 ## 数据存储

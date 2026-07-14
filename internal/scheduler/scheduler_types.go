@@ -108,7 +108,7 @@ func GroupedTaskTypes() []TaskGroupInfo {
 			TaskTamperCheck, TaskURLReachability, TaskPortScan, TaskLoginStatusCheck, TaskQuotaMonitor,
 		}},
 		{Name: "维护与清理", Icon: "🔧", Types: []TaskType{
-			TaskScreenshotCleanup, TaskTamperCleanup, TaskBaselineRefresh, TaskAlertSilence,
+			TaskScreenshotCleanup, TaskTamperCleanup, TaskBaselineRefresh, TaskAlertSilence, TaskBackup,
 		}},
 		{Name: "基础设施", Icon: "📡", Types: []TaskType{
 			TaskCookieVerify, TaskBridgeTokenRotate, TaskPluginHealth, TaskCacheWarmup, TaskDistributedSubmit,

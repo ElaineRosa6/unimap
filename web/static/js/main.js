@@ -2831,7 +2831,9 @@ function openQuotaSettings() {
 		if (dt && saved.defaultThreshold) dt.value = saved.defaultThreshold;
 		if (ea) ea.checked = !!saved.emailAlert;
 		if (em && saved.alertEmail) em.value = saved.alertEmail;
-	} catch(e) {}
+	} catch(e) {
+		console.warn('Failed to load saved quota settings:', e);
+	}
 
 	modal.style.display = 'block';
 

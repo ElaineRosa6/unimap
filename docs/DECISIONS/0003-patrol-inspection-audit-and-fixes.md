@@ -73,7 +73,9 @@
 - `go vet` + `gofmt` 干净
 - GitHub Actions CI（commit `2bf5fe5`，PR #11）：ci + bridge-smoke 两套工作流全部 success，含 ubuntu/macos 双平台 build/lint/test/security scan
 
-## 列为后续的架构级缺口（本次未修）
+## 列为后续的架构级缺口（2026-06-30 历史清单）
+
+> 以下是当日审计结论，不是 2026-07-13 的当前待办。后续实现已改变其中多项：可达性/端口巡检失败会触发 `AlertTypeReachability`；告警记录采用临时文件+rename 持久化；查询路径已有内部 operation history 写入者；Web 批次截图会持久化到 `batchdb`；篡改导出已有生产路由；历史索引已有 SQL 页查询，HTTP API 也已公开受限的 `offset` 分页。当前工作区还包含未提交的定时备份任务。是否发布及剩余限制应以当前代码、测试和发布说明为准。
 
 1. 可达性/端口扫描未产生告警记录（`AlertTypeReachability` 定义但无人触发，需阈值/去重设计）
 2. 告警与资源监控仅存内存，重启丢失
@@ -83,4 +85,4 @@
 6. 无定时备份任务类型
 7. 篡改记录文件式无索引（量大时查询慢）
 
-这些涉及阈值设计与架构决策，建议单独规划。
+除资源监控历史是否建立应用内时序存储、以及 L2 Hook 是否由 telemetry 触发外，其余条目均已闭环；这些历史条目不应再作为发布阻断项。

@@ -76,6 +76,53 @@ func TestSaveAndGetJob(t *testing.T) {
 	}
 }
 
+func TestBatchJobPersistsAfterDatabaseReopen(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "batch.db")
+	firstDB, err := NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("open first database: %v", err)
+	}
+	if err := firstDB.InitSchema(); err != nil {
+		_ = firstDB.Close()
+		t.Fatalf("initialize first database: %v", err)
+	}
+	firstRepo := NewRepository(firstDB.DB())
+	job := &BatchJobRecord{
+		ID:        "batch_reopen",
+		Status:    "completed",
+		Total:     1,
+		Completed: 1,
+		Success:   1,
+		Results: []screenshot.BatchScreenshotResult{{
+			URL: "https://example.test", Success: true, FilePath: "/screenshots/batch_reopen/example.png",
+		}},
+		StartedAt: time.Now(),
+	}
+	if err := firstRepo.SaveJob(job); err != nil {
+		_ = firstDB.Close()
+		t.Fatalf("save batch job: %v", err)
+	}
+	if err := firstDB.Close(); err != nil {
+		t.Fatalf("close first database: %v", err)
+	}
+
+	secondDB, err := NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("reopen database: %v", err)
+	}
+	defer secondDB.Close()
+	if err := secondDB.InitSchema(); err != nil {
+		t.Fatalf("initialize reopened database: %v", err)
+	}
+	persisted, err := NewRepository(secondDB.DB()).GetJob(job.ID)
+	if err != nil {
+		t.Fatalf("get persisted batch job: %v", err)
+	}
+	if persisted == nil || persisted.Status != "completed" || len(persisted.Results) != 1 || persisted.Results[0].FilePath != "/screenshots/batch_reopen/example.png" {
+		t.Fatalf("unexpected persisted batch job: %#v", persisted)
+	}
+}
+
 func TestSaveJob_Upsert(t *testing.T) {
 	repo := setupTestDB(t)
 

@@ -286,7 +286,7 @@ document.addEventListener('DOMContentLoaded', function() {
 					'failed': '❌ 失败',
 					'suspicious': '⚠️ 可疑'
 				};
-				const label = statusMap[r.status] || r.status || '未知';
+				const label = statusMap[r.status] || escapeHtml(r.status || '未知');
 				const changeCount = (r.changes && r.changes.length) || 0;
 				const changes = changeCount > 0 ? ` <a href="#" class="change-link">(${changeCount}处变更 ▸)</a>` : '';
 				const flags = (r.suspicious_flags && r.suspicious_flags.length > 0) ? ` [${escapeHtml(r.suspicious_flags.join(', '))}]` : '';
@@ -317,7 +317,7 @@ document.addEventListener('DOMContentLoaded', function() {
 					});
 					detailHTML += '</table>';
 					if (r.tampered_segments && r.tampered_segments.length > 0) {
-						detailHTML += `<div class="mt-6 text-warn">受影响区域: ${r.tampered_segments.join(', ')}</div>`;
+						detailHTML += `<div class="mt-6 text-warn">受影响区域: ${escapeHtml(r.tampered_segments.join(', '))}</div>`;
 					}
 					detailDiv.innerHTML = detailHTML;
 
@@ -386,7 +386,7 @@ document.addEventListener('DOMContentLoaded', function() {
 			if (!data.results || data.results.length === 0) {
 				const div = document.createElement('div');
 				div.className = 'result-item';
-				div.innerHTML = `✅ 基线设置完成 — ${data.summary ? JSON.stringify(data.summary) : '成功'}`;
+				div.innerHTML = `✅ 基线设置完成 — ${data.summary ? escapeHtml(JSON.stringify(data.summary)) : '成功'}`;
 				container.appendChild(div);
 			}
 		} catch(e) {
@@ -453,17 +453,17 @@ document.addEventListener('DOMContentLoaded', function() {
 			records.forEach(r => {
 				const div = document.createElement('div');
 				div.className = 'result-item';
-				const label = statusMap[r.status] || r.status;
+				const label = statusMap[r.status] || escapeHtml(r.status || '未知');
 				const time = r.timestamp ? new Date(r.timestamp * 1000).toLocaleString() : '';
-				const mode = r.detection_mode ? ` [${r.detection_mode}]` : '';
+				const mode = r.detection_mode ? ` [${escapeHtml(r.detection_mode)}]` : '';
 				const changeCount = r.changes_count || 0;
 				const changes = changeCount > 0 ? ` (${changeCount}处变更)` : '';
 				const segments = (r.tampered_segments && r.tampered_segments.length > 0) ? ` — 影响区域: ${escapeHtml(r.tampered_segments.join(', '))}` : '';
 				const hashes = [];
-				if (r.baseline_full_hash) hashes.push(`基线: ${r.baseline_full_hash.slice(0,12)}...`);
-				if (r.current_full_hash) hashes.push(`当前: ${r.current_full_hash.slice(0,12)}...`);
+				if (r.baseline_full_hash) hashes.push(`基线: ${escapeHtml(r.baseline_full_hash.slice(0,12))}...`);
+				if (r.current_full_hash) hashes.push(`当前: ${escapeHtml(r.current_full_hash.slice(0,12))}...`);
 					const hashInfo = hashes.length > 0 ? `<br><small class="text-muted">${hashes.join(' | ')}</small>` : '';
-				div.innerHTML = `<strong>${escapeHtml(r.url)}</strong> — ${label}${mode}${changes}${segments} <small>${time}</small>${hashInfo}`;
+				div.innerHTML = `<strong>${escapeHtml(r.url)}</strong> — ${label}${mode}${changes}${segments} <small>${escapeHtml(time)}</small>${hashInfo}`;
 				container.appendChild(div);
 			});
 		} catch(e) {
