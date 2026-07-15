@@ -13,6 +13,14 @@ type TaskPayload struct {
 	LowThresh  int      `json:"low_threshold,omitempty"`
 	TimeoutSec int      `json:"timeout_seconds,omitempty"`
 
+	// Optional browser/Bridge query workflow. When BrowserQuery is enabled for
+	// a query task, BrowserAction must be collect_and_capture so the scheduler
+	// can persist the collected assets and attach the evidence screenshot to
+	// the task notification.
+	BrowserQuery  bool   `json:"browser_query,omitempty"`
+	BrowserAction string `json:"browser_action,omitempty"`
+	QueryID       string `json:"query_id,omitempty"`
+
 	// ICP-specific
 	Queries     []string `json:"queries,omitempty"`
 	Type        string   `json:"type,omitempty"`

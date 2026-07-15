@@ -153,6 +153,117 @@ func TestLiveBridgeSearchScreenshotNotification(t *testing.T) {
 	t.Logf("LIVE_BRIDGE_E2E success engine=%s bridge_callback=true screenshot_bytes=%d screenshot_sha256_prefix=%x notification_type=feishu_app notification_success=true", engine, len(image), sum[:6])
 }
 
+// TestLiveBridgeScheduledQueryClosedLoop verifies the complete scheduled path:
+// query -> Bridge structured collection + screenshot -> SQLite history -> image notification.
+func TestLiveBridgeScheduledQueryClosedLoop(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("APPDATA", stateDir)
+	t.Setenv("LOCALAPPDATA", stateDir)
+
+	webRoot, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("resolve web root: %v", err)
+	}
+	t.Setenv("UNIMAP_WEB_ROOT", webRoot)
+
+	cfgManager := config.NewManager(liveBridgeConfigPath(t))
+	if err := cfgManager.Load(); err != nil {
+		t.Fatalf("load live configuration: %v", err)
+	}
+	cfg := cfgManager.GetConfig().Clone()
+	if cfg == nil {
+		t.Fatal("live configuration is unavailable")
+	}
+
+	channelID := enabledFeishuAppChannelID(t, cfg)
+	engine, query := liveBridgeEngine(t)
+	cfg.Web.BindAddress = "127.0.0.1"
+	cfg.Web.Port = 8448
+	cfg.Screenshot.BaseDir = filepath.Join(stateDir, "screenshots")
+	cfg.History.DatabasePath = filepath.Join(stateDir, "history.db")
+	cfg.ICP.DatabasePath = filepath.Join(stateDir, "icp_results.db")
+
+	listener, err := net.Listen("tcp", "127.0.0.1:8448")
+	if err != nil {
+		t.Fatalf("127.0.0.1:8448 is required for the extension test: %v", err)
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatalf("release Bridge test port: %v", err)
+	}
+
+	app := service.NewUnifiedServiceWithConfig(cfg)
+	srv, err := NewServer(cfg.Web.Port, app, app.GetOrchestrator(), cfg, cfgManager)
+	if err != nil {
+		t.Fatalf("create loopback Bridge server: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			t.Errorf("shutdown loopback Bridge server: %v", err)
+		}
+		if err := app.Shutdown(); err != nil {
+			t.Errorf("shutdown application service: %v", err)
+		}
+	})
+
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+	}()
+	waitForLiveBridge(t, srv, serverErr, 30*time.Second)
+
+	beforeNotify := liveNotifyMetric(t, srv, "feishu_app", "success")
+	runAt := time.Now().Add(time.Hour)
+	taskID := fmt.Sprintf("live-bridge-query-%s-e2e-%d", engine, time.Now().UnixNano())
+	task := &scheduler.ScheduledTask{
+		ID: taskID, Name: fmt.Sprintf("Live Bridge %s scheduled query closed-loop verification", engine),
+		Type: scheduler.TaskQuery, Enabled: false, ScheduleType: "once", RunAt: &runAt,
+		Payload: &model.TaskPayload{
+			Query: query, Engines: []string{engine}, PageSize: 10,
+			BrowserQuery: true, BrowserAction: "collect_and_capture", QueryID: taskID,
+		},
+		TimeoutSec: 180,
+		Notifications: &scheduler.NotificationConfig{
+			Enabled: true, OnSuccess: true, ChannelIDs: []string{channelID},
+		},
+	}
+	if err := srv.scheduler.AddTask(task); err != nil {
+		t.Fatalf("create live Bridge query task: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.scheduler.DeleteTask(taskID) })
+	if err := srv.scheduler.RunTaskNow(taskID); err != nil {
+		t.Fatalf("run live Bridge query task: %v", err)
+	}
+
+	record := waitForLiveTaskRecord(t, srv.scheduler, taskID, 190*time.Second)
+	if record.Status != "success" {
+		t.Fatalf("closed-loop task did not succeed: status=%s error=%s", record.Status, record.Error)
+	}
+	imagePath := liveScreenshotPath(t, record.Result)
+	image, err := os.ReadFile(imagePath)
+	if err != nil || len(image) == 0 {
+		t.Fatalf("read closed-loop Bridge screenshot: bytes=%d err=%v", len(image), err)
+	}
+
+	histories, total, err := srv.historyRepo.ListHistory("query", 10, 0)
+	if err != nil {
+		t.Fatalf("list persisted query history: %v", err)
+	}
+	if total != 1 || len(histories) != 1 {
+		t.Fatalf("persisted query history count=%d/%d, want one", total, len(histories))
+	}
+	results, err := srv.historyRepo.GetResults(histories[0].ID)
+	if err != nil || len(results) == 0 {
+		t.Fatalf("persisted query results=%d err=%v", len(results), err)
+	}
+
+	waitForLiveNotificationMetric(t, srv, beforeNotify, 20*time.Second)
+	t.Logf("LIVE_BRIDGE_CLOSED_LOOP success engine=%s persisted_results=%d screenshot_bytes=%d notification_success=true", engine, len(results), len(image))
+}
+
 func liveBridgeConfigPath(t *testing.T) string {
 	t.Helper()
 	for _, path := range []string{
@@ -243,7 +354,7 @@ func waitForLiveTaskRecord(t *testing.T, sched *scheduler.Scheduler, taskID stri
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		for _, record := range sched.GetHistory(100, string(scheduler.TaskSearchScreenshot), "") {
+		for _, record := range sched.GetHistory(100, "", "") {
 			if record.TaskID == taskID {
 				return record
 			}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -27,12 +28,21 @@ import (
 
 // QueryRunner executes scheduled UQL queries via QueryAppService.
 type QueryRunner struct {
-	querySvc *service.QueryAppService
+	querySvc      *service.QueryAppService
+	screenshotSvc *service.ScreenshotAppService
+	mgr           *screenshot.Manager
+	browserRouter service.BrowserRouter
 }
 
 // NewQueryRunner creates a QueryRunner.
 func NewQueryRunner(b *service.QueryAppService) *QueryRunner {
 	return &QueryRunner{querySvc: b}
+}
+
+// NewQueryRunnerWithBrowser creates a query runner capable of completing the
+// durable Bridge collect+capture workflow.
+func NewQueryRunnerWithBrowser(b *service.QueryAppService, screenshotSvc *service.ScreenshotAppService, mgr *screenshot.Manager, browserRouter service.BrowserRouter) *QueryRunner {
+	return &QueryRunner{querySvc: b, screenshotSvc: screenshotSvc, mgr: mgr, browserRouter: browserRouter}
 }
 
 func (r *QueryRunner) Type() TaskType { return TaskQuery }
@@ -50,12 +60,45 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 	if len(engines) == 0 {
 		engines = extractStrings(payload, "engine", []string{})
 	}
+	engines = r.querySvc.ResolveEngines(engines)
+	if len(engines) == 0 {
+		return "", fmt.Errorf("no query engines available")
+	}
 	pageSize := payload.PageSize
 	if pageSize == 0 {
 		pageSize = 100
 	}
 
-	resp, err := r.querySvc.ExecuteQuery(ctx, payload.Query, engines, pageSize)
+	var resp *service.QueryResponse
+	var browserOutcome service.BrowserQueryOutcome
+	var err error
+	if payload.BrowserQuery {
+		action := strings.TrimSpace(payload.BrowserAction)
+		if action == "" {
+			action = "collect_and_capture"
+		}
+		if action != "collect_and_capture" {
+			return "", fmt.Errorf("scheduled browser query requires browser_action=collect_and_capture")
+		}
+		if r.browserRouter == nil || r.screenshotSvc == nil {
+			return "", fmt.Errorf("scheduled browser query requires an available Bridge screenshot provider")
+		}
+		queryID := strings.TrimSpace(payload.QueryID)
+		if queryID == "" {
+			queryID = fmt.Sprintf("scheduled_query_%d", time.Now().UnixNano())
+		}
+		resp, browserOutcome, err = r.querySvc.ExecuteQueryWithBrowserWorkflow(ctx, payload.Query, engines, pageSize, service.BrowserQueryWorkflowOptions{
+			Action:             action,
+			QueryID:            queryID,
+			ScreenshotApp:      r.screenshotSvc,
+			ScreenshotManager:  r.mgr,
+			BrowserRouter:      r.browserRouter,
+			RequireComplete:    true,
+			RequirePersistence: true,
+		})
+	} else {
+		resp, err = r.querySvc.ExecuteQuery(ctx, payload.Query, engines, pageSize)
+	}
 	if err != nil {
 		return "", fmt.Errorf("query execution failed: %w", err)
 	}
@@ -71,6 +114,21 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 	}
 	for _, e := range resp.Errors {
 		fmt.Fprintf(&b, "❌ %s\n", e)
+	}
+	if payload.BrowserQuery {
+		enginesWithScreenshots := make([]string, 0, len(browserOutcome.AutoCapturedPaths))
+		for engine := range browserOutcome.AutoCapturedPaths {
+			enginesWithScreenshots = append(enginesWithScreenshots, engine)
+		}
+		sort.Strings(enginesWithScreenshots)
+		for _, engine := range enginesWithScreenshots {
+			path := browserOutcome.AutoCapturedPaths[engine]
+			if _, statErr := os.Stat(path); statErr != nil {
+				return "", fmt.Errorf("Bridge screenshot unavailable for %s: %w", engine, statErr)
+			}
+			fmt.Fprintf(&b, "✅ %s Bridge 截图保存: %s\n", engine, path)
+		}
+		fmt.Fprintf(&b, "✅ Bridge 采集结果已合并并持久化\n")
 	}
 	return sanitizeUTF8(b.String()), nil
 }

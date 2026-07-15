@@ -772,6 +772,9 @@ func (s *Scheduler) finalizeTaskExecution(task *ScheduledTask, record ExecutionR
 	s.mu.Unlock()
 
 	s.updateMetrics()
+	if err := s.Save(); err != nil {
+		logger.Errorf("[scheduler] persist execution history for task %s: %v", task.ID, err)
+	}
 	s.sendNotification(task, record)
 }
 
@@ -881,6 +884,9 @@ func (s *Scheduler) recordSkippedExecution(task *ScheduledTask, status string, r
 		s.history = s.history[len(s.history)-s.maxHistory:]
 	}
 	s.mu.Unlock()
+	if err := s.Save(); err != nil {
+		logger.Errorf("[scheduler] persist skipped execution for task %s: %v", task.ID, err)
+	}
 
 	metrics.IncSchedulerTaskExecution(string(task.Type), "skipped")
 }

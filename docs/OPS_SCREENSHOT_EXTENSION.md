@@ -1,6 +1,6 @@
 # Screenshot Extension Ops Runbook
 
-> 最后按代码核对：2026-07-13。适用于 `tools/extension-screenshot` manifest 0.4.1。
+> 最后按代码核对：2026-07-15。适用于 `tools/extension-screenshot` manifest 0.4.1。
 
 ## 运行边界
 
@@ -99,6 +99,12 @@ GET /api/v1/screenshot/batch/progress?job_id=<job_id>
 
 ```powershell
 go test -tags live_bridge_e2e ./web -run '^TestLiveBridgeSearchScreenshotNotification$' -count=1 -v
+```
+
+完整定时查询闭环（Bridge 结构化采集 + 截图 + SQLite 查询结果 + 图片通知）使用：
+
+```powershell
+go test -tags live_bridge_e2e ./web -run '^TestLiveBridgeScheduledQueryClosedLoop$' -count=1 -v
 ```
 
 默认引擎为 FOFA；可在 PowerShell 设置 `UNIMAP_LIVE_BRIDGE_ENGINE` 为 `hunter`、`zoomeye`、`quake` 或 `shodan` 后执行同一命令。

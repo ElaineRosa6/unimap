@@ -149,15 +149,18 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 	initUserDatabase(srv)
 	initScreenshotBatchDB(srv)
 
+	// Initialize the final screenshot/Bridge router before constructing task
+	// runners. QueryRunner must receive the combined collect+capture provider,
+	// not the temporary CDP-only fallback returned during early startup.
+	initScreenshotMode(srv, cfg, screenshotCDPProvider(screenshotMgr), screenshotMgr, screenshotApp, shutdownCtx)
+	wireBrowserBackend(srv, cfg, unifiedSvc)
+
 	sched := initScheduler(srv, cfg, screenshotApp, screenshotMgr, alertManager, orchestrator, unifiedSvc, nodeTaskQueue)
 	srv.notifyRegistry = initNotifySystem(cfg, cfgManager, sched)
 
 	// 所有 handler 注册完毕且数据加载完成后再启动 cron
 	sched.Start()
 	srv.scheduler = sched
-
-	initScreenshotMode(srv, cfg, screenshotCDPProvider(screenshotMgr), screenshotMgr, screenshotApp, shutdownCtx)
-	wireBrowserBackend(srv, cfg, unifiedSvc)
 
 	return srv, nil
 }
@@ -520,7 +523,7 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 		maxHistory)
 
 	// 高优先级 Runner (ST-01 ~ ST-08)
-	sched.RegisterHandler(scheduler.NewQueryRunner(srv.queryApp))
+	sched.RegisterHandler(scheduler.NewQueryRunnerWithBrowser(srv.queryApp, screenshotApp, screenshotMgr, srv.browserQueryProvider()))
 	sched.RegisterHandler(scheduler.NewSearchScreenshotRunner(screenshotApp, screenshotMgr))
 	var batchRepo *batchdb.Repository
 	if srv.batchDB != nil {

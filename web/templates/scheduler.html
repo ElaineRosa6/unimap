@@ -228,7 +228,7 @@
 						<tr><th>任务类型</th><th>说明</th><th>参数示例</th></tr>
 					</thead>
 					<tbody>
-						<tr><td>UQL 查询</td><td>执行统一查询语言搜索</td><td><code>{"query": "port=\"80\"", "engines": ["fofa"], "page_size": 100}</code></td></tr>
+						<tr><td>UQL 查询</td><td>执行查询；可选通过 Bridge 同时采集、截图、持久化并附图通知</td><td><code>{"query": "port=\"80\"", "engines": ["fofa"], "page_size": 100, "browser_query": true, "browser_action": "collect_and_capture"}</code></td></tr>
 						<tr><td>搜索引擎截图</td><td>打开搜索引擎结果页截图</td><td><code>{"engine": "fofa", "query": "port=80"}</code></td></tr>
 						<tr><td>批量截图</td><td>批量对URL列表截图</td><td><code>{"urls": ["https://a.com"], "concurrency": 5}</code></td></tr>
 						<tr><td>篡改检测</td><td>对指定URL做篡改对比</td><td><code>{"urls": ["https://example.com"], "concurrency": 5}</code></td></tr>
@@ -809,7 +809,7 @@ document.getElementById('edit-modal-overlay').addEventListener('click', closeEdi
 	// Pre-filled payloads for high-frequency task types. Uses precise queries
 	// (single IP + port) to keep API consumption minimal.
 	const TASK_TEMPLATES = {
-		query:             {name: '单 IP 资产扫描',    payload: {query: 'ip="47.95.120.1" && port="80"', engines: ['fofa'], page_size: 5}},
+		query:             {name: 'Bridge 查询采集与截图', payload: {query: 'port="443"', engines: ['fofa'], page_size: 10, browser_query: true, browser_action: 'collect_and_capture'}},
 		search_screenshot: {name: 'FOFA 搜索结果截图', payload: {engine: 'fofa', query: 'ip="47.95.120.1" && port="80"'}},
 		batch_screenshot:  {name: '官网截图巡检',      payload: {urls: ['https://www.baidu.com'], concurrency: 2}},
 		tamper_check:      {name: '首页篡改监控',      payload: {urls: ['https://www.baidu.com'], detection_mode: 'relaxed'}},
@@ -820,7 +820,7 @@ document.getElementById('edit-modal-overlay').addEventListener('click', closeEdi
 
 	// Concise parameter hints for every task type.
 	const PARAM_HINTS = {
-		query: 'query: UQL 查询语句；engines: 引擎列表；page_size: 每页结果数',
+		query: 'query: UQL；engines: 引擎列表；page_size: 每页结果数；browser_query=true + browser_action=collect_and_capture 可完成 Bridge 采集、截图、持久化和附图通知',
 		search_screenshot: 'engine: 单个引擎；query: 搜索语句（打开结果页截图）',
 		batch_screenshot: 'urls: URL 列表；concurrency: 并发数',
 		tamper_check: 'urls: URL 列表；detection_mode: strict/relaxed/security/balanced/precise',

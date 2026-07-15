@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/model"
 )
@@ -172,5 +174,26 @@ func TestBrowserQueryWaitTimeoutForAction(t *testing.T) {
 	}
 	if BrowserCollectAndCaptureWaitTimeout < 2*time.Minute {
 		t.Fatalf("collect_and_capture wait timeout should allow serial extension work, got %s", BrowserCollectAndCaptureWaitTimeout)
+	}
+}
+
+func TestTranslateBrowserQueryWithoutRegisteredAPIAdapter(t *testing.T) {
+	svc := NewQueryAppService(nil, adapter.NewEngineOrchestrator())
+	translated, err := svc.translateBrowserQuery(`port="443"`, "fofa")
+	if err != nil {
+		t.Fatalf("translate browser-only query: %v", err)
+	}
+	if translated == "" {
+		t.Fatal("browser-only translation returned empty query")
+	}
+}
+
+func TestExecuteQueryWithBrowserWorkflow_CanceledContextCannotSucceed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	svc := NewQueryAppService(nil, nil)
+	_, _, err := svc.ExecuteQueryWithBrowserWorkflow(ctx, `port="443"`, []string{"fofa"}, 10, BrowserQueryWorkflowOptions{})
+	if err == nil || !strings.Contains(err.Error(), context.Canceled.Error()) {
+		t.Fatalf("canceled workflow error = %v", err)
 	}
 }

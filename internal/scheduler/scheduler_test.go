@@ -304,6 +304,43 @@ func TestStorePersist(t *testing.T) {
 	s2.Stop()
 }
 
+func TestExecutionHistoryPersistsImmediatelyAfterRun(t *testing.T) {
+	dir := t.TempDir()
+	taskPath := filepath.Join(dir, "tasks.json")
+	historyPath := filepath.Join(dir, "history.json")
+
+	s1 := NewScheduler(taskPath, historyPath, 100)
+	s1.RegisterHandler(&testHandler{typ: TaskQuery})
+	task := &ScheduledTask{
+		Name: "persist execution immediately", Type: TaskQuery, Enabled: false,
+		ScheduleType: "cron", CronExpr: "0 0 * * *", TimeoutSec: 30,
+	}
+	if err := s1.AddTask(task); err != nil {
+		t.Fatalf("AddTask: %v", err)
+	}
+	if err := s1.RunTaskNow(task.ID); err != nil {
+		t.Fatalf("RunTaskNow: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for len(s1.GetHistory(1, "", "")) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(s1.GetHistory(1, "", "")) == 0 {
+		t.Fatal("execution did not finish")
+	}
+	s1.Stop()
+
+	s2 := NewScheduler(taskPath, historyPath, 100)
+	s2.RegisterHandler(&testHandler{typ: TaskQuery})
+	if err := s2.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer s2.Stop()
+	if history := s2.GetHistory(10, "", ""); len(history) != 1 || history[0].TaskID != task.ID {
+		t.Fatalf("reloaded execution history = %#v, want task %s", history, task.ID)
+	}
+}
+
 func TestStoreNonExistentFile(t *testing.T) {
 	dir := t.TempDir()
 	s := NewScheduler(filepath.Join(dir, "nonexist_tasks.json"), filepath.Join(dir, "nonexist_history.json"), 100)
