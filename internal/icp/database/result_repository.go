@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
@@ -119,15 +120,21 @@ func (r *resultRepository) GetRunsByKeyword(keyword, queryType string, limit int
 	rows, err := r.db.Query(
 		`SELECT id, task_id, query_keyword, query_type, page, page_size,
 		        total_records, result_count, error_msg, started_at, created_at
-		 FROM icp_query_runs WHERE query_keyword = ? AND query_type = ?
+		 FROM icp_query_runs WHERE query_keyword LIKE ? ESCAPE '\' AND query_type = ?
 		 ORDER BY started_at DESC LIMIT ?`,
-		keyword, queryType, limit,
+		"%"+escapeLikePattern(keyword)+"%", queryType, limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query runs by keyword: %w", err)
 	}
 	defer rows.Close()
 	return scanRuns(rows)
+}
+
+func escapeLikePattern(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `%`, `\%`)
+	return strings.ReplaceAll(value, `_`, `\_`)
 }
 
 func (r *resultRepository) GetResultsByRunID(runID int64) ([]*ICPResultRow, error) {

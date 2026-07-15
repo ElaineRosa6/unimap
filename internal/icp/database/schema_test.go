@@ -59,6 +59,30 @@ func TestICPResultRepository_SaveAndQueryRun(t *testing.T) {
 	}
 }
 
+func TestICPResultRepository_GetRunsByKeywordMatchesSubstring(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	repo := NewICPResultRepository(db.db)
+	for _, run := range []*ICPQueryRun{
+		{TaskID: "task-web", QueryKeyword: "[REDACTED]", QueryType: "web", StartedAt: time.Now()},
+		{TaskID: "task-app", QueryKeyword: "[REDACTED]", QueryType: "app", StartedAt: time.Now()},
+		{TaskID: "task-other", QueryKeyword: "中国联通", QueryType: "web", StartedAt: time.Now()},
+	} {
+		if _, err := repo.SaveRun(run); err != nil {
+			t.Fatalf("SaveRun(%q) failed: %v", run.TaskID, err)
+		}
+	}
+
+	runs, err := repo.GetRunsByKeyword("云南", "web", 20)
+	if err != nil {
+		t.Fatalf("GetRunsByKeyword failed: %v", err)
+	}
+	if len(runs) != 1 || runs[0].TaskID != "task-web" {
+		t.Fatalf("partial keyword returned unexpected runs: %#v", runs)
+	}
+}
+
 func TestICPResultsPersistAfterDatabaseReopen(t *testing.T) {
 	dbPath := t.TempDir() + "/icp.db"
 	firstDB, err := NewDatabase(dbPath)

@@ -302,11 +302,9 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 | GET/DELETE | `/api/v1/history/{id}` | 读取、删除操作历史；需管理员 |
 | GET | `/api/v1/icp/health` | |
 | GET | `/api/v1/icp/query` | `type`、`search`、`page`、`page_size`；`search` 必填且最大 256 字符 |
-| GET | `/api/v1/icp/history` | `keyword` 为**精确匹配**，`type` 默认 `web`，`task_id` 可选；三者均为精确等值查询 |
+| GET | `/api/v1/icp/history` | `keyword` 支持部分关键词匹配，`type` 默认 `web`；`task_id` 可选且保持精确匹配 |
 | GET | `/api/v1/icp/history/results` | `run_id` 必填，返回该次查询的明细结果 |
 | GET | `/api/v1/icp/compare` | |
-
-> **注意**：`/api/v1/icp/history` 的 `keyword` 参数使用 SQL 精确等值匹配（`query_keyword = ?`），不是模糊匹配。若传入部分关键词，可能返回空结果。建议使用完整关键词或 `task_id` 查询。
 
 ## 待 Codex 优化项
 
@@ -314,8 +312,7 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 
 | # | 问题 | 位置 | 建议 | 优先级 |
 |---|------|------|------|--------|
-| 1 | ICP history keyword 精确匹配不透明 | `web/icp_handlers.go:247` + `docs/API.md` | 文档已补充精确匹配说明；可选：支持 LIKE 模糊匹配 | P3 |
-| 2 | 调度任务 payload 格式严格但不透明 | `internal/scheduler/executor.go` + `docs/API.md` | 文档已补充 payload 速查；可选：validateTaskPayload 增加 runner-specific 校验 + 更友好的错误提示 | P3 |
+| 1 | 调度任务 payload 格式严格但不透明 | `internal/scheduler/executor.go` + `docs/API.md` | 文档已补充 payload 速查；可选：validateTaskPayload 增加 runner-specific 校验 + 更友好的错误提示 | P3 |
 
 ## 变更规则
 
