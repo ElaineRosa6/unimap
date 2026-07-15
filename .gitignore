@@ -116,6 +116,7 @@ node_modules/
 package-lock.json
 
 # Project internal audit, logs, and development reports (Local Only)
+/reports/
 /docs_archive/
 /docs/test_reports/
 /docs/API_KEYS.md

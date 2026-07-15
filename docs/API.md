@@ -96,7 +96,7 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 |---|---|---|
 | POST | `/api/v1/import/urls` | 导入 URL |
 | POST | `/api/v1/url/reachability` | URL 可达性检测 |
-| POST | `/api/v1/url/port-scan` | 公网 URL TCP 端口扫描；支持常用、自定义范围和全端口 |
+| POST | `/api/v1/url/port-scan` | 公网 URL/IP 端口扫描；支持 TCP connect、Telnet、FIN/NULL/Xmas、UDP、混合模式和随机抖动 |
 | POST | `/api/v1/url/probe-web` | Web 服务探测 |
 | POST | `/api/v1/url/probe-web-batch` | 批量 Web 服务探测 |
 | POST | `/api/v1/tamper/check` | JSON：`urls`、可选 `concurrency`、`mode`；模式为 `strict`、`relaxed`、`security`、`balanced`、`precise` |
@@ -122,13 +122,18 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
   "concurrency": 3,
   "port_concurrency": 256,
   "connect_timeout_ms": 800,
-  "scan_timeout_seconds": 60
+  "scan_timeout_seconds": 60,
+  "probe_methods": ["connect", "telnet", "udp"],
+  "jitter_min_ms": 10,
+  "jitter_max_ms": 80
 }
 ```
 
 `targets` 接受 URL、域名或公网 IPv4；旧字段 `urls` 继续兼容。`authorized_targets` 是可选的 IPv4/CIDR 清单：填写后，一个目标解析出的每个 IP 都必须位于清单内，否则该目标状态为 `not_authorized` 且不会进入连接计划。留空表示操作者已确认所有输入目标均获授权。授权清单不会放宽私有地址、loopback、link-local 等 SSRF 限制。
 
-全端口可使用 `"scan_mode":"full"`，默认扫描计划总超时为 300 秒。服务端先完成解析和安全判断，再对所有合格目标构造去重的 `唯一 IP × 端口` 笛卡尔积，并以全局有界队列执行。响应中的 `unique_ip_count`、`duplicate_ip_references`、`planned_connections` 和 `attempted_connections` 描述该计划；同一个 IP 被多个目标引用时只扫描一次，再把结果回填给每个目标。`port_count` 是请求端口数；全端口响应会省略巨大的 `ports` 数组。超时时状态为 `scan_failed`，但仍返回已经发现的开放端口。
+全端口可使用 `"scan_mode":"full"`，默认扫描计划总超时为 300 秒。服务端先完成解析和安全判断，再对所有合格目标构造去重的 `唯一 IP × 端口` 笛卡尔积并随机打乱，以全局有界队列执行。`probe_methods` 可包含 `connect`、`telnet`、`fin`、`null`、`xmas`、`udp`；省略时默认为 `connect`。`jitter_min_ms` / `jitter_max_ms` 在每次发包前加入 0-5000ms 的随机延迟。响应中的 `planned_connections` 和 `attempted_connections` 按“IP × 端口 × 方法”计数。
+
+`findings` 保留每个 IP 的方法、协议和状态。TCP connect/Telnet 完成连接或 UDP 收到响应时状态为 `open`，并汇总进兼容字段 `open_ports`；UDP 无响应以及 FIN/NULL/Xmas 未收到 RST 时只能判定为 `open_filtered`，不会误报成确定开放。FIN/NULL/Xmas 使用原始 IPv4 TCP 套接字，调用方必须填写 `authorized_targets`，运行进程还需要管理员/root 或 `CAP_NET_RAW` 权限；不满足时返回扫描未完成及具体原因。
 
 端口扫描仅允许公网目标。解析到 loopback、私有或内部地址会返回/记录 `blocked`，检测到 CDN 的目标会记录为 `cdn_excluded`；全端口模式不会放宽这些安全边界。
 

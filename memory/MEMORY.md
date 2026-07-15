@@ -14,6 +14,7 @@
 
 ## 核心架构决策
 
+- **端口扫描随机化与多方法探测（2026-07-15）**：公网目标解析、SSRF/CDN/授权范围校验后，对全局去重的 `唯一 IP × 端口` 笛卡尔积随机打乱；每个组合可执行 connect、Telnet、UDP、FIN、NULL、Xmas 和 0-5000ms 随机抖动。确定响应使用 `open`，UDP/原始 TCP 无响应使用 `open_filtered`，不得合并进确定开放端口。FIN/NULL/Xmas 必须提供 `authorized_targets`，进程还需原始套接字权限。
 - **Extension 模式是截图/采集的主力模式**：CDP headless 指纹暴露，Extension 使用真实浏览器会话
 - **ScreenshotRouter 双模式自动降级**：CDP↔Extension 自动切换
 - **三层采集架构（L1/L2/L3）**：L1 Network + L3 DOM 覆盖 5 引擎；L2 Hook 设计冻结
