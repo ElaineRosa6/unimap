@@ -43,10 +43,7 @@ func (s *Server) requireBackupTaskAdminByID(w http.ResponseWriter, r *http.Reque
 	return s.requireBackupTaskAdmin(w, r, task.Type)
 }
 
-func validateTaskPayload(payload map[string]interface{}) error {
-	if payload == nil {
-		return nil
-	}
+func validateTaskPayload(taskType scheduler.TaskType, payload map[string]interface{}) error {
 	if len(payload) > maxPayloadKeys {
 		return fmt.Errorf("payload exceeds maximum of %d keys", maxPayloadKeys)
 	}
@@ -62,7 +59,97 @@ func validateTaskPayload(payload map[string]interface{}) error {
 			return fmt.Errorf("payload webhook_url invalid: %w", err)
 		}
 	}
-	return nil
+
+	requireString := func(field string) error {
+		if payloadHasString(payload, field) {
+			return nil
+		}
+		return fmt.Errorf("scheduler task type %q payload requires non-empty field %q", taskType, field)
+	}
+	requireStrings := func(field string, aliases ...string) error {
+		if payloadHasStrings(payload, append([]string{field}, aliases...)...) {
+			return nil
+		}
+		if len(aliases) > 0 {
+			return fmt.Errorf("scheduler task type %q payload requires non-empty field %q (legacy alias %q is also accepted)", taskType, field, aliases[0])
+		}
+		return fmt.Errorf("scheduler task type %q payload requires non-empty field %q", taskType, field)
+	}
+
+	switch taskType {
+	case scheduler.TaskQuery, scheduler.TaskExport:
+		return requireString("query")
+	case scheduler.TaskSearchScreenshot:
+		if err := requireString("engine"); err != nil {
+			return err
+		}
+		return requireString("query")
+	case scheduler.TaskBatchScreenshot, scheduler.TaskTamperCheck,
+		scheduler.TaskURLReachability, scheduler.TaskPortScan:
+		return requireStrings("urls", "targets")
+	case scheduler.TaskDistributedSubmit:
+		return requireString("task_type")
+	case scheduler.TaskBackup:
+		return requireStrings("sources")
+	case scheduler.TaskICPQuery:
+		if payloadHasStrings(payload, "queries") || payloadHasString(payload, "query") {
+			return nil
+		}
+		return fmt.Errorf("scheduler task type %q payload requires non-empty field %q or %q", taskType, "queries", "query")
+	default:
+		return nil
+	}
+}
+
+func payloadValue(payload map[string]interface{}, key string) (interface{}, bool) {
+	if value, ok := payload[key]; ok {
+		return value, true
+	}
+	extra, ok := payload["extra"].(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	value, ok := extra[key]
+	return value, ok
+}
+
+func payloadHasString(payload map[string]interface{}, key string) bool {
+	value, ok := payloadValue(payload, key)
+	if !ok {
+		return false
+	}
+	text, ok := value.(string)
+	return ok && strings.TrimSpace(text) != ""
+}
+
+func payloadHasStrings(payload map[string]interface{}, keys ...string) bool {
+	for _, key := range keys {
+		value, ok := payloadValue(payload, key)
+		if !ok {
+			continue
+		}
+		switch values := value.(type) {
+		case string:
+			for _, item := range strings.Split(values, ",") {
+				if strings.TrimSpace(item) != "" {
+					return true
+				}
+			}
+		case []string:
+			for _, item := range values {
+				if strings.TrimSpace(item) != "" {
+					return true
+				}
+			}
+		case []interface{}:
+			for _, item := range values {
+				if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // handleSchedulerPage renders the scheduler management page.
@@ -208,7 +295,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := validateTaskPayload(req.Payload); err != nil {
+	if err := validateTaskPayload(task.Type, req.Payload); err != nil {
 		writeSchedulerJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -332,7 +419,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		DelaySeconds:  req.DelaySeconds,
 	}
 
-	if err := validateTaskPayload(req.Payload); err != nil {
+	if err := validateTaskPayload(task.Type, req.Payload); err != nil {
 		writeSchedulerJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -529,7 +616,19 @@ func mapToTaskPayload(m map[string]any) *model.TaskPayload {
 	if m == nil {
 		return &model.TaskPayload{}
 	}
-	raw, err := json.Marshal(m)
+	normalized := make(map[string]any, len(m))
+	for key, value := range m {
+		normalized[key] = value
+	}
+	for _, key := range []string{"engines", "queries", "urls"} {
+		if value, ok := normalized[key]; ok {
+			if values, compatible := normalizePayloadStringList(value); compatible {
+				normalized[key] = values
+			}
+		}
+	}
+
+	raw, err := json.Marshal(normalized)
 	if err != nil {
 		return &model.TaskPayload{}
 	}
@@ -546,11 +645,11 @@ func mapToTaskPayload(m map[string]any) *model.TaskPayload {
 		"icp_page_size": {}, "urls": {}, "url": {}, "cookie_file": {},
 		"extra": {},
 	}
-	extra := make(map[string]any, len(p.Extra)+len(m))
+	extra := make(map[string]any, len(p.Extra)+len(normalized))
 	for key, value := range p.Extra {
 		extra[key] = value
 	}
-	for key, value := range m {
+	for key, value := range normalized {
 		if _, known := knownFields[key]; !known {
 			extra[key] = value
 		}
@@ -559,4 +658,31 @@ func mapToTaskPayload(m map[string]any) *model.TaskPayload {
 		p.Extra = extra
 	}
 	return &p
+}
+
+func normalizePayloadStringList(value any) ([]string, bool) {
+	var raw []string
+	switch values := value.(type) {
+	case string:
+		raw = strings.Split(values, ",")
+	case []string:
+		raw = values
+	case []interface{}:
+		raw = make([]string, 0, len(values))
+		for _, item := range values {
+			if text, ok := item.(string); ok {
+				raw = append(raw, text)
+			}
+		}
+	default:
+		return nil, false
+	}
+
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out, true
 }

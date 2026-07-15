@@ -45,6 +45,27 @@ func TestExtractStrings(t *testing.T) {
 			want:    []string{"fofa"},
 		},
 		{
+			name:    "comma separated string is split and trimmed",
+			payload: &model.TaskPayload{Extra: map[string]any{"ports": "22, 80,443"}},
+			key:     "ports",
+			def:     []string{},
+			want:    []string{"22", "80", "443"},
+		},
+		{
+			name:    "urls fall back to legacy targets",
+			payload: &model.TaskPayload{Extra: map[string]any{"targets": "https://a.test, https://b.test"}},
+			key:     "urls",
+			def:     []string{},
+			want:    []string{"https://a.test", "https://b.test"},
+		},
+		{
+			name:    "engines fall back to singular engine",
+			payload: &model.TaskPayload{Extra: map[string]any{"engine": "fofa"}},
+			key:     "engines",
+			def:     []string{},
+			want:    []string{"fofa"},
+		},
+		{
 			name:    "extra empty string returns default",
 			payload: &model.TaskPayload{Extra: map[string]any{"engine": ""}},
 			key:     "engine",
@@ -147,6 +168,13 @@ func TestExtractString(t *testing.T) {
 			key:     "query",
 			def:     "default",
 			want:    "domain=example.com",
+		},
+		{
+			name:    "query falls back to legacy extra nesting",
+			payload: &model.TaskPayload{Extra: map[string]any{"query": "domain=legacy.example"}},
+			key:     "query",
+			def:     "",
+			want:    "domain=legacy.example",
 		},
 		{
 			name:    "extra non-string value returns default",

@@ -550,7 +550,7 @@ func extractICPQueries(payload *model.TaskPayload) ([]string, error) {
 		}
 	}
 	if len(queries) == 0 {
-		return nil, fmt.Errorf("missing 'queries' or 'query' in payload")
+		return nil, fmt.Errorf("%s runner: missing 'queries' or 'query' in payload", TaskICPQuery)
 	}
 	if len(queries) > icpMaxQueries {
 		return nil, fmt.Errorf("too many queries (%d), maximum is %d", len(queries), icpMaxQueries)
