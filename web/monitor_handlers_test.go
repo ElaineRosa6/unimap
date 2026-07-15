@@ -325,6 +325,39 @@ func TestHandleURLPortScanRejectsInvalidPortSpec(t *testing.T) {
 	}
 }
 
+func TestHandleURLPortScanAcceptsTargetsAliasAndAppliesSSRFProtection(t *testing.T) {
+	s := &Server{monitorApp: service.NewMonitorAppService(nil)}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/port-scan", strings.NewReader(`{
+		"targets":["127.0.0.1"],
+		"port_spec":"80"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleURLPortScan(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"blocked"`) {
+		t.Fatalf("expected targets alias to reach SSRF protection, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleURLPortScanRejectsInvalidAuthorizedScope(t *testing.T) {
+	s := &Server{monitorApp: service.NewMonitorAppService(nil)}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/port-scan", strings.NewReader(`{
+		"targets":["https://example.com"],
+		"port_spec":"80",
+		"authorized_targets":["not-an-ip"]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleURLPortScan(rec, req)
+
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_authorized_scope") {
+		t.Fatalf("expected invalid_authorized_scope, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHandleProbeWebService_MissingURL(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()

@@ -4,11 +4,16 @@
 	<main>
 		<div class="card">
 			<h2>端口扫描</h2>
-			<p class="text-muted">对目标 URL 进行端口扫描，检测开放端口和服务。</p>
+			<p class="text-muted">对授权公网 URL/IP 进行去重端口扫描，检测开放 TCP 端口。</p>
 
 			<div class="form-group">
-				<label>目标 URL（每行一个）</label>
+				<label>目标 URL 或公网 IP（每行一个）</label>
 				<textarea id="scan-urls" rows="5" class="form-control" placeholder="https://example.com&#10;http://1.2.3.4:8080&#10;example.org"></textarea>
+			</div>
+			<div class="form-group">
+				<label>授权 IP / CIDR 范围（可选，每行或逗号分隔）</label>
+				<textarea id="scan-authorized-targets" rows="2" class="form-control" placeholder="203.0.113.10&#10;198.51.100.0/24"></textarea>
+				<small>填写后，域名解析出的每个 IP 都必须落在该范围内；留空表示输入目标均已由操作者确认授权。此范围不会绕过内网 SSRF 拦截。</small>
 			</div>
 
 			<div class="form-row">
@@ -106,6 +111,7 @@
 		if (!urlsText) { showToast('请输入目标 URL', 'error'); return; }
 
 		const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u);
+		const authorizedTargets = document.getElementById('scan-authorized-targets').value.split(/[\n,]/).map(v => v.trim()).filter(v => v);
 		const mode = scanMode.value;
 		const portSpec = scanPorts.value.trim();
 		if (mode === 'custom' && !portSpec) { showToast('请输入自定义端口或范围', 'error'); return; }
@@ -124,7 +130,7 @@
 				method: 'POST',
 				headers: {'Content-Type': 'application/json'},
 				body: JSON.stringify({
-					urls, scan_mode: mode, port_spec: portSpec, concurrency,
+					targets: urls, authorized_targets: authorizedTargets, scan_mode: mode, port_spec: portSpec, concurrency,
 					port_concurrency: portConcurrency,
 					connect_timeout_ms: connectTimeoutMS,
 					scan_timeout_seconds: scanTimeoutSeconds
@@ -139,13 +145,13 @@
 			// 保存到操作历史（fire-and-forget）
 			try {
 				var s = data.summary || {};
-				var hasFailures = (s.scanFailed || 0) > 0 || (s.resolveFailed || 0) > 0 || (s.invalidFormat || 0) > 0 || (s.blocked || 0) > 0;
+				var hasFailures = (s.scanFailed || 0) > 0 || (s.resolveFailed || 0) > 0 || (s.invalidFormat || 0) > 0 || (s.blocked || 0) > 0 || (s.notAuthorized || 0) > 0;
 				apiFetch('/api/v1/history/save', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
 						operation_type: 'port_scan',
-						input: { urls: urls, scan_mode: mode, port_spec: portSpec, concurrency: concurrency, port_concurrency: portConcurrency, connect_timeout_ms: connectTimeoutMS, scan_timeout_seconds: scanTimeoutSeconds },
+						input: { targets: urls, authorized_targets: authorizedTargets, scan_mode: mode, port_spec: portSpec, concurrency: concurrency, port_concurrency: portConcurrency, connect_timeout_ms: connectTimeoutMS, scan_timeout_seconds: scanTimeoutSeconds },
 						status: hasFailures ? 'partial' : 'success',
 						total_count: s.total || 0,
 						summary: s,
@@ -170,16 +176,21 @@
 		const total = Number(s.total) || 0;
 		const scanned = Number(s.scanned) || 0;
 		const cdnExcluded = Number(s.cdnExcluded) || 0;
-		const failed = (Number(s.invalidFormat) || 0) + (Number(s.resolveFailed) || 0) + (Number(s.scanFailed) || 0) + (Number(s.blocked) || 0);
+		const failed = (Number(s.invalidFormat) || 0) + (Number(s.resolveFailed) || 0) + (Number(s.scanFailed) || 0) + (Number(s.blocked) || 0) + (Number(s.notAuthorized) || 0);
 		const portCount = Number(data.port_count) || (data.ports || []).length;
 		const duration = ((Number(data.duration_ms) || 0) / 1000).toFixed(1);
+		const uniqueIPs = Number(data.unique_ip_count) || 0;
+		const planned = Number(data.planned_connections) || 0;
+		const attempted = Number(data.attempted_connections) || 0;
 		const summaryHtml = `
-			<div class="summary-card"><div class="count">${total}</div><div class="label">总 URL</div></div>
+			<div class="summary-card"><div class="count">${total}</div><div class="label">总目标</div></div>
 			<div class="summary-card"><div class="count">${scanned}</div><div class="label">已扫描</div></div>
 			<div class="summary-card"><div class="count">${cdnExcluded}</div><div class="label">CDN 排除</div></div>
 			<div class="summary-card"><div class="count">${failed}</div><div class="label">失败</div></div>
 			<div class="summary-card"><div class="count">${portCount}</div><div class="label">请求端口</div></div>
 			<div class="summary-card"><div class="count">${duration}s</div><div class="label">总耗时</div></div>
+			<div class="summary-card"><div class="count">${uniqueIPs}</div><div class="label">唯一 IP</div></div>
+			<div class="summary-card"><div class="count">${attempted}/${planned}</div><div class="label">全局连接进度</div></div>
 		`;
 		document.getElementById('scan-summary').innerHTML = summaryHtml;
 
@@ -199,7 +210,7 @@
 				});
 			}
 			const statusClass = r.status === 'scanned' ? 'status-enabled' : 'status-disabled';
-			const statusLabel = {scanned:'已扫描', blocked:'安全拦截', cdn_excluded:'CDN排除', resolve_failed:'解析失败', scan_failed:'扫描未完成', invalid_format:'格式错误'}[r.status] || escHtml(r.status || '未知');
+			const statusLabel = {scanned:'已扫描', blocked:'安全拦截', not_authorized:'超出授权范围', cdn_excluded:'CDN排除', resolve_failed:'解析失败', scan_failed:'扫描未完成', invalid_format:'格式错误'}[r.status] || escHtml(r.status || '未知');
 			const progress = r.expected_connections ? ` (${Number(r.attempted_connections) || 0}/${Number(r.expected_connections)}, ${((Number(r.duration_ms) || 0) / 1000).toFixed(1)}s)` : '';
 
 			tr.innerHTML = `
@@ -231,10 +242,11 @@
 				}
 				items.forEach(function(item) {
 					var li = document.createElement('li');
-					var urls = '', portsStr = '', historyMode = 'common';
+					var urls = '', portsStr = '', historyMode = 'common', authorizedStr = '';
 					try {
 						var input = JSON.parse(item.input);
-						urls = (input.urls || []).join('\n');
+						urls = (input.targets || input.urls || []).join('\n');
+						authorizedStr = (input.authorized_targets || []).join('\n');
 						portsStr = input.port_spec || (input.ports || []).join(', ');
 						historyMode = input.scan_mode || (portsStr ? 'custom' : 'common');
 					} catch(e) { urls = item.input; }
@@ -253,6 +265,7 @@
 					li.addEventListener('click', function() {
 						document.getElementById('scan-urls').value = urls;
 						document.getElementById('scan-ports').value = portsStr;
+						document.getElementById('scan-authorized-targets').value = authorizedStr;
 						scanMode.value = historyMode;
 						updatePortMode();
 						closePScanHistory();

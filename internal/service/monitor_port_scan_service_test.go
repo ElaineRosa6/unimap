@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -91,6 +92,91 @@ func TestScanHostPortsConcurrentActuallyRunsConcurrently(t *testing.T) {
 	}
 	if got := open["192.0.2.1"]; len(got) != 4 || got[0] != 2 || got[3] != 8 {
 		t.Fatalf("unexpected open ports: %v", got)
+	}
+}
+
+func TestPortScanPlanDeduplicatesIPsAndBuildsCartesianProduct(t *testing.T) {
+	results := []URLPortScanResult{
+		{Input: "one.example", Status: "resolved", ResolvedIPs: []string{"192.0.2.10"}},
+		{Input: "two.example", Status: "resolved", ResolvedIPs: []string{"192.0.2.10", "198.51.100.20"}},
+	}
+	plan := buildPortScanPlan(results, []int{80, 443})
+
+	if len(plan.IPs) != 2 || plan.PlannedConnections != 4 || plan.DuplicateIPReferences != 1 {
+		t.Fatalf("unexpected plan: %+v", plan)
+	}
+	if plan.IPs[0] != "192.0.2.10" || plan.IPs[1] != "198.51.100.20" {
+		t.Fatalf("plan IPs are not unique and sorted: %v", plan.IPs)
+	}
+}
+
+func TestApplyAuthorizedScopeRejectsTargetWithUnlistedResolvedIP(t *testing.T) {
+	networks, err := parseAuthorizedNetworks([]string{"192.0.2.10", "198.51.100.0/24"})
+	if err != nil {
+		t.Fatalf("parseAuthorizedNetworks: %v", err)
+	}
+	results := []URLPortScanResult{
+		{Input: "allowed", Status: "resolved", ResolvedIPs: []string{"192.0.2.10", "198.51.100.20"}},
+		{Input: "mixed", Status: "resolved", ResolvedIPs: []string{"192.0.2.10", "203.0.113.30"}},
+	}
+	applyAuthorizedScope(results, networks)
+
+	if results[0].Status != "resolved" {
+		t.Fatalf("allowed target status = %q", results[0].Status)
+	}
+	if results[1].Status != "not_authorized" || !strings.Contains(results[1].Reason, "203.0.113.30") {
+		t.Fatalf("mixed target should be rejected with the unlisted IP, got %+v", results[1])
+	}
+}
+
+func TestExecutePortScanPlanScansEachUniqueIPPortPairOnce(t *testing.T) {
+	results := []URLPortScanResult{
+		{Input: "one.example", Status: "resolved", ResolvedIPs: []string{"192.0.2.10"}},
+		{Input: "two.example", Status: "resolved", ResolvedIPs: []string{"192.0.2.10", "198.51.100.20"}},
+	}
+	ports := []int{80, 443}
+	plan := buildPortScanPlan(results, ports)
+	var calls atomic.Int32
+	dial := func(ctx context.Context, ip string, port int, timeout time.Duration) bool {
+		calls.Add(1)
+		return ip == "192.0.2.10" && port == 443
+	}
+
+	outcome := executePortScanPlan(context.Background(), plan, ports, 4, time.Second, dial)
+	if outcome.Err != nil {
+		t.Fatalf("executePortScanPlan: %v", outcome.Err)
+	}
+	if calls.Load() != 4 || outcome.AttemptedConnections != 4 {
+		t.Fatalf("expected exactly four unique IP×port attempts, calls=%d outcome=%+v", calls.Load(), outcome)
+	}
+	if got := outcome.OpenPorts["192.0.2.10"]; len(got) != 1 || got[0] != 443 {
+		t.Fatalf("unexpected open ports: %v", outcome.OpenPorts)
+	}
+}
+
+func TestApplyPortScanOutcomeAttributesSharedIPResults(t *testing.T) {
+	results := []URLPortScanResult{
+		{Input: "one.example", Status: "resolved", ResolvedIPs: []string{"192.0.2.10"}},
+		{Input: "two.example", Status: "resolved", ResolvedIPs: []string{"192.0.2.10", "198.51.100.20"}},
+	}
+	outcome := portScanExecution{
+		OpenPorts: map[string][]int{
+			"192.0.2.10":    {443},
+			"198.51.100.20": {},
+		},
+		AttemptedByIP:        map[string]int{"192.0.2.10": 2, "198.51.100.20": 2},
+		AttemptedConnections: 4,
+	}
+	applyPortScanOutcome(results, []int{80, 443}, outcome, 25)
+
+	if results[0].Status != "scanned" || results[0].AttemptedConnections != 2 || results[0].ExpectedConnections != 2 {
+		t.Fatalf("unexpected first target attribution: %+v", results[0])
+	}
+	if results[1].Status != "scanned" || results[1].AttemptedConnections != 4 || results[1].ExpectedConnections != 4 {
+		t.Fatalf("unexpected second target attribution: %+v", results[1])
+	}
+	if got := results[0].OpenPorts["192.0.2.10"]; len(got) != 1 || got[0] != 443 {
+		t.Fatalf("shared IP result not attributed: %v", results[0].OpenPorts)
 	}
 }
 

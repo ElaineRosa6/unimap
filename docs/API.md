@@ -115,7 +115,8 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 
 ```json
 {
-  "urls": ["https://example.com"],
+  "targets": ["https://example.com", "203.0.113.10"],
+  "authorized_targets": ["203.0.113.0/24", "198.51.100.20"],
   "scan_mode": "custom",
   "port_spec": "22,80,443,8000-8100",
   "concurrency": 3,
@@ -125,7 +126,9 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 }
 ```
 
-全端口可使用 `"scan_mode":"full"`，默认单目标总超时为 300 秒。服务端限制总拨号并发，连接超时最大 10 秒、扫描超时最大 15 分钟。响应的 `port_count` 是请求端口数；全端口响应会省略巨大的 `ports` 数组。每个结果包含 `attempted_connections`、`expected_connections` 和 `duration_ms`；超时时状态为 `scan_failed`，但仍返回已经发现的开放端口。
+`targets` 接受 URL、域名或公网 IPv4；旧字段 `urls` 继续兼容。`authorized_targets` 是可选的 IPv4/CIDR 清单：填写后，一个目标解析出的每个 IP 都必须位于清单内，否则该目标状态为 `not_authorized` 且不会进入连接计划。留空表示操作者已确认所有输入目标均获授权。授权清单不会放宽私有地址、loopback、link-local 等 SSRF 限制。
+
+全端口可使用 `"scan_mode":"full"`，默认扫描计划总超时为 300 秒。服务端先完成解析和安全判断，再对所有合格目标构造去重的 `唯一 IP × 端口` 笛卡尔积，并以全局有界队列执行。响应中的 `unique_ip_count`、`duplicate_ip_references`、`planned_connections` 和 `attempted_connections` 描述该计划；同一个 IP 被多个目标引用时只扫描一次，再把结果回填给每个目标。`port_count` 是请求端口数；全端口响应会省略巨大的 `ports` 数组。超时时状态为 `scan_failed`，但仍返回已经发现的开放端口。
 
 端口扫描仅允许公网目标。解析到 loopback、私有或内部地址会返回/记录 `blocked`，检测到 CDN 的目标会记录为 `cdn_excluded`；全端口模式不会放宽这些安全边界。
 

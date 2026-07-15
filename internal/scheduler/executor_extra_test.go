@@ -613,6 +613,20 @@ func TestPortScanRunner_RejectsInvalidPortRange(t *testing.T) {
 	}
 }
 
+func TestPortScanRunnerRejectsInvalidAuthorizedTarget(t *testing.T) {
+	r := NewPortScanRunner(service.NewMonitorAppService(nil))
+	_, err := r.Execute(context.Background(), &model.TaskPayload{
+		URLs: []string{"https://example.com"},
+		Extra: map[string]any{
+			"port_spec":          "443",
+			"authorized_targets": []any{"not-an-ip"},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "authorized target") {
+		t.Fatalf("expected invalid authorized target error, got %v", err)
+	}
+}
+
 // ===== ScreenshotCleanupRunner Execute tests =====
 
 func TestScreenshotCleanupRunner_Execute_NilService(t *testing.T) {
