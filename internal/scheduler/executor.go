@@ -60,11 +60,12 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 		return "", fmt.Errorf("query service not available")
 	}
 
-	if payload == nil || payload.Query == "" {
-		return "", fmt.Errorf("missing 'query' in payload")
+	query := extractString(payload, "query", "")
+	if query == "" {
+		return "", fmt.Errorf("%s runner: missing 'query' in payload", r.Type())
 	}
 
-	engines := payload.Engines
+	engines := extractStrings(payload, "engines", nil)
 	if len(engines) == 0 {
 		engines = extractStrings(payload, "engine", []string{})
 	}
@@ -95,7 +96,7 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 		if queryID == "" {
 			queryID = fmt.Sprintf("scheduled_query_%d", time.Now().UnixNano())
 		}
-		resp, browserOutcome, err = r.querySvc.ExecuteQueryWithBrowserWorkflow(ctx, payload.Query, engines, pageSize, service.BrowserQueryWorkflowOptions{
+		resp, browserOutcome, err = r.querySvc.ExecuteQueryWithBrowserWorkflow(ctx, query, engines, pageSize, service.BrowserQueryWorkflowOptions{
 			Action:             action,
 			QueryID:            queryID,
 			ScreenshotApp:      r.screenshotSvc,
@@ -105,7 +106,7 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 			RequirePersistence: true,
 		})
 	} else {
-		resp, err = r.querySvc.ExecuteQuery(ctx, payload.Query, engines, pageSize)
+		resp, err = r.querySvc.ExecuteQuery(ctx, query, engines, pageSize)
 	}
 	if err != nil {
 		return "", fmt.Errorf("query execution failed: %w", err)
@@ -113,7 +114,7 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "UQL 查询完成\n\n")
-	fmt.Fprintf(&b, "📋 查询: %s\n", payload.Query)
+	fmt.Fprintf(&b, "📋 查询: %s\n", query)
 	fmt.Fprintf(&b, "📋 引擎: %s\n", strings.Join(engines, ","))
 	fmt.Fprintf(&b, "📋 页大小: %d\n", pageSize)
 	fmt.Fprintf(&b, "📊 共返回 %d 条资产\n\n", resp.TotalCount)
@@ -269,11 +270,11 @@ func (r *SearchScreenshotRunner) Execute(ctx context.Context, payload *model.Tas
 	}
 
 	engine := extractString(payload, "engine", "")
-	query := payload.Query
+	query := extractString(payload, "query", "")
 	queryID := extractString(payload, "query_id", "")
 
 	if engine == "" || query == "" {
-		return "", fmt.Errorf("missing 'engine' or 'query' in payload")
+		return "", fmt.Errorf("%s runner: missing 'engine' or 'query' in payload", r.Type())
 	}
 
 	path, eng, q, id, err := r.screenshotSvc.CaptureSearchEngineResult(ctx, r.mgr, engine, query, queryID)
@@ -319,7 +320,7 @@ func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload *model.Task
 
 	urls := extractStrings(payload, "urls", []string{})
 	if len(urls) == 0 {
-		return "", fmt.Errorf("missing 'urls' in payload")
+		return "", fmt.Errorf("%s runner: missing 'urls' in payload", r.Type())
 	}
 
 	batchID := extractString(payload, "batch_id", "")
@@ -392,7 +393,7 @@ func (r *TamperCheckRunner) Execute(ctx context.Context, payload *model.TaskPayl
 
 	urls := extractStrings(payload, "urls", []string{})
 	if len(urls) == 0 {
-		return "", fmt.Errorf("missing 'urls' in payload")
+		return "", fmt.Errorf("%s runner: missing 'urls' in payload", r.Type())
 	}
 
 	concurrency := extractInt(payload, "concurrency", 5)
@@ -462,7 +463,7 @@ func (r *URLReachabilityRunner) Execute(ctx context.Context, payload *model.Task
 
 	urls := extractStrings(payload, "urls", []string{})
 	if len(urls) == 0 {
-		return "", fmt.Errorf("missing 'urls' in payload")
+		return "", fmt.Errorf("%s runner: missing 'urls' in payload", r.Type())
 	}
 
 	concurrency := extractInt(payload, "concurrency", 5)
@@ -613,7 +614,7 @@ func (r *DistributedSubmitRunner) Execute(ctx context.Context, payload *model.Ta
 
 	taskType := extractString(payload, "task_type", "")
 	if taskType == "" {
-		return "", fmt.Errorf("missing 'task_type' in payload")
+		return "", fmt.Errorf("%s runner: missing 'task_type' in payload", r.Type())
 	}
 
 	taskPayload := make(map[string]any)
@@ -675,7 +676,7 @@ func (r *BackupRunner) Type() TaskType { return TaskBackup }
 func (r *BackupRunner) Execute(_ context.Context, payload *model.TaskPayload) (string, error) {
 	sources := extractStrings(payload, "sources", []string{})
 	if len(sources) == 0 {
-		return "", fmt.Errorf("missing 'sources' in payload")
+		return "", fmt.Errorf("%s runner: missing 'sources' in payload", r.Type())
 	}
 	result, err := backup.Backup(backup.BackupConfig{
 		Sources: sources, OutputDir: extractString(payload, "output_dir", ""),
@@ -715,7 +716,7 @@ func (r *ExportRunner) Execute(ctx context.Context, payload *model.TaskPayload) 
 
 	query := extractString(payload, "query", "")
 	if query == "" {
-		return "", fmt.Errorf("missing 'query' in payload")
+		return "", fmt.Errorf("%s runner: missing 'query' in payload", r.Type())
 	}
 
 	engines := extractStrings(payload, "engines", []string{})
@@ -796,7 +797,7 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 
 	urls := extractStrings(payload, "urls", []string{})
 	if len(urls) == 0 {
-		return "", fmt.Errorf("missing 'urls' in payload")
+		return "", fmt.Errorf("%s runner: missing 'urls' in payload", r.Type())
 	}
 
 	concurrency := extractInt(payload, "concurrency", 5)

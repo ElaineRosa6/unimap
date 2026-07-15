@@ -39,10 +39,17 @@ func extractStringsFromMap(payload map[string]any, key string, def []string) []s
 		}
 		return out
 	case string:
-		if val == "" {
+		items := strings.Split(val, ",")
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			if item = strings.TrimSpace(item); item != "" {
+				out = append(out, item)
+			}
+		}
+		if len(out) == 0 {
 			return def
 		}
-		return []string{val}
+		return out
 	default:
 		return def
 	}
@@ -92,7 +99,10 @@ func extractString(payload *model.TaskPayload, key string, def string) string {
 	}
 	switch key {
 	case "query":
-		return payload.Query
+		if payload.Query != "" {
+			return payload.Query
+		}
+		return extractStringFromMap(payload.Extra, key, def)
 	case "format":
 		return payload.Format
 	case "detection_mode":
@@ -103,14 +113,6 @@ func extractString(payload *model.TaskPayload, key string, def string) string {
 		return payload.URL
 	case "cookie_file":
 		return payload.CookieFile
-	case "engine":
-		return extractStringFromMap(payload.Extra, key, def)
-	case "query_id":
-		return extractStringFromMap(payload.Extra, key, def)
-	case "batch_id":
-		return extractStringFromMap(payload.Extra, key, def)
-	case "strategy":
-		return extractStringFromMap(payload.Extra, key, def)
 	}
 	return extractStringFromMap(payload.Extra, key, def)
 }
@@ -134,7 +136,23 @@ func extractStrings(payload *model.TaskPayload, key string, def []string) []stri
 		}
 	}
 	if payload.Extra != nil {
-		return extractStringsFromMap(payload.Extra, key, def)
+		var alias string
+		switch key {
+		case "urls":
+			alias = "targets"
+		case "engines":
+			alias = "engine"
+		default:
+			return extractStringsFromMap(payload.Extra, key, def)
+		}
+		if values := extractStringsFromMap(payload.Extra, key, nil); len(values) > 0 {
+			return values
+		}
+		if alias != "" {
+			if values := extractStringsFromMap(payload.Extra, alias, nil); len(values) > 0 {
+				return values
+			}
+		}
 	}
 	return def
 }

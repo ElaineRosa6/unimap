@@ -160,17 +160,18 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 
 ### 通用规则
 
-- Payload 字段必须位于**顶层**，不支持 `extra` 嵌套。
-- 数组字段必须是 JSON 数组，不支持逗号分隔的单个字符串。
-- 每个 Runner 的字段名和类型是严格的，不兼容别名。
+- Payload 字段推荐放在**顶层**；为兼容旧任务，Runner 仍会读取 `extra` 中的任务字段。
+- 数组字段优先使用 JSON 数组；字符串形式会按逗号拆分并去除首尾空白。
+- `urls` 兼容旧别名 `targets`，`engines` 兼容单数别名 `engine`；新任务应使用规范字段名。
+- 创建或更新任务时会按 Runner 类型校验必填字段；400 错误会包含任务类型、规范字段名和可用别名。
 
 ### 常见陷阱
 
 | Runner | 错误用法 | 正确用法 |
 |--------|----------|----------|
-| `port_scan` | `{"extra": {"ports": "22,80", "targets": [...]}}` | `{"urls": ["..."], "ports": ["22", "80"], "concurrency": 50}` |
-| `query` | `{"engine": "fofa"}`（单数） | `{"engines": ["fofa"], "query": "...", "page_size": 20}` |
-| `tamper_check` | `{"url": "..."}`（单数） | `{"urls": ["..."], "mode": "relaxed"}` |
+| `port_scan` | 旧格式 `{"targets": "https://a.test,https://b.test", "ports": "22,80"}` | 推荐 `{"urls": ["https://a.test", "https://b.test"], "ports": ["22", "80"], "concurrency": 50}` |
+| `query` | 兼容 `{"engine": "fofa", "query": "..."}` | 推荐 `{"engines": ["fofa"], "query": "...", "page_size": 20}` |
+| `tamper_check` | `{"url": "..."}`（不兼容的单数字段） | `{"urls": ["..."], "detection_mode": "relaxed"}` |
 
 ### 各 Runner Payload 速查
 
@@ -305,14 +306,6 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 | GET | `/api/v1/icp/history` | `keyword` 支持部分关键词匹配，`type` 默认 `web`；`task_id` 可选且保持精确匹配 |
 | GET | `/api/v1/icp/history/results` | `run_id` 必填，返回该次查询的明细结果 |
 | GET | `/api/v1/icp/compare` | |
-
-## 待 Codex 优化项
-
-以下为非 Bug 但影响使用的逻辑不完善问题，已记录待后续优化：
-
-| # | 问题 | 位置 | 建议 | 优先级 |
-|---|------|------|------|--------|
-| 1 | 调度任务 payload 格式严格但不透明 | `internal/scheduler/executor.go` + `docs/API.md` | 文档已补充 payload 速查；可选：validateTaskPayload 增加 runner-specific 校验 + 更友好的错误提示 | P3 |
 
 ## 变更规则
 

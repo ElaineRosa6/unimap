@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/unimap/project/internal/auth"
@@ -154,6 +156,32 @@ func TestHandleCreateTask_Success(t *testing.T) {
 	}
 }
 
+func TestHandleCreateTask_MissingRunnerFieldReturnsClearError(t *testing.T) {
+	sched := setupScheduler(t)
+	s := &Server{scheduler: sched}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{
+		"name":      "screenshots",
+		"type":      "batch_screenshot",
+		"cron_expr": "0 * * * *",
+		"payload":   map[string]interface{}{},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scheduler/tasks/create", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+
+	s.handleCreateTask(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{"batch_screenshot", "urls", "targets"} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("error response %q does not contain %q", rec.Body.String(), want)
+		}
+	}
+}
+
 func TestHandleCreateTask_PreservesBackupPayloadFields(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"
@@ -219,6 +247,16 @@ func TestMapToTaskPayloadPreservesNotificationDetailLimit(t *testing.T) {
 		if _, duplicated := payload.Extra["notification_detail_limit"]; duplicated {
 			t.Fatal("typed notification detail limit was also duplicated into Extra")
 		}
+	}
+}
+
+func TestMapToTaskPayloadNormalizesCommaSeparatedURLs(t *testing.T) {
+	payload := mapToTaskPayload(map[string]any{
+		"urls": "https://a.test, https://b.test",
+	})
+	want := []string{"https://a.test", "https://b.test"}
+	if !slices.Equal(payload.URLs, want) {
+		t.Fatalf("URLs = %#v, want %#v", payload.URLs, want)
 	}
 }
 
@@ -704,7 +742,7 @@ func TestHandleRunTaskNow_GetMethod_Returns405(t *testing.T) {
 // ============================================================
 
 func TestValidateTaskPayload_Nil(t *testing.T) {
-	if err := validateTaskPayload(nil); err != nil {
+	if err := validateTaskPayload(scheduler.TaskScreenshotCleanup, nil); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 }
@@ -714,21 +752,40 @@ func TestValidateTaskPayload_TooManyKeys(t *testing.T) {
 	for i := 0; i < maxPayloadKeys+1; i++ {
 		payload[fmt.Sprintf("key%d", i)] = "value"
 	}
-	if err := validateTaskPayload(payload); err == nil {
+	if err := validateTaskPayload(scheduler.TaskScreenshotCleanup, payload); err == nil {
 		t.Fatal("expected error for too many keys")
 	}
 }
 
 func TestValidateTaskPayload_Valid(t *testing.T) {
 	payload := map[string]interface{}{"query": "test", "limit": 10}
-	if err := validateTaskPayload(payload); err != nil {
+	if err := validateTaskPayload(scheduler.TaskQuery, payload); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
+func TestValidateTaskPayload_AcceptsCompatibleShapes(t *testing.T) {
+	tests := []struct {
+		name     string
+		taskType scheduler.TaskType
+		payload  map[string]interface{}
+	}{
+		{"legacy targets string", scheduler.TaskPortScan, map[string]interface{}{"targets": "https://a.test,https://b.test"}},
+		{"comma separated sources", scheduler.TaskBackup, map[string]interface{}{"sources": "config,baseline"}},
+		{"legacy extra query", scheduler.TaskQuery, map[string]interface{}{"extra": map[string]interface{}{"query": "domain=example.com"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateTaskPayload(tt.taskType, tt.payload); err != nil {
+				t.Fatalf("expected compatible payload to pass: %v", err)
+			}
+		})
 	}
 }
 
 func TestValidateTaskPayload_InvalidWebhookScheme(t *testing.T) {
 	payload := map[string]interface{}{"webhook_url": "ftp://example.com/webhook"}
-	if err := validateTaskPayload(payload); err == nil {
+	if err := validateTaskPayload(scheduler.TaskScreenshotCleanup, payload); err == nil {
 		t.Fatal("expected error for invalid webhook scheme")
 	}
 }
