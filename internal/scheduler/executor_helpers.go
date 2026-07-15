@@ -148,6 +148,10 @@ func extractInt(payload *model.TaskPayload, key string, def int) int {
 		if payload.PageSize > 0 {
 			return payload.PageSize
 		}
+	case "notification_detail_limit":
+		if payload.NotificationDetailLimit > 0 {
+			return payload.NotificationDetailLimit
+		}
 	case "icp_page_size":
 		if payload.PageSizeICP > 0 {
 			return payload.PageSizeICP

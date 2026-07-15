@@ -809,7 +809,7 @@ document.getElementById('edit-modal-overlay').addEventListener('click', closeEdi
 	// Pre-filled payloads for high-frequency task types. Uses precise queries
 	// (single IP + port) to keep API consumption minimal.
 	const TASK_TEMPLATES = {
-		query:             {name: 'Bridge 查询采集与截图', payload: {query: 'port="443"', engines: ['fofa'], page_size: 10, browser_query: true, browser_action: 'collect_and_capture'}},
+		query:             {name: 'Bridge 查询采集与截图', payload: {query: 'port="443"', engines: ['fofa'], page_size: 10, notification_detail_limit: 50, browser_query: true, browser_action: 'collect_and_capture'}},
 		search_screenshot: {name: 'FOFA 搜索结果截图', payload: {engine: 'fofa', query: 'ip="47.95.120.1" && port="80"'}},
 		batch_screenshot:  {name: '官网截图巡检',      payload: {urls: ['https://www.baidu.com'], concurrency: 2}},
 		tamper_check:      {name: '首页篡改监控',      payload: {urls: ['https://www.baidu.com'], detection_mode: 'relaxed'}},
@@ -820,7 +820,7 @@ document.getElementById('edit-modal-overlay').addEventListener('click', closeEdi
 
 	// Concise parameter hints for every task type.
 	const PARAM_HINTS = {
-		query: 'query: UQL；engines: 引擎列表；page_size: 每页结果数；browser_query=true + browser_action=collect_and_capture 可完成 Bridge 采集、截图、持久化和附图通知',
+		query: 'query: UQL；engines: 引擎列表；page_size: 每页结果数；notification_detail_limit: 通知展开明细数（默认 50，最大 100）；browser_query=true + browser_action=collect_and_capture 可完成 Bridge 采集、截图、持久化和明细附图通知',
 		search_screenshot: 'engine: 单个引擎；query: 搜索语句（打开结果页截图）',
 		batch_screenshot: 'urls: URL 列表；concurrency: 并发数',
 		tamper_check: 'urls: URL 列表；detection_mode: strict/relaxed/security/balanced/precise',

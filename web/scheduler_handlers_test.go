@@ -207,6 +207,21 @@ func TestHandleCreateTask_PreservesBackupPayloadFields(t *testing.T) {
 	}
 }
 
+func TestMapToTaskPayloadPreservesNotificationDetailLimit(t *testing.T) {
+	payload := mapToTaskPayload(map[string]any{
+		"query":                     `port="443"`,
+		"notification_detail_limit": 25,
+	})
+	if payload.NotificationDetailLimit != 25 {
+		t.Fatalf("notification detail limit = %d, want 25", payload.NotificationDetailLimit)
+	}
+	if payload.Extra != nil {
+		if _, duplicated := payload.Extra["notification_detail_limit"]; duplicated {
+			t.Fatal("typed notification detail limit was also duplicated into Extra")
+		}
+	}
+}
+
 func TestHandleCreateTask_BackupRequiresAdmin(t *testing.T) {
 	storePath := t.TempDir() + "/tasks.json"
 	historyPath := t.TempDir() + "/history.json"

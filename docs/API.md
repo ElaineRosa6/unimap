@@ -130,20 +130,23 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 
 调度器任务请求的权威字段是 `web/scheduler_handlers.go` 中的创建/更新结构：`name`、`type`、`enabled`、`cron_expr`、`payload`、`timeout_seconds`、`max_retries`，以及可选 `notifications`、`schedule_type`、`run_at`、`delay_seconds`。当前工作区定义 23 种任务类型；其中备份任务属于未提交工作区改动，发布说明应随提交状态更新。
 
-`query` 任务的基础 payload 为 `query`、`engines`、`page_size`。需要完整 Bridge 闭环时增加：
+`query` 任务的基础 payload 为 `query`、`engines`、`page_size`。查询成功通知会展开资产明细，而不是只发送数量；`notification_detail_limit` 控制通知中最多展开多少条，默认 50、最大 100。明细正文另有约 20 KiB 的渠道安全上限。超过任一上限的资产仍全部写入 SQLite，通知会标明未展开数量。通知不会包含响应头、正文片段或任意扩展字段。
+
+需要完整 Bridge 闭环时增加：
 
 ```json
 {
   "query": "port=\"443\"",
   "engines": ["fofa"],
   "page_size": 10,
+  "notification_detail_limit": 50,
   "browser_query": true,
   "browser_action": "collect_and_capture",
   "query_id": "optional-correlation-id"
 }
 ```
 
-该模式对每个引擎执行一次 Bridge 结构化采集与截图，将 API 和 Bridge 资产合并为一条 SQLite 查询历史，并把本地 PNG 路径交给任务通知。它要求历史数据库、Bridge provider 和截图文件均可用；任一必需环节失败时任务不会报告成功。未设置 `browser_query` 的旧查询任务保持普通 API 查询行为。
+该模式对每个引擎执行一次 Bridge 结构化采集与截图，将 API 和 Bridge 资产合并为一条 SQLite 查询历史，并把合并后的资产明细和本地 PNG 路径交给任务通知。它要求历史数据库、Bridge provider 和截图文件均可用；任一必需环节失败时任务不会报告成功。未设置 `browser_query` 的查询任务保持普通 API 查询行为，但成功通知同样包含 API 资产明细。
 
 ## 分布式节点
 

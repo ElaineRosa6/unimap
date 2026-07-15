@@ -92,7 +92,7 @@
 
 ## 4. Quake（360 Quake）
 
-- 语法：`field:"value"`，连接符 **`AND` `OR` `NOT`（大写英文词）**，`()` 分组，区间 `port:[50 TO 60]`。
+- 语法：文本字段使用 `field:"value"`；当前 Web 搜索的端口数值使用 `port:443`（不可写成 `port:"443"`）；连接符为 **`AND` `OR` `NOT`（大写英文词）**，支持 `()` 分组和 `port:[50 TO 60]` 区间。
 - 当前适配器基本正确。
 
 | UQL 字段 | Quake 字段 | 备注 |
@@ -117,7 +117,7 @@
 | app | `app` | |
 
 - 其它专有字段：`is_ipv6`、`transport`(tcp/udp)、`hostname`、`owner`、`cert`、`icp_nature`。
-- 示例：`port:"80" AND country:"CN" AND NOT service:"https"`
+- 示例：`port:80 AND country:"CN" AND NOT service:"https"`
 
 ---
 

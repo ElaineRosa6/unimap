@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +26,14 @@ import (
 )
 
 // --- QueryRunner (ST-01) ---
+
+const (
+	defaultQueryNotificationDetailLimit = 50
+	maxQueryNotificationDetailLimit     = 100
+	maxQueryNotificationDetailBytes     = 20 * 1024
+)
+
+var notificationWhitespace = regexp.MustCompile(`\s+`)
 
 // QueryRunner executes scheduled UQL queries via QueryAppService.
 type QueryRunner struct {
@@ -115,6 +124,7 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 	for _, e := range resp.Errors {
 		fmt.Fprintf(&b, "❌ %s\n", e)
 	}
+	appendQueryAssetDetails(&b, resp.Assets, queryNotificationDetailLimit(payload))
 	if payload.BrowserQuery {
 		enginesWithScreenshots := make([]string, 0, len(browserOutcome.AutoCapturedPaths))
 		for engine := range browserOutcome.AutoCapturedPaths {
@@ -131,6 +141,112 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 		fmt.Fprintf(&b, "✅ Bridge 采集结果已合并并持久化\n")
 	}
 	return sanitizeUTF8(b.String()), nil
+}
+
+func queryNotificationDetailLimit(payload *model.TaskPayload) int {
+	limit := extractInt(payload, "notification_detail_limit", defaultQueryNotificationDetailLimit)
+	if limit < 1 {
+		return defaultQueryNotificationDetailLimit
+	}
+	if limit > maxQueryNotificationDetailLimit {
+		return maxQueryNotificationDetailLimit
+	}
+	return limit
+}
+
+func appendQueryAssetDetails(b *strings.Builder, assets []model.UnifiedAsset, limit int) {
+	if len(assets) == 0 {
+		return
+	}
+	var details strings.Builder
+	shown := 0
+	for shown < min(len(assets), limit) {
+		var entry strings.Builder
+		appendQueryAssetDetail(&entry, assets[shown])
+		if details.Len() > 0 && details.Len()+entry.Len() > maxQueryNotificationDetailBytes {
+			break
+		}
+		details.WriteString(entry.String())
+		shown++
+	}
+	fmt.Fprintf(b, "\n📋 查询结果明细（显示 %d/%d）:\n", shown, len(assets))
+	b.WriteString(details.String())
+	if remaining := len(assets) - shown; remaining > 0 {
+		fmt.Fprintf(b, "  … 另有 %d 条结果已持久化，通知中未展开。\n", remaining)
+	}
+}
+
+func appendQueryAssetDetail(b *strings.Builder, asset model.UnifiedAsset) {
+	target := firstNonEmpty(asset.URL, asset.Host, asset.IP)
+	fmt.Fprintf(b, "  • %s\n", notificationField(target))
+	if endpoint := assetEndpoint(asset); endpoint != "" && endpoint != target {
+		fmt.Fprintf(b, "    IP/端口: %s\n", notificationField(endpoint))
+	}
+	if protocolStatus := assetProtocolStatus(asset); protocolStatus != "" {
+		fmt.Fprintf(b, "    协议/状态: %s\n", notificationField(protocolStatus))
+	}
+	appendNotificationField(b, "标题", asset.Title)
+	appendNotificationField(b, "Server", asset.Server)
+	appendNotificationField(b, "位置", joinNonEmpty(" / ", asset.CountryCode, asset.Region, asset.City))
+	appendNotificationField(b, "组织", joinNonEmpty(" / ", asset.Org, asset.ISP, asset.ASN))
+	appendNotificationField(b, "来源", asset.Source)
+	appendNotificationField(b, "最近发现", asset.LastSeen)
+}
+
+func appendNotificationField(b *strings.Builder, label, value string) {
+	if value = notificationField(value); value != "" {
+		fmt.Fprintf(b, "    %s: %s\n", label, value)
+	}
+}
+
+func assetEndpoint(asset model.UnifiedAsset) string {
+	if asset.IP == "" {
+		return ""
+	}
+	if asset.Port > 0 {
+		return fmt.Sprintf("%s:%d", asset.IP, asset.Port)
+	}
+	return asset.IP
+}
+
+func assetProtocolStatus(asset model.UnifiedAsset) string {
+	parts := make([]string, 0, 2)
+	if asset.Protocol != "" {
+		parts = append(parts, asset.Protocol)
+	}
+	if asset.StatusCode > 0 {
+		parts = append(parts, fmt.Sprintf("HTTP %d", asset.StatusCode))
+	}
+	return strings.Join(parts, " / ")
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return "未知资产"
+}
+
+func joinNonEmpty(separator string, values ...string) string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			result = append(result, value)
+		}
+	}
+	return strings.Join(result, separator)
+}
+
+func notificationField(value string) string {
+	value = notificationWhitespace.ReplaceAllString(strings.TrimSpace(value), " ")
+	value = strings.NewReplacer("<", "‹", ">", "›", "`", "'", "[", "［", "]", "］").Replace(value)
+	runes := []rune(value)
+	if len(runes) > 160 {
+		value = string(runes[:157]) + "..."
+	}
+	return value
 }
 
 // --- SearchScreenshotRunner (ST-02) ---

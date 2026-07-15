@@ -38,18 +38,25 @@ func (a *failingSchedulerAdapter) Normalize(*model.EngineResult) ([]model.Unifie
 func (a *failingSchedulerAdapter) GetQuota() (*model.QuotaInfo, error) { return nil, nil }
 func (a *failingSchedulerAdapter) IsWebOnly() bool                     { return false }
 
-type successfulSchedulerAdapter struct{ name string }
+type successfulSchedulerAdapter struct {
+	name   string
+	assets []model.UnifiedAsset
+}
 
 func (a *successfulSchedulerAdapter) Name() string { return a.name }
 func (a *successfulSchedulerAdapter) Translate(*model.UQLAST) (string, error) {
 	return "translated", nil
 }
 func (a *successfulSchedulerAdapter) Search(context.Context, string, int, int) (*model.EngineResult, error) {
-	return &model.EngineResult{
-		EngineName: a.name,
-		NormalizedData: []model.UnifiedAsset{{
+	assets := a.assets
+	if len(assets) == 0 {
+		assets = []model.UnifiedAsset{{
 			IP: "192.0.2.10", Port: 443, URL: "https://api.example.test",
-		}},
+		}}
+	}
+	return &model.EngineResult{
+		EngineName:     a.name,
+		NormalizedData: assets,
 	}, nil
 }
 func (a *successfulSchedulerAdapter) Normalize(result *model.EngineResult) ([]model.UnifiedAsset, error) {
@@ -140,6 +147,110 @@ func TestQueryRunner_Execute_AllEnginesFailed(t *testing.T) {
 	}
 }
 
+func TestQueryRunner_Execute_APIQueryIncludesAssetDetailsForNotification(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa"})
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	result, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("execute API query: %v", err)
+	}
+	for _, want := range []string{"📋 查询结果明细", "https://api.example.test", "192.0.2.10:443"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("query notification result lacks %q:\n%s", want, result)
+		}
+	}
+}
+
+func TestQueryRunner_Execute_QueryNotificationDetailLimit(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: []model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443, URL: "https://first.example.test"},
+		{IP: "192.0.2.11", Port: 8443, URL: "https://second.example.test"},
+	}})
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	result, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query:                   `port="443"`,
+		Engines:                 []string{"fofa"},
+		PageSize:                10,
+		NotificationDetailLimit: 1,
+	})
+	if err != nil {
+		t.Fatalf("execute API query: %v", err)
+	}
+	firstShown := strings.Contains(result, "https://first.example.test")
+	secondShown := strings.Contains(result, "https://second.example.test")
+	if firstShown == secondShown {
+		t.Fatalf("query notification detail limit not applied:\n%s", result)
+	}
+	if !strings.Contains(result, "另有 1 条结果已持久化") {
+		t.Fatalf("query notification omits persisted remainder notice:\n%s", result)
+	}
+}
+
+func TestQueryRunner_Execute_QueryNotificationOmitsSensitiveAssetFields(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: []model.UnifiedAsset{{
+		IP:          "192.0.2.10",
+		Port:        443,
+		URL:         "https://safe.example.test",
+		Title:       "line one\n<at>all</at>",
+		BodySnippet: "body-secret-must-not-be-sent",
+		Headers:     map[string]string{"Authorization": "header-secret-must-not-be-sent"},
+		Extra:       map[string]any{"cookie": "extra-secret-must-not-be-sent"},
+	}}})
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	result, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("execute API query: %v", err)
+	}
+	for _, forbidden := range []string{"body-secret", "header-secret", "extra-secret", "<at>"} {
+		if strings.Contains(result, forbidden) {
+			t.Fatalf("query notification leaked or preserved unsafe field %q:\n%s", forbidden, result)
+		}
+	}
+	if !strings.Contains(result, "line one ‹at›all‹/at›") {
+		t.Fatalf("query notification did not safely normalize the title:\n%s", result)
+	}
+}
+
+func TestQueryRunner_Execute_QueryNotificationCapsDetailBodySize(t *testing.T) {
+	assets := make([]model.UnifiedAsset, 0, 100)
+	for i := 0; i < 100; i++ {
+		assets = append(assets, model.UnifiedAsset{
+			IP: fmt.Sprintf("192.0.2.%d", i+1), Port: 443,
+			URL:    fmt.Sprintf("https://asset-%d.example.test/%s", i, strings.Repeat("x", 120)),
+			Title:  strings.Repeat("title", 32),
+			Server: strings.Repeat("server", 27),
+			Org:    strings.Repeat("organization", 14),
+		})
+	}
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: assets})
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	result, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 100,
+		NotificationDetailLimit: 100,
+	})
+	if err != nil {
+		t.Fatalf("execute API query: %v", err)
+	}
+	if len(result) > maxQueryNotificationDetailBytes+2048 {
+		t.Fatalf("query notification size = %d, expected bounded detail body", len(result))
+	}
+	if !strings.Contains(result, "条结果已持久化，通知中未展开") {
+		t.Fatalf("query notification omits byte-cap remainder notice:\n%s", result)
+	}
+}
+
 func TestQueryRunner_Execute_BridgeCollectCapturePersistsCombinedResults(t *testing.T) {
 	db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
 	if err != nil {
@@ -180,6 +291,21 @@ func TestQueryRunner_Execute_BridgeCollectCapturePersistsCombinedResults(t *test
 	}
 	if got := extractImagePaths(result); len(got) != 1 || got[0] != screenshotPath {
 		t.Fatalf("notification image paths = %#v, want %q", got, screenshotPath)
+	}
+	for _, want := range []string{"https://api.example.test", "https://bridge.example.test"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("Bridge query notification result lacks %q:\n%s", want, result)
+		}
+	}
+	notification := (&Scheduler{}).buildNotificationMessage(
+		&ScheduledTask{ID: "scheduled-query-1", Name: "closed loop", Type: TaskQuery},
+		ExecutionRecord{Status: "success", Result: result},
+	)
+	if !strings.Contains(notification.Result, "https://bridge.example.test") {
+		t.Fatalf("notification payload lost Bridge asset details: %#v", notification)
+	}
+	if len(notification.ImagePaths) != 1 || notification.ImagePaths[0] != screenshotPath {
+		t.Fatalf("notification payload image paths = %#v, want %q", notification.ImagePaths, screenshotPath)
 	}
 
 	histories, total, err := repo.ListHistory(string(history.OpTypeQuery), 10, 0)

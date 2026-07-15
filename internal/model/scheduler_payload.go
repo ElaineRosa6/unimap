@@ -4,14 +4,18 @@ package model
 // Each task type uses known fields; Extra holds engine-specific params.
 type TaskPayload struct {
 	// Common fields
-	Query      string   `json:"query,omitempty"`
-	Engines    []string `json:"engines,omitempty"`
-	PageSize   int      `json:"page_size,omitempty"`
-	Format     string   `json:"format,omitempty"`
-	DetectMode string   `json:"detection_mode,omitempty"`
-	MaxAgeDays int      `json:"max_age_days,omitempty"`
-	LowThresh  int      `json:"low_threshold,omitempty"`
-	TimeoutSec int      `json:"timeout_seconds,omitempty"`
+	Query    string   `json:"query,omitempty"`
+	Engines  []string `json:"engines,omitempty"`
+	PageSize int      `json:"page_size,omitempty"`
+	// NotificationDetailLimit controls how many persisted query assets are
+	// expanded in a task notification. QueryRunner defaults to 50 and caps at
+	// 100 so notification channels remain usable while SQLite retains all rows.
+	NotificationDetailLimit int    `json:"notification_detail_limit,omitempty"`
+	Format                  string `json:"format,omitempty"`
+	DetectMode              string `json:"detection_mode,omitempty"`
+	MaxAgeDays              int    `json:"max_age_days,omitempty"`
+	LowThresh               int    `json:"low_threshold,omitempty"`
+	TimeoutSec              int    `json:"timeout_seconds,omitempty"`
 
 	// Optional browser/Bridge query workflow. When BrowserQuery is enabled for
 	// a query task, BrowserAction must be collect_and_capture so the scheduler

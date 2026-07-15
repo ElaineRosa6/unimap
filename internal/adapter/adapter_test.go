@@ -1206,7 +1206,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80"},
 				},
 			}},
-			want: `port:"80"`,
+			want: `port:80`,
 		},
 		{
 			name: "not equal",
@@ -1236,7 +1236,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 					}},
 				},
 			}},
-			want: `(port:"80" AND ip:"1.2.3.4")`,
+			want: `(port:80 AND ip:"1.2.3.4")`,
 		},
 		{
 			name: "IN operator",
@@ -1248,7 +1248,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80,443"},
 				},
 			}},
-			want: `(port:"80" OR port:"443")`,
+			want: `(port:80 OR port:443)`,
 		},
 		{
 			name: "field mapping body->response",

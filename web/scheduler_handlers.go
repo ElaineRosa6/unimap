@@ -540,7 +540,7 @@ func mapToTaskPayload(m map[string]any) *model.TaskPayload {
 	// task-specific top-level fields. Preserve those fields in Extra so the
 	// typed conversion does not silently discard runner parameters.
 	knownFields := map[string]struct{}{
-		"query": {}, "engines": {}, "page_size": {}, "format": {},
+		"query": {}, "engines": {}, "page_size": {}, "notification_detail_limit": {}, "format": {},
 		"detection_mode": {}, "max_age_days": {}, "low_threshold": {},
 		"timeout_seconds": {}, "queries": {}, "type": {}, "page": {},
 		"icp_page_size": {}, "urls": {}, "url": {}, "cookie_file": {},
