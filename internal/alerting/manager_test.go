@@ -1,6 +1,7 @@
 package alerting
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -28,6 +29,9 @@ func TestManager_PersistsAndRestoresAlertRecords(t *testing.T) {
 	first.SendAlert(AlertLevelWarning, AlertTypeReachability, "unreachable", "timeout", nil, "test", "https://example.test")
 	if got := len(first.GetAlertRecords()); got != 1 {
 		t.Fatalf("expected one saved alert, got %d", got)
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("temporary alert file remains after atomic replacement: %v", err)
 	}
 
 	second := NewManager()
