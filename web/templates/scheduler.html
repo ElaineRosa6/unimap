@@ -237,7 +237,7 @@
 						<tr><td>登录状态检测</td><td>检测搜索引擎是否已登录</td><td><code>{"engines": ["fofa"], "test_query": "test"}</code></td></tr>
 						<tr><td>分布式任务提交</td><td>向分布式队列提交任务</td><td><code>{"task_type": "screenshot", "priority": 0}</code></td></tr>
 						<tr><td>数据导出</td><td>执行查询并导出JSON</td><td><code>{"query": "port=80", "engines": ["fofa"], "format": "json"}</code></td></tr>
-						<tr><td>端口扫描</td><td>对URL做端口扫描检测</td><td><code>{"urls": ["https://example.com"], "ports": ["80","443"]}</code></td></tr>
+						<tr><td>端口扫描</td><td>对公网 URL 做端口扫描检测</td><td><code>{"urls": ["https://example.com"], "port_spec": "22,80,443,8000-8100"}</code></td></tr>
 						<tr><td>截图清理</td><td>清理过期的截图批次</td><td><code>{"max_age_days": 30}</code></td></tr>
 						<tr><td>篡改记录清理</td><td>清理过期的篡改记录</td><td><code>{"max_age_days": 90}</code></td></tr>
 						<tr><td>配额监控</td><td>监控各引擎API配额</td><td><code>{"low_threshold": 10}</code></td></tr>
@@ -829,7 +829,7 @@ document.getElementById('edit-modal-overlay').addEventListener('click', closeEdi
 		login_status_check: 'engines: 引擎列表（留空检测全部）；test_query: 探测查询（可选）',
 		distributed_submit: 'task_type: 子任务类型；priority: 优先级；timeout_seconds: 超时',
 		export: 'query/engines: 同 UQL 查询；format: json/csv/excel',
-		port_scan: 'urls: URL 列表；ports: 端口列表（可选）',
+		port_scan: 'urls: URL 列表；port_spec: 端口/范围或 all；scan_mode: full 可启用全端口；可选 port_concurrency/connect_timeout_ms/scan_timeout_seconds',
 		screenshot_cleanup: 'max_age_days: 保留天数，超过则清理',
 		tamper_cleanup: 'max_age_days: 保留天数，超过则清理',
 		quota_monitor: 'low_threshold: 低配额告警阈值',

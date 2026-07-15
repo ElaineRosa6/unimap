@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -278,6 +279,49 @@ func TestHandleURLPortScan_NoMonitorApp_Returns503(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", rec.Code)
+	}
+}
+
+func TestParsePortScanPortSpec_CustomAndFullRanges(t *testing.T) {
+	t.Run("custom ports and ranges", func(t *testing.T) {
+		ports, err := parsePortScanPortSpec("22, 80, 443, 8000-8002")
+		if err != nil {
+			t.Fatalf("parse custom port spec: %v", err)
+		}
+		want := []int{22, 80, 443, 8000, 8001, 8002}
+		if !reflect.DeepEqual(ports, want) {
+			t.Fatalf("custom ports = %v, want %v", ports, want)
+		}
+	})
+
+	t.Run("all ports", func(t *testing.T) {
+		ports, err := parsePortScanPortSpec("all")
+		if err != nil {
+			t.Fatalf("parse all ports: %v", err)
+		}
+		if len(ports) != 65535 || ports[0] != 1 || ports[len(ports)-1] != 65535 {
+			t.Fatalf("full port range is incomplete: len=%d first=%d last=%d", len(ports), ports[0], ports[len(ports)-1])
+		}
+	})
+}
+
+func TestHandleURLPortScanRejectsInvalidPortSpec(t *testing.T) {
+	s := &Server{monitorApp: service.NewMonitorAppService(nil)}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/port-scan", strings.NewReader(`{
+		"urls":["https://example.com"],
+		"scan_mode":"custom",
+		"port_spec":"80,9000-8000"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleURLPortScan(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_port_spec") {
+		t.Fatalf("expected invalid_port_spec response, got %s", rec.Body.String())
 	}
 }
 

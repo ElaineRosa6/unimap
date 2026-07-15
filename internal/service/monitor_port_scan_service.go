@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/unimap/project/internal/proxypool"
@@ -18,6 +20,62 @@ import (
 
 var defaultScanPorts = []int{80, 81, 443, 8000, 8080, 8443, 9000}
 
+// ParsePortSpec parses comma-separated ports, inclusive ranges, or the
+// aliases "all"/"full". The returned ports are unique and sorted.
+func ParsePortSpec(spec string) ([]int, error) {
+	spec = strings.ToLower(strings.TrimSpace(spec))
+	if spec == "" {
+		return nil, nil
+	}
+	if spec == "all" || spec == "full" {
+		spec = "1-65535"
+	}
+
+	selected := make([]bool, 65536)
+	for _, rawToken := range strings.Split(spec, ",") {
+		token := strings.TrimSpace(rawToken)
+		if token == "" {
+			return nil, fmt.Errorf("empty port item")
+		}
+		start, end := 0, 0
+		if strings.Contains(token, "-") {
+			parts := strings.Split(token, "-")
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("invalid port range %q", token)
+			}
+			var err error
+			start, err = strconv.Atoi(strings.TrimSpace(parts[0]))
+			if err != nil {
+				return nil, fmt.Errorf("invalid port range %q", token)
+			}
+			end, err = strconv.Atoi(strings.TrimSpace(parts[1]))
+			if err != nil {
+				return nil, fmt.Errorf("invalid port range %q", token)
+			}
+		} else {
+			port, err := strconv.Atoi(token)
+			if err != nil {
+				return nil, fmt.Errorf("invalid port %q", token)
+			}
+			start, end = port, port
+		}
+		if start < 1 || end > 65535 || start > end {
+			return nil, fmt.Errorf("port range %q is outside 1-65535", token)
+		}
+		for port := start; port <= end; port++ {
+			selected[port] = true
+		}
+	}
+
+	ports := make([]int, 0)
+	for port := 1; port <= 65535; port++ {
+		if selected[port] {
+			ports = append(ports, port)
+		}
+	}
+	return ports, nil
+}
+
 type URLPortScanSummary struct {
 	Total         int `json:"total"`
 	FormatValid   int `json:"formatValid"`
@@ -26,25 +84,39 @@ type URLPortScanSummary struct {
 	Scanned       int `json:"scanned"`
 	ResolveFailed int `json:"resolveFailed"`
 	ScanFailed    int `json:"scanFailed"`
+	Blocked       int `json:"blocked"`
 }
 
 type URLPortScanResult struct {
-	Input       string           `json:"input"`
-	URL         string           `json:"url,omitempty"`
-	Host        string           `json:"host,omitempty"`
-	Status      string           `json:"status"`
-	Reason      string           `json:"reason,omitempty"`
-	CDNDetected bool             `json:"cdn_detected"`
-	CDNReasons  []string         `json:"cdn_reasons,omitempty"`
-	ResolvedIPs []string         `json:"resolved_ips,omitempty"`
-	ScannedIPs  []string         `json:"scanned_ips,omitempty"`
-	OpenPorts   map[string][]int `json:"open_ports,omitempty"`
+	Input                string           `json:"input"`
+	URL                  string           `json:"url,omitempty"`
+	Host                 string           `json:"host,omitempty"`
+	Status               string           `json:"status"`
+	Reason               string           `json:"reason,omitempty"`
+	CDNDetected          bool             `json:"cdn_detected"`
+	CDNReasons           []string         `json:"cdn_reasons,omitempty"`
+	ResolvedIPs          []string         `json:"resolved_ips,omitempty"`
+	ScannedIPs           []string         `json:"scanned_ips,omitempty"`
+	OpenPorts            map[string][]int `json:"open_ports,omitempty"`
+	AttemptedConnections int              `json:"attempted_connections,omitempty"`
+	ExpectedConnections  int              `json:"expected_connections,omitempty"`
+	DurationMS           int64            `json:"duration_ms,omitempty"`
 }
 
 type URLPortScanResponse struct {
-	Summary URLPortScanSummary  `json:"summary"`
-	Ports   []int               `json:"ports"`
-	Results []URLPortScanResult `json:"results"`
+	Summary    URLPortScanSummary  `json:"summary"`
+	Ports      []int               `json:"ports,omitempty"`
+	PortCount  int                 `json:"port_count"`
+	DurationMS int64               `json:"duration_ms"`
+	Results    []URLPortScanResult `json:"results"`
+}
+
+// PortScanOptions controls bounded target and TCP connection concurrency.
+type PortScanOptions struct {
+	TargetConcurrency int
+	PortConcurrency   int
+	ConnectTimeout    time.Duration
+	ScanTimeout       time.Duration
 }
 
 type portScanTaskPayload struct {
@@ -53,13 +125,16 @@ type portScanTaskPayload struct {
 }
 
 type portScanTask struct {
-	ctx        context.Context
-	index      int
-	input      string
-	ports      []int
-	proxyPool  *proxypool.Pool
-	resultChan chan<- portScanTaskPayload
-	wg         *sync.WaitGroup
+	ctx             context.Context
+	index           int
+	input           string
+	ports           []int
+	proxyPool       *proxypool.Pool
+	portConcurrency int
+	connectTimeout  time.Duration
+	scanTimeout     time.Duration
+	resultChan      chan<- portScanTaskPayload
+	wg              *sync.WaitGroup
 }
 
 func (t *portScanTask) Execute() error {
@@ -131,14 +206,18 @@ func (t *portScanTask) checkCDNExclusion(normalizedURL, host string, ips []strin
 
 // scanAndReport performs the port scan and sends the result.
 func (t *portScanTask) scanAndReport(normalizedURL, host string, ips []string) {
-	scanCtx, scanCancel := context.WithTimeout(t.ctx, 20*time.Second)
+	started := time.Now()
+	scanCtx, scanCancel := context.WithTimeout(t.ctx, t.scanTimeout)
 	defer scanCancel()
-	openPorts, scanErr := scanHostPorts(scanCtx, ips, t.ports)
+	openPorts, attempted, scanErr := scanHostPortsConcurrent(scanCtx, ips, t.ports, t.portConcurrency, t.connectTimeout, nil)
+	expected := len(ips) * len(t.ports)
+	durationMS := time.Since(started).Milliseconds()
 	if scanErr != nil {
 		t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
 			Input: t.input, URL: normalizedURL, Host: host,
-			Status: "scan_failed", Reason: scanErr.Error(),
-			CDNDetected: false, ResolvedIPs: ips,
+			Status: "scan_failed", Reason: fmt.Sprintf("scan incomplete: %v (%d/%d connections attempted)", scanErr, attempted, expected),
+			CDNDetected: false, ResolvedIPs: ips, OpenPorts: openPorts,
+			AttemptedConnections: attempted, ExpectedConnections: expected, DurationMS: durationMS,
 		}}
 		return
 	}
@@ -151,6 +230,7 @@ func (t *portScanTask) scanAndReport(normalizedURL, host string, ips []string) {
 		Input: t.input, URL: normalizedURL, Host: host,
 		Status: "scanned", CDNDetected: false,
 		ResolvedIPs: ips, ScannedIPs: scannedIPs, OpenPorts: openPorts,
+		AttemptedConnections: attempted, ExpectedConnections: expected, DurationMS: durationMS,
 	}}
 }
 
@@ -170,17 +250,20 @@ func (t *portScanTask) sendHostResult(input, normalizedURL, host, status, reason
 
 // ScanURLPorts executes URL->IP resolution, CDN exclusion and port scanning for non-CDN targets.
 func (s *MonitorAppService) ScanURLPorts(ctx context.Context, urls []string, ports []int, concurrency int) (*URLPortScanResponse, error) {
+	return s.ScanURLPortsWithOptions(ctx, urls, ports, PortScanOptions{TargetConcurrency: concurrency})
+}
+
+// ScanURLPortsWithOptions executes a bounded concurrent TCP port scan.
+func (s *MonitorAppService) ScanURLPortsWithOptions(ctx context.Context, urls []string, ports []int, options PortScanOptions) (*URLPortScanResponse, error) {
 	if len(urls) == 0 {
 		return nil, fmt.Errorf("no URLs provided")
 	}
-	if concurrency <= 0 || concurrency > 10 {
-		concurrency = 3
-	}
-
 	normalizedPorts := normalizeScanPorts(ports)
+	options = normalizePortScanOptions(options, len(normalizedPorts))
+	started := time.Now()
 	results := make([]URLPortScanResult, len(urls))
 
-	pool := workerpool.NewPool(concurrency)
+	pool := workerpool.NewPool(options.TargetConcurrency)
 	pool.Start()
 
 	resultChan := make(chan portScanTaskPayload, len(urls))
@@ -189,13 +272,16 @@ func (s *MonitorAppService) ScanURLPorts(ctx context.Context, urls []string, por
 	for i, rawURL := range urls {
 		wg.Add(1)
 		pool.Submit(&portScanTask{
-			ctx:        ctx,
-			index:      i,
-			input:      rawURL,
-			ports:      normalizedPorts,
-			proxyPool:  s.proxyPool,
-			resultChan: resultChan,
-			wg:         &wg,
+			ctx:             ctx,
+			index:           i,
+			input:           rawURL,
+			ports:           normalizedPorts,
+			proxyPool:       s.proxyPool,
+			portConcurrency: options.PortConcurrency,
+			connectTimeout:  options.ConnectTimeout,
+			scanTimeout:     options.ScanTimeout,
+			resultChan:      resultChan,
+			wg:              &wg,
 		})
 	}
 
@@ -223,13 +309,52 @@ func (s *MonitorAppService) ScanURLPorts(ctx context.Context, urls []string, por
 		case "scan_failed":
 			summary.FormatValid++
 			summary.ScanFailed++
+		case "blocked":
+			summary.FormatValid++
+			summary.Blocked++
 		case "scanned":
 			summary.FormatValid++
 			summary.Scanned++
 		}
 	}
 
-	return &URLPortScanResponse{Summary: summary, Ports: normalizedPorts, Results: results}, nil
+	responsePorts := normalizedPorts
+	if len(responsePorts) > 1024 {
+		responsePorts = nil
+	}
+	return &URLPortScanResponse{
+		Summary: summary, Ports: responsePorts, PortCount: len(normalizedPorts),
+		DurationMS: time.Since(started).Milliseconds(), Results: results,
+	}, nil
+}
+
+func normalizePortScanOptions(options PortScanOptions, portCount int) PortScanOptions {
+	if options.TargetConcurrency <= 0 || options.TargetConcurrency > 10 {
+		options.TargetConcurrency = 3
+	}
+	maxPerTarget := 1024 / options.TargetConcurrency
+	if maxPerTarget < 32 {
+		maxPerTarget = 32
+	}
+	if options.PortConcurrency <= 0 {
+		options.PortConcurrency = 256
+	}
+	if options.PortConcurrency > maxPerTarget {
+		options.PortConcurrency = maxPerTarget
+	}
+	if options.ConnectTimeout <= 0 || options.ConnectTimeout > 10*time.Second {
+		options.ConnectTimeout = 800 * time.Millisecond
+	}
+	if options.ScanTimeout <= 0 {
+		options.ScanTimeout = 60 * time.Second
+		if portCount > 1024 {
+			options.ScanTimeout = 5 * time.Minute
+		}
+	}
+	if options.ScanTimeout > 15*time.Minute {
+		options.ScanTimeout = 15 * time.Minute
+	}
+	return options
 }
 
 func normalizeScanPorts(ports []int) []int {
@@ -256,9 +381,6 @@ func normalizeScanPorts(ports []int) []int {
 		out = append(out, defaultScanPorts...)
 	}
 	sort.Ints(out)
-	if len(out) > 64 {
-		out = out[:64]
-	}
 	return out
 }
 
@@ -370,18 +492,86 @@ func detectCDNByHTTPHeaders(ctx context.Context, targetURL string, pool *proxypo
 }
 
 func scanHostPorts(ctx context.Context, ips []string, ports []int) (map[string][]int, error) {
+	result, _, err := scanHostPortsConcurrent(ctx, ips, ports, 64, 1200*time.Millisecond, nil)
+	return result, err
+}
+
+type tcpPortDialFunc func(context.Context, string, int, time.Duration) bool
+
+type tcpPortJob struct {
+	ip   string
+	port int
+}
+
+// scanHostPortsConcurrent scans real TCP endpoints with a bounded worker pool.
+// A nil dial function selects the production net.Dialer implementation.
+func scanHostPortsConcurrent(ctx context.Context, ips []string, ports []int, concurrency int, timeout time.Duration, dial tcpPortDialFunc) (map[string][]int, int, error) {
 	result := make(map[string][]int, len(ips))
 	for _, ip := range ips {
-		open := make([]int, 0, len(ports))
-		for _, port := range ports {
-			if isTCPPortOpen(ctx, ip, port, 1200*time.Millisecond) {
-				open = append(open, port)
+		result[ip] = []int{}
+	}
+	if len(ips) == 0 || len(ports) == 0 {
+		return result, 0, nil
+	}
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	total := len(ips) * len(ports)
+	if concurrency > total {
+		concurrency = total
+	}
+	if dial == nil {
+		dial = isTCPPortOpen
+	}
+
+	jobs := make(chan tcpPortJob)
+	openResults := make(chan tcpPortJob)
+	var attempted atomic.Int64
+	var workers sync.WaitGroup
+	workers.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			defer workers.Done()
+			for job := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				attempted.Add(1)
+				if dial(ctx, job.ip, job.port, timeout) {
+					select {
+					case openResults <- job:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	go func() {
+		defer close(jobs)
+		for _, ip := range ips {
+			for _, port := range ports {
+				select {
+				case jobs <- tcpPortJob{ip: ip, port: port}:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
-		sort.Ints(open)
-		result[ip] = open
+	}()
+	go func() {
+		workers.Wait()
+		close(openResults)
+	}()
+
+	for open := range openResults {
+		result[open.ip] = append(result[open.ip], open.port)
 	}
-	return result, nil
+	for ip := range result {
+		sort.Ints(result[ip])
+	}
+	return result, int(attempted.Load()), ctx.Err()
 }
 
 func isTCPPortOpen(ctx context.Context, ip string, port int, timeout time.Duration) bool {

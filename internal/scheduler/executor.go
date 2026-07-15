@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -800,20 +799,25 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 		return "", fmt.Errorf("missing 'urls' in payload")
 	}
 
-	ports := extractStrings(payload, "ports", []string{})
 	concurrency := extractInt(payload, "concurrency", 5)
-
-	portNums := make([]int, 0, len(ports))
-	for _, p := range ports {
-		if n, err := strconv.Atoi(strings.TrimSpace(p)); err == nil && n > 0 && n <= 65535 {
-			portNums = append(portNums, n)
-		}
+	portSpec := strings.TrimSpace(extractString(payload, "port_spec", ""))
+	if strings.EqualFold(strings.TrimSpace(extractString(payload, "scan_mode", "")), "full") {
+		portSpec = "all"
 	}
-	if len(portNums) == 0 {
-		portNums = []int{80, 443} // default ports
+	if portSpec == "" {
+		portSpec = strings.Join(extractStrings(payload, "ports", []string{}), ",")
+	}
+	portNums, err := service.ParsePortSpec(portSpec)
+	if err != nil {
+		return "", fmt.Errorf("invalid port specification: %w", err)
 	}
 
-	resp, err := r.monitorSvc.ScanURLPorts(ctx, urls, portNums, concurrency)
+	resp, err := r.monitorSvc.ScanURLPortsWithOptions(ctx, urls, portNums, service.PortScanOptions{
+		TargetConcurrency: concurrency,
+		PortConcurrency:   extractInt(payload, "port_concurrency", 256),
+		ConnectTimeout:    time.Duration(extractInt(payload, "connect_timeout_ms", 800)) * time.Millisecond,
+		ScanTimeout:       time.Duration(extractInt(payload, "scan_timeout_seconds", 0)) * time.Second,
+	})
 	if err != nil {
 		return "", fmt.Errorf("port scan failed: %w", err)
 	}
@@ -826,15 +830,22 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "端口扫描完成：%d 个 URL，端口 %v\n\n", resp.Summary.Total, portNums)
+	portDescription := fmt.Sprintf("端口 %v", resp.Ports)
+	if resp.PortCount > 1024 {
+		portDescription = fmt.Sprintf("全端口 1-65535（%d 个）", resp.PortCount)
+	}
+	fmt.Fprintf(&b, "端口扫描完成：%d 个 URL，%s，耗时 %.1f 秒\n\n", resp.Summary.Total, portDescription, float64(resp.DurationMS)/1000)
 	for _, r := range resp.Results {
 		switch r.Status {
 		case "scanned":
-			if len(r.OpenPorts) > 0 {
-				var portDetails []string
-				for ip, ports := range r.OpenPorts {
+			var portDetails []string
+			for ip, ports := range r.OpenPorts {
+				if len(ports) > 0 {
 					portDetails = append(portDetails, fmt.Sprintf("%s: %v", ip, ports))
 				}
+			}
+			sort.Strings(portDetails)
+			if len(portDetails) > 0 {
 				fmt.Fprintf(&b, "✅ %s — 开放端口 %s\n", r.Input, strings.Join(portDetails, "; "))
 			} else {
 				fmt.Fprintf(&b, "✅ %s — 无开放端口\n", r.Input)
