@@ -13,12 +13,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/utils/urlguard"
 	"github.com/xuri/excelize/v2"
 )
 
 // 预编译正则表达式，避免每次调用时重新编译
 var reURLPattern = regexp.MustCompile(`^(https?://)?([\w.-]+)(:\d+)?(/.*)?$`)
+
+func parsePortScanPortSpec(spec string) ([]int, error) {
+	return service.ParsePortSpec(spec)
+}
 
 // allowedUploadMIME maps file extensions to their expected MIME types
 var allowedUploadMIME = map[string][]string{
@@ -222,9 +227,14 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		URLs        []string `json:"urls"`
-		Ports       []int    `json:"ports"`
-		Concurrency int      `json:"concurrency"`
+		URLs               []string `json:"urls"`
+		Ports              []int    `json:"ports"`
+		PortSpec           string   `json:"port_spec"`
+		ScanMode           string   `json:"scan_mode"`
+		Concurrency        int      `json:"concurrency"`
+		PortConcurrency    int      `json:"port_concurrency"`
+		ConnectTimeoutMS   int      `json:"connect_timeout_ms"`
+		ScanTimeoutSeconds int      `json:"scan_timeout_seconds"`
 	}
 
 	if !decodeJSONBody(w, r, &req) {
@@ -234,6 +244,31 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 	if len(req.URLs) == 0 {
 		writeAPIError(w, http.StatusBadRequest, "no_urls_provided", "no URLs provided", nil)
 		return
+	}
+
+	ports := req.Ports
+	portSpec := strings.TrimSpace(req.PortSpec)
+	scanMode := strings.ToLower(strings.TrimSpace(req.ScanMode))
+	switch scanMode {
+	case "", "common", "custom", "full":
+	default:
+		writeAPIError(w, http.StatusBadRequest, "invalid_scan_mode", "scan_mode must be common, custom, or full", nil)
+		return
+	}
+	if scanMode == "full" {
+		portSpec = "all"
+	}
+	if scanMode == "custom" && portSpec == "" && len(ports) == 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_port_spec", "custom scan requires port_spec", nil)
+		return
+	}
+	if portSpec != "" {
+		parsedPorts, err := parsePortScanPortSpec(portSpec)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_port_spec", "invalid port specification", sanitizeError(err.Error()))
+			return
+		}
+		ports = parsedPorts
 	}
 
 	// 检查所有URL是否指向内网地址
@@ -248,7 +283,23 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	response, err := s.monitorApp.ScanURLPorts(r.Context(), req.URLs, req.Ports, req.Concurrency)
+	scanTimeout := time.Duration(req.ScanTimeoutSeconds) * time.Second
+	if scanTimeout <= 0 {
+		scanTimeout = time.Minute
+		if len(ports) > 1024 {
+			scanTimeout = 5 * time.Minute
+		}
+	}
+	if scanTimeout > 15*time.Minute {
+		scanTimeout = 15 * time.Minute
+	}
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(scanTimeout + 30*time.Second))
+	response, err := s.monitorApp.ScanURLPortsWithOptions(r.Context(), req.URLs, ports, service.PortScanOptions{
+		TargetConcurrency: req.Concurrency,
+		PortConcurrency:   req.PortConcurrency,
+		ConnectTimeout:    time.Duration(req.ConnectTimeoutMS) * time.Millisecond,
+		ScanTimeout:       scanTimeout,
+	})
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "url_port_scan_failed", "url port scan failed", sanitizeError(err.Error()))
 		return
@@ -256,10 +307,12 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"summary": response.Summary,
-		"ports":   response.Ports,
-		"results": response.Results,
+		"success":     true,
+		"summary":     response.Summary,
+		"ports":       response.Ports,
+		"port_count":  response.PortCount,
+		"duration_ms": response.DurationMS,
+		"results":     response.Results,
 	})
 }
 

@@ -96,7 +96,7 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 |---|---|---|
 | POST | `/api/v1/import/urls` | 导入 URL |
 | POST | `/api/v1/url/reachability` | URL 可达性检测 |
-| POST | `/api/v1/url/port-scan` | URL 端口扫描 |
+| POST | `/api/v1/url/port-scan` | 公网 URL TCP 端口扫描；支持常用、自定义范围和全端口 |
 | POST | `/api/v1/url/probe-web` | Web 服务探测 |
 | POST | `/api/v1/url/probe-web-batch` | 批量 Web 服务探测 |
 | POST | `/api/v1/tamper/check` | JSON：`urls`、可选 `concurrency`、`mode`；模式为 `strict`、`relaxed`、`security`、`balanced`、`precise` |
@@ -108,6 +108,26 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 | DELETE | `/api/v1/tamper/history/delete?url=...` | 删除一个 URL 的巡检历史 |
 
 当前 HTTP 历史接口支持受限的 `offset` 分页；尚未公开 `start_time` 或 `end_time` 参数，不要依赖这两个参数。
+
+### URL 端口扫描
+
+`POST /api/v1/url/port-scan` 的 `scan_mode` 为 `common`、`custom` 或 `full`；`port_spec` 支持逗号分隔的端口和闭区间（如 `22,80,443,8000-8100`），也支持 `all` / `full`。旧版 `ports: [80,443]` 仍兼容。
+
+```json
+{
+  "urls": ["https://example.com"],
+  "scan_mode": "custom",
+  "port_spec": "22,80,443,8000-8100",
+  "concurrency": 3,
+  "port_concurrency": 256,
+  "connect_timeout_ms": 800,
+  "scan_timeout_seconds": 60
+}
+```
+
+全端口可使用 `"scan_mode":"full"`，默认单目标总超时为 300 秒。服务端限制总拨号并发，连接超时最大 10 秒、扫描超时最大 15 分钟。响应的 `port_count` 是请求端口数；全端口响应会省略巨大的 `ports` 数组。每个结果包含 `attempted_connections`、`expected_connections` 和 `duration_ms`；超时时状态为 `scan_failed`，但仍返回已经发现的开放端口。
+
+端口扫描仅允许公网目标。解析到 loopback、私有或内部地址会返回/记录 `blocked`，检测到 CDN 的目标会记录为 `cdn_excluded`；全端口模式不会放宽这些安全边界。
 
 ## 调度、通知与备份
 

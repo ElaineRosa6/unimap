@@ -602,6 +602,17 @@ func TestPortScanRunner_Execute_UsesConfiguredStringPorts(t *testing.T) {
 	}
 }
 
+func TestPortScanRunner_RejectsInvalidPortRange(t *testing.T) {
+	r := NewPortScanRunner(service.NewMonitorAppService(nil))
+	_, err := r.Execute(context.Background(), &model.TaskPayload{
+		URLs:  []string{"https://example.com"},
+		Extra: map[string]any{"port_spec": "443,9000-8000"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid port specification") {
+		t.Fatalf("expected invalid port specification error, got %v", err)
+	}
+}
+
 // ===== ScreenshotCleanupRunner Execute tests =====
 
 func TestScreenshotCleanupRunner_Execute_NilService(t *testing.T) {

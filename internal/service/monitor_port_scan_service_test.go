@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -26,6 +27,71 @@ func TestNormalizeScanPorts(t *testing.T) {
 			t.Fatalf("unexpected normalized ports: %+v", ports)
 		}
 	})
+
+	t.Run("preserves the full port range", func(t *testing.T) {
+		ports, err := ParsePortSpec("all")
+		if err != nil {
+			t.Fatalf("ParsePortSpec(all): %v", err)
+		}
+		got := normalizeScanPorts(ports)
+		if len(got) != 65535 || got[0] != 1 || got[len(got)-1] != 65535 {
+			t.Fatalf("expected all 65535 ports, got len=%d first=%d last=%d", len(got), got[0], got[len(got)-1])
+		}
+	})
+}
+
+func TestScanHostPortsConcurrentUsesRealTCP(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	open, attempted, err := scanHostPortsConcurrent(
+		context.Background(), []string{"127.0.0.1"}, []int{port}, 4, time.Second, nil,
+	)
+	if err != nil {
+		t.Fatalf("scanHostPortsConcurrent: %v", err)
+	}
+	if attempted != 1 || len(open["127.0.0.1"]) != 1 || open["127.0.0.1"][0] != port {
+		t.Fatalf("expected real listener %d to be open; attempted=%d result=%v", port, attempted, open)
+	}
+}
+
+func TestScanHostPortsConcurrentActuallyRunsConcurrently(t *testing.T) {
+	var active atomic.Int32
+	var maxActive atomic.Int32
+	dial := func(ctx context.Context, ip string, port int, timeout time.Duration) bool {
+		current := active.Add(1)
+		defer active.Add(-1)
+		for {
+			previous := maxActive.Load()
+			if current <= previous || maxActive.CompareAndSwap(previous, current) {
+				break
+			}
+		}
+		select {
+		case <-time.After(20 * time.Millisecond):
+			return port%2 == 0
+		case <-ctx.Done():
+			return false
+		}
+	}
+
+	ports := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	open, attempted, err := scanHostPortsConcurrent(
+		context.Background(), []string{"192.0.2.1"}, ports, 4, time.Second, dial,
+	)
+	if err != nil {
+		t.Fatalf("scanHostPortsConcurrent: %v", err)
+	}
+	if attempted != len(ports) || maxActive.Load() < 2 {
+		t.Fatalf("expected concurrent execution; attempted=%d max_active=%d", attempted, maxActive.Load())
+	}
+	if got := open["192.0.2.1"]; len(got) != 4 || got[0] != 2 || got[3] != 8 {
+		t.Fatalf("unexpected open ports: %v", got)
+	}
 }
 
 func TestCDNHelpers(t *testing.T) {
