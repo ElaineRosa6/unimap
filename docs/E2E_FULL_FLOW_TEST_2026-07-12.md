@@ -3,6 +3,8 @@
 > **历史验收快照**：结果仅代表 2026-07-12 的特定部署与凭证状态，不代表当前生产可用性。以下测试目标、组织名称、第三方代理和通知通道标识已脱敏；不得复用本记录中的目标或参数。
 >
 > **后续勘误（2026-07-14）**：本记录中“截图引擎不可用”仅是当日 Chrome Extension 未连接的环境状态。受控本机 Bridge 的后续成功态证据见 [`E2E_BRIDGE_SCREENSHOT_NOTIFICATION_2026-07-14.md`](E2E_BRIDGE_SCREENSHOT_NOTIFICATION_2026-07-14.md)。
+>
+> **后续勘误（2026-07-15）**：下文 ICP history `keyword` 精确匹配与调度 payload 严格格式仅是本次验收当日行为。当前 `keyword` 已支持字面量部分匹配；调度器已支持创建期 Runner 校验、逗号字符串数组及 `targets`/`engine` 兼容。当前契约以 [`API.md`](API.md) 为准。
 
 ## 测试范围
 

@@ -244,7 +244,7 @@ go run -tags gui ./cmd/unimap-gui
 
 **测试**：config/history handler 测试更新 `withAdminContext` 注入 admin 认证上下文，全量 `go test ./...` 通过。
 
-### 2026-07-10 持久化审计修复状态（8 项）
+### 2026-07-10 持久化审计修复状态（8 项，2026-07-15 更新）
 
 > 来源：`.audit-results/PERSISTENCE_REAUDIT_2026-07-10.md`
 
@@ -255,14 +255,16 @@ go run -tags gui ./cmd/unimap-gui
 | 3 | Query persistence coverage inconsistent | P1 | ✅ FIXED | WebSocket 走 ExecuteQuery 持久化 |
 | 4 | Query header/results not atomic | P2 | ✅ FIXED | `CreateHistoryWithResults` 事务 |
 | 5 | Tamper index still loads every payload | P2 | ✅ FIXED | 审计报告为旧结论；当前有 `WHERE url = ?` + `LIMIT/OFFSET` |
-| 6 | Alert JSON writes not crash-safe | P2 | ❌ NOT FIXED | `persistLocked()` 仍用 `os.WriteFile` 直接写，缺 temp+rename 原子替换（待 Codex 修复） |
+| 6 | Alert JSON writes not crash-safe | P2 | ✅ FIXED | `persistLocked()` 使用 `.tmp` + `os.Rename` 原子替换，并有临时文件清理回归测试 |
 | 7 | Scheduled screenshot SaveJob errors ignored | P2 | ✅ FIXED | 错误已检查 |
 | 8 | Tamper export contract incomplete | P2 | ⚠️ PARTIAL | 过滤参数已补齐，handler 测试已加但组合覆盖待加强 |
 
-**遗留项（1 项 P2 + 2 项 P3）**：
-- Alert JSON crash-safe：`internal/alerting/manager.go:59` — 改为 temp file + `os.Rename`
-- ICP history keyword 精确匹配不透明：`web/icp_handlers.go:247` — 文档已补充说明，可选支持 LIKE
-- 调度任务 payload 格式严格但不透明：`internal/scheduler/executor.go` — 文档已补充 payload 速查，可选增加 runner-specific 校验
+**2026-07-15 可用性完善闭环**：
+- Alert JSON crash-safe：生产实现已使用 temp file + `os.Rename`，提交 `4278a3f` 补充原子替换回归测试并清理过期待办。
+- ICP history keyword：提交 `a982189` 改为转义后的 `LIKE %keyword%` 部分匹配；`type` 与 `task_id` 保持精确匹配。
+- 调度任务 payload：提交 `1a32f46` 增加 runner-specific 创建/更新校验、明确 400 错误、逗号字符串数组和 `targets`/`engine` 兼容。
+
+持久化审计中仍需加强的是 Tamper export 组合与错误路径测试；不再把上述三项列为遗留问题。
 
 ### 2026-07-13 审计安全漏洞修复（17 文件）
 - adapter 层加固、ZoomEye cookie 校验、scheduler 备份任务鉴权、bridge 状态管理、前端静态资源 CSP 调整

@@ -1,10 +1,10 @@
 # Audit Remediation Guide — Persistence Findings (2026-07-10 Re-audit)
 
-> **状态说明（2026-07-13）**：以下章节保留原始审计论证。其 #5、#6、#8 的“当前状态”已被后续代码改变：历史索引已支持 SQL 页查询及受限的 HTTP `offset` 分页、告警采用临时文件+rename、导出已有 handler 回归测试。不要将原文中的 6/2 汇总当作当前待办；以 [`.audit-results/PERSISTENCE_REAUDIT_2026-07-10.md`](../.audit-results/PERSISTENCE_REAUDIT_2026-07-10.md) 的勘误和当前代码为准。
+> **状态说明（2026-07-15）**：以下章节保留原始审计背景，但“当前状态”和行动项已按代码复核更新。历史索引支持 SQL 页查询及受限的 HTTP `offset` 分页；告警采用临时文件+rename；导出已有基础 handler 回归测试，组合与错误路径仍可加强。
 
-**Last Updated:** 2026-07-13  
-**Audit Scope:** Commits `fbfe82f` through current HEAD  
-**Auditor:** Hermes Agent  
+**Last Updated:** 2026-07-15
+**Audit Scope:** Commits `fbfe82f` through current HEAD
+**Auditor:** Hermes Agent
 **Project:** `D:/Project/Go_project/unimap`
 
 ## Overview
@@ -16,8 +16,8 @@ This document tracks the remediation status of persistence-related security and 
 | Severity | Total | Fixed | Partial | Open |
 |----------|-------|-------|---------|------|
 | P1 | 3 | 3 | 0 | 0 |
-| P2 | 5 | 3 | 2 | 0 |
-| **Total** | **8** | **6** | **2** | **0** |
+| P2 | 5 | 4 | 1 | 0 |
+| **Total** | **8** | **7** | **1** | **0** |
 
 ---
 
@@ -231,79 +231,11 @@ if _, err := s.historyRepo.CreateHistoryWithResults(historyRecord, results); err
 **Original Issue:**  
 History reads execute `SELECT payload ...` for the full table and filter/paginate in memory, so the URL/time index does not solve large-history query cost.
 
-**Current Status:** ⚠️ **PARTIALLY FIXED**
+**Current Status:** ✅ **FIXED**
 
-**Code Evidence:**
-```go
-// internal/tamper/history_index.go:43-70
-func (s *HashStorage) listIndexedCheckRecords() (map[string][]*CheckRecord, error) {
-    db, err := s.historyIndex()
-    if err != nil {
-        return nil, err
-    }
-    defer db.Close()
-    
-    // ❌ Still loads ALL payloads without URL filter
-    rows, err := db.Query(`SELECT payload FROM check_records ORDER BY timestamp DESC`)
-    if err != nil {
-        return nil, err
-    }
-    defer rows.Close()
-    
-    result := make(map[string][]*CheckRecord)
-    for rows.Next() {
-        var payload string
-        if err := rows.Scan(&payload); err != nil {
-            return nil, err
-        }
-        var record CheckRecord
-        if err := json.Unmarshal([]byte(payload), &record); err != nil {
-            continue
-        }
-        result[record.URL] = append(result[record.URL], &record)
-    }
-    // ... error handling ...
-    return result, nil
-}
-```
+**Current Evidence:** `internal/tamper/history_index.go` 的 `listIndexedCheckRecordPage` 在 SQL 层应用可选 `WHERE url = ?`、`LIMIT ? OFFSET ?`，并单独查询总数。HTTP 查询入口对 limit/offset 设有边界，不再为分页请求加载全部 payload。
 
-**What's Fixed:**
-- ✅ Index table exists with `url` and `timestamp` columns
-- ✅ Index on `(url, timestamp DESC)` is created
-- ✅ Deletion now cleans up index entries
-
-**What's Still Missing:**
-- ❌ No SQL-level URL filtering (`WHERE url = ?`)
-- ❌ No SQL-level pagination (`LIMIT/OFFSET`)
-- ❌ All payloads loaded into memory regardless of filter
-- ❌ `QueryHistory` still filters in application layer after loading everything
-
-**Recommended Fix:**
-```go
-func (s *HashStorage) listIndexedCheckRecords(urlFilter string, limit, offset int) (map[string][]*CheckRecord, error) {
-    db, err := s.historyIndex()
-    if err != nil {
-        return nil, err
-    }
-    defer db.Close()
-    
-    query := `SELECT payload FROM check_records`
-    var args []interface{}
-    
-    if urlFilter != "" {
-        query += ` WHERE url = ?`
-        args = append(args, urlFilter)
-    }
-    
-    query += ` ORDER BY timestamp DESC LIMIT ? OFFSET ?`
-    args = append(args, limit, offset)
-    
-    rows, err := db.Query(query, args...)
-    // ... rest of implementation
-}
-```
-
-**Impact:** Medium — For small to medium histories, performance is acceptable. For large deployments with thousands of records, memory usage and query latency will degrade.
+**Verification:** 索引删除仍同步清理 URL 记录；分页和 URL 过滤由当前 tamper/service/web 测试覆盖。
 
 ---
 
@@ -312,7 +244,7 @@ func (s *HashStorage) listIndexedCheckRecords(urlFilter string, limit, offset in
 **Original Issue:**  
 Direct `os.WriteFile` can leave truncated JSON; persistence failures are log-only.
 
-**Current Status:** ❌ **NOT FIXED**
+**Current Status:** ✅ **FIXED**
 
 **Code Evidence:**
 ```go
@@ -330,54 +262,18 @@ func (m *Manager) persistLocked() {
         logger.Warnf("create alert record dir: %v", err)
         return
     }
-    // ❌ Direct write — no temp file, no rename, no fsync
-    if err := os.WriteFile(m.persistencePath, data, 0o600); err != nil {
+    tmpPath := m.persistencePath + ".tmp"
+    if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
         logger.Warnf("persist alert records: %v", err)
+        return
+    }
+    if err := os.Rename(tmpPath, m.persistencePath); err != nil {
+        logger.Warnf("replace persisted alert records: %v", err)
     }
 }
 ```
 
-**Risk:**  
-If the process crashes or loses power during `os.WriteFile`, the alert records file may be truncated or corrupted, leading to loss of all alert state on next startup.
-
-**Recommended Fix:**
-```go
-func (m *Manager) persistLocked() {
-    if m.persistencePath == "" {
-        return
-    }
-    data, err := json.Marshal(m.alertRecords)
-    if err != nil {
-        logger.Warnf("marshal alert records: %v", err)
-        return
-    }
-    if err := os.MkdirAll(filepath.Dir(m.persistencePath), 0o755); err != nil {
-        logger.Warnf("create alert record dir: %v", err)
-        return
-    }
-    
-    // Write to temp file first
-    tmp := m.persistencePath + ".tmp"
-    if err := os.WriteFile(tmp, data, 0o600); err != nil {
-        logger.Warnf("write temp alert records: %v", err)
-        return
-    }
-    
-    // Atomic rename
-    if err := os.Rename(tmp, m.persistencePath); err != nil {
-        logger.Warnf("rename alert records: %v", err)
-        return
-    }
-    
-    // Optional: fsync directory for durability
-    if f, err := os.Open(filepath.Dir(m.persistencePath)); err == nil {
-        _ = f.Sync()
-        _ = f.Close()
-    }
-}
-```
-
-**Priority:** HIGH — This is a data integrity issue that can cause complete alert state loss.
+**Verification:** `TestManager_PersistsAndRestoresAlertRecords` 验证持久化与重载，并断言原子替换完成后 `.tmp` 不残留。失败路径继续保持只记录 warning 的原行为。
 
 ---
 
@@ -499,9 +395,9 @@ func (s *Server) handleTamperHistoryExport(w http.ResponseWriter, r *http.Reques
 - ✅ Query filter (`q` param)
 - ✅ Configurable limit (default 10,000)
 - ✅ Encoder errors return 500 instead of being silently ignored
+- ✅ Basic export handler regression test exists
 
 **What's Still Missing:**
-- ❌ No handler regression test for export endpoint
 - ❌ No test for filter combinations
 - ❌ No test for error handling paths
 
@@ -524,31 +420,12 @@ func TestTamperHistoryExport(t *testing.T) {
 
 ---
 
-## Action Items
+## Remaining Action Item
 
-### Immediate (P1-equivalent)
-
-1. **Alert Persistence Crash Safety** (Finding #6)
-   - **Priority:** HIGH
-   - **Effort:** Low (~15 minutes)
-   - **File:** `internal/alerting/manager.go`
-   - **Change:** Implement temp-file + rename pattern in `persistLocked()`
-   - **Risk:** Data loss on crash
-
-### Near-term (P2-equivalent)
-
-2. **Tamper Index SQL Filtering** (Finding #5)
+1. **Export Handler Combination/Error Tests** (Finding #8)
    - **Priority:** MEDIUM
-   - **Effort:** Medium (~1 hour)
-   - **File:** `internal/tamper/history_index.go`
-   - **Change:** Add URL filter, LIMIT/OFFSET to `listIndexedCheckRecords()`
-   - **Impact:** Memory usage for large histories
-
-3. **Export Handler Tests** (Finding #8)
-   - **Priority:** MEDIUM
-   - **Effort:** Medium (~1 hour)
-   - **File:** `web/tamper_handlers_test.go` (new)
-   - **Change:** Add regression tests for export endpoint
+   - **File:** `web/tamper_handlers_test.go`
+   - **Change:** Extend the existing regression test with filter combinations and error paths
    - **Impact:** Regression prevention
 
 ---
