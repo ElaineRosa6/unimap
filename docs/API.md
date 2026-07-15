@@ -316,7 +316,6 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 |---|------|------|------|--------|
 | 1 | ICP history keyword 精确匹配不透明 | `web/icp_handlers.go:247` + `docs/API.md` | 文档已补充精确匹配说明；可选：支持 LIKE 模糊匹配 | P3 |
 | 2 | 调度任务 payload 格式严格但不透明 | `internal/scheduler/executor.go` + `docs/API.md` | 文档已补充 payload 速查；可选：validateTaskPayload 增加 runner-specific 校验 + 更友好的错误提示 | P3 |
-| 3 | Alert JSON crash-safe | `internal/alerting/manager.go:59` | temp file + `os.Rename` 原子替换 | P2 |
 
 ## 变更规则
 
