@@ -51,3 +51,7 @@ node --check web/static/js/main.js
 ## 仍需在部署环境完成的人工验收
 
 本记录验证了代码、路由、持久化重载和 JavaScript 语法；它不能替代每种浏览器、屏幕尺寸、反向代理/CORS 配置以及真实权限角色下的人工 UI 验收。Bridge 搜索截图与通知的受控真实联调见 [2026-07-14 Bridge 截图与通知验收](E2E_BRIDGE_SCREENSHOT_NOTIFICATION_2026-07-14.md)。
+
+## 2026-07-15 后续闭环验证
+
+定时 `query` 已增加 `browser_query=true`、`browser_action=collect_and_capture` 闭环：Bridge 结构化结果与 API 结果写入同一条 SQLite 查询历史，PNG 进入图片通知，调度执行历史在完成后立即落盘。真实 FOFA 联调持久化 10 条结果并成功发送图片通知，详见 [2026-07-15 Bridge 定时查询闭环验收](E2E_BRIDGE_SCHEDULED_QUERY_CLOSED_LOOP_2026-07-15.md)。

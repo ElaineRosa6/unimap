@@ -28,3 +28,5 @@ go test -tags live_bridge_e2e ./web -run '^TestLiveBridgeSearchScreenshotNotific
 ```
 
 验收时必须同时确认：查询词与结果区可见、未出现登录墙，以及飞书应用收到对应图片。不要把页面页头账号文本、图片非空或单纯的任务成功状态单独作为完整成功判据。
+
+定时 `query` 任务的“Bridge 采集 + 截图 + SQLite 查询结果 + 图片通知”闭环不属于本历史截图测试范围；后续实测见 [2026-07-15 Bridge 定时查询闭环验收](E2E_BRIDGE_SCHEDULED_QUERY_CLOSED_LOOP_2026-07-15.md)。

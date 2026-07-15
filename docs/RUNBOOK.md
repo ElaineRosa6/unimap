@@ -1,6 +1,6 @@
 # UniMap 运维 Runbook
 
-> 最后按代码核对：2026-07-13。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
+> 最后按代码核对：2026-07-15。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
 
 ## 0. 先确认服务与认证
 
@@ -100,6 +100,26 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/scheduler/history
 ```
 
 创建任务的端点是 `POST /api/v1/scheduler/tasks/create`，不是旧的 `/api/scheduler/tasks`。一次性、延迟和 cron 任务分别通过 `schedule_type` 的 `once`、`delay`、`cron` 表示。通知通道从 `GET /api/v1/notifications/channels` 查看，并可用 `/api/v1/notifications/channels/test` 验证。
+
+需要定时查询的完整 Bridge 闭环时，`query` 任务 payload 必须包含：
+
+```json
+{
+  "query": "port=\"443\"",
+  "engines": ["fofa"],
+  "page_size": 10,
+  "browser_query": true,
+  "browser_action": "collect_and_capture"
+}
+```
+
+并为任务启用成功通知及至少一个支持图片的渠道。排障顺序：
+
+1. `/api/v1/screenshot/bridge/status` 显示扩展近期有拉取或回调活动。
+2. 调度执行结果包含“Bridge 截图保存”和“采集结果已合并并持久化”。
+3. `/api/v1/history?type=query` 只有一条对应查询历史，并能读取结果明细。
+4. `/api/v1/scheduler/history` 中该次执行为 `success`；执行历史在任务完成后立即写入调度历史文件。
+5. 通知渠道指标或接收端确认图片送达。通知投递仍是任务完成后的异步阶段，投递失败会记录日志和指标，不会回滚已经持久化的查询结果。
 
 ## 8. 分布式节点不可用
 

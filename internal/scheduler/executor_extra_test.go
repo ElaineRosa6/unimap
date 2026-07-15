@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -13,7 +15,9 @@ import (
 
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/alerting"
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/distributed"
+	"github.com/unimap/project/internal/history"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
@@ -33,6 +37,49 @@ func (a *failingSchedulerAdapter) Normalize(*model.EngineResult) ([]model.Unifie
 }
 func (a *failingSchedulerAdapter) GetQuota() (*model.QuotaInfo, error) { return nil, nil }
 func (a *failingSchedulerAdapter) IsWebOnly() bool                     { return false }
+
+type successfulSchedulerAdapter struct{ name string }
+
+func (a *successfulSchedulerAdapter) Name() string { return a.name }
+func (a *successfulSchedulerAdapter) Translate(*model.UQLAST) (string, error) {
+	return "translated", nil
+}
+func (a *successfulSchedulerAdapter) Search(context.Context, string, int, int) (*model.EngineResult, error) {
+	return &model.EngineResult{
+		EngineName: a.name,
+		NormalizedData: []model.UnifiedAsset{{
+			IP: "192.0.2.10", Port: 443, URL: "https://api.example.test",
+		}},
+	}, nil
+}
+func (a *successfulSchedulerAdapter) Normalize(result *model.EngineResult) ([]model.UnifiedAsset, error) {
+	return result.NormalizedData, nil
+}
+func (a *successfulSchedulerAdapter) GetQuota() (*model.QuotaInfo, error) { return nil, nil }
+func (a *successfulSchedulerAdapter) IsWebOnly() bool                     { return false }
+
+type combinedSchedulerBrowserRouter struct {
+	path string
+}
+
+func (r *combinedSchedulerBrowserRouter) OpenSearchEngineResult(context.Context, string, string) (string, error) {
+	return "https://search.example.test", nil
+}
+
+func (r *combinedSchedulerBrowserRouter) CollectSearchEngineResult(context.Context, string, string, string) ([]collection.CollectResult, error) {
+	return nil, errors.New("separate collect should not be used")
+}
+
+func (r *combinedSchedulerBrowserRouter) CollectAndCaptureSearchEngineResult(_ context.Context, engine, query, _ string) ([]collection.CollectResult, string, error) {
+	return []collection.CollectResult{{
+		Engine: engine,
+		Query:  query,
+		Total:  1,
+		Assets: []model.UnifiedAsset{{
+			IP: "198.51.100.20", Port: 8443, URL: "https://bridge.example.test",
+		}},
+	}}, r.path, nil
+}
 
 // ===== Bridge client mock for scheduler tests =====
 
@@ -90,6 +137,111 @@ func TestQueryRunner_Execute_AllEnginesFailed(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "all query engines failed") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestQueryRunner_Execute_BridgeCollectCapturePersistsCombinedResults(t *testing.T) {
+	db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("open history database: %v", err)
+	}
+	defer db.Close()
+	if err := db.InitSchema(); err != nil {
+		t.Fatalf("init history schema: %v", err)
+	}
+	repo := history.NewRepository(db.DB())
+
+	unified := service.NewUnifiedService()
+	unified.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa"})
+	queryApp := service.NewQueryAppService(unified, unified.GetOrchestrator())
+	queryApp.SetHistoryRepository(repo)
+
+	screenshotPath := filepath.Join(t.TempDir(), "fofa.png")
+	if err := os.WriteFile(screenshotPath, []byte("png"), 0o600); err != nil {
+		t.Fatalf("write screenshot fixture: %v", err)
+	}
+	router := &combinedSchedulerBrowserRouter{path: screenshotPath}
+	screenshotApp := service.NewScreenshotAppService(t.TempDir())
+	runner := NewQueryRunnerWithBrowser(queryApp, screenshotApp, &screenshot.Manager{}, router)
+
+	result, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query:         `port="443"`,
+		Engines:       []string{"fofa"},
+		PageSize:      10,
+		BrowserQuery:  true,
+		BrowserAction: "collect_and_capture",
+		QueryID:       "scheduled-query-1",
+	})
+	if err != nil {
+		t.Fatalf("execute closed-loop query: %v", err)
+	}
+	if !strings.Contains(result, screenshotPath) {
+		t.Fatalf("task result does not expose screenshot path for notification: %q", result)
+	}
+	if got := extractImagePaths(result); len(got) != 1 || got[0] != screenshotPath {
+		t.Fatalf("notification image paths = %#v, want %q", got, screenshotPath)
+	}
+
+	histories, total, err := repo.ListHistory(string(history.OpTypeQuery), 10, 0)
+	if err != nil {
+		t.Fatalf("list query history: %v", err)
+	}
+	if total != 1 || len(histories) != 1 {
+		t.Fatalf("query history count = %d/%d, want one combined record", total, len(histories))
+	}
+	var summary struct {
+		QueryID     string            `json:"browser_query_id"`
+		Screenshots map[string]string `json:"browser_screenshots"`
+	}
+	if err := json.Unmarshal([]byte(histories[0].Summary), &summary); err != nil {
+		t.Fatalf("decode query history summary: %v", err)
+	}
+	if summary.QueryID != "scheduled-query-1" || summary.Screenshots["fofa"] != screenshotPath {
+		t.Fatalf("query history summary lacks Bridge correlation metadata: %#v", summary)
+	}
+	rows, err := repo.GetResults(histories[0].ID)
+	if err != nil {
+		t.Fatalf("get persisted query results: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("persisted result rows = %d, want API + Bridge assets", len(rows))
+	}
+}
+
+func TestQueryRunner_Execute_BridgeWorkflowFailsWhenScreenshotIsMissing(t *testing.T) {
+	db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("open history database: %v", err)
+	}
+	defer db.Close()
+	if err := db.InitSchema(); err != nil {
+		t.Fatalf("init history schema: %v", err)
+	}
+	repo := history.NewRepository(db.DB())
+
+	unified := service.NewUnifiedService()
+	unified.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa"})
+	queryApp := service.NewQueryAppService(unified, unified.GetOrchestrator())
+	queryApp.SetHistoryRepository(repo)
+
+	router := &combinedSchedulerBrowserRouter{path: filepath.Join(t.TempDir(), "missing.png")}
+	runner := NewQueryRunnerWithBrowser(queryApp, service.NewScreenshotAppService(t.TempDir()), &screenshot.Manager{}, router)
+	_, err = runner.Execute(context.Background(), &model.TaskPayload{
+		Query:         `port="443"`,
+		Engines:       []string{"fofa"},
+		BrowserQuery:  true,
+		BrowserAction: "collect_and_capture",
+	})
+	if err == nil || !strings.Contains(err.Error(), "screenshot unavailable") {
+		t.Fatalf("missing screenshot error = %v", err)
+	}
+
+	histories, total, err := repo.ListHistory(string(history.OpTypeQuery), 10, 0)
+	if err != nil {
+		t.Fatalf("list query history: %v", err)
+	}
+	if total != 1 || len(histories) != 1 || histories[0].Status != "error" {
+		t.Fatalf("failed workflow history = %#v (total %d), want one error record", histories, total)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,18 @@ type BrowserQueryOutcome struct {
 	AutoCaptureQueryID string
 	AutoCapturedPaths  map[string]string
 	AutoCaptureErrors  []string
+}
+
+// BrowserQueryWorkflowOptions configures the synchronous, durable browser
+// workflow used by scheduled queries.
+type BrowserQueryWorkflowOptions struct {
+	Action             string
+	QueryID            string
+	ScreenshotApp      *ScreenshotAppService
+	ScreenshotManager  *screenshot.Manager
+	BrowserRouter      BrowserRouter
+	RequireComplete    bool
+	RequirePersistence bool
 }
 
 // QueryAppService 封装查询应用层流程（引擎选择、核心查询、可选浏览器联动）。
@@ -82,6 +95,15 @@ func (s *QueryAppService) ResolveEngines(engines []string) []string {
 
 // ExecuteQuery 执行统一查询。
 func (s *QueryAppService) ExecuteQuery(ctx context.Context, query string, engines []string, pageSize int) (*QueryResponse, error) {
+	startedAt := time.Now()
+	resp, err := s.executeQuery(ctx, query, engines, pageSize)
+	if persistErr := s.persistQueryHistory(query, engines, pageSize, resp, err, time.Since(startedAt), nil); persistErr != nil {
+		logger.Warnf("persist query history: %v", persistErr)
+	}
+	return resp, err
+}
+
+func (s *QueryAppService) executeQuery(ctx context.Context, query string, engines []string, pageSize int) (*QueryResponse, error) {
 	if s.unified == nil {
 		return nil, fmt.Errorf("query service not initialized")
 	}
@@ -96,25 +118,135 @@ func (s *QueryAppService) ExecuteQuery(ctx context.Context, query string, engine
 		ctx, cancel = context.WithTimeout(ctx, QueryExecutionTimeout)
 		defer cancel()
 	}
-	startedAt := time.Now()
-	resp, err := s.unified.Query(ctx, QueryRequest{
+	return s.unified.Query(ctx, QueryRequest{
 		Query:       query,
 		Engines:     engines,
 		PageSize:    pageSize,
 		ProcessData: true,
 	})
-	s.persistQueryHistory(query, engines, pageSize, resp, err, time.Since(startedAt))
-	return resp, err
 }
 
-func (s *QueryAppService) persistQueryHistory(query string, engines []string, pageSize int, resp *QueryResponse, queryErr error, duration time.Duration) {
+// ExecuteQueryWithBrowserWorkflow runs the API query and Bridge collection in
+// parallel, merges both result sets, and persists exactly one history record.
+// Scheduled callers can require complete collect+capture and durable storage.
+func (s *QueryAppService) ExecuteQueryWithBrowserWorkflow(
+	ctx context.Context,
+	query string,
+	engines []string,
+	pageSize int,
+	opts BrowserQueryWorkflowOptions,
+) (*QueryResponse, BrowserQueryOutcome, error) {
+	if strings.TrimSpace(opts.Action) == "" {
+		opts.Action = "collect_and_capture"
+	}
+	startedAt := time.Now()
+	browserCh := s.RunBrowserQueryAsync(
+		ctx, query, engines, true, opts.Action, opts.QueryID, true,
+		opts.ScreenshotApp, opts.ScreenshotManager, func(path string) string { return path },
+		opts.BrowserRouter, nil,
+	)
+
+	resp, queryErr := s.executeQuery(ctx, query, engines, pageSize)
+	var browserOutcome BrowserQueryOutcome
+	if browserCh != nil {
+		browserOutcome = <-browserCh
+	}
+	merged := mergeBrowserQueryResponse(resp, browserOutcome)
+
+	workflowErr := validateBrowserQueryWorkflow(engines, opts.Action, browserOutcome, opts.RequireComplete)
+	if ctx != nil && ctx.Err() != nil {
+		workflowErr = fmt.Errorf("browser query workflow context ended: %w", ctx.Err())
+	}
+	if queryErr != nil {
+		if workflowErr == nil && len(browserOutcome.CollectedResults) > 0 {
+			merged.Errors = append(merged.Errors, fmt.Sprintf("API query failed; Bridge results used: %v", queryErr))
+		} else if workflowErr == nil {
+			workflowErr = queryErr
+		}
+	}
+
+	if opts.RequirePersistence && s.historyRepo == nil {
+		return merged, browserOutcome, fmt.Errorf("query history repository not available")
+	}
+	details := map[string]interface{}{
+		"browser_action":      opts.Action,
+		"browser_query_id":    opts.QueryID,
+		"browser_screenshots": browserOutcome.AutoCapturedPaths,
+	}
+	if persistErr := s.persistQueryHistory(query, engines, pageSize, merged, workflowErr, time.Since(startedAt), details); persistErr != nil {
+		return merged, browserOutcome, fmt.Errorf("persist combined query results: %w", persistErr)
+	}
+	if workflowErr != nil {
+		return merged, browserOutcome, workflowErr
+	}
+	return merged, browserOutcome, nil
+}
+
+func mergeBrowserQueryResponse(resp *QueryResponse, outcome BrowserQueryOutcome) *QueryResponse {
+	merged := &QueryResponse{EngineStats: make(map[string]int)}
+	if resp != nil {
+		merged.Assets = append(merged.Assets, resp.Assets...)
+		merged.TotalCount = resp.TotalCount
+		merged.Errors = append(merged.Errors, resp.Errors...)
+		for engine, count := range resp.EngineStats {
+			merged.EngineStats[engine] = count
+		}
+	}
+	for _, collected := range outcome.CollectedResults {
+		collection.NormalizeAssets(collected.Engine, collected.Assets)
+		merged.Assets = append(merged.Assets, collected.Assets...)
+		if collected.Total > 0 {
+			merged.TotalCount += collected.Total
+		} else {
+			merged.TotalCount += len(collected.Assets)
+		}
+		merged.EngineStats[collected.Engine] += len(collected.Assets)
+	}
+	merged.Errors = append(merged.Errors, outcome.Errors...)
+	merged.Errors = append(merged.Errors, outcome.AutoCaptureErrors...)
+	return merged
+}
+
+func validateBrowserQueryWorkflow(engines []string, action string, outcome BrowserQueryOutcome, requireComplete bool) error {
+	if !requireComplete {
+		return nil
+	}
+	if action != "collect_and_capture" {
+		return fmt.Errorf("browser workflow requires action collect_and_capture, got %q", action)
+	}
+	if len(outcome.Errors) > 0 || len(outcome.AutoCaptureErrors) > 0 {
+		return fmt.Errorf("browser workflow failed: %s", strings.Join(append(append([]string{}, outcome.Errors...), outcome.AutoCaptureErrors...), "; "))
+	}
+	collected := make(map[string]bool, len(outcome.CollectedResults))
+	for _, result := range outcome.CollectedResults {
+		collected[strings.ToLower(strings.TrimSpace(result.Engine))] = true
+	}
+	for _, engine := range engines {
+		key := strings.ToLower(strings.TrimSpace(engine))
+		if !collected[key] {
+			return fmt.Errorf("browser workflow returned no collected result for %s", engine)
+		}
+		if strings.TrimSpace(outcome.AutoCapturedPaths[engine]) == "" && strings.TrimSpace(outcome.AutoCapturedPaths[key]) == "" {
+			return fmt.Errorf("browser workflow returned no screenshot for %s", engine)
+		}
+		path := strings.TrimSpace(outcome.AutoCapturedPaths[engine])
+		if path == "" {
+			path = strings.TrimSpace(outcome.AutoCapturedPaths[key])
+		}
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("browser workflow screenshot unavailable for %s: %w", engine, err)
+		}
+	}
+	return nil
+}
+
+func (s *QueryAppService) persistQueryHistory(query string, engines []string, pageSize int, resp *QueryResponse, queryErr error, duration time.Duration, details map[string]interface{}) error {
 	if s.historyRepo == nil {
-		return
+		return nil
 	}
 	input, err := json.Marshal(map[string]interface{}{"query": query, "engines": engines, "page_size": pageSize})
 	if err != nil {
-		logger.Warnf("marshal query history input: %v", err)
-		return
+		return fmt.Errorf("marshal query history input: %w", err)
 	}
 	status := "success"
 	total := 0
@@ -130,10 +262,12 @@ func (s *QueryAppService) persistQueryHistory(query string, engines []string, pa
 	} else if resp != nil && len(resp.Errors) > 0 {
 		status = "partial"
 	}
+	for key, value := range details {
+		summary[key] = value
+	}
 	summaryJSON, err := json.Marshal(summary)
 	if err != nil {
-		logger.Warnf("marshal query history summary: %v", err)
-		return
+		return fmt.Errorf("marshal query history summary: %w", err)
 	}
 	historyRecord := &history.OperationHistory{
 		OperationType: history.OpTypeQuery,
@@ -158,24 +292,27 @@ func (s *QueryAppService) persistQueryHistory(query string, engines []string, pa
 			results = append(results, history.OperationResult{Data: string(data)})
 		}
 	}
-	if _, err := s.historyRepo.CreateHistoryWithResults(historyRecord, results); err != nil {
-		logger.Warnf("persist query history: %v", err)
-	}
+	_, err = s.historyRepo.CreateHistoryWithResults(historyRecord, results)
+	return err
 }
 
 func (s *QueryAppService) translateBrowserQuery(query, engine string) (string, error) {
 	if s.orchestrator == nil {
 		return query, nil
 	}
-	adapter, ok := s.orchestrator.GetAdapter(engine)
-	if !ok {
-		return "", fmt.Errorf("adapter %s not found", engine)
+	var engineAdapter adapter.EngineAdapter
+	engineAdapter, _ = s.orchestrator.GetAdapter(engine)
+	if engineAdapter == nil {
+		engineAdapter = browserOnlyTranslationAdapter(engine)
+	}
+	if engineAdapter == nil {
+		return "", fmt.Errorf("browser query engine %s is unsupported", engine)
 	}
 	ast, err := unimap.NewUQLParser().Parse(query)
 	if err != nil {
 		return "", fmt.Errorf("parse browser query for %s: %w", engine, err)
 	}
-	translated, err := adapter.Translate(ast)
+	translated, err := engineAdapter.Translate(ast)
 	if err != nil {
 		return "", fmt.Errorf("translate browser query for %s: %w", engine, err)
 	}
@@ -183,6 +320,30 @@ func (s *QueryAppService) translateBrowserQuery(query, engine string) (string, e
 		return "", fmt.Errorf("translate browser query for %s returned empty query", engine)
 	}
 	return translated, nil
+}
+
+// browserOnlyTranslationAdapter supplies query translation without requiring
+// an API key or a registered API adapter. The returned adapters perform no
+// network access here; only their Translate method is used.
+func browserOnlyTranslationAdapter(engine string) adapter.EngineAdapter {
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case "fofa":
+		return adapter.NewFofaAdapterWebOnly()
+	case "hunter":
+		return adapter.NewHunterAdapterWebOnly()
+	case "quake":
+		return adapter.NewQuakeAdapterWebOnly()
+	case "zoomeye":
+		return adapter.NewZoomEyeAdapterWebOnly()
+	case "shodan":
+		return adapter.NewShodanAdapterWebOnly()
+	case "censys":
+		return adapter.NewCensysAdapterWebOnly()
+	case "daydaymap":
+		return adapter.NewDayDayMapAdapterWebOnly()
+	default:
+		return nil
+	}
 }
 
 // RunBrowserQueryAsync 执行可选浏览器联动（打开结果页、截图、采集结构化结果）。

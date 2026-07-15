@@ -19,6 +19,7 @@
 - [API 版本化实施方案](API_VERSIONING.md)：已完成的历史设计；旧 `/api` shim 已移除。
 - [生产就绪计划](PRODUCTION_READINESS_PLAN.md)：历史计划快照，不是当前发布门禁。
 - [2026-07-14 Bridge 截图与通知验收](E2E_BRIDGE_SCREENSHOT_NOTIFICATION_2026-07-14.md)：稳定引擎的受控真实联调快照。
+- [2026-07-15 Bridge 定时查询闭环验收](E2E_BRIDGE_SCHEDULED_QUERY_CLOSED_LOOP_2026-07-15.md)：定时查询、Bridge 采集与截图、SQLite 结果和图片通知的单任务真实联调。
 - [2026-07-14 持久化与前后端终检](FINAL_PERSISTENCE_FRONTEND_AUDIT_2026-07-14.md)：持久化重载、API 契约和前端渲染的日期化验收。
 
 浏览器运行策略和查询降级计划已归档至 [archive/plans](archive/plans/)。
