@@ -158,6 +158,97 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 
 调度器任务请求的权威字段是 `web/scheduler_handlers.go` 中的创建/更新结构：`name`、`type`、`enabled`、`cron_expr`、`payload`、`timeout_seconds`、`max_retries`，以及可选 `notifications`、`schedule_type`、`run_at`、`delay_seconds`。当前工作区定义 23 种任务类型；其中备份任务属于未提交工作区改动，发布说明应随提交状态更新。
 
+### 通用规则
+
+- Payload 字段必须位于**顶层**，不支持 `extra` 嵌套。
+- 数组字段必须是 JSON 数组，不支持逗号分隔的单个字符串。
+- 每个 Runner 的字段名和类型是严格的，不兼容别名。
+
+### 常见陷阱
+
+| Runner | 错误用法 | 正确用法 |
+|--------|----------|----------|
+| `port_scan` | `{"extra": {"ports": "22,80", "targets": [...]}}` | `{"urls": ["..."], "ports": ["22", "80"], "concurrency": 50}` |
+| `query` | `{"engine": "fofa"}`（单数） | `{"engines": ["fofa"], "query": "...", "page_size": 20}` |
+| `tamper_check` | `{"url": "..."}`（单数） | `{"urls": ["..."], "mode": "relaxed"}` |
+
+### 各 Runner Payload 速查
+
+#### query
+```json
+{
+  "query": "ip=\"1.2.3.4\"",
+  "engines": ["fofa", "hunter"],
+  "page_size": 20,
+  "browser_query": false,
+  "browser_action": "collect_and_capture",
+  "query_id": "optional-correlation-id",
+  "notification_detail_limit": 50
+}
+```
+
+#### port_scan
+```json
+{
+  "urls": ["http://example.com"],
+  "ports": ["22", "80", "443"],
+  "concurrency": 50,
+  "scan_mode": "common",
+  "port_spec": "22,80,443,8000-8100",
+  "probe_methods": ["connect"],
+  "jitter_min_ms": 10,
+  "jitter_max_ms": 80
+}
+```
+
+#### tamper_check
+```json
+{
+  "urls": ["http://example.com"],
+  "concurrency": 5,
+  "mode": "relaxed"
+}
+```
+
+#### icp_query
+```json
+{
+  "queries": ["[REDACTED]"],
+  "type": "web",
+  "page": 1,
+  "page_size": 40
+}
+```
+
+#### url_reachability
+```json
+{
+  "urls": ["http://example.com"],
+  "concurrency": 10
+}
+```
+
+#### backup
+```json
+{
+  "sources": ["baseline", "config", "cookies"],
+  "output_dir": "",
+  "prefix": "unimap",
+  "max_backups": 7
+}
+```
+
+#### export
+```json
+{
+  "query": "ip=\"1.2.3.4\"",
+  "engines": ["fofa"],
+  "page_size": 100,
+  "format": "json",
+  "output_file": ""
+}
+```
+
 `query` 任务的基础 payload 为 `query`、`engines`、`page_size`。查询成功通知会展开资产明细，而不是只发送数量；`notification_detail_limit` 控制通知中最多展开多少条，默认 50、最大 100。明细正文另有约 20 KiB 的渠道安全上限。超过任一上限的资产仍全部写入 SQLite，通知会标明未展开数量。通知不会包含响应头、正文片段或任意扩展字段。
 
 需要完整 Bridge 闭环时增加：
@@ -209,11 +300,23 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 | POST | `/api/v1/history/save` | 保存操作历史；需管理员 |
 | GET/DELETE | `/api/v1/history` | 列出、清空操作历史；需管理员 |
 | GET/DELETE | `/api/v1/history/{id}` | 读取、删除操作历史；需管理员 |
-| GET | `/api/v1/icp/health` |
-| GET | `/api/v1/icp/query` |
-| GET | `/api/v1/icp/history` |
-| GET | `/api/v1/icp/history/results` |
-| GET | `/api/v1/icp/compare` |
+| GET | `/api/v1/icp/health` | |
+| GET | `/api/v1/icp/query` | `type`、`search`、`page`、`page_size`；`search` 必填且最大 256 字符 |
+| GET | `/api/v1/icp/history` | `keyword` 为**精确匹配**，`type` 默认 `web`，`task_id` 可选；三者均为精确等值查询 |
+| GET | `/api/v1/icp/history/results` | `run_id` 必填，返回该次查询的明细结果 |
+| GET | `/api/v1/icp/compare` | |
+
+> **注意**：`/api/v1/icp/history` 的 `keyword` 参数使用 SQL 精确等值匹配（`query_keyword = ?`），不是模糊匹配。若传入部分关键词，可能返回空结果。建议使用完整关键词或 `task_id` 查询。
+
+## 待 Codex 优化项
+
+以下为非 Bug 但影响使用的逻辑不完善问题，已记录待后续优化：
+
+| # | 问题 | 位置 | 建议 | 优先级 |
+|---|------|------|------|--------|
+| 1 | ICP history keyword 精确匹配不透明 | `web/icp_handlers.go:247` + `docs/API.md` | 文档已补充精确匹配说明；可选：支持 LIKE 模糊匹配 | P3 |
+| 2 | 调度任务 payload 格式严格但不透明 | `internal/scheduler/executor.go` + `docs/API.md` | 文档已补充 payload 速查；可选：validateTaskPayload 增加 runner-specific 校验 + 更友好的错误提示 | P3 |
+| 3 | Alert JSON crash-safe | `internal/alerting/manager.go:59` | temp file + `os.Rename` 原子替换 | P2 |
 
 ## 变更规则
 

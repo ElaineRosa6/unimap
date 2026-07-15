@@ -259,8 +259,10 @@ go run -tags gui ./cmd/unimap-gui
 | 7 | Scheduled screenshot SaveJob errors ignored | P2 | ✅ FIXED | 错误已检查 |
 | 8 | Tamper export contract incomplete | P2 | ⚠️ PARTIAL | 过滤参数已补齐，handler 测试已加但组合覆盖待加强 |
 
-**遗留项（1 项 P2）**：
+**遗留项（1 项 P2 + 2 项 P3）**：
 - Alert JSON crash-safe：`internal/alerting/manager.go:59` — 改为 temp file + `os.Rename`
+- ICP history keyword 精确匹配不透明：`web/icp_handlers.go:247` — 文档已补充说明，可选支持 LIKE
+- 调度任务 payload 格式严格但不透明：`internal/scheduler/executor.go` — 文档已补充 payload 速查，可选增加 runner-specific 校验
 
 ### 2026-07-13 审计安全漏洞修复（17 文件）
 - adapter 层加固、ZoomEye cookie 校验、scheduler 备份任务鉴权、bridge 状态管理、前端静态资源 CSP 调整
