@@ -108,6 +108,7 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/scheduler/history
   "query": "port=\"443\"",
   "engines": ["fofa"],
   "page_size": 10,
+  "notification_detail_limit": 50,
   "browser_query": true,
   "browser_action": "collect_and_capture"
 }
@@ -118,8 +119,15 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/scheduler/history
 1. `/api/v1/screenshot/bridge/status` 显示扩展近期有拉取或回调活动。
 2. 调度执行结果包含“Bridge 截图保存”和“采集结果已合并并持久化”。
 3. `/api/v1/history?type=query` 只有一条对应查询历史，并能读取结果明细。
-4. `/api/v1/scheduler/history` 中该次执行为 `success`；执行历史在任务完成后立即写入调度历史文件。
-5. 通知渠道指标或接收端确认图片送达。通知投递仍是任务完成后的异步阶段，投递失败会记录日志和指标，不会回滚已经持久化的查询结果。
+4. `/api/v1/scheduler/history` 中该次执行为 `success`，且 `result` 含“查询结果明细”和至少一条已持久化资产；不能只核对总数。
+5. 通知接收端确认文字明细与图片均送达。`notification_detail_limit` 默认 50、最大 100，正文另有约 20 KiB 的渠道安全上限；超过部分仍持久化并在通知中提示。通知投递仍是任务完成后的异步阶段，投递失败会记录日志和指标，不会回滚已经持久化的查询结果。
+
+普通 API 定时查询不设置 `browser_query`，但通知明细规则相同。真实 API 配置可用时可执行显式联调：
+
+```powershell
+$env:UNIMAP_LIVE_API_ENGINE = 'fofa'
+go test -tags live_bridge_e2e ./web -run '^TestLiveAPIScheduledQueryNotificationDetails$' -count=1 -v
+```
 
 ## 8. 分布式节点不可用
 

@@ -5,6 +5,7 @@ package web
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/history"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/scheduler"
 	"github.com/unimap/project/internal/service"
@@ -247,6 +249,9 @@ func TestLiveBridgeScheduledQueryClosedLoop(t *testing.T) {
 	if err != nil || len(image) == 0 {
 		t.Fatalf("read closed-loop Bridge screenshot: bytes=%d err=%v", len(image), err)
 	}
+	if artifactPath := preserveLiveScreenshot(t, engine, image); artifactPath != "" {
+		t.Logf("LIVE_BRIDGE_CLOSED_LOOP screenshot_artifact=%s", artifactPath)
+	}
 
 	histories, total, err := srv.historyRepo.ListHistory("query", 10, 0)
 	if err != nil {
@@ -259,9 +264,131 @@ func TestLiveBridgeScheduledQueryClosedLoop(t *testing.T) {
 	if err != nil || len(results) == 0 {
 		t.Fatalf("persisted query results=%d err=%v", len(results), err)
 	}
+	if !strings.Contains(record.Result, "📋 查询结果明细") {
+		t.Fatalf("scheduled notification body has no query detail section:\n%s", record.Result)
+	}
+	if !recordContainsPersistedAsset(t, record.Result, results) {
+		t.Fatalf("scheduled notification body has no persisted asset detail:\n%s", record.Result)
+	}
 
 	waitForLiveNotificationMetric(t, srv, beforeNotify, 20*time.Second)
-	t.Logf("LIVE_BRIDGE_CLOSED_LOOP success engine=%s persisted_results=%d screenshot_bytes=%d notification_success=true", engine, len(results), len(image))
+	t.Logf("LIVE_BRIDGE_CLOSED_LOOP success engine=%s persisted_results=%d notification_details=true screenshot_bytes=%d notification_success=true", engine, len(results), len(image))
+}
+
+// TestLiveAPIScheduledQueryNotificationDetails verifies that the non-Bridge
+// scheduled query path persists API assets and sends those assets, not only a
+// count, through the configured notification channel.
+func TestLiveAPIScheduledQueryNotificationDetails(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("APPDATA", stateDir)
+	t.Setenv("LOCALAPPDATA", stateDir)
+	webRoot, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("resolve web root: %v", err)
+	}
+	t.Setenv("UNIMAP_WEB_ROOT", webRoot)
+
+	cfgManager := config.NewManager(liveBridgeConfigPath(t))
+	if err := cfgManager.Load(); err != nil {
+		t.Fatalf("load live configuration: %v", err)
+	}
+	cfg := cfgManager.GetConfig().Clone()
+	if cfg == nil {
+		t.Fatal("live configuration is unavailable")
+	}
+	channelID := enabledFeishuAppChannelID(t, cfg)
+	engine := strings.ToLower(strings.TrimSpace(os.Getenv("UNIMAP_LIVE_API_ENGINE")))
+	if engine == "" {
+		engine = "fofa"
+	}
+	cfg.Web.BindAddress = "127.0.0.1"
+	cfg.Web.Port = 8448
+	cfg.Screenshot.BaseDir = filepath.Join(stateDir, "screenshots")
+	cfg.History.DatabasePath = filepath.Join(stateDir, "history.db")
+	cfg.ICP.DatabasePath = filepath.Join(stateDir, "icp_results.db")
+
+	app := service.NewUnifiedServiceWithConfig(cfg)
+	srv, err := NewServer(cfg.Web.Port, app, app.GetOrchestrator(), cfg, cfgManager)
+	if err != nil {
+		t.Fatalf("create live API query server: %v", err)
+	}
+	// Production cmd/unimap-web registers configured adapters before NewServer.
+	// This package-level E2E constructs the service directly, so mirror that
+	// registration step without exposing any credential values.
+	srv.registerCoreEngineAdapters()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			t.Errorf("shutdown live API query server: %v", err)
+		}
+		if err := app.Shutdown(); err != nil {
+			t.Errorf("shutdown application service: %v", err)
+		}
+	})
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+	}()
+	waitForLiveServer(t, srv, serverErr, 30*time.Second)
+
+	beforeNotify := liveNotifyMetric(t, srv, "feishu_app", "success")
+	runAt := time.Now().Add(time.Hour)
+	taskID := fmt.Sprintf("live-api-query-%s-e2e-%d", engine, time.Now().UnixNano())
+	task := &scheduler.ScheduledTask{
+		ID: taskID, Name: fmt.Sprintf("Live API %s scheduled query detail verification", engine),
+		Type: scheduler.TaskQuery, Enabled: false, ScheduleType: "once", RunAt: &runAt,
+		Payload: &model.TaskPayload{
+			Query: `port="443"`, Engines: []string{engine}, PageSize: 10,
+			NotificationDetailLimit: 10,
+		},
+		TimeoutSec: 120,
+		Notifications: &scheduler.NotificationConfig{
+			Enabled: true, OnSuccess: true, ChannelIDs: []string{channelID},
+		},
+	}
+	if err := srv.scheduler.AddTask(task); err != nil {
+		t.Fatalf("create live API query task: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.scheduler.DeleteTask(taskID) })
+	if err := srv.scheduler.RunTaskNow(taskID); err != nil {
+		t.Fatalf("run live API query task: %v", err)
+	}
+	record := waitForLiveTaskRecord(t, srv.scheduler, taskID, 130*time.Second)
+	if record.Status != "success" {
+		t.Fatalf("live API query task did not succeed: status=%s error=%s", record.Status, record.Error)
+	}
+	histories, total, err := srv.historyRepo.ListHistory("query", 10, 0)
+	if err != nil || total != 1 || len(histories) != 1 {
+		t.Fatalf("persisted API query history count=%d/%d err=%v, want one", total, len(histories), err)
+	}
+	results, err := srv.historyRepo.GetResults(histories[0].ID)
+	if err != nil || len(results) == 0 {
+		t.Fatalf("persisted API query results=%d err=%v", len(results), err)
+	}
+	if !strings.Contains(record.Result, "📋 查询结果明细") || !recordContainsPersistedAsset(t, record.Result, results) {
+		t.Fatalf("API query notification body has no persisted asset details:\n%s", record.Result)
+	}
+	waitForLiveNotificationMetric(t, srv, beforeNotify, 20*time.Second)
+	t.Logf("LIVE_API_QUERY success engine=%s persisted_results=%d notification_details=true notification_success=true", engine, len(results))
+}
+
+func recordContainsPersistedAsset(t *testing.T, result string, rows []history.OperationResult) bool {
+	t.Helper()
+	for _, row := range rows {
+		var asset model.UnifiedAsset
+		if err := json.Unmarshal([]byte(row.Data), &asset); err != nil {
+			t.Fatalf("decode persisted query asset: %v", err)
+		}
+		for _, needle := range []string{asset.URL, asset.Host, asset.IP} {
+			if needle != "" && strings.Contains(result, needle) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func liveBridgeConfigPath(t *testing.T) string {
@@ -298,9 +425,9 @@ func liveBridgeEngine(t *testing.T) (engine, query string) {
 	queries := map[string]string{
 		"fofa":    `port="443"`,
 		"hunter":  `port="443"`,
-		"zoomeye": "port:443",
-		"quake":   "port:443",
-		"shodan":  "port:443",
+		"zoomeye": `port="443"`,
+		"quake":   `port="443"`,
+		"shodan":  `port="443"`,
 	}
 	query, ok := queries[engine]
 	if !ok {
@@ -348,6 +475,30 @@ func waitForLiveBridge(t *testing.T, srv *Server, serverErr <-chan error, timeou
 	}
 	snapshot := srv.buildBridgeDiagnosticSnapshot()
 	t.Fatalf("Bridge extension did not become ready (extension_online=%t live_clients=%d paired_clients=%d)", snapshot.ExtensionOnline, snapshot.LiveClients, snapshot.PairedClients)
+}
+
+func waitForLiveServer(t *testing.T, srv *Server, serverErr <-chan error, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-serverErr:
+			t.Fatalf("live server stopped: %v", err)
+		default:
+		}
+		req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:8448/health/live", nil) // #nosec G107 -- fixed loopback verification endpoint
+		if err == nil {
+			resp, requestErr := http.DefaultClient.Do(req)
+			if requestErr == nil {
+				_ = resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					return
+				}
+			}
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for live server")
 }
 
 func waitForLiveTaskRecord(t *testing.T, sched *scheduler.Scheduler, taskID string, timeout time.Duration) scheduler.ExecutionRecord {

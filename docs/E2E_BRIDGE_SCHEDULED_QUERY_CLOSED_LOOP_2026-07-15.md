@@ -1,40 +1,51 @@
-# 2026-07-15 Bridge 定时查询闭环验收
+# 2026-07-15 查询通知与 Bridge 定时闭环验收
 
-> **日期化验收记录**：本文只说明 2026-07-15 本机受控会话的结果，不承诺任意部署、账号或未来页面版本。未记录 API Key、Cookie、Bridge token、通知凭证或资产目标。
+> **日期化验收记录**：本文只说明 2026-07-15 本机受控会话的结果，不承诺任意部署、账号或未来页面版本。未记录 API Key、Cookie、Bridge token、通知凭证或具体资产明细。
 
-## 验收链路
+## 本次修订
 
-同一个 `query` 定时任务完成以下步骤：
+定时 `query` 的成功通知不再只包含总数和各引擎计数。API 与 Bridge 查询共用同一资产明细格式，默认展开 50 条、最多 100 条，并有约 20 KiB 的正文安全上限；超过上限的资产仍全部持久化，并在通知中说明未展开数量。响应头、正文片段和任意 `extra` 字段不会写入通知。
 
-1. 执行 UQL 查询；即使目标引擎没有注册 API 适配器，仍使用无凭证浏览器翻译器生成引擎查询语法。
-2. 通过 Extension Bridge 的 `collect_and_capture` 在一次页面导航中获取结构化资产并截图。
-3. 将 API 与 Bridge 资产合并为一条查询历史，使用事务写入 SQLite 历史头和结果明细。
-4. 将实际存在的 PNG 路径放入调度执行结果，通知层提取图片并发送到已启用的飞书应用渠道。
-5. 调度执行历史在任务完成后立即写入 JSON，而不依赖后续手工 `Save` 或任务配置变更。
+Bridge 模式下，同一个任务完成：UQL 翻译 → API 查询（适配器可用时）→ Bridge `collect_and_capture` 结构化采集和截图 → API/Bridge 资产合并 → SQLite 单条查询历史与结果明细 → 文字明细和图片通知。
 
-## 实测结果
+## 自动化证据
 
-| 项目 | 结果 |
-| --- | --- |
-| 引擎 | FOFA |
-| Bridge 结构化采集 | ✅ |
-| Bridge PNG | ✅，360,996 字节 |
-| SQLite 查询历史 | ✅，单条合并历史 |
-| SQLite 结果明细 | ✅，10 条 |
-| 飞书应用图片通知 | ✅ |
-| 任务最终状态 | `success` |
+- `TestQueryRunner_Execute_APIQueryIncludesAssetDetailsForNotification`：普通 API 查询结果进入通知正文。
+- `TestQueryRunner_Execute_QueryNotificationDetailLimit`：通知展开限制不影响完整持久化语义。
+- `TestQueryRunner_Execute_BridgeCollectCapturePersistsCombinedResults`：API 与 Bridge 资产、截图路径均进入实际通知载荷，SQLite 保存合并明细。
+- `TestLiveAPIScheduledQueryNotificationDetails`：使用当前 FOFA API 配置实测 10 条结果持久化、通知正文含明细、飞书应用投递成功。
+- `TestLiveBridgeScheduledQueryClosedLoop`：逐引擎验证结构化结果、PNG、SQLite 明细、通知正文资产和飞书成功指标；PNG 另行目视检查登录态与结果区。
 
-执行命令：
+## Bridge 五引擎实测状态
+
+| 引擎 | 结构化结果 / SQLite | 截图 | 明细通知 | 结论 |
+| --- | ---: | ---: | --- | --- |
+| FOFA | 10 条 | 377,765 字节，登录结果页 | 正文含持久化资产；飞书成功 | ✅ |
+| Hunter | 9 条 | 248,281 字节，登录结果页 | 正文含持久化资产；飞书成功 | ✅ |
+| Quake | 10 条 | 358,706 字节，登录结果页 | 正文含持久化资产；飞书成功 | ✅，同时修复端口翻译 |
+| ZoomEye | 10 条 | 623,657 字节，实际结果页 | 正文含持久化资产；飞书成功 | ✅；首次截图读回瞬时失败，复测通过 |
+| Shodan | 0 条 | 101,214 字节，登录页 | 未发送成功通知 | ❌ 当前搜索登录态失效，不能判为代码通过 |
+
+Quake 首次以旧翻译 `port:"443"` 打开页面时返回 0 条。实际页面验证当前端口数值语法应为 `port:443`；适配器和回归测试已同步修复。Shodan 的 Bridge 已恢复连接并回传截图，但页面明确重定向至登录表单，因此本轮没有伪造全绿结论。
+
+## 复测命令
+
+普通 API 调度查询：
 
 ```powershell
+$env:UNIMAP_LIVE_API_ENGINE = 'fofa'
+go test -tags live_bridge_e2e ./web -run '^TestLiveAPIScheduledQueryNotificationDetails$' -count=1 -v
+```
+
+Bridge 逐引擎闭环：
+
+```powershell
+$env:UNIMAP_LIVE_BRIDGE_ENGINE = 'hunter' # fofa/hunter/quake/zoomeye/shodan
+$env:UNIMAP_LIVE_BRIDGE_ARTIFACT_DIR = 'C:\tmp\unimap-live-bridge-diagnostics'
 go test -tags live_bridge_e2e ./web -run '^TestLiveBridgeScheduledQueryClosedLoop$' -count=1 -v
 ```
 
-关键成功输出：
-
-```text
-LIVE_BRIDGE_CLOSED_LOOP success engine=fofa persisted_results=10 screenshot_bytes=360996 notification_success=true
-```
+扩展必须已配对，浏览器必须具备对应引擎的有效搜索登录态，且通知接收方已同意接收真实测试消息。验收必须同时满足：结构化结果非空、SQLite 明细非空、调度结果含资产明细、截图不是登录页、通知成功；仅有非空 PNG 或任务记录不算通过。
 
 ## 失败语义
 
@@ -42,7 +53,3 @@ LIVE_BRIDGE_CLOSED_LOOP success engine=fofa persisted_results=10 screenshot_byte
 - Bridge 采集结果、每个引擎的截图、历史数据库任一不可用时，任务返回失败，不报告假成功。
 - API 查询失败但 Bridge 对所有指定引擎采集和截图完整时，任务可成功；API 错误作为部分结果写入历史摘要。
 - 通知发生在结果持久化之后。通知失败记录日志和 Prometheus 失败计数，但不会回滚已经提交的查询结果。
-
-## 复测范围
-
-默认引擎为 FOFA。可设置 `UNIMAP_LIVE_BRIDGE_ENGINE` 为 `hunter`、`quake`、`zoomeye` 或 `shodan` 后执行相同测试。扩展必须已配对，浏览器必须具备对应引擎的有效登录态，并且通知接收方已同意接收真实测试消息。

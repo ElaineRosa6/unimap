@@ -109,6 +109,15 @@ go test -tags live_bridge_e2e ./web -run '^TestLiveBridgeScheduledQueryClosedLoo
 
 默认引擎为 FOFA；可在 PowerShell 设置 `UNIMAP_LIVE_BRIDGE_ENGINE` 为 `hunter`、`zoomeye`、`quake` 或 `shodan` 后执行同一命令。
 
+测试除非空截图外，还要求 Bridge 结构化结果非空、SQLite 明细非空、调度通知正文包含已持久化资产，并验证真实通知成功指标。若截图是登录页，即使 PNG 非空也必须判为失败；先恢复对应引擎登录态再重跑。
+
+普通 API 调度查询的“API 结果 → SQLite 明细 → 文字明细通知”使用：
+
+```powershell
+$env:UNIMAP_LIVE_API_ENGINE = 'fofa'
+go test -tags live_bridge_e2e ./web -run '^TestLiveAPIScheduledQueryNotificationDetails$' -count=1 -v
+```
+
 需要人工核验截图内容时，可将 `UNIMAP_LIVE_BRIDGE_ARTIFACT_DIR` 设为一个绝对路径。测试会以仅当前用户可读的权限保留一份 PNG 副本；未设置时，截图随临时测试目录清理。
 
 它会使用本机 `configs/config.yaml`、已配对的扩展和当前登录的搜索引擎会话，向已启用的

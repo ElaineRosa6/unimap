@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -178,9 +179,15 @@ func (q *QuakeAdapter) buildCondition(field, op, value string) string {
 	}
 
 	escaped := escapeQuotes(value)
+	formattedValue := fmt.Sprintf(`"%s"`, escaped)
+	if field == "port" {
+		if _, err := strconv.Atoi(strings.TrimSpace(value)); err == nil {
+			formattedValue = strings.TrimSpace(value)
+		}
+	}
 
 	if op == "!=" || op == "<>" {
-		return fmt.Sprintf(`NOT %s:"%s"`, field, escaped)
+		return fmt.Sprintf(`NOT %s:%s`, field, formattedValue)
 	}
 	// Quake 区间语法: port:[N TO M] / port:[N TO *]
 	// 注意: Quake 的 [N TO *] 包含 N 本身，因此 > 和 >= 输出相同结果（Quake 无排他下界语法）
@@ -191,8 +198,9 @@ func (q *QuakeAdapter) buildCondition(field, op, value string) string {
 		return fmt.Sprintf(`%s:[* TO %s]`, field, escaped)
 	}
 
-	// Quake syntax: field:"value"
-	return fmt.Sprintf(`%s:"%s"`, field, escaped)
+	// Quake text values are quoted. Port is numeric in the current Web query
+	// grammar and must remain unquoted (for example, port:443).
+	return fmt.Sprintf(`%s:%s`, field, formattedValue)
 }
 
 // Search 执行搜索
