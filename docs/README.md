@@ -11,6 +11,7 @@
 - [UQL 指南](UQL_GUIDE.md) 与 [搜索引擎语法快照](SEARCH_ENGINE_SYNTAX.md)。
 - [插件架构](PLUGIN_ARCHITECTURE.md) 与 [插件开发](PLUGIN_DEVELOPMENT_GUIDE.md)。
 - [GUI 构建](GUI_BUILD.md)。
+- [变更日志](CHANGELOG.md)：按日期记录已完成的功能、兼容性与验证结果。
 
 ## 决策与历史资料
 
@@ -21,6 +22,7 @@
 - [2026-07-14 Bridge 截图与通知验收](E2E_BRIDGE_SCREENSHOT_NOTIFICATION_2026-07-14.md)：稳定引擎的受控真实联调快照。
 - [2026-07-15 查询通知与 Bridge 定时闭环验收](E2E_BRIDGE_SCHEDULED_QUERY_CLOSED_LOOP_2026-07-15.md)：API/Bridge 查询、资产明细通知、截图、SQLite 结果和五引擎复测状态。
 - [2026-07-14 持久化与前后端终检](FINAL_PERSISTENCE_FRONTEND_AUDIT_2026-07-14.md)：持久化重载、API 契约和前端渲染的日期化验收。
+- [2026-07-15 逻辑可用性三项完善闭环](LOGIC_USABILITY_CLOSEOUT_2026-07-15.md)：Alert 原子持久化回归、ICP history 部分匹配与 scheduler payload 兼容记录。
 
 浏览器运行策略和查询降级计划已归档至 [archive/plans](archive/plans/)。
 
