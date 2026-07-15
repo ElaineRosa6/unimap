@@ -829,7 +829,7 @@ document.getElementById('edit-modal-overlay').addEventListener('click', closeEdi
 		login_status_check: 'engines: 引擎列表（留空检测全部）；test_query: 探测查询（可选）',
 		distributed_submit: 'task_type: 子任务类型；priority: 优先级；timeout_seconds: 超时',
 		export: 'query/engines: 同 UQL 查询；format: json/csv/excel',
-		port_scan: 'urls: URL/IP 列表；authorized_targets: 可选授权 IPv4/CIDR；port_spec: 端口/范围或 all；scan_mode: full 可启用全端口；可选 port_concurrency/connect_timeout_ms/scan_timeout_seconds',
+		port_scan: 'urls: URL/IP 列表；authorized_targets: 授权 IPv4/CIDR（FIN/NULL/Xmas 必填）；port_spec: 端口/范围或 all；probe_methods: connect/telnet/udp/fin/null/xmas；可选 jitter_min_ms/jitter_max_ms、port_concurrency/connect_timeout_ms/scan_timeout_seconds',
 		screenshot_cleanup: 'max_age_days: 保留天数，超过则清理',
 		tamper_cleanup: 'max_age_days: 保留天数，超过则清理',
 		quota_monitor: 'low_threshold: 低配额告警阈值',

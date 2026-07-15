@@ -811,6 +811,14 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 	if err != nil {
 		return "", fmt.Errorf("invalid port specification: %w", err)
 	}
+	probeMethodNames := extractStrings(payload, "probe_methods", nil)
+	if err := service.ValidatePortScanMethods(probeMethodNames); err != nil {
+		return "", fmt.Errorf("invalid port probe methods: %w", err)
+	}
+	probeMethods := make([]service.PortScanMethod, len(probeMethodNames))
+	for i := range probeMethodNames {
+		probeMethods[i] = service.PortScanMethod(probeMethodNames[i])
+	}
 
 	resp, err := r.monitorSvc.ScanURLPortsWithOptions(ctx, urls, portNums, service.PortScanOptions{
 		TargetConcurrency: concurrency,
@@ -818,6 +826,9 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 		ConnectTimeout:    time.Duration(extractInt(payload, "connect_timeout_ms", 800)) * time.Millisecond,
 		ScanTimeout:       time.Duration(extractInt(payload, "scan_timeout_seconds", 0)) * time.Second,
 		AuthorizedTargets: extractStrings(payload, "authorized_targets", nil),
+		ProbeMethods:      probeMethods,
+		JitterMin:         time.Duration(extractInt(payload, "jitter_min_ms", 0)) * time.Millisecond,
+		JitterMax:         time.Duration(extractInt(payload, "jitter_max_ms", 0)) * time.Millisecond,
 	})
 	if err != nil {
 		return "", fmt.Errorf("port scan failed: %w", err)

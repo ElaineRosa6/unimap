@@ -151,12 +151,14 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/nodes/network/profile -Headers @{
 ## 10. 端口扫描异常或全端口未完成
 
 - Web 页支持“常用端口”“自定义端口”“全端口”三种模式。自定义表达式示例：`22,80,443,8000-8100`；调度任务使用同样的 `port_spec`，或以 `scan_mode: full` 扫描 1-65535。
-- 多个目标会先解析并按公网 IPv4 全局去重，再执行 `唯一 IP × 端口`。用 `unique_ip_count`、`duplicate_ip_references` 和 `attempted_connections / planned_connections` 判断实际任务量；多个域名指向同一 IP 不会重复拨号。
+- 多个目标会先解析并按公网 IPv4 全局去重，再将 `唯一 IP × 端口` 笛卡尔积随机打乱。选择多个 `probe_methods` 时，进度按 `IP × 端口 × 方法` 计数；多个域名指向同一 IP 不会重复探测。
 - 如需强制限定授权范围，在 Web 或调度任务填写 `authorized_targets`（IPv4/CIDR 列表）。任一解析 IP 超出清单时，整个目标标记为 `not_authorized`，不进行部分扫描。留空仅表示操作者自行确认授权，不代表系统能够证明资产所有权。
 - 全端口扫描默认全局端口并发 256、TCP 连接超时 800ms、扫描计划总超时 300 秒。高丢包网络可适当增大连接/总超时；目标较多时不要同时把目标解析并发和端口并发调到最大。
 - 结果中的 `attempted_connections` 小于 `expected_connections` 表示扫描被总超时或请求取消中断；已发现的开放端口仍会保留。若经常超时，先降低目标并发，再提高 `scan_timeout_seconds`（最大 900 秒）。
 - `blocked` 表示目标解析为 loopback、私有或内部地址，属于 SSRF 防护；`cdn_excluded` 表示检测到 CDN，属于避免扫描共享边缘节点的安全策略。不要通过关闭这些检查来排障。
-- 端口扫描执行真实 TCP connect，不识别 UDP 服务，也不进行服务版本探测。请只扫描已获授权的公网资产。
+- `connect` 执行完整 TCP 握手；`telnet` 在连接后发送 IAC 协商；`udp` 使用常见服务载荷并区分 `open` 与 `open_filtered`。`fin`、`null`、`xmas` 分别发送 FIN、无标志、FIN/PSH/URG TCP 段，必须填写授权范围并以管理员/root 或 `CAP_NET_RAW` 权限运行。
+- UDP/FIN/NULL/Xmas 的“无响应”不能证明端口开放，结果会显示为 `open_filtered`，只有确定响应才进入 `open_ports`。防火墙、NAT、主机 TCP 栈差异都会影响原始扫描结果，建议与 connect/Telnet 混合复核。
+- `jitter_min_ms` / `jitter_max_ms` 控制每次探测前的随机延迟（最大 5000ms）。抖动会显著增加全端口扫描耗时，需同步增大 `scan_timeout_seconds`。
 
 ## 11. 变更后检查清单
 

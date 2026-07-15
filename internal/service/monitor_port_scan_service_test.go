@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -151,6 +152,153 @@ func TestExecutePortScanPlanScansEachUniqueIPPortPairOnce(t *testing.T) {
 	}
 	if got := outcome.OpenPorts["192.0.2.10"]; len(got) != 1 || got[0] != 443 {
 		t.Fatalf("unexpected open ports: %v", outcome.OpenPorts)
+	}
+}
+
+func TestExecutePortScanPlanRandomizesCartesianProductOrder(t *testing.T) {
+	plan := portScanPlan{IPs: []string{"192.0.2.10", "198.51.100.20"}, PlannedConnections: 6}
+	ports := []int{22, 80, 443}
+	sequential := []tcpPortJob{
+		{ip: "192.0.2.10", port: 22}, {ip: "192.0.2.10", port: 80}, {ip: "192.0.2.10", port: 443},
+		{ip: "198.51.100.20", port: 22}, {ip: "198.51.100.20", port: 80}, {ip: "198.51.100.20", port: 443},
+	}
+
+	var observed []tcpPortJob
+	dial := func(_ context.Context, ip string, port int, _ time.Duration) bool {
+		observed = append(observed, tcpPortJob{ip: ip, port: port})
+		return false
+	}
+	outcome := executePortScanPlanWithShuffle(context.Background(), plan, ports, 1, time.Second, dial, func(jobs []tcpPortJob) {
+		for left, right := 0, len(jobs)-1; left < right; left, right = left+1, right-1 {
+			jobs[left], jobs[right] = jobs[right], jobs[left]
+		}
+	})
+	if outcome.Err != nil {
+		t.Fatalf("execute randomized plan: %v", outcome.Err)
+	}
+	if reflect.DeepEqual(observed, sequential) {
+		t.Fatalf("cartesian product was executed sequentially: %v", observed)
+	}
+	if len(observed) != len(sequential) {
+		t.Fatalf("expected %d jobs, got %d", len(sequential), len(observed))
+	}
+	want := make(map[tcpPortJob]bool, len(sequential))
+	for _, job := range sequential {
+		want[job] = true
+	}
+	for _, job := range observed {
+		if !want[job] {
+			t.Fatalf("unexpected job in randomized product: %+v", job)
+		}
+		delete(want, job)
+	}
+	if len(want) != 0 {
+		t.Fatalf("randomized product omitted jobs: %v", want)
+	}
+}
+
+func TestAdvancedPortScanRunsMixedMethodsWithJitter(t *testing.T) {
+	options := PortScanOptions{
+		PortConcurrency: 1,
+		ConnectTimeout:  time.Second,
+		ProbeMethods:    []PortScanMethod{PortScanMethodConnect, PortScanMethodTelnet, PortScanMethodUDP},
+		JitterMin:       5 * time.Millisecond,
+		JitterMax:       10 * time.Millisecond,
+	}
+	var methods []PortScanMethod
+	var delays []time.Duration
+	probe := func(_ context.Context, _ string, _ int, method PortScanMethod, _ time.Duration) (string, string, error) {
+		methods = append(methods, method)
+		if method == PortScanMethodUDP {
+			return "open_filtered", "no UDP response", nil
+		}
+		return "open", "connected", nil
+	}
+	outcome := scanPortMethodsDetailed(context.Background(), []string{"192.0.2.10"}, []int{23}, options, probe, nil, func(_ context.Context, delay time.Duration) error {
+		delays = append(delays, delay)
+		return nil
+	})
+	if outcome.Err != nil {
+		t.Fatalf("mixed scan failed: %v", outcome.Err)
+	}
+	if !reflect.DeepEqual(methods, options.ProbeMethods) {
+		t.Fatalf("mixed methods = %v, want %v", methods, options.ProbeMethods)
+	}
+	if len(delays) != 3 {
+		t.Fatalf("expected jitter before every probe, got %v", delays)
+	}
+	for _, delay := range delays {
+		if delay < options.JitterMin || delay > options.JitterMax {
+			t.Fatalf("jitter %v outside [%v,%v]", delay, options.JitterMin, options.JitterMax)
+		}
+	}
+	if got := outcome.OpenPorts["192.0.2.10"]; len(got) != 1 || got[0] != 23 {
+		t.Fatalf("confirmed open port union = %v", got)
+	}
+	if got := outcome.Findings["192.0.2.10"]; len(got) != 3 || got[2].State != "open_filtered" {
+		t.Fatalf("mixed findings = %+v", got)
+	}
+}
+
+func TestProbeTelnetNegotiatesAfterStandardConnection(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+	received := make(chan []byte, 1)
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer conn.Close()
+		buffer := make([]byte, 3)
+		n, _ := conn.Read(buffer)
+		received <- buffer[:n]
+		_, _ = conn.Write([]byte("login: "))
+	}()
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	state, _, err := probeTelnetPort(context.Background(), "127.0.0.1", port, time.Second)
+	if err != nil || state != "open" {
+		t.Fatalf("Telnet probe state=%q err=%v", state, err)
+	}
+	if got := <-received; !reflect.DeepEqual(got, []byte{255, 253, 3}) {
+		t.Fatalf("Telnet negotiation bytes = %v", got)
+	}
+}
+
+func TestRawTCPScanFlagsAndChecksum(t *testing.T) {
+	tests := map[PortScanMethod]byte{
+		PortScanMethodFIN:  tcpFlagFIN,
+		PortScanMethodNULL: 0,
+		PortScanMethodXmas: tcpFlagFIN | tcpFlagPSH | tcpFlagURG,
+	}
+	for method, want := range tests {
+		got, err := rawTCPFlags(method)
+		if err != nil || got != want {
+			t.Fatalf("rawTCPFlags(%s)=%#x,%v want %#x", method, got, err, want)
+		}
+	}
+	source := net.ParseIP("192.0.2.10").To4()
+	destination := net.ParseIP("198.51.100.20").To4()
+	segment := buildTCPProbeSegment(source, destination, 40000, 443, tcpFlagFIN|tcpFlagPSH|tcpFlagURG)
+	if segment[13] != tcpFlagFIN|tcpFlagPSH|tcpFlagURG {
+		t.Fatalf("TCP flags byte = %#x", segment[13])
+	}
+	if checksum := tcpChecksum(source, destination, segment); checksum != 0 {
+		t.Fatalf("TCP checksum validation = %#x, want 0", checksum)
+	}
+}
+
+func TestRawTCPMethodsRequireExplicitAuthorizedScope(t *testing.T) {
+	app := NewMonitorAppService(nil)
+	_, err := app.ScanURLPortsWithOptions(context.Background(), []string{"https://example.com"}, []int{443}, PortScanOptions{
+		ProbeMethods: []PortScanMethod{PortScanMethodFIN},
+	})
+	if err == nil || !strings.Contains(err.Error(), "authorized_targets") {
+		t.Fatalf("expected explicit authorized scope error, got %v", err)
 	}
 }
 

@@ -4,6 +4,37 @@
 
 ---
 
+## [2026-07-15] 端口扫描准确性与多协议探测升级
+
+> **变更类型**: 功能增强 + 准确性修复
+> **涉及模块**: service/monitor、scheduler、web、templates、API、Runbook
+
+### 核心变更
+
+- 将去重后的 `唯一 IP × 端口` 笛卡尔积随机打乱后再提交到有界工作池，避免固定的 IP/端口顺序。
+- 保留完整 TCP connect，并新增 Telnet IAC 协商探测。
+- 新增 FIN、NULL、Xmas（FIN/PSH/URG）原始 IPv4 TCP 探测；强制要求显式 `authorized_targets`，运行环境需要管理员/root 或 `CAP_NET_RAW`。
+- 新增 UDP 探测和 TCP/UDP 多方法混合扫描，DNS、NTP、SNMP 使用对应协议载荷。
+- 新增每次探测前的 `jitter_min_ms` / `jitter_max_ms` 随机抖动，范围限制为 0-5000ms。
+- 响应新增结构化 `findings`。只有完成 TCP 连接或收到有效响应的结果才标记为 `open` 并进入 `open_ports`；UDP 或 FIN/NULL/Xmas 无响应标记为 `open_filtered`，避免误报确定开放。
+- Web 页面、端口扫描 API 和 `port_scan` 定时任务均支持 `probe_methods` 与抖动参数。
+
+### 安全与兼容边界
+
+- 继续执行公网 IPv4、SSRF、CDN 排除和可选授权 CIDR 校验，原始扫描不会放宽任何边界。
+- 未传 `probe_methods` 时保持原有 TCP connect 行为。
+- `planned_connections`、`attempted_connections` 和目标级预期次数按 `IP × 端口 × 方法` 统计。
+- `reports/` 为本地生成报告目录，加入 `.gitignore`，不进入版本控制。
+
+### 验证结果
+
+- `go test -race ./...` 通过。
+- `go vet -mod=readonly ./...` 通过。
+- `go build -mod=readonly -buildvcs=false ./...` 通过。
+- `git diff --check` 通过。
+
+---
+
 ## [2026-06-30] 巡检功能逻辑缺陷修复与业务完善
 
 > **变更类型**: Bug 修复 + 业务完善

@@ -233,10 +233,13 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 		Ports              []int    `json:"ports"`
 		PortSpec           string   `json:"port_spec"`
 		ScanMode           string   `json:"scan_mode"`
+		ProbeMethods       []string `json:"probe_methods"`
 		Concurrency        int      `json:"concurrency"`
 		PortConcurrency    int      `json:"port_concurrency"`
 		ConnectTimeoutMS   int      `json:"connect_timeout_ms"`
 		ScanTimeoutSeconds int      `json:"scan_timeout_seconds"`
+		JitterMinMS        int      `json:"jitter_min_ms"`
+		JitterMaxMS        int      `json:"jitter_max_ms"`
 	}
 
 	if !decodeJSONBody(w, r, &req) {
@@ -254,6 +257,18 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 	if err := service.ValidateAuthorizedTargets(req.AuthorizedTargets); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid_authorized_scope", "authorized_targets must contain IPv4 addresses or CIDRs", sanitizeError(err.Error()))
 		return
+	}
+	if err := service.ValidatePortScanMethods(req.ProbeMethods); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_probe_methods", "probe_methods may contain connect, telnet, fin, null, xmas, or udp", sanitizeError(err.Error()))
+		return
+	}
+	if service.PortScanMethodsRequireAuthorizedScope(req.ProbeMethods) && len(req.AuthorizedTargets) == 0 {
+		writeAPIError(w, http.StatusBadRequest, "authorized_scope_required", "FIN/NULL/Xmas scans require authorized_targets", nil)
+		return
+	}
+	probeMethods := make([]service.PortScanMethod, len(req.ProbeMethods))
+	for i := range req.ProbeMethods {
+		probeMethods[i] = service.PortScanMethod(req.ProbeMethods[i])
 	}
 
 	ports := req.Ports
@@ -310,6 +325,9 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 		ConnectTimeout:    time.Duration(req.ConnectTimeoutMS) * time.Millisecond,
 		ScanTimeout:       scanTimeout,
 		AuthorizedTargets: req.AuthorizedTargets,
+		ProbeMethods:      probeMethods,
+		JitterMin:         time.Duration(req.JitterMinMS) * time.Millisecond,
+		JitterMax:         time.Duration(req.JitterMaxMS) * time.Millisecond,
 	})
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "url_port_scan_failed", "url port scan failed", sanitizeError(err.Error()))
