@@ -228,6 +228,8 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		URLs               []string `json:"urls"`
+		Targets            []string `json:"targets"`
+		AuthorizedTargets  []string `json:"authorized_targets"`
 		Ports              []int    `json:"ports"`
 		PortSpec           string   `json:"port_spec"`
 		ScanMode           string   `json:"scan_mode"`
@@ -241,8 +243,16 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.URLs) == 0 {
-		writeAPIError(w, http.StatusBadRequest, "no_urls_provided", "no URLs provided", nil)
+	scanTargets := req.Targets
+	if len(scanTargets) == 0 {
+		scanTargets = req.URLs
+	}
+	if len(scanTargets) == 0 {
+		writeAPIError(w, http.StatusBadRequest, "no_urls_provided", "no scan targets provided", nil)
+		return
+	}
+	if err := service.ValidateAuthorizedTargets(req.AuthorizedTargets); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_authorized_scope", "authorized_targets must contain IPv4 addresses or CIDRs", sanitizeError(err.Error()))
 		return
 	}
 
@@ -272,7 +282,7 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 检查所有URL是否指向内网地址
-	for _, urlStr := range req.URLs {
+	for _, urlStr := range scanTargets {
 		parsed, err := url.Parse(urlStr)
 		if err != nil {
 			continue
@@ -294,11 +304,12 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 		scanTimeout = 15 * time.Minute
 	}
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(scanTimeout + 30*time.Second))
-	response, err := s.monitorApp.ScanURLPortsWithOptions(r.Context(), req.URLs, ports, service.PortScanOptions{
+	response, err := s.monitorApp.ScanURLPortsWithOptions(r.Context(), scanTargets, ports, service.PortScanOptions{
 		TargetConcurrency: req.Concurrency,
 		PortConcurrency:   req.PortConcurrency,
 		ConnectTimeout:    time.Duration(req.ConnectTimeoutMS) * time.Millisecond,
 		ScanTimeout:       scanTimeout,
+		AuthorizedTargets: req.AuthorizedTargets,
 	})
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "url_port_scan_failed", "url port scan failed", sanitizeError(err.Error()))
@@ -307,12 +318,17 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":     true,
-		"summary":     response.Summary,
-		"ports":       response.Ports,
-		"port_count":  response.PortCount,
-		"duration_ms": response.DurationMS,
-		"results":     response.Results,
+		"success":                 true,
+		"summary":                 response.Summary,
+		"ports":                   response.Ports,
+		"port_count":              response.PortCount,
+		"unique_ip_count":         response.UniqueIPCount,
+		"duplicate_ip_references": response.DuplicateIPReferences,
+		"planned_connections":     response.PlannedConnections,
+		"attempted_connections":   response.AttemptedConnections,
+		"authorized_scope_used":   response.AuthorizedScopeUsed,
+		"duration_ms":             response.DurationMS,
+		"results":                 response.Results,
 	})
 }
 

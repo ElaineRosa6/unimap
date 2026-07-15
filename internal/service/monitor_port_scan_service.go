@@ -85,6 +85,7 @@ type URLPortScanSummary struct {
 	ResolveFailed int `json:"resolveFailed"`
 	ScanFailed    int `json:"scanFailed"`
 	Blocked       int `json:"blocked"`
+	NotAuthorized int `json:"notAuthorized"`
 }
 
 type URLPortScanResult struct {
@@ -104,11 +105,16 @@ type URLPortScanResult struct {
 }
 
 type URLPortScanResponse struct {
-	Summary    URLPortScanSummary  `json:"summary"`
-	Ports      []int               `json:"ports,omitempty"`
-	PortCount  int                 `json:"port_count"`
-	DurationMS int64               `json:"duration_ms"`
-	Results    []URLPortScanResult `json:"results"`
+	Summary               URLPortScanSummary  `json:"summary"`
+	Ports                 []int               `json:"ports,omitempty"`
+	PortCount             int                 `json:"port_count"`
+	UniqueIPCount         int                 `json:"unique_ip_count"`
+	DuplicateIPReferences int                 `json:"duplicate_ip_references"`
+	PlannedConnections    int                 `json:"planned_connections"`
+	AttemptedConnections  int                 `json:"attempted_connections"`
+	AuthorizedScopeUsed   bool                `json:"authorized_scope_used"`
+	DurationMS            int64               `json:"duration_ms"`
+	Results               []URLPortScanResult `json:"results"`
 }
 
 // PortScanOptions controls bounded target and TCP connection concurrency.
@@ -117,6 +123,105 @@ type PortScanOptions struct {
 	PortConcurrency   int
 	ConnectTimeout    time.Duration
 	ScanTimeout       time.Duration
+	AuthorizedTargets []string
+}
+
+type portScanPlan struct {
+	IPs                   []string
+	PlannedConnections    int
+	DuplicateIPReferences int
+}
+
+type portScanExecution struct {
+	OpenPorts            map[string][]int
+	AttemptedByIP        map[string]int
+	AttemptedConnections int
+	Err                  error
+}
+
+func buildPortScanPlan(results []URLPortScanResult, ports []int) portScanPlan {
+	seen := make(map[string]struct{})
+	uniqueIPs := make([]string, 0)
+	totalReferences := 0
+	for _, result := range results {
+		if result.Status != "resolved" {
+			continue
+		}
+		for _, ip := range result.ResolvedIPs {
+			totalReferences++
+			if _, exists := seen[ip]; exists {
+				continue
+			}
+			seen[ip] = struct{}{}
+			uniqueIPs = append(uniqueIPs, ip)
+		}
+	}
+	sort.Strings(uniqueIPs)
+	return portScanPlan{
+		IPs:                   uniqueIPs,
+		PlannedConnections:    len(uniqueIPs) * len(ports),
+		DuplicateIPReferences: totalReferences - len(uniqueIPs),
+	}
+}
+
+func parseAuthorizedNetworks(entries []string) ([]*net.IPNet, error) {
+	networks := make([]*net.IPNet, 0, len(entries))
+	for _, raw := range entries {
+		entry := strings.TrimSpace(raw)
+		if entry == "" {
+			continue
+		}
+		if !strings.Contains(entry, "/") {
+			ip := net.ParseIP(entry)
+			if ip == nil || ip.To4() == nil {
+				return nil, fmt.Errorf("authorized target %q is not a valid IPv4 address", entry)
+			}
+			entry = ip.String() + "/32"
+		}
+		ip, network, err := net.ParseCIDR(entry)
+		if err != nil || ip.To4() == nil {
+			return nil, fmt.Errorf("authorized target %q is not a valid IPv4 address or CIDR", entry)
+		}
+		networks = append(networks, network)
+	}
+	return networks, nil
+}
+
+// ValidateAuthorizedTargets validates optional IPv4 addresses and CIDRs used
+// to constrain a scan. The scope never overrides SSRF protections.
+func ValidateAuthorizedTargets(entries []string) error {
+	_, err := parseAuthorizedNetworks(entries)
+	return err
+}
+
+func applyAuthorizedScope(results []URLPortScanResult, networks []*net.IPNet) {
+	if len(networks) == 0 {
+		return
+	}
+	for i := range results {
+		if results[i].Status != "resolved" {
+			continue
+		}
+		for _, ipText := range results[i].ResolvedIPs {
+			ip := net.ParseIP(ipText)
+			authorized := false
+			for _, network := range networks {
+				if network.Contains(ip) {
+					authorized = true
+					break
+				}
+			}
+			if !authorized {
+				results[i].Status = "not_authorized"
+				results[i].Reason = fmt.Sprintf("resolved IP %s is outside the authorized IP/CIDR scope", ipText)
+				break
+			}
+		}
+	}
+}
+
+func executePortScanPlan(ctx context.Context, plan portScanPlan, ports []int, concurrency int, timeout time.Duration, dial tcpPortDialFunc) portScanExecution {
+	return scanHostPortsDetailed(ctx, plan.IPs, ports, concurrency, timeout, dial)
 }
 
 type portScanTaskPayload struct {
@@ -125,16 +230,12 @@ type portScanTaskPayload struct {
 }
 
 type portScanTask struct {
-	ctx             context.Context
-	index           int
-	input           string
-	ports           []int
-	proxyPool       *proxypool.Pool
-	portConcurrency int
-	connectTimeout  time.Duration
-	scanTimeout     time.Duration
-	resultChan      chan<- portScanTaskPayload
-	wg              *sync.WaitGroup
+	ctx        context.Context
+	index      int
+	input      string
+	proxyPool  *proxypool.Pool
+	resultChan chan<- portScanTaskPayload
+	wg         *sync.WaitGroup
 }
 
 func (t *portScanTask) Execute() error {
@@ -154,7 +255,10 @@ func (t *portScanTask) Execute() error {
 		return nil
 	}
 
-	t.scanAndReport(normalizedURL, host, ips)
+	t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
+		Input: t.input, URL: normalizedURL, Host: host, Status: "resolved",
+		CDNDetected: false, ResolvedIPs: ips,
+	}}
 	return nil
 }
 
@@ -187,6 +291,12 @@ func (t *portScanTask) resolveHostIPs(normalizedURL, host string) ([]string, boo
 		t.sendHostResult(t.input, normalizedURL, host, "resolve_failed", resolveErr.Error())
 		return nil, false
 	}
+	for _, ip := range ips {
+		if urlguard.IsInternalHost(t.ctx, ip) {
+			t.sendHostResult(t.input, normalizedURL, host, "blocked", "resolved IP is private/internal (SSRF protection)")
+			return nil, false
+		}
+	}
 	return ips, true
 }
 
@@ -202,36 +312,6 @@ func (t *portScanTask) checkCDNExclusion(normalizedURL, host string, ips []strin
 		return false
 	}
 	return true
-}
-
-// scanAndReport performs the port scan and sends the result.
-func (t *portScanTask) scanAndReport(normalizedURL, host string, ips []string) {
-	started := time.Now()
-	scanCtx, scanCancel := context.WithTimeout(t.ctx, t.scanTimeout)
-	defer scanCancel()
-	openPorts, attempted, scanErr := scanHostPortsConcurrent(scanCtx, ips, t.ports, t.portConcurrency, t.connectTimeout, nil)
-	expected := len(ips) * len(t.ports)
-	durationMS := time.Since(started).Milliseconds()
-	if scanErr != nil {
-		t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
-			Input: t.input, URL: normalizedURL, Host: host,
-			Status: "scan_failed", Reason: fmt.Sprintf("scan incomplete: %v (%d/%d connections attempted)", scanErr, attempted, expected),
-			CDNDetected: false, ResolvedIPs: ips, OpenPorts: openPorts,
-			AttemptedConnections: attempted, ExpectedConnections: expected, DurationMS: durationMS,
-		}}
-		return
-	}
-	scannedIPs := make([]string, 0, len(openPorts))
-	for ip := range openPorts {
-		scannedIPs = append(scannedIPs, ip)
-	}
-	sort.Strings(scannedIPs)
-	t.resultChan <- portScanTaskPayload{index: t.index, item: URLPortScanResult{
-		Input: t.input, URL: normalizedURL, Host: host,
-		Status: "scanned", CDNDetected: false,
-		ResolvedIPs: ips, ScannedIPs: scannedIPs, OpenPorts: openPorts,
-		AttemptedConnections: attempted, ExpectedConnections: expected, DurationMS: durationMS,
-	}}
 }
 
 // sendSimpleResult sends a result with only input, URL, status, and reason.
@@ -260,6 +340,10 @@ func (s *MonitorAppService) ScanURLPortsWithOptions(ctx context.Context, urls []
 	}
 	normalizedPorts := normalizeScanPorts(ports)
 	options = normalizePortScanOptions(options, len(normalizedPorts))
+	authorizedNetworks, err := parseAuthorizedNetworks(options.AuthorizedTargets)
+	if err != nil {
+		return nil, err
+	}
 	started := time.Now()
 	results := make([]URLPortScanResult, len(urls))
 
@@ -272,16 +356,8 @@ func (s *MonitorAppService) ScanURLPortsWithOptions(ctx context.Context, urls []
 	for i, rawURL := range urls {
 		wg.Add(1)
 		pool.Submit(&portScanTask{
-			ctx:             ctx,
-			index:           i,
-			input:           rawURL,
-			ports:           normalizedPorts,
-			proxyPool:       s.proxyPool,
-			portConcurrency: options.PortConcurrency,
-			connectTimeout:  options.ConnectTimeout,
-			scanTimeout:     options.ScanTimeout,
-			resultChan:      resultChan,
-			wg:              &wg,
+			ctx: ctx, index: i, input: rawURL, proxyPool: s.proxyPool,
+			resultChan: resultChan, wg: &wg,
 		})
 	}
 
@@ -294,6 +370,15 @@ func (s *MonitorAppService) ScanURLPortsWithOptions(ctx context.Context, urls []
 	for item := range resultChan {
 		results[item.index] = item.item
 	}
+
+	applyAuthorizedScope(results, authorizedNetworks)
+	plan := buildPortScanPlan(results, normalizedPorts)
+	scanStarted := time.Now()
+	scanCtx, scanCancel := context.WithTimeout(ctx, options.ScanTimeout)
+	outcome := executePortScanPlan(scanCtx, plan, normalizedPorts, options.PortConcurrency, options.ConnectTimeout, nil)
+	scanCancel()
+	scanDurationMS := time.Since(scanStarted).Milliseconds()
+	applyPortScanOutcome(results, normalizedPorts, outcome, scanDurationMS)
 
 	summary := URLPortScanSummary{Total: len(results)}
 	for _, result := range results {
@@ -312,6 +397,9 @@ func (s *MonitorAppService) ScanURLPortsWithOptions(ctx context.Context, urls []
 		case "blocked":
 			summary.FormatValid++
 			summary.Blocked++
+		case "not_authorized":
+			summary.FormatValid++
+			summary.NotAuthorized++
 		case "scanned":
 			summary.FormatValid++
 			summary.Scanned++
@@ -324,23 +412,47 @@ func (s *MonitorAppService) ScanURLPortsWithOptions(ctx context.Context, urls []
 	}
 	return &URLPortScanResponse{
 		Summary: summary, Ports: responsePorts, PortCount: len(normalizedPorts),
-		DurationMS: time.Since(started).Milliseconds(), Results: results,
+		UniqueIPCount: len(plan.IPs), DuplicateIPReferences: plan.DuplicateIPReferences,
+		PlannedConnections: plan.PlannedConnections, AttemptedConnections: outcome.AttemptedConnections,
+		AuthorizedScopeUsed: len(authorizedNetworks) > 0,
+		DurationMS:          time.Since(started).Milliseconds(), Results: results,
 	}, nil
+}
+
+func applyPortScanOutcome(results []URLPortScanResult, ports []int, outcome portScanExecution, durationMS int64) {
+	for i := range results {
+		if results[i].Status != "resolved" {
+			continue
+		}
+		results[i].OpenPorts = make(map[string][]int, len(results[i].ResolvedIPs))
+		results[i].ExpectedConnections = len(results[i].ResolvedIPs) * len(ports)
+		results[i].DurationMS = durationMS
+		for _, ip := range results[i].ResolvedIPs {
+			results[i].OpenPorts[ip] = outcome.OpenPorts[ip]
+			results[i].AttemptedConnections += outcome.AttemptedByIP[ip]
+			if outcome.AttemptedByIP[ip] > 0 {
+				results[i].ScannedIPs = append(results[i].ScannedIPs, ip)
+			}
+		}
+		sort.Strings(results[i].ScannedIPs)
+		if outcome.Err != nil {
+			results[i].Status = "scan_failed"
+			results[i].Reason = fmt.Sprintf("scan incomplete: %v (%d/%d connections attempted for target)", outcome.Err, results[i].AttemptedConnections, results[i].ExpectedConnections)
+		} else {
+			results[i].Status = "scanned"
+		}
+	}
 }
 
 func normalizePortScanOptions(options PortScanOptions, portCount int) PortScanOptions {
 	if options.TargetConcurrency <= 0 || options.TargetConcurrency > 10 {
 		options.TargetConcurrency = 3
 	}
-	maxPerTarget := 1024 / options.TargetConcurrency
-	if maxPerTarget < 32 {
-		maxPerTarget = 32
-	}
 	if options.PortConcurrency <= 0 {
 		options.PortConcurrency = 256
 	}
-	if options.PortConcurrency > maxPerTarget {
-		options.PortConcurrency = maxPerTarget
+	if options.PortConcurrency > 1024 {
+		options.PortConcurrency = 1024
 	}
 	if options.ConnectTimeout <= 0 || options.ConnectTimeout > 10*time.Second {
 		options.ConnectTimeout = 800 * time.Millisecond
@@ -506,12 +618,19 @@ type tcpPortJob struct {
 // scanHostPortsConcurrent scans real TCP endpoints with a bounded worker pool.
 // A nil dial function selects the production net.Dialer implementation.
 func scanHostPortsConcurrent(ctx context.Context, ips []string, ports []int, concurrency int, timeout time.Duration, dial tcpPortDialFunc) (map[string][]int, int, error) {
+	outcome := scanHostPortsDetailed(ctx, ips, ports, concurrency, timeout, dial)
+	return outcome.OpenPorts, outcome.AttemptedConnections, outcome.Err
+}
+
+func scanHostPortsDetailed(ctx context.Context, ips []string, ports []int, concurrency int, timeout time.Duration, dial tcpPortDialFunc) portScanExecution {
 	result := make(map[string][]int, len(ips))
+	attemptedByIP := make(map[string]*atomic.Int64, len(ips))
 	for _, ip := range ips {
 		result[ip] = []int{}
+		attemptedByIP[ip] = &atomic.Int64{}
 	}
 	if len(ips) == 0 || len(ports) == 0 {
-		return result, 0, nil
+		return portScanExecution{OpenPorts: result, AttemptedByIP: map[string]int{}}
 	}
 	if concurrency <= 0 {
 		concurrency = 1
@@ -537,6 +656,7 @@ func scanHostPortsConcurrent(ctx context.Context, ips []string, ports []int, con
 					return
 				}
 				attempted.Add(1)
+				attemptedByIP[job.ip].Add(1)
 				if dial(ctx, job.ip, job.port, timeout) {
 					select {
 					case openResults <- job:
@@ -571,7 +691,14 @@ func scanHostPortsConcurrent(ctx context.Context, ips []string, ports []int, con
 	for ip := range result {
 		sort.Ints(result[ip])
 	}
-	return result, int(attempted.Load()), ctx.Err()
+	attemptedCounts := make(map[string]int, len(attemptedByIP))
+	for ip, count := range attemptedByIP {
+		attemptedCounts[ip] = int(count.Load())
+	}
+	return portScanExecution{
+		OpenPorts: result, AttemptedByIP: attemptedCounts,
+		AttemptedConnections: int(attempted.Load()), Err: ctx.Err(),
+	}
 }
 
 func isTCPPortOpen(ctx context.Context, ip string, port int, timeout time.Duration) bool {

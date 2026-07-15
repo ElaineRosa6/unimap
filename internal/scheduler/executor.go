@@ -817,13 +817,14 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 		PortConcurrency:   extractInt(payload, "port_concurrency", 256),
 		ConnectTimeout:    time.Duration(extractInt(payload, "connect_timeout_ms", 800)) * time.Millisecond,
 		ScanTimeout:       time.Duration(extractInt(payload, "scan_timeout_seconds", 0)) * time.Second,
+		AuthorizedTargets: extractStrings(payload, "authorized_targets", nil),
 	})
 	if err != nil {
 		return "", fmt.Errorf("port scan failed: %w", err)
 	}
 	if r.alerts != nil {
 		for _, item := range resp.Results {
-			if item.Status == "resolve_failed" || item.Status == "scan_failed" {
+			if item.Status == "resolve_failed" || item.Status == "scan_failed" || item.Status == "not_authorized" {
 				r.alerts.SendWarning(alerting.AlertTypeReachability, "端口巡检失败", item.Reason, item, "scheduler", item.Input)
 			}
 		}
@@ -834,7 +835,8 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 	if resp.PortCount > 1024 {
 		portDescription = fmt.Sprintf("全端口 1-65535（%d 个）", resp.PortCount)
 	}
-	fmt.Fprintf(&b, "端口扫描完成：%d 个 URL，%s，耗时 %.1f 秒\n\n", resp.Summary.Total, portDescription, float64(resp.DurationMS)/1000)
+	fmt.Fprintf(&b, "端口扫描完成：%d 个目标，%d 个唯一 IP，%s，连接 %d/%d，耗时 %.1f 秒\n\n",
+		resp.Summary.Total, resp.UniqueIPCount, portDescription, resp.AttemptedConnections, resp.PlannedConnections, float64(resp.DurationMS)/1000)
 	for _, r := range resp.Results {
 		switch r.Status {
 		case "scanned":
@@ -858,6 +860,8 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 			b.WriteString("\n")
 		case "cdn_excluded":
 			fmt.Fprintf(&b, "⚠️ %s — CDN 已排除\n", r.Input)
+		case "not_authorized":
+			fmt.Fprintf(&b, "⛔ %s — 超出授权 IP/CIDR 范围 (%s)\n", r.Input, r.Reason)
 		default:
 			fmt.Fprintf(&b, "❓ %s — %s", r.Input, r.Status)
 			if r.Reason != "" {
