@@ -4,9 +4,130 @@ import (
 	"net/http"
 	"net/http/httptest"
 	neturl "net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestAPIRequestsUseBearerAuthentication(t *testing.T) {
+	t.Setenv("UNIMAP_ADMIN_TOKEN", "")
+	tokenFile := filepath.Join(t.TempDir(), "admin-token")
+	if err := os.WriteFile(tokenFile, []byte("file-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := configureAPIAuth("ignored", tokenFile); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cliAdminToken = "" })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/scheduler/tasks" {
+			t.Errorf("unexpected API contract: %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer file-secret" {
+			t.Errorf("missing bearer token: %q", got)
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+	var tasks []cliSchedulerTask
+	if err := doGETRequest(server.URL, "/api/v1/scheduler/tasks", 5, &tasks); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWaitForScreenshotBatchPollsAsyncJob(t *testing.T) {
+	polls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/screenshot/batch/progress" || r.URL.Query().Get("job_id") != "job-1" {
+			t.Errorf("unexpected progress request: %s %s", r.Method, r.URL.String())
+		}
+		polls++
+		if polls == 1 {
+			_, _ = w.Write([]byte(`{"status":"running"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"completed","total":2,"success":2}`))
+	}))
+	defer server.Close()
+
+	result, err := waitForScreenshotBatch(server.URL, "job-1", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success != 2 || polls != 2 {
+		t.Fatalf("unexpected async result: %+v polls=%d", result, polls)
+	}
+}
+
+func TestAPIClientRejectsCrossOriginRedirect(t *testing.T) {
+	t.Setenv("UNIMAP_ADMIN_TOKEN", "redirect-secret")
+	cliAdminToken = ""
+	t.Cleanup(func() { cliAdminToken = "" })
+	targetReached := false
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetReached = true
+	}))
+	defer target.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/stolen", http.StatusFound)
+	}))
+	defer source.Close()
+
+	var out map[string]any
+	if err := doGETRequest(source.URL, "/redirect", 5, &out); err == nil || !strings.Contains(err.Error(), "different origin") {
+		t.Fatalf("expected cross-origin redirect rejection, got %v", err)
+	}
+	if targetReached {
+		t.Fatal("cross-origin redirect target was reached")
+	}
+}
+
+func TestSchedulerSubcommandContracts(t *testing.T) {
+	t.Setenv("UNIMAP_ADMIN_TOKEN", "")
+	cliAdminToken = "contract-token"
+	t.Cleanup(func() { cliAdminToken = "" })
+	type requestRecord struct{ method, path, query, auth string }
+	records := make(chan requestRecord, 7)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		records <- requestRecord{r.Method, r.URL.Path, r.URL.RawQuery, r.Header.Get("Authorization")}
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`[]`))
+			return
+		}
+		if r.URL.Path == "/api/v1/scheduler/tasks/create" {
+			_, _ = w.Write([]byte(`{"id":"new-task","message":"task created"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"message":"ok"}`))
+	}))
+	defer server.Close()
+	prefix := "/api/v1/scheduler"
+	schedulerList(server.URL, prefix, 5)
+	schedulerRun([]string{"--id", "task-1"}, server.URL, prefix, 5)
+	schedulerCreate([]string{"--name", "daily", "--type", "query", "--cron", "0 * * * *"}, server.URL, prefix, 5)
+	schedulerToggle([]string{"--id", "task-1"}, "enable", server.URL, prefix, 5)
+	schedulerToggle([]string{"--id", "task-1"}, "disable", server.URL, prefix, 5)
+	schedulerDelete([]string{"--id", "task-1"}, server.URL, prefix, 5)
+	schedulerHistory([]string{"--task-id", "task-1", "--limit", "9"}, server.URL, prefix, 5)
+
+	want := []requestRecord{
+		{http.MethodGet, prefix + "/tasks", "", "Bearer contract-token"},
+		{http.MethodPost, prefix + "/tasks/run", "", "Bearer contract-token"},
+		{http.MethodPost, prefix + "/tasks/create", "", "Bearer contract-token"},
+		{http.MethodPost, prefix + "/tasks/enable", "", "Bearer contract-token"},
+		{http.MethodPost, prefix + "/tasks/disable", "", "Bearer contract-token"},
+		{http.MethodPost, prefix + "/tasks/delete", "", "Bearer contract-token"},
+		{http.MethodGet, prefix + "/history", "task_id=task-1&limit=9", "Bearer contract-token"},
+	}
+	for index, expected := range want {
+		actual := <-records
+		if actual != expected {
+			t.Fatalf("request %d mismatch: got=%+v want=%+v", index, actual, expected)
+		}
+	}
+}
 
 func TestSplitCSVText(t *testing.T) {
 	got := splitCSVText(" https://a.com,https://b.com\nhttps://c.com ,, ")

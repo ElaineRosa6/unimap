@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/unimap/project/internal/auth"
 	"github.com/unimap/project/internal/config"
 )
 
@@ -91,6 +92,7 @@ func TestSetSessionCookie_SetsCookie(t *testing.T) {
 	s.staticVersion = "1.0"
 	s.revocationStore = newSessionRevocationStore()
 	defer s.revocationStore.Stop()
+	s.userRepo = &mockUserRepo{users: map[int64]*auth.User{42: {ID: 42, Status: "active", SessionVersion: 3}}}
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	err := s.setSessionCookie(w, r)
@@ -129,6 +131,7 @@ func TestSetSessionCookieForUser_SetsUserID(t *testing.T) {
 	s.staticVersion = "1.0"
 	s.revocationStore = newSessionRevocationStore()
 	defer s.revocationStore.Stop()
+	s.userRepo = &mockUserRepo{users: map[int64]*auth.User{42: {ID: 42, Status: "active", SessionVersion: 3}}}
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	err := s.setSessionCookieForUser(w, r, 42)
@@ -147,7 +150,7 @@ func TestSetSessionCookieForUser_SetsUserID(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decrypt: %v", err)
 			}
-			if !strings.HasPrefix(decrypted, "42:") {
+			if !strings.HasPrefix(decrypted, "42:3:") {
 				t.Fatalf("expected userID=42 prefix, got %q", decrypted)
 			}
 			return
@@ -215,6 +218,7 @@ func TestClearSessionCookie_ClearsCookie(t *testing.T) {
 	s.config.Web.Auth.AdminToken = "test-token"
 	s.revocationStore = newSessionRevocationStore()
 	defer s.revocationStore.Stop()
+	s.userRepo = &mockUserRepo{users: map[int64]*auth.User{1: {ID: 1, Status: "active"}}}
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	s.clearSessionCookie(w, r)
@@ -360,6 +364,7 @@ func TestSetSessionCookieForUser_SetsRevocationStore(t *testing.T) {
 	s.staticVersion = "1.0"
 	s.revocationStore = newSessionRevocationStore()
 	defer s.revocationStore.Stop()
+	s.userRepo = &mockUserRepo{users: map[int64]*auth.User{1: {ID: 1, Status: "active"}}}
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	err := s.setSessionCookieForUser(w, r, 1)

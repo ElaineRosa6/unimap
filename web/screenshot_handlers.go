@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/screenshot"
@@ -245,8 +246,8 @@ func (s *batchJobStore) cleanup(maxAge time.Duration) {
 
 func (s *Server) resolveScreenshotBaseDir() string {
 	baseDir := utils.ScreenshotsDir()
-	if s.config != nil && strings.TrimSpace(s.config.Screenshot.BaseDir) != "" {
-		baseDir = s.config.Screenshot.BaseDir
+	if cfg := s.currentConfig(); cfg != nil && strings.TrimSpace(cfg.Screenshot.BaseDir) != "" {
+		baseDir = cfg.Screenshot.BaseDir
 	}
 	if filepath.IsAbs(baseDir) {
 		return filepath.Clean(baseDir)
@@ -296,7 +297,7 @@ func (s *Server) handleScreenshotFile(w http.ResponseWriter, r *http.Request) {
 
 	origin := r.Header.Get("Origin")
 	referer := r.Header.Get("Referer")
-	allowedOrigins := allowedOriginsFromConfig(s.config)
+	allowedOrigins := s.allowedOrigins()
 	if !isOriginAllowed(origin, r.Host, allowedOrigins) && !isOriginAllowed(referer, r.Host, allowedOrigins) {
 		writeAPIError(w, http.StatusForbidden, "forbidden_origin", "origin not allowed", nil)
 		return
@@ -352,7 +353,7 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -413,7 +414,7 @@ func (s *Server) handleSearchEngineScreenshot(w http.ResponseWriter, r *http.Req
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -486,7 +487,7 @@ func (s *Server) handleTargetScreenshot(w http.ResponseWriter, r *http.Request) 
 		writeAPIError(w, http.StatusServiceUnavailable, "screenshot_manager_unavailable", "screenshot manager not initialized", nil)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -591,7 +592,7 @@ func (s *Server) handleBatchScreenshot(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusServiceUnavailable, "screenshot_manager_unavailable", "screenshot manager not initialized", nil)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -676,7 +677,7 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, http.StatusServiceUnavailable, "screenshot_manager_unavailable", "screenshot manager not initialized", nil)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -1017,7 +1018,7 @@ func (s *Server) handleScreenshotBatchDelete(w http.ResponseWriter, r *http.Requ
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -1050,7 +1051,7 @@ func (s *Server) handleScreenshotFileDelete(w http.ResponseWriter, r *http.Reque
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -1096,7 +1097,7 @@ func (s *Server) handleScreenshotRouterStatus(w http.ResponseWriter, r *http.Req
 
 	if s.screenshotRouter == nil {
 		mode := "cdp"
-		if cfg := s.config; cfg != nil {
+		if cfg := s.currentConfig(); cfg != nil {
 			mode = strings.ToLower(strings.TrimSpace(cfg.Screenshot.Engine))
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -1125,7 +1126,7 @@ func (s *Server) handleSetScreenshotMode(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -1142,24 +1143,21 @@ func (s *Server) handleSetScreenshotMode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Update the router if available
+	if _, err := s.updateConfig(func(cfg *config.Config) error {
+		cfg.Screenshot.Mode = mode
+		return nil
+	}); err != nil {
+		logger.Warnf("failed to persist screenshot mode %q: %v", mode, err)
+		writeAPIError(w, http.StatusInternalServerError, "save_failed", "failed to persist screenshot mode", nil)
+		return
+	}
+
+	// Apply runtime state only after the configuration commit succeeds.
 	if s.screenshotRouter != nil {
 		s.screenshotRouter.SetMode(screenshot.ScreenshotMode(mode))
 	}
-
-	// Also update the app service for its engine-first logic
 	if s.screenshotApp != nil {
 		s.screenshotApp.SetMode(mode)
-	}
-
-	// Persist mode change to config file
-	if s.config != nil {
-		s.config.Screenshot.Mode = mode
-		if s.configManager != nil {
-			if err := s.configManager.Save(); err != nil {
-				logger.Warnf("failed to persist screenshot mode %q: %v", mode, err)
-			}
-		}
 	}
 
 	routerMode := mode

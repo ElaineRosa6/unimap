@@ -434,12 +434,17 @@
 					schedInfo += ': ' + (m > 0 ? m + '分' : '') + (s > 0 ? s + '秒' : '');
 				}
 				const taskID = escHtml(t.id);
+				const runtimeStatus = t.runtime_status || (t.enabled ? 'scheduled' : 'disabled');
+				const runtimeLabels = {scheduled: '已调度', disabled: '已禁用', running: '执行中', schedule_error: '启用异常'};
+				const runtimeLabel = runtimeLabels[runtimeStatus] || runtimeStatus;
+				const runtimeClass = runtimeStatus === 'schedule_error' ? 'status-failed' : (runtimeStatus === 'disabled' ? 'status-disabled' : 'status-enabled');
+				const runtimeTitle = t.schedule_error ? ` title="${escHtml(t.schedule_error)}"` : '';
 
 				tr.innerHTML = `
 					<td>${escHtml(t.name)}</td>
 					<td>${escHtml(t.type)}</td>
 					<td><span class="schedule-badge schedule-${schedType}">${schedInfo}</span></td>
-					<td><span class="status-badge ${t.enabled ? 'status-enabled' : 'status-disabled'}">${t.enabled ? '启用' : '禁用'}</span></td>
+					<td><span class="status-badge ${runtimeClass}"${runtimeTitle}>${escHtml(runtimeLabel)}</span></td>
 					<td>${escHtml(lastRun)}</td>
 					<td>${escHtml(nextRun)}</td>
 					<td><span class="payload-preview" title="${escHtml(JSON.stringify(t.payload || {}))}">${escHtml(payloadStr)}</span></td>

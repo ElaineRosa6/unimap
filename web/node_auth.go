@@ -10,19 +10,20 @@ func (s *Server) isNodeAuthRequired() bool {
 	if s == nil {
 		return false
 	}
-	if s.config == nil {
+	cfg := s.currentConfig()
+	if cfg == nil {
 		// Default to requiring auth when config is nil for safety
 		// But since no tokens are configured, node endpoints should be disabled
 		return false
 	}
 	// 当节点 token 非空时必须鉴权
-	for _, token := range s.config.Distributed.NodeAuthTokens {
+	for _, token := range cfg.Distributed.NodeAuthTokens {
 		if strings.TrimSpace(token) != "" {
 			return true
 		}
 	}
 	// 分布式启用但 token 为空时仍要求鉴权（安全默认值）
-	if s.config.Distributed.Enabled {
+	if cfg.Distributed.Enabled {
 		return true
 	}
 	return false
@@ -40,8 +41,10 @@ func (s *Server) requireNodeToken(w http.ResponseWriter, r *http.Request, nodeID
 	}
 
 	expected := ""
-	if s != nil && s.config != nil {
-		expected = strings.TrimSpace(s.config.Distributed.NodeAuthTokens[nodeID])
+	if s != nil {
+		if cfg := s.currentConfig(); cfg != nil {
+			expected = strings.TrimSpace(cfg.Distributed.NodeAuthTokens[nodeID])
+		}
 	}
 	if expected == "" {
 		writeAPIError(w, http.StatusUnauthorized, "node_auth_failed", "node auth failed", "token not configured for node_id")
@@ -61,15 +64,20 @@ func (s *Server) requireNodeToken(w http.ResponseWriter, r *http.Request, nodeID
 }
 
 func (s *Server) requireDistributedAdminToken(w http.ResponseWriter, r *http.Request) bool {
-	if s == nil || s.config == nil {
+	if s == nil {
 		// Reject when config is nil for safety - no admin token to validate against
 		writeAPIError(w, http.StatusServiceUnavailable, "admin_auth_failed", "admin auth failed", "server configuration not available")
 		return false
 	}
-	expected := strings.TrimSpace(s.config.Distributed.AdminToken)
+	cfg := s.currentConfig()
+	if cfg == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "admin_auth_failed", "admin auth failed", "server configuration not available")
+		return false
+	}
+	expected := strings.TrimSpace(cfg.Distributed.AdminToken)
 	if expected == "" {
 		// 分布式启用但 admin_token 为空时拒绝访问，避免生产暴露
-		if s.config.Distributed.Enabled {
+		if cfg.Distributed.Enabled {
 			writeAPIError(w, http.StatusServiceUnavailable, "admin_auth_failed", "admin auth failed", "distributed admin token not configured -- set distributed.admin_token in config")
 			return false
 		}
@@ -90,10 +98,14 @@ func (s *Server) requireDistributedAdminToken(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) hasValidDistributedAdminToken(r *http.Request) bool {
-	if s == nil || s.config == nil {
+	if s == nil {
 		return false
 	}
-	expected := strings.TrimSpace(s.config.Distributed.AdminToken)
+	cfg := s.currentConfig()
+	if cfg == nil {
+		return false
+	}
+	expected := strings.TrimSpace(cfg.Distributed.AdminToken)
 	if expected == "" {
 		return false
 	}

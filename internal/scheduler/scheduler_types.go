@@ -221,17 +221,19 @@ func (s *Scheduler) CreateTaskFromTemplate(templateID string, name string, cronE
 
 // ScheduledTask represents a user-configured scheduled task.
 type ScheduledTask struct {
-	ID         string             `json:"id"`
-	Name       string             `json:"name"`
-	Type       TaskType           `json:"type"`
-	Enabled    bool               `json:"enabled"`
-	CronExpr   string             `json:"cron_expr,omitempty"`
-	Payload    *model.TaskPayload `json:"payload"`
-	TimeoutSec int                `json:"timeout_seconds"`
-	MaxRetries int                `json:"max_retries"`
-	LastRunAt  *time.Time         `json:"last_run_at,omitempty"`
-	NextRunAt  *time.Time         `json:"next_run_at,omitempty"`
-	CreatedAt  time.Time          `json:"created_at"`
+	ID            string             `json:"id"`
+	Name          string             `json:"name"`
+	Type          TaskType           `json:"type"`
+	Enabled       bool               `json:"enabled"`
+	CronExpr      string             `json:"cron_expr,omitempty"`
+	Payload       *model.TaskPayload `json:"payload"`
+	TimeoutSec    int                `json:"timeout_seconds"`
+	MaxRetries    int                `json:"max_retries"`
+	LastRunAt     *time.Time         `json:"last_run_at,omitempty"`
+	NextRunAt     *time.Time         `json:"next_run_at,omitempty"`
+	CreatedAt     time.Time          `json:"created_at"`
+	RuntimeStatus string             `json:"runtime_status"`
+	ScheduleError string             `json:"schedule_error,omitempty"`
 
 	// Schedule type: "cron" (default), "once", "delay"
 	ScheduleType string `json:"schedule_type,omitempty"`
@@ -305,6 +307,7 @@ type TaskHandler interface {
 type schedulerStore interface {
 	Load() ([]*ScheduledTask, []ExecutionRecord, error)
 	Save([]*ScheduledTask, []ExecutionRecord) error
+	SaveTasks([]*ScheduledTask) error
 }
 
 // Scheduler manages cron-based task scheduling with persistence.

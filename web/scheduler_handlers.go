@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -22,6 +23,19 @@ func writeSchedulerJSONError(w http.ResponseWriter, status int, msg string) {
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"error": msg,
 	})
+}
+
+func schedulerErrorStatus(err error) int {
+	switch {
+	case errors.Is(err, scheduler.ErrTaskNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, scheduler.ErrPersistence):
+		return http.StatusInternalServerError
+	case errors.Is(err, scheduler.ErrSchedule):
+		return http.StatusInternalServerError
+	default:
+		return http.StatusBadRequest
+	}
 }
 
 func (s *Server) requireBackupTaskAdmin(w http.ResponseWriter, r *http.Request, taskType scheduler.TaskType) bool {
@@ -205,7 +219,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -301,7 +315,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.scheduler.AddTask(task); err != nil {
-		writeSchedulerJSONError(w, http.StatusBadRequest, err.Error())
+		writeSchedulerJSONError(w, schedulerErrorStatus(err), err.Error())
 		return
 	}
 
@@ -356,7 +370,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -425,7 +439,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.scheduler.UpdateTask(task); err != nil {
-		writeSchedulerJSONError(w, http.StatusBadRequest, err.Error())
+		writeSchedulerJSONError(w, schedulerErrorStatus(err), err.Error())
 		return
 	}
 
@@ -442,7 +456,7 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -463,7 +477,7 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.scheduler.DeleteTask(req.ID); err != nil {
-		writeSchedulerJSONError(w, http.StatusNotFound, err.Error())
+		writeSchedulerJSONError(w, schedulerErrorStatus(err), err.Error())
 		return
 	}
 
@@ -480,7 +494,7 @@ func (s *Server) handleRunTaskNow(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -501,7 +515,7 @@ func (s *Server) handleRunTaskNow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.scheduler.RunTaskNow(req.ID); err != nil {
-		writeSchedulerJSONError(w, http.StatusNotFound, err.Error())
+		writeSchedulerJSONError(w, schedulerErrorStatus(err), err.Error())
 		return
 	}
 
@@ -517,7 +531,7 @@ func (s *Server) handleEnableTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -538,7 +552,7 @@ func (s *Server) handleEnableTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.scheduler.EnableTask(req.ID); err != nil {
-		writeSchedulerJSONError(w, http.StatusNotFound, err.Error())
+		writeSchedulerJSONError(w, schedulerErrorStatus(err), err.Error())
 		return
 	}
 
@@ -554,7 +568,7 @@ func (s *Server) handleDisableTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -575,7 +589,7 @@ func (s *Server) handleDisableTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.scheduler.DisableTask(req.ID); err != nil {
-		writeSchedulerJSONError(w, http.StatusNotFound, err.Error())
+		writeSchedulerJSONError(w, schedulerErrorStatus(err), err.Error())
 		return
 	}
 
@@ -602,8 +616,9 @@ func (s *Server) handleTaskHistory(w http.ResponseWriter, r *http.Request) {
 
 	taskType := r.URL.Query().Get("task_type")
 	status := r.URL.Query().Get("status")
+	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
 
-	history := s.scheduler.GetHistory(limit, taskType, status)
+	history := s.scheduler.GetHistory(limit, taskType, status, taskID)
 	if history == nil {
 		history = []scheduler.ExecutionRecord{}
 	}

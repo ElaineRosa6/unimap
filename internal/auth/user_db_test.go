@@ -1,9 +1,50 @@
 package auth
 
 import (
+	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 )
+
+func TestCreateBootstrapAdminIsAtomic(t *testing.T) {
+	udb, err := NewUserDB(filepath.Join(t.TempDir(), "users.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer udb.Close()
+	if err := udb.InitSchema(); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewUserRepository(udb.DB())
+
+	var wg sync.WaitGroup
+	results := make(chan error, 2)
+	for _, username := range []string{"first-admin", "second-admin"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := repo.CreateBootstrapAdmin(username, "hash")
+			results <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+	successes, closed := 0, 0
+	for err := range results {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrBootstrapAlreadyCompleted):
+			closed++
+		default:
+			t.Fatalf("unexpected bootstrap result: %v", err)
+		}
+	}
+	if successes != 1 || closed != 1 {
+		t.Fatalf("expected one bootstrap admin: successes=%d closed=%d", successes, closed)
+	}
+}
 
 func TestNewUserDB(t *testing.T) {
 	t.Run("creates database successfully", func(t *testing.T) {
@@ -46,6 +87,42 @@ func TestUserDB_InitSchema(t *testing.T) {
 	err = udb.InitSchema()
 	if err != nil {
 		t.Fatalf("unexpected error on second schema init: %v", err)
+	}
+}
+
+func TestUserDB_InitSchemaMigratesLegacyUsersTable(t *testing.T) {
+	udb, err := NewUserDB(filepath.Join(t.TempDir(), "legacy.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer udb.Close()
+	_, err = udb.DB().Exec(`CREATE TABLE users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL UNIQUE,
+		password_hash TEXT NOT NULL,
+		role TEXT NOT NULL DEFAULT 'readonly',
+		status TEXT NOT NULL DEFAULT 'active',
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	if err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	if err := udb.InitSchema(); err != nil {
+		t.Fatalf("migrate legacy schema: %v", err)
+	}
+
+	repo := NewUserRepository(udb.DB())
+	created, err := repo.Create("legacy-user", "hash", "operator")
+	if err != nil {
+		t.Fatalf("create user after migration: %v", err)
+	}
+	got, err := repo.GetByID(created.ID)
+	if err != nil {
+		t.Fatalf("get migrated user: %v", err)
+	}
+	if got == nil || got.SessionVersion != 0 {
+		t.Fatalf("unexpected migrated user: %#v", got)
 	}
 }
 
@@ -211,6 +288,22 @@ func TestUserRepository_CRUD(t *testing.T) {
 		updated, _ := repo.GetByID(user.ID)
 		if updated.PasswordHash != "newhash456" {
 			t.Errorf("expected password hash 'newhash456', got %q", updated.PasswordHash)
+		}
+		if updated.SessionVersion != user.SessionVersion+1 {
+			t.Errorf("password change should invalidate sessions: before=%d after=%d", user.SessionVersion, updated.SessionVersion)
+		}
+	})
+
+	t.Run("DisableInvalidatesSessions", func(t *testing.T) {
+		user, _ := repo.GetByUsername("testuser")
+		previousVersion := user.SessionVersion
+		user.Status = "disabled"
+		if err := repo.Update(user); err != nil {
+			t.Fatal(err)
+		}
+		updated, _ := repo.GetByID(user.ID)
+		if updated.SessionVersion != previousVersion+1 {
+			t.Errorf("disable should invalidate sessions: before=%d after=%d", previousVersion, updated.SessionVersion)
 		}
 	})
 

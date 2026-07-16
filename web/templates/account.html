@@ -187,7 +187,7 @@
 					});
 					const data = await res.json();
 					if (!res.ok) {
-						showToast(data.error || data.message || '修改失败', 'error');
+						showToast((data.error && data.error.message) || data.error || data.message || '修改失败', 'error');
 						return;
 					}
 					showToast('密码已更新', 'success');
@@ -208,7 +208,7 @@
 					const res = await fetch('/api/v1/users');
 					const data = await res.json();
 					if (!res.ok) {
-						usersTbody.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:#c00">' + esc(data.error || '加载失败') + '</td></tr>';
+					usersTbody.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:#c00">' + esc((data.error && data.error.message) || data.error || '加载失败') + '</td></tr>';
 						return;
 					}
 					const users = (data.data && data.data.users) || [];
@@ -293,7 +293,7 @@
 						body: JSON.stringify(body)
 					});
 					const data = await res.json();
-					if (!res.ok) { showToast(data.error || '更新失败', 'error'); return; }
+					if (!res.ok) { showToast((data.error && data.error.message) || data.error || '更新失败', 'error'); return; }
 					showToast('用户已更新', 'success');
 					loadUsers();
 				} catch (err) { showToast('请求失败: ' + err.message, 'error'); }
@@ -327,7 +327,7 @@
 						body: JSON.stringify({username: username, password: password})
 					});
 					const data = await res.json();
-					if (!res.ok) { showToast(data.error || '创建失败', 'error'); return; }
+					if (!res.ok) { showToast((data.error && data.error.message) || data.error || '创建失败', 'error'); return; }
 					// New users always start as readonly by backend; promote if admin requested
 					if (role !== 'readonly' && data.data && data.data.id) {
 						await fetch('/api/v1/users/' + data.data.id, {

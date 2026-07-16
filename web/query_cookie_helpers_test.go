@@ -193,7 +193,7 @@ func TestHandleImportCookieJSON_ExtensionMode(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for extension mode, got %d, body=%s", w.Code, w.Body.String())
 	}
-	if len(cfg.Engines.Fofa.Cookies) == 0 {
+	if len(s.currentConfig().Engines.Fofa.Cookies) == 0 {
 		t.Fatal("expected extension-mode import to persist configured cookies")
 	}
 	if len(mgr.GetCookies("fofa")) == 0 {
@@ -252,7 +252,7 @@ func TestHandleSaveCookies_ExtensionMode(t *testing.T) {
 	if resp["engine"] != "extension" {
 		t.Fatalf("expected engine=extension, got %v", resp["engine"])
 	}
-	if len(cfg.Engines.Fofa.Cookies) == 0 {
+	if len(s.currentConfig().Engines.Fofa.Cookies) == 0 {
 		t.Fatal("expected extension-mode save to persist cookies")
 	}
 	if len(mgr.GetCookies("fofa")) == 0 {

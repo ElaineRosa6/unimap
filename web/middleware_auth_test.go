@@ -5,8 +5,34 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/unimap/project/internal/auth"
 	"github.com/unimap/project/internal/config"
 )
+
+func TestAdminAuthMiddlewareRejectsStaleSessionVersion(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "secret-token"
+	user := &auth.User{ID: 7, Status: "active", SessionVersion: 2}
+	s := &Server{config: cfg, userRepo: &mockUserRepo{users: map[int64]*auth.User{7: user}}}
+
+	loginResponse := httptest.NewRecorder()
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/login", nil)
+	if err := s.setSessionCookieForUser(loginResponse, loginRequest, 7); err != nil {
+		t.Fatal(err)
+	}
+	user.SessionVersion++
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
+	req.AddCookie(loginResponse.Result().Cookies()[0])
+	rec := httptest.NewRecorder()
+	s.adminAuthMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected stale session to be rejected, got %d", rec.Code)
+	}
+}
 
 func TestAdminAuthMiddleware_MissingToken_Returns401(t *testing.T) {
 	s := &Server{config: &config.Config{}}

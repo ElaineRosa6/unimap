@@ -39,6 +39,18 @@ type QueryCache interface {
 	SetMulti(keyAssets map[string][]model.UnifiedAsset, duration time.Duration)
 }
 
+// QueryCacheMetadataCache is an optional extension used by the unified query
+// service to preserve response semantics across cache hits.
+type QueryCacheMetadataCache interface {
+	GetQueryMetadata(key string) (QueryCacheMetadata, bool)
+	SetQueryMetadata(key string, metadata QueryCacheMetadata, duration time.Duration)
+}
+
+type QueryCacheMetadata struct {
+	EngineStats map[string]int `json:"engine_stats"`
+	Errors      []string       `json:"errors"`
+}
+
 // CacheStats 缓存统计信息
 type CacheStats struct {
 	Hits        int       // 缓存命中次数
@@ -52,6 +64,7 @@ type CacheStats struct {
 // MemoryCache 内存缓存实现
 type MemoryCache struct {
 	cache           map[string]cacheItem
+	metadata        map[string]metadataItem
 	mutex           sync.RWMutex
 	maxSize         int
 	cleanupInterval time.Duration
@@ -61,6 +74,11 @@ type MemoryCache struct {
 	accessCounter   uint64
 	stopChan        chan struct{} // 用于停止清理 goroutine
 	stopped         bool          // 标记是否已停止
+}
+
+type metadataItem struct {
+	metadata   QueryCacheMetadata
+	expiryTime time.Time
 }
 
 // cacheItem 缓存项
@@ -79,6 +97,7 @@ func NewMemoryCache(maxSize int, cleanupInterval time.Duration) *MemoryCache {
 	}
 	cache := &MemoryCache{
 		cache:           make(map[string]cacheItem),
+		metadata:        make(map[string]metadataItem),
 		maxSize:         maxSize,
 		cleanupInterval: cleanupInterval,
 		lastCleanup:     time.Now(),
@@ -91,6 +110,23 @@ func NewMemoryCache(maxSize int, cleanupInterval time.Duration) *MemoryCache {
 	}
 
 	return cache
+}
+
+func (c *MemoryCache) GetQueryMetadata(key string) (QueryCacheMetadata, bool) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	item, ok := c.metadata[key]
+	if !ok || time.Now().After(item.expiryTime) {
+		delete(c.metadata, key)
+		return QueryCacheMetadata{}, false
+	}
+	return cloneQueryCacheMetadata(item.metadata), true
+}
+
+func (c *MemoryCache) SetQueryMetadata(key string, metadata QueryCacheMetadata, duration time.Duration) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.metadata[key] = metadataItem{metadata: cloneQueryCacheMetadata(metadata), expiryTime: time.Now().Add(duration)}
 }
 
 // Get 从缓存中获取查询结果
@@ -155,6 +191,7 @@ func (c *MemoryCache) Delete(key string) {
 	defer c.mutex.Unlock()
 
 	delete(c.cache, key)
+	delete(c.metadata, key)
 }
 
 // Clear 清空缓存
@@ -163,6 +200,7 @@ func (c *MemoryCache) Clear() {
 	defer c.mutex.Unlock()
 
 	c.cache = make(map[string]cacheItem)
+	c.metadata = make(map[string]metadataItem)
 	c.hits = 0
 	c.misses = 0
 }
@@ -269,6 +307,7 @@ func (c *MemoryCache) evictLFU() {
 
 	if lfuKey != "" {
 		delete(c.cache, lfuKey)
+		delete(c.metadata, lfuKey)
 	}
 }
 
@@ -313,6 +352,7 @@ func (c *MemoryCache) cleanupExpired() {
 	for key, item := range c.cache {
 		if now.After(item.expiryTime) {
 			delete(c.cache, key)
+			delete(c.metadata, key)
 		}
 	}
 
@@ -523,10 +563,40 @@ func (c *RedisCache) Set(key string, assets []model.UnifiedAsset, duration time.
 	c.client.Set(c.ctx, fullKey, data, duration)
 }
 
+func (c *RedisCache) GetQueryMetadata(key string) (QueryCacheMetadata, bool) {
+	value, err := c.client.Get(c.ctx, c.prefix+key+":query-metadata").Bytes()
+	if err != nil {
+		return QueryCacheMetadata{}, false
+	}
+	var metadata QueryCacheMetadata
+	if err := json.Unmarshal(value, &metadata); err != nil {
+		return QueryCacheMetadata{}, false
+	}
+	return metadata, true
+}
+
+func (c *RedisCache) SetQueryMetadata(key string, metadata QueryCacheMetadata, duration time.Duration) {
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return
+	}
+	if err := c.client.Set(c.ctx, c.prefix+key+":query-metadata", data, duration).Err(); err != nil {
+		logger.Warnf("Redis query metadata write failed: %v", err)
+	}
+}
+
 // Delete 从缓存中删除查询结果
 func (c *RedisCache) Delete(key string) {
 	fullKey := c.prefix + key
-	c.client.Del(c.ctx, fullKey)
+	c.client.Del(c.ctx, fullKey, fullKey+":query-metadata")
+}
+
+func cloneQueryCacheMetadata(metadata QueryCacheMetadata) QueryCacheMetadata {
+	stats := make(map[string]int, len(metadata.EngineStats))
+	for engine, count := range metadata.EngineStats {
+		stats[engine] = count
+	}
+	return QueryCacheMetadata{EngineStats: stats, Errors: append([]string(nil), metadata.Errors...)}
 }
 
 // Clear 清空缓存

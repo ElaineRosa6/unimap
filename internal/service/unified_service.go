@@ -249,6 +249,12 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 	if len(allAssets) > 0 {
 		cacheTTL := s.resolveCacheTTL(req)
 		s.cache.Set(cacheKey, allAssets, cacheTTL)
+		if metadataCache, ok := s.cache.(utils.QueryCacheMetadataCache); ok {
+			metadataCache.SetQueryMetadata(cacheKey, utils.QueryCacheMetadata{
+				EngineStats: engineStats,
+				Errors:      queryErrors,
+			}, cacheTTL)
+		}
 	}
 
 	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", &model.HookData{
@@ -287,7 +293,7 @@ func (s *UnifiedService) buildQueryCacheKey(req QueryRequest) string {
 	sortedEngines := make([]string, len(req.Engines))
 	copy(sortedEngines, req.Engines)
 	sort.Strings(sortedEngines)
-	keyData := fmt.Sprintf("%s|%s|%d|%t", strings.Join(sortedEngines, ","), req.Query, req.PageSize, req.ProcessData)
+	keyData := fmt.Sprintf("v2|%s|%s|%d|%t", strings.Join(sortedEngines, ","), req.Query, req.PageSize, req.ProcessData)
 	hash := sha256.Sum256([]byte(keyData))
 	return hex.EncodeToString(hash[:])
 }
@@ -296,6 +302,14 @@ func (s *UnifiedService) buildQueryCacheKey(req QueryRequest) string {
 func (s *UnifiedService) handleCachedQueryResult(ctx context.Context, req QueryRequest, cacheKey string) (*QueryResponse, bool) {
 	cachedAssets, found := s.cache.Get(cacheKey)
 	if !found {
+		return nil, false
+	}
+	metadataCache, ok := s.cache.(utils.QueryCacheMetadataCache)
+	if !ok {
+		return nil, false
+	}
+	metadata, ok := metadataCache.GetQueryMetadata(cacheKey)
+	if !ok {
 		return nil, false
 	}
 	metrics.ObserveCacheLookup(s.cacheBackend, "hit")
@@ -310,10 +324,6 @@ func (s *UnifiedService) handleCachedQueryResult(ctx context.Context, req QueryR
 		return nil, false
 	}
 
-	engineStats := make(map[string]int)
-	for _, engine := range req.Engines {
-		engineStats[engine] = 0
-	}
 	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", &model.HookData{
 		Extra: map[string]any{"result_count": len(cachedAssets), "cached": true},
 	}); err != nil {
@@ -321,7 +331,7 @@ func (s *UnifiedService) handleCachedQueryResult(ctx context.Context, req QueryR
 	}
 	return &QueryResponse{
 		Assets: cachedAssets, TotalCount: len(cachedAssets),
-		EngineStats: engineStats, Errors: []string{},
+		EngineStats: metadata.EngineStats, Errors: metadata.Errors,
 	}, true
 }
 

@@ -31,11 +31,15 @@ type apiTamperResponse struct {
 }
 
 type apiScreenshotBatchResponse struct {
-	BatchID string                   `json:"batch_id"`
-	Total   int                      `json:"total"`
-	Success int                      `json:"success"`
-	Failed  int                      `json:"failed"`
-	Results []map[string]interface{} `json:"results"`
+	ID               string                   `json:"id,omitempty"`
+	BatchID          string                   `json:"batch_id"`
+	Total            int                      `json:"total"`
+	Success          int                      `json:"success"`
+	Failed           int                      `json:"failed"`
+	Results          []map[string]interface{} `json:"results"`
+	Status           string                   `json:"status,omitempty"`
+	Error            string                   `json:"error,omitempty"`
+	PersistenceError string                   `json:"persistence_error,omitempty"`
 }
 
 // cliSchedulerTask is the typed response for a scheduler task.
@@ -58,6 +62,33 @@ type cliSchedulerHistoryEntry struct {
 	Error     string `json:"error"`
 	StartedAt string `json:"started_at"`
 	Duration  int64  `json:"duration"`
+}
+
+var cliAdminToken string
+
+func addAPIAuthFlags(fs *flag.FlagSet) (*string, *string) {
+	token := fs.String("admin-token", "", "Admin token (prefer --admin-token-file or UNIMAP_ADMIN_TOKEN)")
+	tokenFile := fs.String("admin-token-file", "", "Read admin token from file")
+	return token, tokenFile
+}
+
+func configureAPIAuth(token, tokenFile string) error {
+	resolved := strings.TrimSpace(os.Getenv("UNIMAP_ADMIN_TOKEN"))
+	if resolved == "" {
+		resolved = strings.TrimSpace(token)
+	}
+	if path := strings.TrimSpace(tokenFile); path != "" {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read admin token file: %w", err)
+		}
+		resolved = strings.TrimSpace(string(data))
+		if resolved == "" {
+			return fmt.Errorf("admin token file is empty")
+		}
+	}
+	cliAdminToken = resolved
+	return nil
 }
 
 func runAPISubcommand(command string, args []string) bool {
@@ -87,7 +118,12 @@ func runAPIQuery(args []string) {
 	apiBase := fs.String("api-base", "http://127.0.0.1:8448", "Web API base URL")
 	timeoutSec := fs.Int("timeout", 60, "HTTP timeout in seconds")
 	output := fs.String("o", "", "Output file path (csv/json/xlsx)")
+	adminToken, adminTokenFile := addAPIAuthFlags(fs)
 	_ = fs.Parse(args)
+	if err := configureAPIAuth(*adminToken, *adminTokenFile); err != nil {
+		fmt.Fprintf(os.Stderr, "API authentication configuration failed: %v\n", err)
+		os.Exit(1)
+	}
 
 	if strings.TrimSpace(*query) == "" {
 		fmt.Fprintln(os.Stderr, "Error: -q is required")
@@ -139,7 +175,12 @@ func runAPITamperCheck(args []string) {
 	apiBase := fs.String("api-base", "http://127.0.0.1:8448", "Web API base URL")
 	timeoutSec := fs.Int("timeout", 120, "HTTP timeout in seconds")
 	output := fs.String("o", "", "Output JSON file path")
+	adminToken, adminTokenFile := addAPIAuthFlags(fs)
 	_ = fs.Parse(args)
+	if err := configureAPIAuth(*adminToken, *adminTokenFile); err != nil {
+		fmt.Fprintf(os.Stderr, "API authentication configuration failed: %v\n", err)
+		os.Exit(1)
+	}
 
 	urls := splitCSVText(*urlsText)
 	if len(urls) == 0 {
@@ -185,7 +226,12 @@ func runAPIScreenshotBatch(args []string) {
 	apiBase := fs.String("api-base", "http://127.0.0.1:8448", "Web API base URL")
 	timeoutSec := fs.Int("timeout", 300, "HTTP timeout in seconds")
 	output := fs.String("o", "", "Output JSON file path")
+	adminToken, adminTokenFile := addAPIAuthFlags(fs)
 	_ = fs.Parse(args)
+	if err := configureAPIAuth(*adminToken, *adminTokenFile); err != nil {
+		fmt.Fprintf(os.Stderr, "API authentication configuration failed: %v\n", err)
+		os.Exit(1)
+	}
 
 	urls := splitCSVText(*urlsText)
 	if len(urls) == 0 {
@@ -201,10 +247,23 @@ func runAPIScreenshotBatch(args []string) {
 	payload := cliScreenshotRequest{
 		URLs: urls, BatchID: strings.TrimSpace(*batchID), Concurrency: *concurrency,
 	}
-	var resp apiScreenshotBatchResponse
-	if err := doJSONRequest(*apiBase, "/api/v1/screenshot/batch-urls", *timeoutSec, payload, &resp); err != nil {
+	var start struct {
+		JobID  string `json:"job_id"`
+		Total  int    `json:"total"`
+		Status string `json:"status"`
+	}
+	if err := doJSONRequest(*apiBase, "/api/v1/screenshot/batch-urls", *timeoutSec, payload, &start); err != nil {
 		fmt.Fprintf(os.Stderr, "API screenshot-batch failed: %v\n", err)
 		os.Exit(1)
+	}
+	resp, err := waitForScreenshotBatch(*apiBase, start.JobID, *timeoutSec)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Screenshot job %s did not complete: %v\n", start.JobID, err)
+		os.Exit(1)
+	}
+	resp.BatchID = start.JobID
+	if resp.PersistenceError != "" {
+		fmt.Fprintf(os.Stderr, "Warning: screenshot results completed but persistence was degraded: %s\n", resp.PersistenceError)
 	}
 
 	fmt.Printf("Screenshot batch completed: batch_id=%s total=%d success=%d failed=%d\n", resp.BatchID, resp.Total, resp.Success, resp.Failed)
@@ -218,13 +277,42 @@ func runAPIScreenshotBatch(args []string) {
 	}
 }
 
+func waitForScreenshotBatch(base, jobID string, timeoutSec int) (apiScreenshotBatchResponse, error) {
+	deadline := time.Now().Add(time.Duration(maxInt(timeoutSec, 1)) * time.Second)
+	for {
+		var job apiScreenshotBatchResponse
+		if err := doGETRequest(base, "/api/v1/screenshot/batch/progress?job_id="+neturl.QueryEscape(jobID), min(maxInt(timeoutSec, 1), 30), &job); err != nil {
+			return job, err
+		}
+		switch job.Status {
+		case "completed":
+			return job, nil
+		case "failed":
+			return job, fmt.Errorf("%s", job.Error)
+		}
+		if time.Now().After(deadline) {
+			return job, fmt.Errorf("timed out; resume with job_id=%s", jobID)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 func doFormRequest(apiBase, path string, timeoutSec int, values neturl.Values, out interface{}) error {
 	base := strings.TrimRight(strings.TrimSpace(apiBase), "/")
 	if base == "" {
 		return fmt.Errorf("api base is empty")
 	}
-	client := &http.Client{Timeout: time.Duration(maxInt(timeoutSec, 1)) * time.Second}
-	resp, err := client.PostForm(base+path, values)
+	client, err := newAPIHTTPClient(base, timeoutSec)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, base+path, strings.NewReader(values.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	applyCLIAuth(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -240,6 +328,61 @@ func doFormRequest(apiBase, path string, timeoutSec int, values neturl.Values, o
 	return nil
 }
 
+func doGETRequest(apiBase, path string, timeoutSec int, out interface{}) error {
+	base := strings.TrimRight(strings.TrimSpace(apiBase), "/")
+	if base == "" {
+		return fmt.Errorf("api base is empty")
+	}
+	req, err := http.NewRequest(http.MethodGet, base+path, nil)
+	if err != nil {
+		return err
+	}
+	applyCLIAuth(req)
+	client, err := newAPIHTTPClient(base, timeoutSec)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("decode response failed: %w", err)
+	}
+	return nil
+}
+
+func applyCLIAuth(req *http.Request) {
+	token := strings.TrimSpace(cliAdminToken)
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("UNIMAP_ADMIN_TOKEN"))
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+}
+
+func newAPIHTTPClient(base string, timeoutSec int) (*http.Client, error) {
+	baseURL, err := neturl.Parse(base)
+	if err != nil || baseURL.Scheme == "" || baseURL.Host == "" {
+		return nil, fmt.Errorf("invalid API base URL")
+	}
+	return &http.Client{
+		Timeout: time.Duration(maxInt(timeoutSec, 1)) * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if !strings.EqualFold(req.URL.Scheme, baseURL.Scheme) || !strings.EqualFold(req.URL.Host, baseURL.Host) {
+				return fmt.Errorf("refusing API redirect to a different origin")
+			}
+			return nil
+		},
+	}, nil
+}
+
 func doJSONRequest(apiBase, path string, timeoutSec int, payload interface{}, out interface{}) error {
 	base := strings.TrimRight(strings.TrimSpace(apiBase), "/")
 	if base == "" {
@@ -250,8 +393,17 @@ func doJSONRequest(apiBase, path string, timeoutSec int, payload interface{}, ou
 		return err
 	}
 
-	client := &http.Client{Timeout: time.Duration(maxInt(timeoutSec, 1)) * time.Second}
-	resp, err := client.Post(base+path, "application/json", bytes.NewReader(body))
+	client, err := newAPIHTTPClient(base, timeoutSec)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, base+path, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	applyCLIAuth(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -315,9 +467,20 @@ func runAPIScheduler(args []string) {
 	fs := flag.NewFlagSet("scheduler", flag.ExitOnError)
 	apiBase := fs.String("api-base", "http://127.0.0.1:8448", "Web API base URL")
 	timeoutSec := fs.Int("timeout", 30, "HTTP timeout in seconds")
+	adminToken, adminTokenFile := addAPIAuthFlags(fs)
 	_ = fs.Parse(args)
+	if err := configureAPIAuth(*adminToken, *adminTokenFile); err != nil {
+		fmt.Fprintf(os.Stderr, "API authentication configuration failed: %v\n", err)
+		os.Exit(1)
+	}
 
-	subcmd := fs.Arg(0)
+	remaining := fs.Args()
+	if len(remaining) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: unimap-cli scheduler [global flags] <list|run|create|enable|disable|delete|history> [flags]")
+		return
+	}
+	subcmd := remaining[0]
+	subArgs := remaining[1:]
 	if subcmd == "" {
 		fmt.Fprintln(os.Stderr, "Usage: unimap-cli scheduler <list|run|create|enable|disable|delete|history> [flags]")
 		os.Exit(1)
@@ -330,15 +493,15 @@ func runAPIScheduler(args []string) {
 	case "list":
 		schedulerList(base, prefix, *timeoutSec)
 	case "run":
-		schedulerRun(fs, base, prefix, *timeoutSec)
+		schedulerRun(subArgs, base, prefix, *timeoutSec)
 	case "create":
-		schedulerCreate(fs, args, base, prefix, *timeoutSec)
+		schedulerCreate(subArgs, base, prefix, *timeoutSec)
 	case "enable", "disable":
-		schedulerToggle(fs, args, subcmd, base, prefix, *timeoutSec)
+		schedulerToggle(subArgs, subcmd, base, prefix, *timeoutSec)
 	case "delete":
-		schedulerDelete(fs, args, base, prefix, *timeoutSec)
+		schedulerDelete(subArgs, base, prefix, *timeoutSec)
 	case "history":
-		schedulerHistory(fs, args, base, prefix, *timeoutSec)
+		schedulerHistory(subArgs, base, prefix, *timeoutSec)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown scheduler command: %s\n", subcmd)
 		os.Exit(1)
@@ -346,28 +509,27 @@ func runAPIScheduler(args []string) {
 }
 
 func schedulerList(base, prefix string, timeoutSec int) {
-	var resp struct {
-		Success bool               `json:"success"`
-		Tasks   []cliSchedulerTask `json:"tasks"`
-	}
-	if err := doFormRequest(base, prefix+"/tasks", timeoutSec, nil, &resp); err != nil {
+	var tasks []cliSchedulerTask
+	if err := doGETRequest(base, prefix+"/tasks", timeoutSec, &tasks); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Scheduled tasks (%d):\n", len(resp.Tasks))
-	for _, t := range resp.Tasks {
+	fmt.Printf("Scheduled tasks (%d):\n", len(tasks))
+	for _, t := range tasks {
 		fmt.Printf("  %-8s %-30s %-20s enabled=%v  cron=%s\n",
 			t.ID, t.Name, t.Type, t.Enabled, t.CronExpr)
 	}
 }
 
-func schedulerRun(fs *flag.FlagSet, base, prefix string, timeoutSec int) {
-	taskID := fs.Lookup("id")
-	if taskID == nil || taskID.Value.String() == "" {
+func schedulerRun(args []string, base, prefix string, timeoutSec int) {
+	fs := flag.NewFlagSet("scheduler run", flag.ExitOnError)
+	taskID := fs.String("id", "", "Task ID")
+	_ = fs.Parse(args)
+	if *taskID == "" {
 		fmt.Fprintln(os.Stderr, "Error: -id is required for run")
 		os.Exit(1)
 	}
-	payload := map[string]string{"id": taskID.Value.String()}
+	payload := map[string]string{"id": *taskID}
 	var resp struct {
 		Success bool `json:"success"`
 	}
@@ -375,15 +537,17 @@ func schedulerRun(fs *flag.FlagSet, base, prefix string, timeoutSec int) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Task %s triggered successfully\n", taskID.Value.String())
+	fmt.Printf("Task %s triggered successfully\n", *taskID)
 }
 
-func schedulerCreate(fs *flag.FlagSet, args []string, base, prefix string, timeoutSec int) {
+func schedulerCreate(args []string, base, prefix string, timeoutSec int) {
+	fs := flag.NewFlagSet("scheduler create", flag.ExitOnError)
 	name := fs.String("name", "", "Task name")
 	taskType := fs.String("type", "", "Task type (e.g. icp_query, query)")
 	cron := fs.String("cron", "", "Cron expression")
 	payloadStr := fs.String("payload", "{}", "JSON payload")
-	_ = fs.Parse(args[1:])
+	enabled := fs.Bool("enabled", true, "Enable task immediately")
+	_ = fs.Parse(args)
 
 	if *name == "" || *taskType == "" || *cron == "" {
 		fmt.Fprintln(os.Stderr, "Error: -name, -type, and -cron are required for create")
@@ -399,23 +563,25 @@ func schedulerCreate(fs *flag.FlagSet, args []string, base, prefix string, timeo
 	task := cliSchedulerTask{
 		Name:     *name,
 		Type:     *taskType,
+		Enabled:  *enabled,
 		CronExpr: *cron,
 		Payload:  p,
 	}
 	var resp struct {
-		Success bool             `json:"success"`
-		Task    cliSchedulerTask `json:"task"`
+		ID      string `json:"id"`
+		Message string `json:"message"`
 	}
-	if err := doJSONRequest(base, prefix+"/tasks", timeoutSec, task, &resp); err != nil {
+	if err := doJSONRequest(base, prefix+"/tasks/create", timeoutSec, task, &resp); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Task created: id=%s name=%s type=%s\n", resp.Task.ID, resp.Task.Name, resp.Task.Type)
+	fmt.Printf("Task created: id=%s name=%s type=%s\n", resp.ID, task.Name, task.Type)
 }
 
-func schedulerToggle(fs *flag.FlagSet, args []string, subcmd, base, prefix string, timeoutSec int) {
+func schedulerToggle(args []string, subcmd, base, prefix string, timeoutSec int) {
+	fs := flag.NewFlagSet("scheduler "+subcmd, flag.ExitOnError)
 	taskID := fs.String("id", "", "Task ID")
-	_ = fs.Parse(args[1:])
+	_ = fs.Parse(args)
 	if *taskID == "" {
 		fmt.Fprintln(os.Stderr, "Error: -id is required")
 		os.Exit(1)
@@ -432,9 +598,10 @@ func schedulerToggle(fs *flag.FlagSet, args []string, subcmd, base, prefix strin
 	fmt.Printf("Task %s %sd\n", *taskID, action)
 }
 
-func schedulerDelete(fs *flag.FlagSet, args []string, base, prefix string, timeoutSec int) {
+func schedulerDelete(args []string, base, prefix string, timeoutSec int) {
+	fs := flag.NewFlagSet("scheduler delete", flag.ExitOnError)
 	taskID := fs.String("id", "", "Task ID")
-	_ = fs.Parse(args[1:])
+	_ = fs.Parse(args)
 	if *taskID == "" {
 		fmt.Fprintln(os.Stderr, "Error: -id is required")
 		os.Exit(1)
@@ -450,10 +617,11 @@ func schedulerDelete(fs *flag.FlagSet, args []string, base, prefix string, timeo
 	fmt.Printf("Task %s deleted\n", *taskID)
 }
 
-func schedulerHistory(fs *flag.FlagSet, args []string, base, prefix string, timeoutSec int) {
+func schedulerHistory(args []string, base, prefix string, timeoutSec int) {
+	fs := flag.NewFlagSet("scheduler history", flag.ExitOnError)
 	taskID := fs.String("task-id", "", "Filter by task ID")
 	limit := fs.Int("limit", 20, "Max history entries")
-	_ = fs.Parse(args[1:])
+	_ = fs.Parse(args)
 
 	url := prefix + "/history?"
 	if *taskID != "" {
@@ -461,16 +629,13 @@ func schedulerHistory(fs *flag.FlagSet, args []string, base, prefix string, time
 	}
 	url += fmt.Sprintf("limit=%d", *limit)
 
-	var resp struct {
-		Success bool                       `json:"success"`
-		History []cliSchedulerHistoryEntry `json:"history"`
-	}
-	if err := doFormRequest(base, url, timeoutSec, nil, &resp); err != nil {
+	var history []cliSchedulerHistoryEntry
+	if err := doGETRequest(base, url, timeoutSec, &history); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Execution history (%d records):\n", len(resp.History))
-	for _, h := range resp.History {
+	fmt.Printf("Execution history (%d records):\n", len(history))
+	for _, h := range history {
 		status := h.Status
 		result := h.Result
 		if h.Error != "" {

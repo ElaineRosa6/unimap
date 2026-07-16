@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/unimap/project/internal/config"
@@ -77,6 +78,25 @@ func TestHandleGetConfig_MasksSecrets(t *testing.T) {
 	}
 }
 
+func TestICPConfigProviderUsesCommittedConfig(t *testing.T) {
+	s := newServerForConfigTest()
+	mgr := config.NewManager(filepath.Join(t.TempDir(), "config.yaml"))
+	mgr.SetConfig(s.config.Clone())
+	s.configManager = mgr
+
+	if _, err := s.updateConfig(func(cfg *config.Config) error {
+		cfg.ICP.APIKey = "new-scheduler-key"
+		cfg.ICP.DefaultType = "domain"
+		return nil
+	}); err != nil {
+		t.Fatalf("commit ICP config: %v", err)
+	}
+	got := s.icpConfigProvider()
+	if got.APIKey != "new-scheduler-key" || got.DefaultType != "domain" {
+		t.Fatalf("scheduler provider returned stale ICP config: %#v", got)
+	}
+}
+
 func TestHandleGetConfig_RejectsNonGET(t *testing.T) {
 	s := newServerForConfigTest()
 	req := withAdminContext(httptest.NewRequest(http.MethodPost, "/api/v1/config", nil))
@@ -141,20 +161,21 @@ func TestHandleSaveConfig_ICPSection_UpdatesFields(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%q)", w.Code, w.Body.String())
 	}
-	if s.config.ICP.Enabled {
+	cfg := s.currentConfig()
+	if cfg.ICP.Enabled {
 		t.Fatalf("expected ICP.Enabled=false after save")
 	}
-	if s.config.ICP.BaseURL != "http://example:18888" {
-		t.Fatalf("expected new base_url, got %q", s.config.ICP.BaseURL)
+	if cfg.ICP.BaseURL != "http://example:18888" {
+		t.Fatalf("expected new base_url, got %q", cfg.ICP.BaseURL)
 	}
-	if s.config.ICP.Timeout != 60 {
-		t.Fatalf("expected new timeout=60, got %d", s.config.ICP.Timeout)
+	if cfg.ICP.Timeout != 60 {
+		t.Fatalf("expected new timeout=60, got %d", cfg.ICP.Timeout)
 	}
-	if s.config.ICP.DefaultType != "app" {
-		t.Fatalf("expected default_type=app, got %q", s.config.ICP.DefaultType)
+	if cfg.ICP.DefaultType != "app" {
+		t.Fatalf("expected default_type=app, got %q", cfg.ICP.DefaultType)
 	}
-	if s.config.ICP.APIKey != originalKey {
-		t.Fatalf("api_key was overwritten by empty value: now=%q want=%q", s.config.ICP.APIKey, originalKey)
+	if cfg.ICP.APIKey != originalKey {
+		t.Fatalf("api_key was overwritten by empty value: now=%q want=%q", cfg.ICP.APIKey, originalKey)
 	}
 }
 
@@ -167,8 +188,8 @@ func TestHandleSaveConfig_ICPSection_RealAPIKeyUpdates(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	if s.config.ICP.APIKey != "new-real-key" {
-		t.Fatalf("expected api_key updated to new-real-key, got %q", s.config.ICP.APIKey)
+	if got := s.currentConfig().ICP.APIKey; got != "new-real-key" {
+		t.Fatalf("expected api_key updated to new-real-key, got %q", got)
 	}
 }
 
@@ -196,11 +217,12 @@ func TestHandleSaveConfig_ScreenshotSection(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%q)", w.Code, w.Body.String())
 	}
-	if s.config.Screenshot.Engine != "extension" {
-		t.Fatalf("expected engine=extension, got %q", s.config.Screenshot.Engine)
+	cfg := s.currentConfig()
+	if cfg.Screenshot.Engine != "extension" {
+		t.Fatalf("expected engine=extension, got %q", cfg.Screenshot.Engine)
 	}
-	if s.config.Screenshot.Timeout != 45 {
-		t.Fatalf("expected timeout=45, got %d", s.config.Screenshot.Timeout)
+	if cfg.Screenshot.Timeout != 45 {
+		t.Fatalf("expected timeout=45, got %d", cfg.Screenshot.Timeout)
 	}
 }
 
@@ -248,11 +270,44 @@ func TestHandleSaveConfig_SystemSection(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%q)", w.Code, w.Body.String())
 	}
-	if s.config.System.MaxConcurrent != 50 {
-		t.Fatalf("expected max_concurrent=50, got %d", s.config.System.MaxConcurrent)
+	cfg := s.currentConfig()
+	if cfg.System.MaxConcurrent != 50 {
+		t.Fatalf("expected max_concurrent=50, got %d", cfg.System.MaxConcurrent)
 	}
-	if s.config.System.CacheTTL != 7200 {
-		t.Fatalf("expected cache_ttl=7200, got %d", s.config.System.CacheTTL)
+	if cfg.System.CacheTTL != 7200 {
+		t.Fatalf("expected cache_ttl=7200, got %d", cfg.System.CacheTTL)
+	}
+}
+
+func TestUpdateConfigSerializesConcurrentWriters(t *testing.T) {
+	s := newServerForConfigTest()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	mgr := config.NewManager(path)
+	mgr.SetConfig(s.config.Clone())
+	s.configManager = mgr
+
+	var wg sync.WaitGroup
+	for _, mutate := range []func(*config.Config){
+		func(cfg *config.Config) { cfg.System.CacheTTL = 7200 },
+		func(cfg *config.Config) { cfg.System.MaxConcurrent = 42 },
+	} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.updateConfig(func(cfg *config.Config) error { mutate(cfg); return nil }); err != nil {
+				t.Errorf("concurrent update failed: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	reloaded := config.NewManager(path)
+	if err := reloaded.Load(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := reloaded.GetConfig()
+	if cfg.System.CacheTTL != 7200 || cfg.System.MaxConcurrent != 42 {
+		t.Fatalf("concurrent updates overwrote each other: ttl=%d max=%d", cfg.System.CacheTTL, cfg.System.MaxConcurrent)
 	}
 }
 

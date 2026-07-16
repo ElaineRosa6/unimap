@@ -102,6 +102,8 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/screenshot/bridge/status
 
 `batch_id` 是创建请求中的可选 JSON 字段；列文件和删除时的查询参数叫 `batch`。
 
+POST 返回 202 只表示任务已接受。CLI/GUI 会继续轮询；手工调用时必须保存 `job_id` 并查询到 `completed`/`failed`。拿到 `job_id` 后遇到断网或超时，不要本地重跑同一批 URL，以免产生重复截图；恢复后继续查询进度。`persistence_error` 表示截图终态完成但持久化降级。
+
 ## 6. 巡检、篡改检测或基线异常
 
 支持的模式只有：`strict`、`relaxed`、`security`、`balanced`、`precise`。`malicious`、`performance`、`full` 是历史名称，不能再用于新请求。
@@ -122,6 +124,8 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/scheduler/history
 ```
 
 创建任务的端点是 `POST /api/v1/scheduler/tasks/create`，不是旧的 `/api/scheduler/tasks`。一次性、延迟和 cron 任务分别通过 `schedule_type` 的 `once`、`delay`、`cron` 表示。通知通道从 `GET /api/v1/notifications/channels` 查看，并可用 `/api/v1/notifications/channels/test` 验证。
+
+任务列表的 `enabled=true` 表示期望启用；还要检查 `runtime_status`。`schedule_error` 表示加载或布置失败，具体诊断在同名错误字段中。删除、停用持久化失败会返回 500 并回滚内存调度状态，不应按 404 处理。
 
 需要定时查询的完整 Bridge 闭环时，`query` 任务 payload 必须包含：
 
@@ -162,6 +166,8 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/nodes/network/profile -Headers @{
 
 注册、心跳、领取和结果回传应使用对应节点令牌；状态、任务队列管理使用分布式管理令牌。
 
+`max_reassign=N` 表示首次分配之外最多重新分配 N 次；离线、租约过期和 retryable 失败都会消耗次数。队列快照写失败时入队、认领、结果提交和删除不会返回成功，后台回收会恢复旧状态并记录错误。
+
 ## 9. 备份、配置或历史记录
 
 - 配置读取/保存：`GET`/`POST /api/v1/config`，需要管理员。
@@ -169,6 +175,10 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/nodes/network/profile -Headers @{
 - 操作历史：`POST /api/v1/history/save`、`GET`/`DELETE /api/v1/history`，需要管理员。
 
 配置保存响应包含 `persisted`、`applied` 和 `restart_required`。查询响应的 `persistence.status` 为 `persisted`、`failed` 或 `disabled`；批量截图任务可能包含 `persistence_error`。反向代理部署必须把直接代理网段加入 `web.rate_limit.trusted_proxy_cidrs`，直连部署保持空列表。
+
+所有配置写入口采用候选副本提交：只有 `SaveConfig` 成功后才发布并执行运行态刷新。保存失败时当前 Manager 和运行态保持旧值。`restart_required=true` 时不要仅凭“保存成功”判断已热生效。
+
+多用户数据库启动时会幂等迁移 `session_version`。禁用、删除或改密后旧会话下一请求应为 401；用户库故障时会话请求为 503，但管理令牌仍可作为运维恢复入口。首次管理员使用数据库条件写入，多个并发公开注册最多一个成功。
 
 备份文件和本地配置可能包含敏感数据；限制文件系统权限，并通过受控部署流程恢复。
 

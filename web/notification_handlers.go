@@ -15,14 +15,17 @@ import (
 )
 
 func (s *Server) handleNotificationChannels(w http.ResponseWriter, r *http.Request) {
-	if s.config == nil {
+	if s.currentConfig() == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "service_unavailable", "config not loaded", nil)
 		return
 	}
 
-	s.configMutex.Lock()
-	channels := s.config.Notifications.Channels
-	s.configMutex.Unlock()
+	cfg := s.currentConfig()
+	if cfg == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "service_unavailable", "config not loaded", nil)
+		return
+	}
+	channels := cfg.Notifications.Channels
 
 	infos := make([]model.NotificationChannelInfo, len(channels))
 	for i, ch := range channels {
@@ -59,7 +62,10 @@ func (s *Server) handleNotifyReload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) reloadNotifyChannels() {
-	cfg := s.configManager.GetConfig()
+	cfg := s.currentConfig()
+	if cfg == nil {
+		return
+	}
 	var chanCfgs []notify.ChannelConfig
 	for _, cc := range cfg.Notifications.Channels {
 		chanCfgs = append(chanCfgs, notify.ChannelConfig{
@@ -77,7 +83,9 @@ func (s *Server) reloadNotifyChannels() {
 	}
 
 	if s.notifyRegistry != nil {
+		s.notifyRegistry.Remove("feishu_app")
 		s.notifyRegistry.Reload(chanCfgs)
+		registerFeishuAppChannel(s.notifyRegistry, cfg)
 	}
 }
 
@@ -85,22 +93,22 @@ func (s *Server) reloadNotifyChannels() {
 // This allows quota and API queries to work immediately after saving API keys
 // without restarting the server.
 func (s *Server) reloadEngineAdapters() {
-	if s.orchestrator == nil || s.config == nil {
+	cfg := s.currentConfig()
+	if s.orchestrator == nil || cfg == nil {
 		return
 	}
 	for _, name := range []string{"fofa", "hunter", "zoomeye", "quake", "shodan"} {
 		s.orchestrator.UnregisterAdapter(name)
 	}
-	s.registerCoreEngineAdapters()
+	s.registerCoreEngineAdapters(cfg)
 	if provider := s.browserQueryProvider(); provider != nil {
 		s.orchestrator.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: provider})
 	}
-	s.reloadBrowserFallbackConfig()
+	s.reloadBrowserFallbackConfig(cfg)
 }
 
 // registerCoreEngineAdapters 注册核心 5 引擎适配器。新引擎适配器代码保留，未来启用时取消注释即可。
-func (s *Server) registerCoreEngineAdapters() {
-	cfg := s.config
+func (s *Server) registerCoreEngineAdapters(cfg *config.Config) {
 	type engineReg struct {
 		enabled bool
 		apiKey  string
@@ -160,18 +168,18 @@ func (s *Server) registerCoreEngineAdapters() {
 }
 
 // reloadBrowserFallbackConfig 重载浏览器降级配置
-func (s *Server) reloadBrowserFallbackConfig() {
-	if s.service == nil || s.config == nil {
+func (s *Server) reloadBrowserFallbackConfig(cfg *config.Config) {
+	if s.service == nil || cfg == nil {
 		return
 	}
-	if s.config.Query.BrowserFallback.Enabled {
+	if cfg.Query.BrowserFallback.Enabled {
 		bfEngines := make(map[string]bool)
-		for _, e := range s.config.Query.BrowserFallback.Engines {
+		for _, e := range cfg.Query.BrowserFallback.Engines {
 			bfEngines[strings.ToLower(e)] = true
 		}
 		s.service.SetBrowserFallbackConfig(service.BrowserFallbackConfig{
-			Enabled: true, OnAPIError: s.config.Query.BrowserFallback.OnAPIError,
-			OnEmptyResult: s.config.Query.BrowserFallback.OnEmptyResult, Engines: bfEngines,
+			Enabled: true, OnAPIError: cfg.Query.BrowserFallback.OnAPIError,
+			OnEmptyResult: cfg.Query.BrowserFallback.OnEmptyResult, Engines: bfEngines,
 		})
 	} else {
 		s.service.SetBrowserFallbackConfig(service.BrowserFallbackConfig{Enabled: false})
@@ -233,19 +241,19 @@ func parseNotifyChannelSaveRequest(w http.ResponseWriter, r *http.Request) (noti
 	return req, true
 }
 
-// upsertNotifyChannel inserts or updates a channel in the config. Must be called with configMutex held.
-func (s *Server) upsertNotifyChannel(req notifyChannelSaveRequest) {
-	for i := range s.config.Notifications.Channels {
-		if s.config.Notifications.Channels[i].ID == req.ID {
+// upsertNotifyChannel inserts or updates a channel in a candidate config.
+func upsertNotifyChannel(cfg *config.Config, req notifyChannelSaveRequest) {
+	for i := range cfg.Notifications.Channels {
+		if cfg.Notifications.Channels[i].ID == req.ID {
 			secret := req.Secret
 			if secret == "" {
-				secret = s.config.Notifications.Channels[i].Secret
+				secret = cfg.Notifications.Channels[i].Secret
 			}
 			appSecret := req.AppSecret
 			if appSecret == "" {
-				appSecret = s.config.Notifications.Channels[i].AppSecret
+				appSecret = cfg.Notifications.Channels[i].AppSecret
 			}
-			s.config.Notifications.Channels[i] = config.NotificationChannelCfg{
+			cfg.Notifications.Channels[i] = config.NotificationChannelCfg{
 				ID: req.ID, Type: req.Type, Enabled: req.Enabled,
 				WebhookURL: req.WebhookURL, Secret: secret,
 				AppID: req.AppID, AppSecret: appSecret, ChatID: req.ChatID,
@@ -254,7 +262,7 @@ func (s *Server) upsertNotifyChannel(req notifyChannelSaveRequest) {
 			return
 		}
 	}
-	s.config.Notifications.Channels = append(s.config.Notifications.Channels,
+	cfg.Notifications.Channels = append(cfg.Notifications.Channels,
 		config.NotificationChannelCfg{
 			ID: req.ID, Type: req.Type, Enabled: req.Enabled,
 			WebhookURL: req.WebhookURL, Secret: req.Secret,
@@ -269,10 +277,10 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
-	if s.config == nil || s.configManager == nil {
+	if s.currentConfig() == nil || s.configManager == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "service_unavailable", "config not available", nil)
 		return
 	}
@@ -293,10 +301,10 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	s.configMutex.Lock()
-	s.upsertNotifyChannel(req)
-	saveErr := s.configManager.Save()
-	s.configMutex.Unlock()
+	_, saveErr := s.updateConfig(func(cfg *config.Config) error {
+		upsertNotifyChannel(cfg, req)
+		return nil
+	})
 
 	if saveErr != nil {
 		logger.Warnf("notify channel save failed: %v", saveErr)
@@ -319,10 +327,10 @@ func (s *Server) handleNotifyChannelDelete(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
-	if s.config == nil || s.configManager == nil {
+	if s.currentConfig() == nil || s.configManager == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "service_unavailable", "config not available", nil)
 		return
 	}
@@ -332,27 +340,35 @@ func (s *Server) handleNotifyChannelDelete(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, http.StatusBadRequest, "missing_id", "channel id is required", nil)
 		return
 	}
-
-	s.configMutex.Lock()
-
-	removed := false
-	newChannels := make([]config.NotificationChannelCfg, 0, len(s.config.Notifications.Channels))
-	for _, ch := range s.config.Notifications.Channels {
+	current := s.currentConfig()
+	found := false
+	for _, ch := range current.Notifications.Channels {
 		if ch.ID == id {
-			removed = true
-			continue
+			found = true
+			break
 		}
-		newChannels = append(newChannels, ch)
 	}
-	if !removed {
-		s.configMutex.Unlock()
+	if !found {
 		writeAPIError(w, http.StatusNotFound, "not_found", "channel not found", map[string]string{"id": id})
 		return
 	}
-	s.config.Notifications.Channels = newChannels
 
-	saveErr := s.configManager.Save()
-	s.configMutex.Unlock()
+	removed := false
+	_, saveErr := s.updateConfig(func(cfg *config.Config) error {
+		newChannels := make([]config.NotificationChannelCfg, 0, len(cfg.Notifications.Channels))
+		for _, ch := range cfg.Notifications.Channels {
+			if ch.ID == id {
+				removed = true
+				continue
+			}
+			newChannels = append(newChannels, ch)
+		}
+		if !removed {
+			return nil
+		}
+		cfg.Notifications.Channels = newChannels
+		return nil
+	})
 
 	if saveErr != nil {
 		logger.Warnf("notify channel delete failed: %v", saveErr)
@@ -391,14 +407,17 @@ func (s *Server) resolveNotifyChannelTestRequest(w http.ResponseWriter, r *http.
 
 	needLookup := req.WebhookURL == "" || req.Secret == "" || req.AppID == "" || req.AppSecret == "" || req.ChatID == ""
 	if needLookup {
-		s.configMutex.Lock()
-		for _, ch := range s.config.Notifications.Channels {
+		cfg := s.currentConfig()
+		if cfg == nil {
+			writeAPIError(w, http.StatusServiceUnavailable, "service_unavailable", "config not loaded", nil)
+			return req, false
+		}
+		for _, ch := range cfg.Notifications.Channels {
 			if ch.ID == req.ID {
 				s.fillTestRequestFromChannel(&req, ch)
 				break
 			}
 		}
-		s.configMutex.Unlock()
 	}
 
 	if req.Type == "" {
@@ -474,7 +493,7 @@ func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 

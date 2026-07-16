@@ -819,6 +819,36 @@ func TestHandleSetScreenshotMode_ValidMode(t *testing.T) {
 	}
 }
 
+func TestHandleSetScreenshotMode_PersistenceFailureKeepsRuntimeMode(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Screenshot.Mode = "auto"
+	blocked := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mgr := config.NewManager(filepath.Join(blocked, "config.yaml"))
+	mgr.SetConfig(cfg.Clone())
+	router := screenshot.NewScreenshotRouter(screenshot.RouterConfig{Priority: screenshot.ModeAuto}, nil, nil, nil)
+	s := &Server{config: cfg, configManager: mgr, screenshotRouter: router}
+
+	body := `{"mode":"cdp"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/mode", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+	s.handleSetScreenshotMode(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := router.CurrentMode(); got != screenshot.ModeAuto {
+		t.Fatalf("runtime mode changed after persistence failure: %q", got)
+	}
+	if got := mgr.GetConfig().Screenshot.Mode; got != "auto" {
+		t.Fatalf("persisted snapshot changed after persistence failure: %q", got)
+	}
+}
+
 // ============================================================
 // clearAllEngineCookies tests
 // ============================================================
@@ -827,8 +857,7 @@ func TestClearAllEngineCookies(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Engines.Fofa.Cookies = []config.Cookie{{Name: "test", Value: "val"}}
 	cfg.Engines.Hunter.Cookies = []config.Cookie{{Name: "test", Value: "val"}}
-	s := &Server{config: cfg}
-	s.clearAllEngineCookies()
+	clearEngineCookies(cfg)
 	if len(cfg.Engines.Fofa.Cookies) != 0 {
 		t.Fatal("expected fofa cookies cleared")
 	}

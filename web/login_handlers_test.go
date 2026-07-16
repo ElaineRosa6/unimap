@@ -38,7 +38,9 @@ func TestHandleLoginPage_AlreadyAuthenticated(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
 	setTestRemoteAddr(req, "203.0.113.10:12345")
 	// Set session cookie with encrypted token format
-	s.setSessionCookieForUser(rec, req, 1)
+	if err := s.setSessionCookieForUser(rec, req, 0); err != nil {
+		t.Fatal(err)
+	}
 	// Re-read the response to get the cookie
 	cookies := rec.Result().Cookies()
 	req.AddCookie(cookies[0])

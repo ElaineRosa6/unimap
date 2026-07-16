@@ -2,9 +2,48 @@ package distributed
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestMarkOfflineFailsWhenTaskReleaseCannotPersist(t *testing.T) {
+	registry := NewRegistry(time.Minute)
+	defer registry.Stop()
+	queue := NewTaskQueueWithPath(filepath.Join(t.TempDir(), "queue.json"))
+	defer queue.Stop()
+	registry.SetTaskQueue(queue)
+	if _, err := registry.Register(NodeRegistration{NodeID: "node-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.Enqueue(TaskEnvelope{TaskID: "task-1", TaskType: "scan"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.Claim("node-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	blockingFile := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	queue.snapshotPath = filepath.Join(blockingFile, "queue.json")
+
+	if err := registry.MarkOffline("node-1"); err == nil {
+		t.Fatal("expected offline transition to fail")
+	}
+	node, err := registry.Get("node-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !node.Online {
+		t.Fatal("node was marked offline despite task persistence failure")
+	}
+	task, err := queue.Get("task-1")
+	if err != nil || task == nil || task.Status != TaskStatusClaimed || task.AssignedNode != "node-1" {
+		t.Fatalf("task release was not rolled back: task=%+v err=%v", task, err)
+	}
+}
 
 func TestFailover_NodeGoesOffline_ReleasesTasks(t *testing.T) {
 	// 1. 创建 registry 和 task queue

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -15,7 +16,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	if s.config == nil {
+	cfg := s.currentConfig()
+	if cfg == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "config_not_loaded", "config not loaded", nil)
 		return
 	}
@@ -24,78 +26,75 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.configMutex.Lock()
-	defer s.configMutex.Unlock()
-
 	engines := map[string]map[string]interface{}{
 		"fofa": {
-			"enabled":      s.config.Engines.Fofa.Enabled,
-			"api_base_url": s.config.Engines.Fofa.APIBaseURL,
-			"web_base_url": s.config.Engines.Fofa.WebBaseURL,
-			"email":        s.config.Engines.Fofa.Email,
-			"api_key":      maskAPIKey(s.config.Engines.Fofa.APIKey),
-			"qps":          s.config.Engines.Fofa.QPS,
-			"timeout":      s.config.Engines.Fofa.Timeout,
+			"enabled":      cfg.Engines.Fofa.Enabled,
+			"api_base_url": cfg.Engines.Fofa.APIBaseURL,
+			"web_base_url": cfg.Engines.Fofa.WebBaseURL,
+			"email":        cfg.Engines.Fofa.Email,
+			"api_key":      maskAPIKey(cfg.Engines.Fofa.APIKey),
+			"qps":          cfg.Engines.Fofa.QPS,
+			"timeout":      cfg.Engines.Fofa.Timeout,
 		},
 		"hunter": {
-			"enabled":  s.config.Engines.Hunter.Enabled,
-			"base_url": s.config.Engines.Hunter.BaseURL,
-			"api_key":  maskAPIKey(s.config.Engines.Hunter.APIKey),
-			"qps":      s.config.Engines.Hunter.QPS,
-			"timeout":  s.config.Engines.Hunter.Timeout,
+			"enabled":  cfg.Engines.Hunter.Enabled,
+			"base_url": cfg.Engines.Hunter.BaseURL,
+			"api_key":  maskAPIKey(cfg.Engines.Hunter.APIKey),
+			"qps":      cfg.Engines.Hunter.QPS,
+			"timeout":  cfg.Engines.Hunter.Timeout,
 		},
 		"zoomeye": {
-			"enabled":  s.config.Engines.Zoomeye.Enabled,
-			"base_url": s.config.Engines.Zoomeye.BaseURL,
-			"api_key":  maskAPIKey(s.config.Engines.Zoomeye.APIKey),
-			"qps":      s.config.Engines.Zoomeye.QPS,
-			"timeout":  s.config.Engines.Zoomeye.Timeout,
+			"enabled":  cfg.Engines.Zoomeye.Enabled,
+			"base_url": cfg.Engines.Zoomeye.BaseURL,
+			"api_key":  maskAPIKey(cfg.Engines.Zoomeye.APIKey),
+			"qps":      cfg.Engines.Zoomeye.QPS,
+			"timeout":  cfg.Engines.Zoomeye.Timeout,
 		},
 		"quake": {
-			"enabled":  s.config.Engines.Quake.Enabled,
-			"base_url": s.config.Engines.Quake.BaseURL,
-			"api_key":  maskAPIKey(s.config.Engines.Quake.APIKey),
-			"qps":      s.config.Engines.Quake.QPS,
-			"timeout":  s.config.Engines.Quake.Timeout,
+			"enabled":  cfg.Engines.Quake.Enabled,
+			"base_url": cfg.Engines.Quake.BaseURL,
+			"api_key":  maskAPIKey(cfg.Engines.Quake.APIKey),
+			"qps":      cfg.Engines.Quake.QPS,
+			"timeout":  cfg.Engines.Quake.Timeout,
 		},
 		"shodan": {
-			"enabled":  s.config.Engines.Shodan.Enabled,
-			"base_url": s.config.Engines.Shodan.BaseURL,
-			"api_key":  maskAPIKey(s.config.Engines.Shodan.APIKey),
-			"qps":      s.config.Engines.Shodan.QPS,
+			"enabled":  cfg.Engines.Shodan.Enabled,
+			"base_url": cfg.Engines.Shodan.BaseURL,
+			"api_key":  maskAPIKey(cfg.Engines.Shodan.APIKey),
+			"qps":      cfg.Engines.Shodan.QPS,
 		},
 	}
 
 	icp := map[string]interface{}{
-		"enabled":      s.config.ICP.Enabled,
-		"base_url":     s.config.ICP.BaseURL,
-		"api_key":      maskAPIKey(s.config.ICP.APIKey),
-		"timeout":      s.config.ICP.Timeout,
-		"default_type": s.config.ICP.DefaultType,
+		"enabled":      cfg.ICP.Enabled,
+		"base_url":     cfg.ICP.BaseURL,
+		"api_key":      maskAPIKey(cfg.ICP.APIKey),
+		"timeout":      cfg.ICP.Timeout,
+		"default_type": cfg.ICP.DefaultType,
 	}
 
 	screenshot := map[string]interface{}{
-		"enabled": s.config.Screenshot.Enabled,
-		"engine":  s.config.Screenshot.Engine,
-		"mode":    s.config.Screenshot.Mode,
-		"timeout": s.config.Screenshot.Timeout,
+		"enabled": cfg.Screenshot.Enabled,
+		"engine":  cfg.Screenshot.Engine,
+		"mode":    cfg.Screenshot.Mode,
+		"timeout": cfg.Screenshot.Timeout,
 	}
 
 	system := map[string]interface{}{
-		"max_concurrent":    s.config.System.MaxConcurrent,
-		"cache_ttl":         s.config.System.CacheTTL,
-		"cache_max_entries": s.config.System.CacheMaxSize,
+		"max_concurrent":    cfg.System.MaxConcurrent,
+		"cache_ttl":         cfg.System.CacheTTL,
+		"cache_max_entries": cfg.System.CacheMaxSize,
 	}
 
 	notifyCfg := map[string]interface{}{
-		"enabled":  s.config.Notifications.Enabled,
-		"channels": s.config.Notifications.Channels,
+		"enabled":  cfg.Notifications.Enabled,
+		"channels": cfg.Notifications.Channels,
 	}
-	if s.config.Notifications.FeishuApp != nil {
+	if cfg.Notifications.FeishuApp != nil {
 		notifyCfg["feishu_app"] = map[string]interface{}{
-			"app_id":     s.config.Notifications.FeishuApp.AppID,
-			"app_secret": maskAPIKey(s.config.Notifications.FeishuApp.AppSecret),
-			"chat_id":    s.config.Notifications.FeishuApp.ChatID,
+			"app_id":     cfg.Notifications.FeishuApp.AppID,
+			"app_secret": maskAPIKey(cfg.Notifications.FeishuApp.AppSecret),
+			"chat_id":    cfg.Notifications.FeishuApp.ChatID,
 		}
 	}
 
@@ -122,10 +121,10 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
-	if s.config == nil {
+	if s.currentConfig() == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "config_not_loaded", "config not loaded", nil)
 		return
 	}
@@ -145,41 +144,30 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.configMutex.Lock()
-	candidate := s.config.Clone()
 	switch section {
-	case "engines":
-		applyEngineSections(candidate, req.Data)
-	case "icp":
-		applyICPSection(candidate, req.Data)
-	case "screenshot":
-		applyScreenshotSection(candidate, req.Data)
-	case "system":
-		applySystemSection(candidate, req.Data)
-	case "notifications":
-		applyNotificationsSection(candidate, req.Data)
+	case "engines", "icp", "screenshot", "system", "notifications":
 	default:
-		s.configMutex.Unlock()
 		writeAPIError(w, http.StatusBadRequest, "unsupported_section",
 			"unsupported section", map[string]string{"section": section})
 		return
 	}
 
-	var saveErr error
-	validator := s.configManager
-	if validator == nil {
-		validator = config.NewManager("")
-	}
-	if err := validator.Validate(candidate); err != nil {
-		s.configMutex.Unlock()
-		writeAPIError(w, http.StatusBadRequest, "invalid_config", "invalid configuration: "+sanitizeError(err.Error()), nil)
-		return
-	}
-	if s.configManager != nil {
-		saveErr = s.configManager.SaveConfig(candidate)
-	}
+	candidate, saveErr := s.updateConfig(func(candidate *config.Config) error {
+		switch section {
+		case "engines":
+			applyEngineSections(candidate, req.Data)
+		case "icp":
+			applyICPSection(candidate, req.Data)
+		case "screenshot":
+			applyScreenshotSection(candidate, req.Data)
+		case "system":
+			applySystemSection(candidate, req.Data)
+		case "notifications":
+			applyNotificationsSection(candidate, req.Data)
+		}
+		return nil
+	})
 	if saveErr == nil {
-		s.config = candidate
 		if section == "engines" {
 			s.reloadEngineAdapters()
 		}
@@ -188,9 +176,11 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.configMutex.Unlock()
-
 	if saveErr != nil {
+		if errors.Is(saveErr, errInvalidConfig) {
+			writeAPIError(w, http.StatusBadRequest, "invalid_config", sanitizeError(saveErr.Error()), nil)
+			return
+		}
 		logger.Warnf("config save failed: %v", saveErr)
 		writeAPIError(w, http.StatusInternalServerError, "save_failed",
 			"failed to persist config: "+sanitizeError(saveErr.Error()), nil)

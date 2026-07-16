@@ -1,12 +1,13 @@
 # UniMap HTTP API
 
-> 最后按代码核对：2026-07-15。路由的唯一事实来源是 `web/router.go`；handler 的请求/响应细节以对应 `web/*_handlers.go` 为准。
+> 最后按代码核对：2026-07-17。路由的唯一事实来源是 `web/router.go`；handler 的请求/响应细节以对应 `web/*_handlers.go` 为准。
 
 ## 约定
 
 - 所有业务 API 均以 `/api/v1` 为前缀。旧 `/api/...` 路径已于 2026-06-09 移除，不能使用。
 - 页面、健康检查、指标和图片预览不使用该前缀：`/health`、`/health/ready`、`/health/live`、`/metrics`、`/screenshots/...`。
 - 启用 Web 认证时，请按部署配置提供会话、API Key 或管理令牌。节点接口另有节点令牌/分布式管理令牌要求。
+- CLI API 子命令按 `--admin-token-file`、`UNIMAP_ADMIN_TOKEN`、`--admin-token` 的顺序读取管理令牌；推荐 token 文件或环境变量。CLI 拒绝把带认证的请求重定向到不同 origin。
 - 修改性 JSON 请求会校验同源/受信任 Origin；命令行调用应从被允许的来源执行，或按部署的认证与 CORS 配置处理。
 - 成功响应**没有统一信封**：有的 handler 直接返回业务对象，有的返回 `{ "success": true, ... }`。错误响应统一为：
 
@@ -44,7 +45,7 @@
 | `browser_query` | 可选布尔值，是否同时走浏览器采集 |
 | `browser_action` | 可选浏览器动作 |
 
-响应为 `QueryAPIPayload`，核心字段是 `query`、`engines`、`assets`、`totalCount`、`engineStats`、`errors`、`persistence`，并可能附带浏览器采集状态。`persistence.status` 为 `persisted`、`failed` 或 `disabled`。`GET /query` 是页面跳转入口，不是等价的 JSON 查询接口。
+响应为 `QueryAPIPayload`，核心字段是 `query`、`engines`、`assets`、`totalCount`、`engineStats`、`errors`、`persistence`，并可能附带浏览器采集状态。缓存使用版本化 key 并保存 `engineStats`/`errors` 元数据，因此首次响应与缓存命中的统计语义一致。`persistence.status` 为 `persisted`、`failed` 或 `disabled`。`GET /query` 是页面跳转入口，不是等价的 JSON 查询接口。
 
 ## Cookie 与 CDP
 
@@ -75,7 +76,7 @@
 | GET | `/api/v1/screenshot/router/status` | 截图路由与健康状态 |
 | POST | `/api/v1/screenshot/set-mode` | JSON：`{"mode":"cdp|extension|auto"}` |
 
-重复 `batch_id` 返回 409；创建阶段无法持久化任务返回 503。进度响应可能包含 `persistence_error`。
+启动成功返回 202 和 `{job_id,total,status}`，调用方必须轮询进度直到 `completed` 或 `failed`，不能把 202 当作完成。重复 `batch_id` 返回 409；创建阶段无法持久化任务返回 503。完成响应可能包含 `persistence_error`，表示截图已完成但结果持久化降级。
 
 非空的自定义 `query_id` / `batch_id` 不能是 `.`、`..`，也不能包含 `/` 或 `\`。handler 会在任务创建前拒绝非法值并返回 400：分别使用 `invalid_query_id` 与 `invalid_batch_id`；省略可选 ID 或传空字符串时由服务生成安全 ID。
 
@@ -153,14 +154,14 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 | POST | `/api/v1/scheduler/tasks/run` | 立即执行 |
 | POST | `/api/v1/scheduler/tasks/enable` | 启用 |
 | POST | `/api/v1/scheduler/tasks/disable` | 停用 |
-| GET | `/api/v1/scheduler/history` | 执行历史 |
+| GET | `/api/v1/scheduler/history` | 执行历史；可选 `task_id`、`task_type`、`status`、`limit` |
 | GET/POST/DELETE | `/api/v1/notifications/channels` | 列出、保存、删除通知通道 |
 | POST | `/api/v1/notifications/channels/test` | 测试通道 |
 | POST | `/api/v1/notifications/reload` | 重载通知配置 |
 | POST | `/api/v1/backup/create` | 创建备份 |
 | GET | `/api/v1/backup/list` | 备份列表 |
 
-调度器任务请求的权威字段是 `web/scheduler_handlers.go` 中的创建/更新结构：`name`、`type`、`enabled`、`cron_expr`、`payload`、`timeout_seconds`、`max_retries`，以及可选 `notifications`、`schedule_type`、`run_at`、`delay_seconds`。当前工作区定义 23 种任务类型；其中备份任务属于未提交工作区改动，发布说明应随提交状态更新。
+调度器任务请求的权威字段是 `web/scheduler_handlers.go` 中的创建/更新结构：`name`、`type`、`enabled`、`cron_expr`、`payload`、`timeout_seconds`、`max_retries`，以及可选 `notifications`、`schedule_type`、`run_at`、`delay_seconds`。任务响应额外包含只读 `runtime_status`（`scheduled`、`disabled`、`schedule_error`）和可选 `schedule_error`；`enabled` 仍表示用户期望，不代表任务一定已成功布置。当前工作区定义 23 种任务类型；其中备份任务属于未提交工作区改动，发布说明应随提交状态更新。
 
 ### 通用规则
 
@@ -302,6 +303,8 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 | GET/PUT/DELETE | `/api/v1/users/{id}` | 读取、更新、删除用户 |
 | POST | `/api/v1/users/{id}/password` | 修改用户密码 |
 | GET/POST | `/api/v1/config` | 读取、保存配置；需管理员 |
+
+数据库用户会话在每次受保护请求上校验用户存在、active 状态和 `session_version`。禁用、删除或修改密码后，旧 Cookie 的下一次请求会返回 401；用户数据库不可用时返回 503。legacy 单用户会话与管理令牌认证不读取用户表。
 | POST | `/api/v1/history/save` | 保存操作历史；需管理员 |
 | GET/DELETE | `/api/v1/history` | 列出、清空操作历史；需管理员 |
 | GET/DELETE | `/api/v1/history/{id}` | 读取、删除操作历史；需管理员 |

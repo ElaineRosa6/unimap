@@ -155,7 +155,7 @@ func TestUpsertNotifyChannel_Insert(t *testing.T) {
 		WebhookURL: "https://hook.example.com",
 		Headers:    map[string]string{"X-Custom": "val"},
 	}
-	s.upsertNotifyChannel(req)
+	upsertNotifyChannel(s.config, req)
 	if len(s.config.Notifications.Channels) != 1 {
 		t.Fatalf("expected 1 channel, got %d", len(s.config.Notifications.Channels))
 	}
@@ -178,7 +178,7 @@ func TestUpsertNotifyChannel_Update(t *testing.T) {
 		Type:       "webhook",
 		WebhookURL: "https://new.example.com",
 	}
-	s.upsertNotifyChannel(req)
+	upsertNotifyChannel(s.config, req)
 	if len(s.config.Notifications.Channels) != 1 {
 		t.Fatalf("expected 1 channel, got %d", len(s.config.Notifications.Channels))
 	}
@@ -203,7 +203,7 @@ func TestUpsertNotifyChannel_UpdatePreservesSecret(t *testing.T) {
 		AppSecret:  "", // empty → preserve old
 		WebhookURL: "https://new.example.com",
 	}
-	s.upsertNotifyChannel(req)
+	upsertNotifyChannel(s.config, req)
 	ch := s.config.Notifications.Channels[0]
 	if ch.Secret != "keep-this" {
 		t.Fatalf("expected secret preserved, got %q", ch.Secret)
@@ -215,8 +215,8 @@ func TestUpsertNotifyChannel_UpdatePreservesSecret(t *testing.T) {
 
 func TestUpsertNotifyChannel_MultipleChannels(t *testing.T) {
 	s := &Server{config: &config.Config{}}
-	s.upsertNotifyChannel(notifyChannelSaveRequest{ID: "ch1", Type: "webhook", WebhookURL: "https://a.com"})
-	s.upsertNotifyChannel(notifyChannelSaveRequest{ID: "ch2", Type: "log"})
+	upsertNotifyChannel(s.config, notifyChannelSaveRequest{ID: "ch1", Type: "webhook", WebhookURL: "https://a.com"})
+	upsertNotifyChannel(s.config, notifyChannelSaveRequest{ID: "ch2", Type: "log"})
 	if len(s.config.Notifications.Channels) != 2 {
 		t.Fatalf("expected 2 channels, got %d", len(s.config.Notifications.Channels))
 	}
@@ -515,8 +515,8 @@ func TestHandleNotifyChannelDelete_Success(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
-	if len(cfg.Notifications.Channels) != 0 {
-		t.Fatalf("expected 0 channels, got %d", len(cfg.Notifications.Channels))
+	if got := len(s.currentConfig().Notifications.Channels); got != 0 {
+		t.Fatalf("expected 0 channels, got %d", got)
 	}
 }
 
