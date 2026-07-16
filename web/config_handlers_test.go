@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,6 +16,9 @@ import (
 
 func newServerForConfigTest() *Server {
 	cfg := &config.Config{}
+	mgr := config.NewManager("")
+	// Seed all required defaults so section patches exercise validation rather than setup gaps.
+	mgr.ApplyDefaults(cfg)
 	cfg.ICP.Enabled = true
 	cfg.ICP.BaseURL = "http://localhost:16181"
 	cfg.ICP.APIKey = "abcd1234efgh5678"
@@ -196,6 +201,41 @@ func TestHandleSaveConfig_ScreenshotSection(t *testing.T) {
 	}
 	if s.config.Screenshot.Timeout != 45 {
 		t.Fatalf("expected timeout=45, got %d", s.config.Screenshot.Timeout)
+	}
+}
+
+func TestHandleSaveConfig_RejectsInvalidScreenshotMode(t *testing.T) {
+	s := newServerForConfigTest()
+	mgr := config.NewManager(filepath.Join(t.TempDir(), "config.yaml"))
+	mgr.SetConfig(s.config.Clone())
+	s.configManager = mgr
+	w := postConfig(t, s, map[string]interface{}{
+		"section": "screenshot",
+		"data":    map[string]interface{}{"mode": "not-a-mode"},
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if s.config.Screenshot.Mode != "auto" {
+		t.Fatalf("invalid candidate was published: %q", s.config.Screenshot.Mode)
+	}
+}
+
+func TestHandleSaveConfig_PersistenceFailureDoesNotPublish(t *testing.T) {
+	s := newServerForConfigTest()
+	path := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(path, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mgr := config.NewManager(filepath.Join(path, "config.yaml"))
+	mgr.SetConfig(s.config.Clone())
+	s.configManager = mgr
+	w := postConfig(t, s, map[string]interface{}{"section": "system", "data": map[string]interface{}{"cache_ttl": 7200}})
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	if s.config.System.CacheTTL == 7200 {
+		t.Fatal("candidate was published after persistence failure")
 	}
 }
 

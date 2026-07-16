@@ -79,7 +79,7 @@
 | host | `domain` | |
 | server | `header.server` | ⚠️ 点号，非 `header_server` |
 | status_code | `web.status_code` | |
-| os | `ip.os` | ⚠️ 现代码误为 `os` |
+| os | `ip.os` | 当前适配器已映射 |
 | app | `app.name` | |
 | cert | `cert` | |
 | url | `web.url` | 待官方核对 |
@@ -111,7 +111,7 @@
 | isp | `isp` | |
 | domain | `domain` | |
 | host | `domain` | |
-| server | `server` | ⚠️ 现代码误为 `app` |
+| server | `server` | 当前适配器已映射 |
 | status_code | `status_code` | |
 | os | `os` | |
 | app | `app` | |
@@ -130,8 +130,8 @@
 
 | UQL 字段 | Shodan 字段 | 备注 |
 |----------|-------------|------|
-| body | `http.html` | ⚠️ 现代码误为 `html` |
-| title | `http.title` | ⚠️ 现代码误为 `title` |
+| body | `http.html` | 当前适配器已映射 |
+| title | `http.title` | 当前适配器已映射 |
 | header | `http.html` | Shodan 无独立 header filter（暂并入 html，待定） |
 | port | `port` | 多端口用逗号 `port:80,443` |
 | protocol | `transport` | tcp/udp；存疑（官方 filter list 未明列） |
@@ -143,9 +143,9 @@
 | org | `org` | |
 | isp | `isp` | |
 | domain | `domain` | |
-| host | `hostname` | ⚠️ 现代码误为 `hostnames`（复数） |
+| host | `hostname` | 当前适配器已映射 |
 | server | `product` | Shodan 无 server filter，并入 product（待定） |
-| status_code | `http.status` | ⚠️ 现代码误为 `status` |
+| status_code | `http.status` | 当前适配器已映射 |
 | os | `os` | |
 | app | `product` | |
 | cert | `ssl` | |
@@ -164,13 +164,13 @@ UQL/AST 支持任意 `()` 嵌套和跨字段 `OR`，Shodan 不支持。翻译策
 ## 6. ZoomEye（v2）
 
 - 语法：`field="value"`（模糊）/ `field=="value"`（精确），连接符 **`&&` `||` `!=`**，`()` 分组，`*` 通配。
-- ⚠️ 当前适配器产出的是 **v1（ES）语法** `+field:"value"`，与 `/v2/search` 端点不匹配，必须整体改写。
+- 当前适配器使用 `/v2/search`、URL-safe `qbase64` 和 v2 字段语法。
 
 | UQL 字段 | ZoomEye v2 字段 | 备注 |
 |----------|-----------------|------|
-| body | `http.body` | ⚠️ 现代码误为 `site` |
+| body | `http.body` | 当前适配器已映射 |
 | title | `title` | |
-| header | `http.header` | ⚠️ 现代码误为 `headers` |
+| header | `http.header` | 当前适配器已映射 |
 | port | `port` | |
 | protocol | `service` | |
 | ip | `ip` | CIDR 用 `cidr` |
@@ -180,10 +180,10 @@ UQL/AST 支持任意 `()` 嵌套和跨字段 `OR`，Shodan 不支持。翻译策
 | asn | `asn` | |
 | org | `org` | 或 `organization` |
 | isp | `isp` | |
-| domain | `domain` | ⚠️ 现代码误为 `hostname` |
+| domain | `domain` | 当前适配器已映射 |
 | host | `hostname` | |
-| server | `http.header.server` | ⚠️ 现代码误为 `app` |
-| status_code | `http.header.status_code` | ⚠️ 现代码误为 `site` |
+| server | `http.header.server` | 当前适配器已映射 |
+| status_code | `http.header.status_code` | 当前适配器已映射 |
 | os | `os` | |
 | app | `app` | |
 | cert | `ssl` | |
@@ -208,6 +208,8 @@ UQL/AST 支持任意 `()` 嵌套和跨字段 `OR`，Shodan 不支持。翻译策
 | OR | `\|\|` | `\|\|` | `OR` | `,`（同字段） | `\|\|` |
 | IN [a,b] | `(...||...)` | `(...||...)` | `(...OR...)` | 同字段 `f:a,b` | `(... ...)` |
 
-> ¹ 当前所有适配器对 `>`/`<` 等比较操作符降级为等值匹配（静默错误），见修复计划 FIX-P1。
+> ¹ 各引擎能力不同；当前 ZoomEye 对比较操作符返回明确错误，不再静默降级。Shodan、Hunter、Quake 按各自已实现语法处理。
 > ² Hunter 仅 `ip.port_count` 等数值字段支持。
 > ³ 仅特定字段（端口/时间）支持，非通用。
+
+> `FINDING-008` 与 `FINDING-009` 已修复：Shodan 同字段等值 OR 使用逗号语法，跨字段 OR 返回能力错误；ZoomEye 比较操作符返回能力错误。调用方必须处理翻译失败，不能假定跨引擎语义等价。

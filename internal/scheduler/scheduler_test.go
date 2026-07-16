@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -10,6 +11,145 @@ import (
 
 	"github.com/unimap/project/internal/model"
 )
+
+type blockingFailStore struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *blockingFailStore) Load() ([]*ScheduledTask, []ExecutionRecord, error) {
+	return nil, nil, nil
+}
+
+func (s *blockingFailStore) Save([]*ScheduledTask, []ExecutionRecord) error {
+	close(s.started)
+	<-s.release
+	return errors.New("forced persistence failure")
+}
+
+func TestAddTaskDoesNotArmBeforePersistenceSucceeds(t *testing.T) {
+	s := NewScheduler("", "", 10)
+	handler := &testHandler{typ: TaskQuery}
+	s.RegisterHandler(handler)
+	store := &blockingFailStore{started: make(chan struct{}), release: make(chan struct{})}
+	s.store = store
+	runAt := time.Now().Add(50 * time.Millisecond)
+	task := &ScheduledTask{
+		Name:         "must-not-fire",
+		Type:         TaskQuery,
+		Enabled:      true,
+		ScheduleType: "once",
+		RunAt:        &runAt,
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- s.AddTask(task) }()
+	<-store.started
+	time.Sleep(100 * time.Millisecond)
+	if got := handler.execCount.Load(); got != 0 {
+		t.Fatalf("task executed %d time(s) before persistence completed", got)
+	}
+	close(store.release)
+	if err := <-done; err == nil {
+		t.Fatal("AddTask succeeded despite persistence failure")
+	}
+}
+
+func TestUpdateTaskDoesNotArmBeforePersistenceSucceeds(t *testing.T) {
+	s := NewScheduler("", "", 10)
+	handler := &testHandler{typ: TaskQuery}
+	s.RegisterHandler(handler)
+	store := &blockingFailStore{started: make(chan struct{}), release: make(chan struct{})}
+	s.store = store
+	s.tasks["task-1"] = &ScheduledTask{ID: "task-1", Name: "disabled", Type: TaskQuery, ScheduleType: "once", Enabled: false}
+	runAt := time.Now().Add(50 * time.Millisecond)
+	updated := &ScheduledTask{ID: "task-1", Name: "enabled", Type: TaskQuery, ScheduleType: "once", RunAt: &runAt, Enabled: true}
+
+	done := make(chan error, 1)
+	go func() { done <- s.UpdateTask(updated) }()
+	<-store.started
+	time.Sleep(100 * time.Millisecond)
+	if got := handler.execCount.Load(); got != 0 {
+		t.Fatalf("updated task executed %d time(s) before persistence completed", got)
+	}
+	close(store.release)
+	if err := <-done; err == nil {
+		t.Fatal("UpdateTask succeeded despite persistence failure")
+	}
+}
+
+func TestEnableTaskDoesNotArmBeforePersistenceSucceeds(t *testing.T) {
+	s := NewScheduler("", "", 10)
+	handler := &testHandler{typ: TaskQuery}
+	s.RegisterHandler(handler)
+	store := &blockingFailStore{started: make(chan struct{}), release: make(chan struct{})}
+	s.store = store
+	runAt := time.Now().Add(50 * time.Millisecond)
+	s.tasks["task-1"] = &ScheduledTask{
+		ID: "task-1", Name: "disabled", Type: TaskQuery,
+		ScheduleType: "once", RunAt: &runAt, Enabled: false,
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- s.EnableTask("task-1") }()
+	<-store.started
+	time.Sleep(100 * time.Millisecond)
+	if got := handler.execCount.Load(); got != 0 {
+		t.Fatalf("enabled task executed %d time(s) before persistence completed", got)
+	}
+	close(store.release)
+	if err := <-done; err == nil {
+		t.Fatal("EnableTask succeeded despite persistence failure")
+	}
+}
+
+func TestAddTaskRollsBackWhenPersistenceFails(t *testing.T) {
+	dir := t.TempDir()
+	blockedParent := filepath.Join(dir, "not-a-directory")
+	if err := os.WriteFile(blockedParent, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewScheduler(filepath.Join(blockedParent, "tasks.json"), filepath.Join(blockedParent, "history.json"), 10)
+	s.RegisterHandler(&testHandler{typ: TaskQuery})
+	task := &ScheduledTask{Name: "must-not-survive", Type: TaskQuery, Enabled: true, CronExpr: "0 0 * * * *"}
+
+	if err := s.AddTask(task); err == nil {
+		t.Fatal("AddTask reported success when persistence failed")
+	}
+	if _, err := s.GetTask(task.ID); err == nil {
+		t.Fatal("task remained in memory after persistence failure")
+	}
+}
+
+func TestUpdateTaskRollsBackWhenPersistenceFails(t *testing.T) {
+	dir := t.TempDir()
+	taskPath := filepath.Join(dir, "tasks.json")
+	historyPath := filepath.Join(dir, "history.json")
+	s := NewScheduler(taskPath, historyPath, 10)
+	s.RegisterHandler(&testHandler{typ: TaskQuery})
+	original := &ScheduledTask{Name: "original", Type: TaskQuery, Enabled: false, CronExpr: "0 0 * * * *"}
+	if err := s.AddTask(original); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(taskPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(taskPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	updated := &ScheduledTask{ID: original.ID, Name: "changed", Type: TaskQuery, Enabled: false, CronExpr: "0 1 * * * *"}
+	if err := s.UpdateTask(updated); err == nil {
+		t.Fatal("UpdateTask reported success when persistence failed")
+	}
+	got, err := s.GetTask(original.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "original" || got.CronExpr != "0 0 * * * *" {
+		t.Fatalf("task was not rolled back: %#v", got)
+	}
+}
 
 func TestNewScheduler(t *testing.T) {
 	s := NewScheduler("", "", 100)

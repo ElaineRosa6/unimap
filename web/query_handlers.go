@@ -78,6 +78,7 @@ type QueryAPIPayload struct {
 	TotalCount           int                        `json:"totalCount"`
 	EngineStats          map[string]int             `json:"engineStats"`
 	Errors               []string                   `json:"errors"`
+	Persistence          service.PersistenceStatus  `json:"persistence,omitempty"`
 	Error                string                     `json:"error,omitempty"`
 	BrowserQuery         bool                       `json:"browserQuery"`
 	BrowserAction        string                     `json:"browserAction"`
@@ -128,12 +129,14 @@ func buildQueryAPIPayload(query string, engines []string, resp *service.QueryRes
 	assets := []model.UnifiedAsset{}
 	totalCount := 0
 	engineStats := map[string]int{}
+	persistence := service.PersistenceStatus{}
 	if resp != nil {
 		assets = resp.Assets
 		totalCount = resp.TotalCount
 		if resp.EngineStats != nil {
 			engineStats = resp.EngineStats
 		}
+		persistence = resp.Persistence
 	}
 	for _, collected := range browserOutcome.CollectedResults {
 		assets = append(assets, collected.Assets...)
@@ -154,6 +157,7 @@ func buildQueryAPIPayload(query string, engines []string, resp *service.QueryRes
 		TotalCount:           totalCount,
 		EngineStats:          engineStats,
 		Errors:               combinedErrors,
+		Persistence:          persistence,
 		BrowserQuery:         browserOutcome.Enabled,
 		BrowserAction:        browserAction,
 		BrowserOpenedEngines: browserOutcome.OpenedEngines,

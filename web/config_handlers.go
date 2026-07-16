@@ -6,6 +6,7 @@ import (
 
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 // handleGetConfig returns the current config with secrets masked (GET /api/v1/config).
@@ -145,17 +146,18 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.configMutex.Lock()
+	candidate := s.config.Clone()
 	switch section {
 	case "engines":
-		applyEngineSections(s.config, req.Data)
+		applyEngineSections(candidate, req.Data)
 	case "icp":
-		applyICPSection(s.config, req.Data)
+		applyICPSection(candidate, req.Data)
 	case "screenshot":
-		applyScreenshotSection(s.config, req.Data)
+		applyScreenshotSection(candidate, req.Data)
 	case "system":
-		applySystemSection(s.config, req.Data)
+		applySystemSection(candidate, req.Data)
 	case "notifications":
-		applyNotificationsSection(s.config, req.Data)
+		applyNotificationsSection(candidate, req.Data)
 	default:
 		s.configMutex.Unlock()
 		writeAPIError(w, http.StatusBadRequest, "unsupported_section",
@@ -164,12 +166,26 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var saveErr error
-	if s.configManager != nil {
-		saveErr = s.configManager.Save()
+	validator := s.configManager
+	if validator == nil {
+		validator = config.NewManager("")
 	}
-
-	if section == "engines" {
-		s.reloadEngineAdapters()
+	if err := validator.Validate(candidate); err != nil {
+		s.configMutex.Unlock()
+		writeAPIError(w, http.StatusBadRequest, "invalid_config", "invalid configuration: "+sanitizeError(err.Error()), nil)
+		return
+	}
+	if s.configManager != nil {
+		saveErr = s.configManager.SaveConfig(candidate)
+	}
+	if saveErr == nil {
+		s.config = candidate
+		if section == "engines" {
+			s.reloadEngineAdapters()
+		}
+		if section == "screenshot" && s.screenshotRouter != nil {
+			s.screenshotRouter.SetMode(screenshot.ScreenshotMode(candidate.Screenshot.Mode))
+		}
 	}
 
 	s.configMutex.Unlock()
@@ -181,10 +197,15 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	restartRequired := section == "system" || section == "notifications" || section == "screenshot"
+	persisted := s.configManager != nil
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"section": section,
-		"message": "saved",
+		"success":          true,
+		"section":          section,
+		"message":          "saved",
+		"persisted":        persisted,
+		"applied":          !restartRequired,
+		"restart_required": restartRequired,
 	})
 }
 

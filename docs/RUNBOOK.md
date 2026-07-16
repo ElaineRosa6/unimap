@@ -1,6 +1,6 @@
 # UniMap 运维 Runbook
 
-> 最后按代码核对：2026-07-15。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
+> 最后按代码核对：2026-07-16。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
 
 ## 0. 先确认服务与认证
 
@@ -17,6 +17,28 @@ Invoke-RestMethod http://127.0.0.1:8448/metrics -Headers @{ 'X-Admin-Token' = $e
 ```
 
 不要把管理令牌、Bridge token 或引擎 Key 写入命令历史、工单或日志。
+
+### 发布前审计门槛（2026-07-15）
+
+2026-07-15 审计的 12 项问题已在当前工作区处理；2026-07-16 补修后为 11 项完整修复、1 项产品缓解（未实现的额度趋势/告警入口保持禁用），状态见 [`docs/AUDIT_REMEDIATION_GUIDE.md`](AUDIT_REMEDIATION_GUIDE.md)。发布前仍必须保留以下复验门槛：
+
+- 危险截图 ID 不得在截图根目录外创建文件；同步和异步 handler 必须在任务创建前返回 400；
+- 重复批次 ID 必须同时检查内存与 SQLite，内存清理或服务重启后仍返回 409，不得覆盖历史记录；
+- 配置保存失败不改变当前内存/运行时配置；
+- 调度和备份持久化失败不得报告成功；临近触发的一次性任务在保存失败后也不得执行；
+- readiness 必须逐个验证所有已启用引擎，并通过加锁快照读取配置；公开检查响应不得暴露底层数据库错误；
+- 未配置 `web.rate_limit.trusted_proxy_cidrs` 时忽略全部转发头；
+- Shodan 跨字段 OR 与 ZoomEye 比较操作符返回明确能力错误。
+
+每次修复后保存对应测试输出，并重新运行：
+
+```powershell
+go test ./...
+go vet ./...
+go test -race ./...
+```
+
+不要把现有审计报告中的 `P0` 自动扫描计数当作已确认漏洞；测试占位密钥、固定文案 `innerHTML` 和历史归档脚本已经在人工审查中去重。
 
 ## 1. 服务无法启动
 
@@ -145,6 +167,8 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/nodes/network/profile -Headers @{
 - 配置读取/保存：`GET`/`POST /api/v1/config`，需要管理员。
 - 备份：`POST /api/v1/backup/create`、`GET /api/v1/backup/list`。
 - 操作历史：`POST /api/v1/history/save`、`GET`/`DELETE /api/v1/history`，需要管理员。
+
+配置保存响应包含 `persisted`、`applied` 和 `restart_required`。查询响应的 `persistence.status` 为 `persisted`、`failed` 或 `disabled`；批量截图任务可能包含 `persistence_error`。反向代理部署必须把直接代理网段加入 `web.rate_limit.trusted_proxy_cidrs`，直连部署保持空列表。
 
 备份文件和本地配置可能包含敏感数据；限制文件系统权限，并通过受控部署流程恢复。
 

@@ -125,11 +125,17 @@ func (m *Manager) GetCookies(engine string) []Cookie {
 // CreateQueryDirectory 创建查询目录结构
 // 返回: 查询目录路径, 搜索引擎截图目录, 目标网站截图目录, 错误
 func (m *Manager) CreateQueryDirectory(queryID string) (string, string, string, error) {
+	if err := ValidateIdentifier(queryID); err != nil {
+		return "", "", "", fmt.Errorf("invalid query ID: %w", err)
+	}
 	// 生成目录名: YYYY-MM-DD-{queryID}
 	dateStr := time.Now().Format("2006-01-02")
 	dirName := fmt.Sprintf("%s-%s", dateStr, queryID)
 
 	queryDir := filepath.Join(m.baseDir, dirName)
+	if err := validatePath(m.baseDir, queryDir); err != nil {
+		return "", "", "", fmt.Errorf("query directory escapes screenshot root: %w", err)
+	}
 	searchEngineDir := filepath.Join(queryDir, string(ScreenshotTypeSearchEngine))
 	targetWebsiteDir := filepath.Join(queryDir, string(ScreenshotTypeTargetWebsite))
 
@@ -147,11 +153,17 @@ func (m *Manager) CreateQueryDirectory(queryID string) (string, string, string, 
 // CreateBatchUploadDirectory 创建批量上传截图目录
 // 返回: 批量上传目录路径, 错误
 func (m *Manager) CreateBatchUploadDirectory(batchID string) (string, error) {
+	if err := ValidateIdentifier(batchID); err != nil {
+		return "", fmt.Errorf("invalid batch ID: %w", err)
+	}
 	// 生成目录名: batch-YYYY-MM-DD-{batchID}
 	dateStr := time.Now().Format("2006-01-02")
 	dirName := fmt.Sprintf("batch-%s-%s", dateStr, batchID)
 
 	batchDir := filepath.Join(m.baseDir, dirName)
+	if err := validatePath(m.baseDir, batchDir); err != nil {
+		return "", fmt.Errorf("batch directory escapes screenshot root: %w", err)
+	}
 
 	// 创建目录
 	if err := os.MkdirAll(batchDir, 0755); err != nil {

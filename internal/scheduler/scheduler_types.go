@@ -302,6 +302,11 @@ type TaskHandler interface {
 	Execute(ctx context.Context, payload *model.TaskPayload) (string, error)
 }
 
+type schedulerStore interface {
+	Load() ([]*ScheduledTask, []ExecutionRecord, error)
+	Save([]*ScheduledTask, []ExecutionRecord) error
+}
+
 // Scheduler manages cron-based task scheduling with persistence.
 type Scheduler struct {
 	tasks      map[string]*ScheduledTask
@@ -309,7 +314,7 @@ type Scheduler struct {
 	cronIDs    map[string]cron.EntryID
 	handlers   map[TaskType]TaskHandler
 	history    []ExecutionRecord
-	store      *Store
+	store      schedulerStore
 	stopCh     chan struct{}
 	stopped    bool
 	mu         sync.RWMutex

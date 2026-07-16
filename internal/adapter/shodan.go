@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/utils"
 )
@@ -81,13 +80,12 @@ func (s *ShodanAdapter) Translate(ast *model.UQLAST) (string, error) {
 
 	// Shodan使用类似ES的查询语法
 	// 简单实现：遍历AST构建查询字符串
-	query := s.translateNode(ast.Root)
-	return query, nil
+	return s.translateNode(ast.Root)
 }
 
-func (s *ShodanAdapter) translateNode(node *model.UQLNode) string {
+func (s *ShodanAdapter) translateNode(node *model.UQLNode) (string, error) {
 	if node == nil {
-		return ""
+		return "", nil
 	}
 
 	switch node.Type {
@@ -106,33 +104,54 @@ func (s *ShodanAdapter) translateNode(node *model.UQLNode) string {
 				for _, v := range values {
 					quoted = append(quoted, shodanQuote(strings.TrimSpace(v)))
 				}
-				return fmt.Sprintf("%s:%s", mappedField, strings.Join(quoted, ","))
+				return fmt.Sprintf("%s:%s", mappedField, strings.Join(quoted, ",")), nil
 			}
 
 			if op == "!=" || op == "<>" {
-				return fmt.Sprintf("-%s:%s", mappedField, shodanQuote(val))
+				return fmt.Sprintf("-%s:%s", mappedField, shodanQuote(val)), nil
 			}
 			// Shodan 比较操作符: field:>value, field:>=value, field:<value, field:<=value
 			if op == ">" || op == ">=" || op == "<" || op == "<=" {
-				return fmt.Sprintf("%s:%s%s", mappedField, op, shodanQuote(val))
+				return fmt.Sprintf("%s:%s%s", mappedField, op, shodanQuote(val)), nil
 			}
-			return fmt.Sprintf("%s:%s", mappedField, shodanQuote(val))
+			return fmt.Sprintf("%s:%s", mappedField, shodanQuote(val)), nil
 		}
 
 	case "logical":
 		if len(node.Children) >= 2 {
-			left := s.translateNode(node.Children[0])
-			right := s.translateNode(node.Children[1])
+			left, err := s.translateNode(node.Children[0])
+			if err != nil {
+				return "", err
+			}
+			right, err := s.translateNode(node.Children[1])
+			if err != nil {
+				return "", err
+			}
 			if node.Value == "OR" {
-				// Shodan 不支持跨字段 OR / 括号 — 降级为 AND 语义（结果集更小但安全）
-				logger.Warnf("Shodan adapter: OR between (%s) and (%s) degraded to AND (Shodan does not support cross-field OR)", left, right)
+				leftField, leftValue, leftOK := shodanEquality(node.Children[0])
+				rightField, rightValue, rightOK := shodanEquality(node.Children[1])
+				if leftOK && rightOK && leftField == rightField {
+					return fmt.Sprintf("%s:%s,%s", s.mapField(leftField), shodanQuote(leftValue), shodanQuote(rightValue)), nil
+				}
+				return "", fmt.Errorf("shodan does not support cross-field OR: %s OR %s", left, right)
 			}
 			// AND = 空格连接（Shodan 原生语法）
-			return fmt.Sprintf("%s %s", left, right)
+			return fmt.Sprintf("%s %s", left, right), nil
 		}
 	}
 
-	return ""
+	return "", nil
+}
+
+func shodanEquality(node *model.UQLNode) (field, value string, ok bool) {
+	if node == nil || node.Type != "condition" || len(node.Children) < 2 {
+		return "", "", false
+	}
+	op := node.Children[0].Value
+	if op != "=" && op != "==" {
+		return "", "", false
+	}
+	return node.Value, node.Children[1].Value, true
 }
 
 // shodanQuote 对 Shodan 值加引号：含空格或特殊字符时包裹双引号，否则原样返回。

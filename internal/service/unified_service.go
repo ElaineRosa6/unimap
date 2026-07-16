@@ -191,6 +191,12 @@ type QueryResponse struct {
 	TotalCount  int                  // 总数量
 	EngineStats map[string]int       // 各引擎统计
 	Errors      []string             // 错误信息
+	Persistence PersistenceStatus    // 查询历史持久化状态
+}
+
+type PersistenceStatus struct {
+	Status  string `json:"status,omitempty"`
+	Warning string `json:"warning,omitempty"`
 }
 
 // Query 执行查询

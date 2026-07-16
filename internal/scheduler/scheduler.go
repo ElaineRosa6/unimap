@@ -227,13 +227,20 @@ func (s *Scheduler) AddTask(task *ScheduledTask) error {
 	if s.hasCyclicDependencyLocked(task.ID, task.DependsOn) {
 		return fmt.Errorf("task %s has cyclic dependencies", task.ID)
 	}
+	prepareDelayedRunAt(task)
 
 	s.tasks[task.ID] = task
+	if err := s.saveLocked(); err != nil {
+		delete(s.tasks, task.ID)
+		return fmt.Errorf("persist task: %w", err)
+	}
 	if err := s.scheduleTask(task); err != nil {
 		delete(s.tasks, task.ID)
+		if rollbackErr := s.saveLocked(); rollbackErr != nil {
+			return fmt.Errorf("schedule task: %v; persist rollback: %w", err, rollbackErr)
+		}
 		return fmt.Errorf("failed to schedule task: %w", err)
 	}
-	s.saveLocked() //nolint:errcheck
 	return nil
 }
 
@@ -246,6 +253,7 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 	if !ok {
 		return fmt.Errorf("task %s not found", task.ID)
 	}
+	previous := cloneScheduledTask(existing)
 
 	// Sanitize on update too
 	task.Name = sanitizeUTF8(task.Name)
@@ -319,18 +327,94 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 	}
 	if task.DelaySeconds > 0 {
 		existing.DelaySeconds = task.DelaySeconds
+		if task.RunAt == nil {
+			existing.RunAt = nil
+		}
 	}
 	if err := s.validateScheduleTypeLocked(existing.ScheduleType, existing.CronExpr, existing.RunAt, existing.DelaySeconds); err != nil {
+		s.tasks[task.ID] = previous
+		if previous.Enabled {
+			if scheduleErr := s.scheduleTask(previous); scheduleErr != nil {
+				return fmt.Errorf("validate updated task: %v; restore schedule: %w", err, scheduleErr)
+			}
+		}
 		return err
 	}
+	prepareDelayedRunAt(existing)
+	existing.NextRunAt = nil
 
+	if err := s.saveLocked(); err != nil {
+		s.tasks[task.ID] = previous
+		if previous.Enabled {
+			if scheduleErr := s.scheduleTask(previous); scheduleErr != nil {
+				return fmt.Errorf("persist task: %v; restore schedule: %w", err, scheduleErr)
+			}
+		}
+		return fmt.Errorf("persist task: %w", err)
+	}
 	if existing.Enabled {
 		if err := s.scheduleTask(existing); err != nil {
+			s.tasks[task.ID] = previous
+			rollbackErr := s.saveLocked()
+			var scheduleErr error
+			if previous.Enabled {
+				scheduleErr = s.scheduleTask(previous)
+			}
+			if rollbackErr != nil || scheduleErr != nil {
+				return fmt.Errorf("schedule task: %v; persist rollback: %v; restore schedule: %v", err, rollbackErr, scheduleErr)
+			}
 			return fmt.Errorf("failed to schedule task: %w", err)
 		}
 	}
-	s.saveLocked() //nolint:errcheck
 	return nil
+}
+
+func prepareDelayedRunAt(task *ScheduledTask) {
+	if task != nil && task.ScheduleType == "delay" && task.RunAt == nil && task.DelaySeconds > 0 {
+		runAt := time.Now().Add(time.Duration(task.DelaySeconds) * time.Second)
+		task.RunAt = &runAt
+	}
+}
+
+func (s *Scheduler) unscheduleTaskLocked(task *ScheduledTask) {
+	if task == nil {
+		return
+	}
+	if entryID, ok := s.cronIDs[task.ID]; ok {
+		s.cron.Remove(entryID)
+		delete(s.cronIDs, task.ID)
+	}
+	if task.timer != nil {
+		task.timer.Stop()
+		task.timer = nil
+	}
+}
+
+func cloneScheduledTask(task *ScheduledTask) *ScheduledTask {
+	if task == nil {
+		return nil
+	}
+	clone := *task
+	if task.Payload != nil {
+		data, _ := json.Marshal(task.Payload)
+		var payload model.TaskPayload
+		if json.Unmarshal(data, &payload) == nil {
+			clone.Payload = &payload
+		}
+	}
+	if task.RunAt != nil {
+		value := *task.RunAt
+		clone.RunAt = &value
+	}
+	if task.LastRunAt != nil {
+		value := *task.LastRunAt
+		clone.LastRunAt = &value
+	}
+	if task.NextRunAt != nil {
+		value := *task.NextRunAt
+		clone.NextRunAt = &value
+	}
+	return &clone
 }
 
 // DeleteTask removes a task from the scheduler.
@@ -375,11 +459,19 @@ func (s *Scheduler) EnableTask(id string) error {
 	}
 
 	task.Enabled = true
+	prepareDelayedRunAt(task)
+	if err := s.saveLocked(); err != nil {
+		task.Enabled = false
+		return fmt.Errorf("persist task: %w", err)
+	}
 	if err := s.scheduleTask(task); err != nil {
 		task.Enabled = false
+		if rollbackErr := s.saveLocked(); rollbackErr != nil {
+			return fmt.Errorf("schedule task: %v; persist rollback: %w", err, rollbackErr)
+		}
 		return fmt.Errorf("failed to schedule task: %w", err)
 	}
-	return s.saveLocked()
+	return nil
 }
 
 // DisableTask disables a task and removes it from cron.

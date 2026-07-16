@@ -105,8 +105,28 @@ func (z *ZoomEyeAdapter) Translate(ast *model.UQLAST) (string, error) {
 		return "", fmt.Errorf("invalid AST")
 	}
 
-	query := z.translateNode(ast.Root)
-	return query, nil
+	if err := validateZoomEyeOperators(ast.Root); err != nil {
+		return "", err
+	}
+	return z.translateNode(ast.Root), nil
+}
+
+func validateZoomEyeOperators(node *model.UQLNode) error {
+	if node == nil {
+		return nil
+	}
+	if node.Type == "condition" && len(node.Children) >= 1 {
+		switch node.Children[0].Value {
+		case ">", ">=", "<", "<=":
+			return fmt.Errorf("zoomeye does not support comparison operator %q for field %s", node.Children[0].Value, node.Value)
+		}
+	}
+	for _, child := range node.Children {
+		if err := validateZoomEyeOperators(child); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (z *ZoomEyeAdapter) translateNode(node *model.UQLNode) string {

@@ -198,6 +198,14 @@ func TestParseEnginesParam_Empty(t *testing.T) {
 	}
 }
 
+func TestBuildQueryAPIPayloadIncludesPersistenceStatus(t *testing.T) {
+	resp := &service.QueryResponse{Persistence: service.PersistenceStatus{Status: "failed", Warning: "history unavailable"}}
+	payload := buildQueryAPIPayload("test", []string{"fofa"}, resp, browserQueryOutcome{}, "")
+	if payload.Persistence.Status != "failed" || payload.Persistence.Warning == "" {
+		t.Fatalf("persistence status was not propagated: %#v", payload.Persistence)
+	}
+}
+
 func TestValidateQueryInput_TooLong(t *testing.T) {
 	longQuery := ""
 	for i := 0; i < 1001; i++ {
