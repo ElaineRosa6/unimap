@@ -33,16 +33,17 @@ const (
 )
 
 type batchJob struct {
-	ID        string                             `json:"id"`
-	Status    batchJobStatus                     `json:"status"`
-	Total     int                                `json:"total"`
-	Completed int                                `json:"completed"`
-	Success   int                                `json:"success"`
-	Failed    int                                `json:"failed"`
-	Results   []screenshot.BatchScreenshotResult `json:"results,omitempty"`
-	Error     string                             `json:"error,omitempty"`
-	StartedAt time.Time                          `json:"started_at"`
-	EndedAt   *time.Time                         `json:"ended_at,omitempty"`
+	ID               string                             `json:"id"`
+	Status           batchJobStatus                     `json:"status"`
+	Total            int                                `json:"total"`
+	Completed        int                                `json:"completed"`
+	Success          int                                `json:"success"`
+	Failed           int                                `json:"failed"`
+	Results          []screenshot.BatchScreenshotResult `json:"results,omitempty"`
+	Error            string                             `json:"error,omitempty"`
+	PersistenceError string                             `json:"persistence_error,omitempty"`
+	StartedAt        time.Time                          `json:"started_at"`
+	EndedAt          *time.Time                         `json:"ended_at,omitempty"`
 }
 
 type batchJobStore struct {
@@ -65,11 +66,19 @@ func (s *batchJobStore) setRepo(repo *batchdb.Repository) {
 
 // persistLocked writes the current job snapshot to the DB.
 // Must be called with s.mu held (at least read-locked); no-op if repo is nil.
-func (s *batchJobStore) persistLocked(job *batchJob) {
+func (s *batchJobStore) persistLocked(job *batchJob) error {
 	if s.repo == nil || job == nil {
-		return
+		return nil
 	}
-	rec := &batchdb.BatchJobRecord{
+	if err := s.repo.SaveJob(batchJobRecord(job)); err != nil {
+		logger.Warnf("screenshot: failed to persist batch job %s: %v", job.ID, err)
+		return err
+	}
+	return nil
+}
+
+func batchJobRecord(job *batchJob) *batchdb.BatchJobRecord {
+	return &batchdb.BatchJobRecord{
 		ID:        job.ID,
 		Status:    string(job.Status),
 		Total:     job.Total,
@@ -80,9 +89,6 @@ func (s *batchJobStore) persistLocked(job *batchJob) {
 		Results:   job.Results,
 		StartedAt: job.StartedAt,
 		EndedAt:   job.EndedAt,
-	}
-	if err := s.repo.SaveJob(rec); err != nil {
-		logger.Warnf("screenshot: failed to persist batch job %s: %v", job.ID, err)
 	}
 }
 
@@ -129,9 +135,12 @@ func (s *batchJobStore) loadFromDB() {
 	}
 }
 
-func (s *batchJobStore) create(id string, total int) *batchJob {
+func (s *batchJobStore) create(id string, total int) (*batchJob, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, exists := s.jobs[id]; exists {
+		return nil, false, nil
+	}
 	job := &batchJob{
 		ID:        id,
 		Status:    batchJobRunning,
@@ -139,8 +148,18 @@ func (s *batchJobStore) create(id string, total int) *batchJob {
 		StartedAt: time.Now(),
 	}
 	s.jobs[id] = job
-	s.persistLocked(job)
-	return job
+	if s.repo != nil {
+		created, err := s.repo.CreateJob(batchJobRecord(job))
+		if err != nil {
+			delete(s.jobs, id)
+			return nil, false, err
+		}
+		if !created {
+			delete(s.jobs, id)
+			return nil, false, nil
+		}
+	}
+	return job, true, nil
 }
 
 // getSnapshot returns a deep copy of the job to avoid data races when
@@ -175,7 +194,9 @@ func (s *batchJobStore) recordResult(id string, result screenshot.BatchScreensho
 		} else {
 			job.Failed++
 		}
-		s.persistLocked(job)
+		if err := s.persistLocked(job); err != nil {
+			job.PersistenceError = err.Error()
+		}
 	}
 }
 
@@ -190,7 +211,9 @@ func (s *batchJobStore) complete(id string, results []screenshot.BatchScreenshot
 		job.Completed = len(results)
 		now := time.Now()
 		job.EndedAt = &now
-		s.persistLocked(job)
+		if err := s.persistLocked(job); err != nil {
+			job.PersistenceError = err.Error()
+		}
 	}
 }
 
@@ -202,7 +225,9 @@ func (s *batchJobStore) fail(id string, err error) {
 		job.Error = err.Error()
 		now := time.Now()
 		job.EndedAt = &now
-		s.persistLocked(job)
+		if persistErr := s.persistLocked(job); persistErr != nil {
+			job.PersistenceError = persistErr.Error()
+		}
 	}
 }
 
@@ -409,6 +434,10 @@ func (s *Server) handleSearchEngineScreenshot(w http.ResponseWriter, r *http.Req
 	if queryID == "" {
 		queryID = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
+	if err := screenshot.ValidateIdentifier(queryID); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_query_id", "query_id is invalid", nil)
+		return
+	}
 
 	startTime := time.Now()
 
@@ -470,6 +499,12 @@ func (s *Server) handleTargetScreenshot(w http.ResponseWriter, r *http.Request) 
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
+	}
+	if req.QueryID != "" {
+		if err := screenshot.ValidateIdentifier(req.QueryID); err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_query_id", "query_id is invalid", nil)
+			return
+		}
 	}
 
 	if req.URL != "" {
@@ -577,6 +612,12 @@ func (s *Server) handleBatchScreenshot(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	if req.QueryID != "" {
+		if err := screenshot.ValidateIdentifier(req.QueryID); err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_query_id", "query_id is invalid", nil)
+			return
+		}
+	}
 
 	// SSRF: validate target URLs
 	for _, t := range req.Targets {
@@ -665,7 +706,17 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 	if jobID == "" {
 		jobID = fmt.Sprintf("batch_%d", time.Now().UnixNano())
 	}
-	s.batchJobs.create(jobID, len(req.URLs))
+	if err := screenshot.ValidateIdentifier(jobID); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_batch_id", "batch_id is invalid", nil)
+		return
+	}
+	if _, created, err := s.batchJobs.create(jobID, len(req.URLs)); err != nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "batch_persistence_unavailable", "failed to persist batch job", nil)
+		return
+	} else if !created {
+		writeAPIError(w, http.StatusConflict, "batch_id_conflict", "batch_id already exists", nil)
+		return
+	}
 	for _, item := range invalidResults {
 		s.batchJobs.recordResult(jobID, item.Result)
 	}

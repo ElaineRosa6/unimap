@@ -156,6 +156,42 @@ func TestSaveJob_Upsert(t *testing.T) {
 	}
 }
 
+func TestCreateJob_DuplicatePreservesExistingRecord(t *testing.T) {
+	repo := setupTestDB(t)
+	original := &BatchJobRecord{
+		ID:        "stable-batch",
+		Status:    "completed",
+		Total:     1,
+		Completed: 1,
+		Success:   1,
+		StartedAt: time.Now().Add(-time.Hour),
+	}
+	if err := repo.SaveJob(original); err != nil {
+		t.Fatalf("seed existing job: %v", err)
+	}
+
+	created, err := repo.CreateJob(&BatchJobRecord{
+		ID:        original.ID,
+		Status:    "running",
+		Total:     99,
+		StartedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("CreateJob duplicate: %v", err)
+	}
+	if created {
+		t.Fatal("duplicate CreateJob reported a new record")
+	}
+
+	got, err := repo.GetJob(original.ID)
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if got == nil || got.Status != original.Status || got.Total != original.Total || got.Success != original.Success {
+		t.Fatalf("duplicate create replaced persisted history: %#v", got)
+	}
+}
+
 func TestListJobs_OrderedByStartedAtDesc(t *testing.T) {
 	repo := setupTestDB(t)
 

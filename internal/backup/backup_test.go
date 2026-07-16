@@ -1,11 +1,63 @@
 package backup
 
 import (
+	"archive/tar"
+	"compress/gzip"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestBackupSameSecondCreatesDistinctCompleteArchives(t *testing.T) {
+	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "payload.txt"), []byte("complete"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outDir := t.TempDir()
+	cfg := BackupConfig{Sources: []string{srcDir}, OutputDir: outDir, Prefix: "unique"}
+
+	first, err := Backup(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Backup(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Path == second.Path {
+		t.Fatalf("backups collided at %s", first.Path)
+	}
+	for _, result := range []*BackupResult{first, second} {
+		f, err := os.Open(result.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			f.Close()
+			t.Fatalf("backup is not a complete gzip stream: %v", err)
+		}
+		tr := tar.NewReader(gz)
+		if _, err := tr.Next(); err != nil {
+			t.Fatalf("backup has no readable tar entry: %v", err)
+		}
+		if _, err := io.ReadAll(tr); err != nil {
+			t.Fatal(err)
+		}
+		if err := gz.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(result.Path)
+		if err != nil || info.Size() != result.Size {
+			t.Fatalf("reported size %d does not match final archive", result.Size)
+		}
+	}
+}
 
 func TestBackup_CreatesTarGz(t *testing.T) {
 	// 创建测试源

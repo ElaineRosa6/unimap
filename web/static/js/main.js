@@ -2656,9 +2656,8 @@ function initQuotaPage() {
 	// 配额设置按钮
 	const settingsBtn = document.getElementById('btn-quota-settings');
 	if (settingsBtn) {
-		settingsBtn.addEventListener('click', function() {
-			openQuotaSettings();
-		});
+		settingsBtn.disabled = true;
+		settingsBtn.title = '配额自动刷新与告警设置尚未实现';
 	}
 	
 	// 初始化配额概览
@@ -2859,12 +2858,7 @@ function openQuotaSettings() {
 				emailAlert: modal.querySelector('[name="email-alert"]')?.checked || false,
 				alertEmail: modal.querySelector('[name="alert-email"]')?.value || '',
 			};
-			try {
-				localStorage.setItem('unimap_quota_settings', JSON.stringify(settings));
-				showMessage('设置已保存', 'success');
-			} catch(e) {
-				showMessage('保存失败: ' + e.message, 'error');
-			}
+			showMessage('配额自动刷新与告警设置尚未实现', 'warning');
 			modal.style.display = 'none';
 		};
 	}

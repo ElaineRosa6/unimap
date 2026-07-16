@@ -42,6 +42,18 @@ func TestManager_CreateQueryDirectory(t *testing.T) {
 	}
 }
 
+func TestManager_CreateQueryDirectoryRejectsUnsafeIdentifier(t *testing.T) {
+	m := NewManager(Config{BaseDir: t.TempDir()})
+
+	for _, queryID := range []string{"", ".", "..", "a/b", `a\b`, `x\..\..\outside`} {
+		t.Run(queryID, func(t *testing.T) {
+			if _, _, _, err := m.CreateQueryDirectory(queryID); err == nil {
+				t.Fatalf("expected unsafe query ID %q to be rejected", queryID)
+			}
+		})
+	}
+}
+
 func TestManager_CreateQueryDirectory_InvalidBaseDir(t *testing.T) {
 	// Use a path that should fail on most systems
 	m := NewManager(Config{BaseDir: "/nonexistent/readonly/path"})
@@ -75,6 +87,18 @@ func TestManager_CreateBatchUploadDirectory(t *testing.T) {
 	}
 	if !strings.Contains(batchDir, batchID) {
 		t.Errorf("batch dir should contain batchID: %s", batchDir)
+	}
+}
+
+func TestManager_CreateBatchUploadDirectoryRejectsUnsafeIdentifier(t *testing.T) {
+	m := NewManager(Config{BaseDir: t.TempDir()})
+
+	for _, batchID := range []string{"", ".", "..", "a/b", `a\b`, `x\..\..\outside`} {
+		t.Run(batchID, func(t *testing.T) {
+			if _, err := m.CreateBatchUploadDirectory(batchID); err == nil {
+				t.Fatalf("expected unsafe batch ID %q to be rejected", batchID)
+			}
+		})
 	}
 }
 

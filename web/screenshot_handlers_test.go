@@ -13,6 +13,7 @@ import (
 
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
 )
 
@@ -479,6 +480,23 @@ func TestHandleBatchScreenshot_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestHandleBatchScreenshot_InvalidQueryID(t *testing.T) {
+	s := buildTestServerWithScreenshotBase(t.TempDir())
+	body := strings.NewReader(`{"query_id":"../escape","engines":[{"engine":"fofa","query":"test"}]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch", body)
+	req.Host = "localhost:8448"
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+	s.handleBatchScreenshot(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "invalid_query_id") {
+		t.Fatalf("expected invalid_query_id, got %q", w.Body.String())
+	}
+}
+
 // ============================================================
 // handleBatchURLsScreenshot error path tests
 // ============================================================
@@ -543,6 +561,101 @@ func TestHandleBatchURLsScreenshot_InvalidScheme(t *testing.T) {
 	s.handleBatchURLsScreenshot(w, req)
 
 	assertBatchURLAcceptedWithFailedResult(t, s, w, "http/https")
+}
+
+func TestHandleBatchURLsScreenshot_DuplicateBatchID(t *testing.T) {
+	s := buildTestServerWithScreenshotBase(t.TempDir())
+	request := func() *httptest.ResponseRecorder {
+		body := strings.NewReader(`{"urls":["file:///etc/passwd"],"batch_id":"stable-batch"}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch-urls", body)
+		req.Host = "localhost:8448"
+		req.Header.Set("Origin", "http://localhost:8448")
+		w := httptest.NewRecorder()
+		s.handleBatchURLsScreenshot(w, req)
+		return w
+	}
+
+	if first := request(); first.Code != http.StatusAccepted {
+		t.Fatalf("first request status = %d, want 202: %s", first.Code, first.Body.String())
+	}
+	if second := request(); second.Code != http.StatusConflict {
+		t.Fatalf("duplicate request status = %d, want 409: %s", second.Code, second.Body.String())
+	}
+}
+
+func TestHandleBatchURLsScreenshot_InvalidBatchID(t *testing.T) {
+	s := buildTestServerWithScreenshotBase(t.TempDir())
+	body := strings.NewReader(`{"urls":["file:///etc/passwd"],"batch_id":"../escape"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch-urls", body)
+	req.Host = "localhost:8448"
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+	s.handleBatchURLsScreenshot(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "invalid_batch_id") {
+		t.Fatalf("expected invalid_batch_id, got %q", w.Body.String())
+	}
+}
+
+func TestBatchJobStoreCreateRollsBackOnPersistenceFailure(t *testing.T) {
+	db, err := batchdb.NewDatabase(filepath.Join(t.TempDir(), "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.InitSchema(); err != nil {
+		t.Fatal(err)
+	}
+	repo := batchdb.NewRepository(db.DB())
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store := newBatchJobStore()
+	store.repo = repo
+	if _, created, err := store.create("durable", 1); err == nil || created {
+		t.Fatalf("create = created %v, err %v; want persistence failure", created, err)
+	}
+	if got := store.getSnapshot("durable"); got != nil {
+		t.Fatalf("failed job remained in memory: %#v", got)
+	}
+}
+
+func TestBatchJobStoreCreateRejectsPersistedDuplicateOutsideMemory(t *testing.T) {
+	db, err := batchdb.NewDatabase(filepath.Join(t.TempDir(), "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.InitSchema(); err != nil {
+		t.Fatal(err)
+	}
+	repo := batchdb.NewRepository(db.DB())
+	original := &batchdb.BatchJobRecord{
+		ID:        "persisted-only",
+		Status:    string(batchJobCompleted),
+		Total:     1,
+		Completed: 1,
+		Success:   1,
+		StartedAt: time.Now().Add(-time.Hour),
+	}
+	if err := repo.SaveJob(original); err != nil {
+		t.Fatal(err)
+	}
+
+	store := newBatchJobStore()
+	store.repo = repo // Deliberately do not load the persisted record into the map.
+	if _, created, err := store.create(original.ID, 99); err != nil || created {
+		t.Fatalf("create persisted duplicate = created %v, err %v; want conflict", created, err)
+	}
+	got, err := repo.GetJob(original.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Status != original.Status || got.Total != original.Total {
+		t.Fatalf("persisted job was replaced: %#v", got)
+	}
 }
 
 func TestHandleBatchURLsScreenshot_InvalidJSON(t *testing.T) {

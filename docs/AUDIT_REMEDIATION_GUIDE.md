@@ -432,6 +432,8 @@ func TestTamperHistoryExport(t *testing.T) {
 
 ## Verification Notes
 
+> 本段属于 2026-07-10 persistence re-audit 的历史记录；当前工作区的验证结论以文末“Current Functional / Interface Audit (2026-07-15)”为准。
+
 - **Static analysis only** — No runtime tests were executed during this verification
 - **Code reviewed:** `internal/tamper/detector_types.go`, `internal/tamper/history_index.go`, `internal/alerting/manager.go`, `internal/service/query_app_service.go`, `internal/history/repository.go`, `internal/scheduler/executor.go`, `web/tamper_handlers.go`, `web/websocket_handlers.go`
 - **Compilation:** Not verified — assumes `go test ./...` passes per original audit
@@ -442,3 +444,59 @@ func TestTamperHistoryExport(t *testing.T) {
 - Original audit: `.audit-results-incremental/audit_summary.md`
 - Original verification: `.audit-results-incremental/VERIFICATION_REPORT.md`
 - This verification: `.audit-results/PERSISTENCE_REAUDIT_2026-07-10.md`
+
+---
+
+## Current Functional / Interface Audit (2026-07-15)
+
+本节记录 2026-07-15 报告及 2026-07-16 当前工作区修复状态。原始证据见：
+[`verified_functional_audit_2026-07-15.md`](../.audit-results/verified_functional_audit_2026-07-15.md)、
+[`verified_functional_audit_2026-07-15.json`](../.audit-results/verified_functional_audit_2026-07-15.json)、
+[`verified_functional_audit_2026-07-15.sarif`](../.audit-results/verified_functional_audit_2026-07-15.sarif)。
+
+### 2026-07-16 re-verification summary
+
+本次不是重新采信扫描器计数，而是逐项追踪当前未提交补丁并完成补修。结论为：11 项完整修复，0 项部分修复，1 项产品缓解；代码层发布阻断项已闭合，仍须通过本节列出的发布验证门槛。
+
+| 结论 | 数量 | 发布判断 |
+|---|---:|---|
+| FIXED | 11 | 原问题的关键失败路径已闭合 |
+| PARTIAL | 0 | 无 |
+| MITIGATED | 1 | `FINDING-006` 不再误导用户，但趋势与告警功能仍未实现 |
+| 新增 P0 | 0 | 增量扫描中的 P0 均为旧代码/测试占位数据线索，未验证为本补丁新增漏洞 |
+
+### Remediation checklist
+
+| ID | 当前状态 | 位置 | 修复要求 |
+|---|---|---|---|
+| FINDING-001 | FIXED | `internal/screenshot/manager.go` | ID 拒绝点段/分隔符，Join 后验证 containment |
+| FINDING-002 | FIXED | `web/screenshot_handlers.go`、`internal/screenshot/batchdb/repository.go` | 创建使用 SQLite `ON CONFLICT DO NOTHING`；即使内存状态缺失，重复 ID 仍返回 409 且保留原记录 |
+| FINDING-003 | FIXED | `web/config_handlers.go`、`internal/config/config.go` | 候选复制、完整校验、原子保存后发布；响应含 `persisted/applied/restart_required` |
+| FINDING-004 | FIXED | `internal/scheduler/scheduler.go` | Add、Update、Enable 均先持久化再布置 cron/timer；失败时不会执行任务，调度或持久化回滚错误会返回调用方 |
+| FINDING-005 | FIXED | `internal/backup/backup.go` | 独占临时文件、显式 close/sync、唯一名称和原子发布 |
+| FINDING-006 | MITIGATED | `web/templates/quota.html`、`web/static/js/main.js` | 禁用未实现设置入口并明确提示；趋势仍标注未实现 |
+| FINDING-007 | FIXED | `web/health_handlers.go` | readiness 使用一次加锁配置快照，逐个验证已启用引擎 adapter；公开响应只返回稳定类别，底层 DB 错误仅写日志 |
+| FINDING-008 | FIXED | `internal/adapter/shodan.go` | 同字段等值 OR 合并为逗号；跨字段 OR 返回能力错误 |
+| FINDING-009 | FIXED | `internal/adapter/zoomeye.go` | 比较操作符返回能力错误，不再静默等值降级 |
+| FINDING-010 | FIXED | `web/middleware_ratelimit.go` | 仅信任 `trusted_proxy_cidrs` 命中的直接代理并校验代理链 |
+| FINDING-011 | FIXED | `internal/service/query_app_service.go` | 响应暴露 `persisted/failed/disabled` 与安全警告 |
+| FINDING-012 | FIXED | `web/screenshot_handlers.go` | 创建落库失败返回 503；运行阶段暴露 `persistence_error` |
+
+### Closeout items completed on 2026-07-16
+
+1. 批次创建同时使用 SQLite“不存在才插入”，不再依赖进程内 map 维持唯一性。
+2. 调度 Add、Update、Enable 在持久化成功后才布置执行，保存阻塞或失败期间不会触发一次性任务。
+3. readiness 使用一次加锁配置快照，逐个比对已启用引擎，并对外隐藏底层数据库错误。
+4. 截图 handler 在创建任务前校验 `query_id` / `batch_id`；非法值统一返回 400（`invalid_query_id` / `invalid_batch_id`）。
+
+### Fresh verification evidence (2026-07-16)
+
+- `go test -race ./internal/adapter ./internal/backup ./internal/config ./internal/scheduler ./internal/screenshot/... ./internal/service ./web`：PASS。
+- `go test ./...`：PASS。
+- `go vet ./...`：PASS。
+- `go build ./...`：PASS。
+- `go test -race ./...`：PASS。
+- `govulncheck ./...`：当前调用路径 0 个漏洞；依赖模块中 14 个已知漏洞均未被当前代码调用。
+- `git diff --check`：PASS，仅有 4 个工作区文件的 CRLF→LF 提示。
+- qa-security-audit 增量扫描：范围为 HEAD 后 33 个文件，自动线索 735 条；按 Git 新增行过滤后只有 5 条扫描线索，均为复杂度、测试类型或可证明不会失败的清理调用，未形成新增 P0/P1 安全漏洞。随后针对人工发现的持久化、调度、readiness 与 HTTP 契约缺口补充回归测试并完成修复。
+- 补修后的全仓 qa-security-audit 复验：16 个扫描器全部成功，原始规则命中 4485 条；对本轮涉及文件的 P0/P1 重新落到新增行和调用链复核，命中项为复杂度阈值、已等待退出的测试 goroutine、既有长文件/既有错误处理线索，未确认本轮新增功能或安全缺陷。扫描器因原始 P0 计数退出 1，不能等同于测试失败或已确认漏洞。

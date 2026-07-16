@@ -926,7 +926,7 @@ func TestShodanAdapter_Translate(t *testing.T) {
 			want: `port:<=443`,
 		},
 		{
-			name: "OR logical (degraded to AND)",
+			name: "same-field OR uses comma syntax",
 			ast: &model.UQLAST{Root: &model.UQLNode{
 				Type:  "logical",
 				Value: "OR",
@@ -941,7 +941,15 @@ func TestShodanAdapter_Translate(t *testing.T) {
 					}},
 				},
 			}},
-			want: `port:80 port:443`,
+			want: `port:80,443`,
+		},
+		{
+			name: "cross-field OR is rejected",
+			ast: &model.UQLAST{Root: &model.UQLNode{Type: "logical", Value: "OR", Children: []*model.UQLNode{
+				{Type: "condition", Value: "port", Children: []*model.UQLNode{{Type: "operator", Value: "="}, {Type: "value", Value: "80"}}},
+				{Type: "condition", Value: "country", Children: []*model.UQLNode{{Type: "operator", Value: "="}, {Type: "value", Value: "CN"}}},
+			}}},
+			wantErr: true,
 		},
 		{
 			name: "value with space gets quoted",
@@ -1572,7 +1580,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80"},
 				},
 			}},
-			want: `port="80"`, // ZoomEye 不支持比较运算符，降级为等值查询
+			wantErr: true,
 		},
 		{
 			name: "nested OR and AND",

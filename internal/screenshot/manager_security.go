@@ -6,6 +6,19 @@ import (
 	"strings"
 )
 
+// ValidateIdentifier rejects screenshot query and batch identifiers that could
+// escape their managed storage directory.
+func ValidateIdentifier(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" || id == "." || id == ".." {
+		return fmt.Errorf("identifier must not be empty or a dot segment")
+	}
+	if strings.ContainsAny(id, `/\`) {
+		return fmt.Errorf("identifier must not contain path separators")
+	}
+	return nil
+}
+
 // sanitizeFilename 清理文件名中的危险字符
 func sanitizeFilename(name string) string {
 	// 替换所有可能的路径遍历字符

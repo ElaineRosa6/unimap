@@ -902,6 +902,11 @@ func (s *Server) configureServerLimits() (rateLimitEnabled bool, maxBodyBytes in
 	SetRateLimitEnabled(rateLimitEnabled)
 	if rateLimitEnabled && s.config != nil {
 		SetRateLimitConfig(s.config.Web.RateLimit.RequestsPerWindow, time.Duration(s.config.Web.RateLimit.WindowSeconds)*time.Second)
+		if err := SetTrustedProxyCIDRs(s.config.Web.RateLimit.TrustedProxyCIDRs); err != nil {
+			logger.Warnf("invalid trusted proxy configuration: %v", err)
+		}
+	} else {
+		_ = SetTrustedProxyCIDRs(nil)
 	}
 	maxBodyBytes = int64(10 * 1024 * 1024)
 	if s.config != nil && s.config.Web.RequestLimits.MaxBodyBytes > 0 {

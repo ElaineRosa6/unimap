@@ -135,9 +135,10 @@ type Config struct {
 			AllowedExtensionIDs []string `yaml:"allowed_extension_ids"` // chrome-extension:// 允许的扩展 ID，空表示全部允许（向后兼容）
 		} `yaml:"cors"`
 		RateLimit struct {
-			Enabled           bool `yaml:"enabled"`
-			RequestsPerWindow int  `yaml:"requests_per_window"`
-			WindowSeconds     int  `yaml:"window_seconds"`
+			Enabled           bool     `yaml:"enabled"`
+			RequestsPerWindow int      `yaml:"requests_per_window"`
+			WindowSeconds     int      `yaml:"window_seconds"`
+			TrustedProxyCIDRs []string `yaml:"trusted_proxy_cidrs"`
 		} `yaml:"rate_limit"`
 		RequestLimits struct {
 			MaxBodyBytes       int64 `yaml:"max_body_bytes"`
@@ -351,6 +352,7 @@ func (c *Config) Clone() *Config {
 	clone.Web.CORS.AllowedHeaders = cloneStringSlice(c.Web.CORS.AllowedHeaders)
 	clone.Web.CORS.ExposedHeaders = cloneStringSlice(c.Web.CORS.ExposedHeaders)
 	clone.Web.CORS.AllowedExtensionIDs = cloneStringSlice(c.Web.CORS.AllowedExtensionIDs)
+	clone.Web.RateLimit.TrustedProxyCIDRs = cloneStringSlice(c.Web.RateLimit.TrustedProxyCIDRs)
 	clone.Web.Auth = c.Web.Auth
 
 	// Network (has slice: Proxies)

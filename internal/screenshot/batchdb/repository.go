@@ -34,6 +34,37 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
+// CreateJob inserts a new batch job without replacing an existing ID.
+// It returns false when the ID already exists.
+func (r *Repository) CreateJob(job *BatchJobRecord) (bool, error) {
+	resultsJSON, err := json.Marshal(job.Results)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal results: %w", err)
+	}
+
+	var endedAt interface{}
+	if job.EndedAt != nil {
+		endedAt = *job.EndedAt
+	}
+
+	result, err := r.db.Exec(
+		`INSERT INTO screenshot_batch_jobs
+			(id, status, total, completed, success, failed, error_msg, results, started_at, ended_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(id) DO NOTHING`,
+		job.ID, job.Status, job.Total, job.Completed, job.Success, job.Failed,
+		job.Error, string(resultsJSON), job.StartedAt, endedAt,
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to create batch job: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to inspect batch job creation: %w", err)
+	}
+	return rows == 1, nil
+}
+
 // SaveJob upserts a batch job record (INSERT OR REPLACE).
 func (r *Repository) SaveJob(job *BatchJobRecord) error {
 	resultsJSON, err := json.Marshal(job.Results)

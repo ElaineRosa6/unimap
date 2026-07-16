@@ -56,10 +56,16 @@ func (m *Manager) applyDefaults(config *Config) {
 	m.applyMiscDefaults(config)
 }
 
+// ApplyDefaults fills unset values on a candidate configuration.
+func (m *Manager) ApplyDefaults(config *Config) { m.applyDefaults(config) }
+
 // IsValid 检查配置是否有效
 func (m *Manager) IsValid() bool {
 	return m.config != nil
 }
+
+// Validate checks a candidate configuration without publishing it.
+func (m *Manager) Validate(cfg *Config) error { return m.validate(cfg) }
 
 // GetEngineConfig 获取引擎配置
 func (m *Manager) GetEngineConfig(name string) (interface{}, error) {
@@ -89,15 +95,24 @@ func (m *Manager) GetEngineConfig(name string) (interface{}, error) {
 
 // Save 保存配置文件
 func (m *Manager) Save() error {
-	if m.config == nil {
+	candidate := m.GetConfig()
+	if candidate == nil {
 		return fmt.Errorf("config is nil")
 	}
+	return m.SaveConfig(candidate)
+}
+
+// SaveConfig atomically persists a candidate and publishes it only on success.
+func (m *Manager) SaveConfig(candidate *Config) error {
+	if candidate == nil {
+		return fmt.Errorf("config is nil")
+	}
+	persisted := candidate.Clone()
 
 	// 加密通知渠道密钥后再持久化
-	EncryptNotifySecrets(m.config)
-	defer DecryptNotifySecrets(m.config)
+	EncryptNotifySecrets(persisted)
 
-	data, err := yaml.Marshal(m.config)
+	data, err := yaml.Marshal(persisted)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -110,9 +125,30 @@ func (m *Manager) Save() error {
 		}
 	}
 
-	if err := os.WriteFile(m.path, data, 0600); err != nil {
+	tmp, err := os.CreateTemp(dir, filepath.Base(m.path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary config file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	cleanup := func() { _ = tmp.Close(); _ = os.Remove(tmpPath) }
+	defer cleanup()
+	if err := tmp.Chmod(0600); err != nil {
+		return fmt.Errorf("failed to chmod config file: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("failed to sync config file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to close config file: %w", err)
+	}
+	if err := os.Rename(tmpPath, m.path); err != nil {
+		return fmt.Errorf("failed to replace config file: %w", err)
+	}
+	tmpPath = ""
+	m.SetConfig(candidate.Clone())
 	return nil
 }
 

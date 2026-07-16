@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -138,6 +139,8 @@ var (
 	globalLimiterMu   sync.RWMutex
 	globalLimiterOnce sync.Once
 	rateLimitEnabled  atomic.Bool
+	trustedProxyMu    sync.RWMutex
+	trustedProxyCIDRs []*net.IPNet
 )
 
 func init() {
@@ -210,32 +213,63 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 }
 
 func getClientIP(r *http.Request) string {
-	// Only trust X-Forwarded-For when the immediate connection is a known proxy
-	if isPrivateOrInternalHost(r.Context(), r.RemoteAddr) {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			// Take the first IP (original client)
-			for i, c := range xff {
-				if c == ',' {
-					return strings.TrimSpace(xff[:i])
-				}
-			}
-			return strings.TrimSpace(xff)
+	peer := remoteHost(r.RemoteAddr)
+	if !isTrustedProxyIP(net.ParseIP(peer)) {
+		return peer
+	}
+	chain := make([]net.IP, 0)
+	for _, value := range strings.Split(r.Header.Get("X-Forwarded-For"), ",") {
+		if ip := net.ParseIP(strings.TrimSpace(value)); ip != nil {
+			chain = append(chain, ip)
 		}
 	}
-
-	// Check X-Real-IP only when connection is from a trusted proxy
-	if isPrivateOrInternalHost(r.Context(), r.RemoteAddr) {
-		if xri := r.Header.Get("X-Real-IP"); xri != "" {
-			return strings.TrimSpace(xri)
+	for i := len(chain) - 1; i >= 0; i-- {
+		if !isTrustedProxyIP(chain[i]) {
+			return chain[i].String()
 		}
 	}
+	if ip := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); ip != nil {
+		return ip.String()
+	}
+	return peer
+}
 
-	// 使用 RemoteAddr
-	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+func remoteHost(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
 	if err == nil {
 		return host
 	}
-	return strings.TrimSpace(r.RemoteAddr)
+	return strings.TrimSpace(remoteAddr)
+}
+
+func isTrustedProxyIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	trustedProxyMu.RLock()
+	defer trustedProxyMu.RUnlock()
+	for _, network := range trustedProxyCIDRs {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// SetTrustedProxyCIDRs replaces the proxy allowlist used for forwarded headers.
+func SetTrustedProxyCIDRs(values []string) error {
+	parsed := make([]*net.IPNet, 0, len(values))
+	for _, value := range values {
+		_, network, err := net.ParseCIDR(strings.TrimSpace(value))
+		if err != nil {
+			return fmt.Errorf("invalid trusted proxy CIDR %q: %w", value, err)
+		}
+		parsed = append(parsed, network)
+	}
+	trustedProxyMu.Lock()
+	trustedProxyCIDRs = parsed
+	trustedProxyMu.Unlock()
+	return nil
 }
 
 // SetRateLimitConfig 设置限流配置

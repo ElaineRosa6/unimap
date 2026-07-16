@@ -99,6 +99,15 @@ func (s *QueryAppService) ExecuteQuery(ctx context.Context, query string, engine
 	resp, err := s.executeQuery(ctx, query, engines, pageSize)
 	if persistErr := s.persistQueryHistory(query, engines, pageSize, resp, err, time.Since(startedAt), nil); persistErr != nil {
 		logger.Warnf("persist query history: %v", persistErr)
+		if resp != nil {
+			resp.Persistence = PersistenceStatus{Status: "failed", Warning: "query completed but history persistence failed"}
+		}
+	} else if resp != nil {
+		if s.historyRepo == nil {
+			resp.Persistence = PersistenceStatus{Status: "disabled"}
+		} else {
+			resp.Persistence = PersistenceStatus{Status: "persisted"}
+		}
 	}
 	return resp, err
 }
@@ -174,7 +183,13 @@ func (s *QueryAppService) ExecuteQueryWithBrowserWorkflow(
 		"browser_screenshots": browserOutcome.AutoCapturedPaths,
 	}
 	if persistErr := s.persistQueryHistory(query, engines, pageSize, merged, workflowErr, time.Since(startedAt), details); persistErr != nil {
+		merged.Persistence = PersistenceStatus{Status: "failed", Warning: "query completed but history persistence failed"}
 		return merged, browserOutcome, fmt.Errorf("persist combined query results: %w", persistErr)
+	}
+	if s.historyRepo == nil {
+		merged.Persistence = PersistenceStatus{Status: "disabled"}
+	} else {
+		merged.Persistence = PersistenceStatus{Status: "persisted"}
 	}
 	if workflowErr != nil {
 		return merged, browserOutcome, workflowErr

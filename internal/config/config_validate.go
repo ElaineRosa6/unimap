@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/unimap/project/internal/utils/urlguard"
@@ -136,6 +137,11 @@ func validateWebConfig(config *Config) error {
 	}
 	if config.Web.RateLimit.WindowSeconds <= 0 {
 		return fmt.Errorf("web rate_limit window_seconds must be greater than 0")
+	}
+	for _, cidr := range config.Web.RateLimit.TrustedProxyCIDRs {
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(cidr)); err != nil {
+			return fmt.Errorf("web rate_limit trusted_proxy_cidrs contains invalid CIDR %q", cidr)
+		}
 	}
 	if config.Web.RequestLimits.MaxBodyBytes <= 0 {
 		return fmt.Errorf("web request_limits max_body_bytes must be greater than 0")
