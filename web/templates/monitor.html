@@ -543,7 +543,12 @@ document.addEventListener('DOMContentLoaded', function() {
 				try {
 					const pResp = await fetch(`/api/v1/screenshot/batch/progress?job_id=${encodeURIComponent(jobID)}`);
 					const job = await pResp.json();
-					if (job.error) return;
+					if (!pResp.ok || job.error) {
+						clearInterval(pollInterval);
+						progressText.textContent = '截图进度查询失败: ' + ((job.error && job.error.message) || job.error || `HTTP ${pResp.status}`);
+						btn.disabled = false; btn.textContent = '批量截图';
+						return;
+					}
 
 					const completed = job.completed || 0;
 					const success = job.success || 0;
@@ -569,7 +574,11 @@ document.addEventListener('DOMContentLoaded', function() {
 						});
 						btn.disabled = false; btn.textContent = '批量截图';
 					}
-				} catch(e) { /* 轮询失败时静默继续 */ }
+				} catch(e) {
+					clearInterval(pollInterval);
+					progressText.textContent = '截图进度查询失败: ' + e.message;
+					btn.disabled = false; btn.textContent = '批量截图';
+				}
 			}, 2000);
 			setTimeout(function() { clearInterval(pollInterval); btn.disabled = false; btn.textContent = '批量截图'; }, 600000);
 		} catch(e) {

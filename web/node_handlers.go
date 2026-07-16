@@ -13,11 +13,12 @@ func (s *Server) isDistributedEnabled() bool {
 	if s == nil {
 		return false
 	}
-	if s.config == nil {
+	cfg := s.currentConfig()
+	if cfg == nil {
 		// Default to disabled when config is nil for safety
 		return false
 	}
-	return s.config.Distributed.Enabled
+	return cfg.Distributed.Enabled
 }
 
 func (s *Server) requireDistributedEnabled(w http.ResponseWriter) bool {

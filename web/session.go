@@ -153,11 +153,25 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request) error 
 }
 
 // setSessionCookieForUser creates a session for a specific user.
-// Cookie format: "sessionID:encryptedPayload" where payload = "userID:adminToken"
+// Cookie format: "sessionID:encryptedPayload" where payload = "userID:sessionVersion:adminToken"
 // userID=0 means legacy single-user mode (no user DB).
 func (s *Server) setSessionCookieForUser(w http.ResponseWriter, r *http.Request, userID int64) error {
+	var sessionVersion int64
+	if userID > 0 {
+		if s.userRepo == nil {
+			return fmt.Errorf("user repository is unavailable")
+		}
+		user, err := s.userRepo.GetByID(userID)
+		if err != nil {
+			return fmt.Errorf("load user session version: %w", err)
+		}
+		if user == nil || user.Status != "active" {
+			return fmt.Errorf("user is not active")
+		}
+		sessionVersion = user.SessionVersion
+	}
 	sessionID := generateSessionID()
-	payload := fmt.Sprintf("%d:%s", userID, s.adminToken())
+	payload := fmt.Sprintf("%d:%d:%s", userID, sessionVersion, s.adminToken())
 	encrypted, err := s.encryptToken(payload)
 	if err != nil {
 		return fmt.Errorf("encrypt token: %w", err)
@@ -178,52 +192,77 @@ func (s *Server) setSessionCookieForUser(w http.ResponseWriter, r *http.Request,
 
 // getSessionToken extracts and decrypts the session cookie. Returns "" if invalid or revoked.
 func (s *Server) getSessionToken(r *http.Request) string {
-	token, _ := s.getSessionInfo(r)
+	token, _, _ := s.getSessionIdentity(r)
 	return token
 }
 
 // getSessionUserID extracts the user ID from the session cookie. Returns 0 if unavailable.
 func (s *Server) getSessionUserID(r *http.Request) int64 {
-	_, userID := s.getSessionInfo(r)
+	_, userID, _ := s.getSessionIdentity(r)
 	return userID
 }
 
 // getSessionInfo extracts both admin token and user ID from the session cookie.
 // Handles both new format ("userID:adminToken") and legacy format ("adminToken").
 func (s *Server) getSessionInfo(r *http.Request) (string, int64) {
+	token, userID, _ := s.getSessionIdentity(r)
+	return token, userID
+}
+
+// getSessionIdentity returns the token, database user ID, and session version.
+// User cookies from the pre-version format receive version 0 for a compatible
+// migration; password changes and disable operations still invalidate them.
+func (s *Server) getSessionIdentity(r *http.Request) (string, int64, int64) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil || cookie.Value == "" {
-		return "", 0
+		return "", 0, 0
 	}
 	parts := strings.SplitN(cookie.Value, ":", 2)
 	if len(parts) != 2 {
-		return "", 0
+		return "", 0, 0
 	}
 	sessionID := parts[0]
 	if s.revocationStore != nil && s.revocationStore.IsRevoked(sessionID) {
-		return "", 0
+		return "", 0, 0
 	}
 	decrypted, err := s.decryptToken(parts[1])
 	if err != nil {
-		return "", 0
+		return "", 0, 0
 	}
-	// New format: "userID:adminToken"
-	if idx := strings.Index(decrypted, ":"); idx > 0 {
-		userIDStr := decrypted[:idx]
-		token := decrypted[idx+1:]
-		var userID int64
-		for _, c := range userIDStr {
-			if c >= '0' && c <= '9' {
-				userID = userID*10 + int64(c-'0')
-			} else {
-				// Not a number, treat as legacy format
-				return decrypted, 0
-			}
+	parts = strings.SplitN(decrypted, ":", 3)
+	if len(parts) == 3 {
+		userID, ok := parseDecimalInt64(parts[0])
+		if !ok {
+			return decrypted, 0, 0
 		}
-		return token, userID
+		version, ok := parseDecimalInt64(parts[1])
+		if !ok {
+			return "", 0, 0
+		}
+		return parts[2], userID, version
+	}
+	// Previous multi-user format: "userID:adminToken" (implicit version 0).
+	if len(parts) == 2 {
+		if userID, ok := parseDecimalInt64(parts[0]); ok {
+			return parts[1], userID, 0
+		}
 	}
 	// Legacy format: just the admin token
-	return decrypted, 0
+	return decrypted, 0, 0
+}
+
+func parseDecimalInt64(value string) (int64, bool) {
+	if value == "" {
+		return 0, false
+	}
+	var result int64
+	for _, c := range value {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		result = result*10 + int64(c-'0')
+	}
+	return result, true
 }
 
 // getSessionID extracts the session ID from the cookie. Returns "" if missing.

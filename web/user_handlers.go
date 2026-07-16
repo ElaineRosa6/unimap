@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -56,6 +57,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Serialize the bootstrap count-and-create decision. The middleware may let
+	// concurrent requests reach this handler while the table is still empty;
+	// the second request must re-check after the first commit.
+	s.registrationMutex.Lock()
+	defer s.registrationMutex.Unlock()
 	// If users already exist, require authentication (admin or logged-in user)
 	count, _ := s.userRepo.Count()
 	if count > 0 {
@@ -84,8 +90,17 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		role = "admin"
 	}
 
-	user, err := s.userRepo.Create(req.Username, string(hash), role)
+	var user *auth.User
+	if count == 0 {
+		user, err = s.userRepo.CreateBootstrapAdmin(req.Username, string(hash))
+	} else {
+		user, err = s.userRepo.Create(req.Username, string(hash), role)
+	}
 	if err != nil {
+		if errors.Is(err, auth.ErrBootstrapAlreadyCompleted) {
+			writeError(w, http.StatusConflict, "bootstrap registration has already completed")
+			return
+		}
 		// Handle UNIQUE constraint violation (race condition)
 		if strings.Contains(err.Error(), "UNIQUE constraint") {
 			writeError(w, http.StatusConflict, "username already exists")
@@ -459,6 +474,9 @@ func (s *Server) handleChangeUserPassword(w http.ResponseWriter, r *http.Request
 // getCurrentUser extracts the authenticated user from the request context.
 // Returns a synthetic admin user for admin-token-authenticated requests.
 func (s *Server) getCurrentUser(r *http.Request) *auth.User {
+	if user, ok := r.Context().Value(contextKeyUser).(*auth.User); ok && user != nil && user.Status == "active" {
+		return user
+	}
 	userID, ok := r.Context().Value(contextKeyUserID).(int64)
 	if !ok {
 		return nil
@@ -480,7 +498,7 @@ func (s *Server) getCurrentUser(r *http.Request) *auth.User {
 	}
 
 	user, err := s.userRepo.GetByID(userID)
-	if err != nil || user == nil {
+	if err != nil || user == nil || user.Status != "active" {
 		return nil
 	}
 	return user

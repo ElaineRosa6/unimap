@@ -109,8 +109,10 @@ func (s *Server) validateLoginCredentials(w http.ResponseWriter, username, passw
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return 0, false
 		}
-		if user != nil && user.Status == "active" {
+		if user != nil {
 			dbUserFound = true
+		}
+		if user != nil && user.Status == "active" {
 			dbUserID = user.ID
 			dbUserHash = user.PasswordHash
 			dbUserActive = true
@@ -128,15 +130,16 @@ func (s *Server) validateLoginCredentials(w http.ResponseWriter, username, passw
 	}
 
 	// 配置文件降级（单用户遗留模式）
-	if s.config == nil || !dbUserFound {
+	if s.currentConfig() == nil || !dbUserFound {
 		// Only check config if no DB user was found
 		if !dbUserFound {
-			if s.config == nil {
+			cfg := s.currentConfig()
+			if cfg == nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server configuration error"})
 				return 0, false
 			}
-			expectedUser := s.config.Web.Auth.Username
-			expectedHash := s.config.Web.Auth.PasswordHash
+			expectedUser := cfg.Web.Auth.Username
+			expectedHash := cfg.Web.Auth.PasswordHash
 			if expectedUser == "" || expectedHash == "" {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "login not configured"})
 				return 0, false

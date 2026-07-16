@@ -86,8 +86,9 @@ func (s *Server) handleScreenshotBridgePair(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if s.config != nil && s.config.Screenshot.Extension.PairCode != "" {
-		if subtle.ConstantTimeCompare([]byte(s.config.Screenshot.Extension.PairCode), []byte(req.PairCode)) != 1 {
+	cfg := s.currentConfig()
+	if cfg != nil && cfg.Screenshot.Extension.PairCode != "" {
+		if subtle.ConstantTimeCompare([]byte(cfg.Screenshot.Extension.PairCode), []byte(req.PairCode)) != 1 {
 			s.setBridgeLastError("invalid_pair_code: pair_code mismatch")
 			writeAPIError(w, http.StatusForbidden, "invalid_pair_code", "pair_code mismatch", nil)
 			return
@@ -95,8 +96,8 @@ func (s *Server) handleScreenshotBridgePair(w http.ResponseWriter, r *http.Reque
 	}
 
 	ttl := 600
-	if s.config != nil && s.config.Screenshot.Extension.TokenTTLSeconds > 0 {
-		ttl = s.config.Screenshot.Extension.TokenTTLSeconds
+	if cfg != nil && cfg.Screenshot.Extension.TokenTTLSeconds > 0 {
+		ttl = cfg.Screenshot.Extension.TokenTTLSeconds
 	}
 	token, expireAt, err := s.issueBridgeToken(ttl)
 	if err != nil {
@@ -145,8 +146,8 @@ func (s *Server) handleScreenshotBridgeRotateToken(w http.ResponseWriter, r *htt
 	}
 
 	ttl := 600
-	if s.config != nil && s.config.Screenshot.Extension.TokenTTLSeconds > 0 {
-		ttl = s.config.Screenshot.Extension.TokenTTLSeconds
+	if cfg := s.currentConfig(); cfg != nil && cfg.Screenshot.Extension.TokenTTLSeconds > 0 {
+		ttl = cfg.Screenshot.Extension.TokenTTLSeconds
 	}
 	newToken, expireAt, err := s.issueBridgeToken(ttl)
 	if err != nil {
@@ -272,8 +273,8 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 // readAndValidateBridgeBody reads and size-limits the request body.
 func (s *Server) readAndValidateBridgeBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 	maxBodyBytes := int64(10 * 1024 * 1024)
-	if s.config != nil && s.config.Web.RequestLimits.MaxBodyBytes > 0 {
-		maxBodyBytes = s.config.Web.RequestLimits.MaxBodyBytes
+	if cfg := s.currentConfig(); cfg != nil && cfg.Web.RequestLimits.MaxBodyBytes > 0 {
+		maxBodyBytes = cfg.Web.RequestLimits.MaxBodyBytes
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
@@ -401,8 +402,8 @@ func (s *Server) handleScreenshotBridgeTaskNext(w http.ResponseWriter, r *http.R
 
 func (s *Server) validateBridgeAuthIfRequired(w http.ResponseWriter, r *http.Request) (string, bool) {
 	required := true
-	if s.config != nil {
-		required = s.config.Screenshot.Extension.PairingRequired
+	if cfg := s.currentConfig(); cfg != nil {
+		required = cfg.Screenshot.Extension.PairingRequired
 	}
 	if !required {
 		return "", true
@@ -439,14 +440,14 @@ func (s *Server) validateBridgeCallbackSignatureIfRequired(r *http.Request, body
 	pairingRequired := true
 	skewSeconds := 300
 	nonceTTLSeconds := 600
-	if s.config != nil {
-		required = s.config.Screenshot.Extension.CallbackSignatureRequired
-		pairingRequired = s.config.Screenshot.Extension.PairingRequired
-		if s.config.Screenshot.Extension.CallbackSignatureSkewSeconds > 0 {
-			skewSeconds = s.config.Screenshot.Extension.CallbackSignatureSkewSeconds
+	if cfg := s.currentConfig(); cfg != nil {
+		required = cfg.Screenshot.Extension.CallbackSignatureRequired
+		pairingRequired = cfg.Screenshot.Extension.PairingRequired
+		if cfg.Screenshot.Extension.CallbackSignatureSkewSeconds > 0 {
+			skewSeconds = cfg.Screenshot.Extension.CallbackSignatureSkewSeconds
 		}
-		if s.config.Screenshot.Extension.CallbackNonceTTLSeconds > 0 {
-			nonceTTLSeconds = s.config.Screenshot.Extension.CallbackNonceTTLSeconds
+		if cfg.Screenshot.Extension.CallbackNonceTTLSeconds > 0 {
+			nonceTTLSeconds = cfg.Screenshot.Extension.CallbackNonceTTLSeconds
 		}
 	}
 	// Callback signature requires a pairing token; skip if pairing is disabled.
@@ -920,14 +921,14 @@ func (s *Server) buildBridgeDiagnosticSnapshot() BridgeDiagnosticSnapshot {
 	enabled := false
 	pairingRequired := true
 	listenAddr := ""
-	if s.config != nil {
-		engine = strings.TrimSpace(s.config.Screenshot.Engine)
+	if cfg := s.currentConfig(); cfg != nil {
+		engine = strings.TrimSpace(cfg.Screenshot.Engine)
 		if engine == "" {
 			engine = "cdp"
 		}
-		enabled = s.config.Screenshot.Extension.Enabled
-		pairingRequired = s.config.Screenshot.Extension.PairingRequired
-		listenAddr = strings.TrimSpace(s.config.Screenshot.Extension.ListenAddr)
+		enabled = cfg.Screenshot.Extension.Enabled
+		pairingRequired = cfg.Screenshot.Extension.PairingRequired
+		listenAddr = strings.TrimSpace(cfg.Screenshot.Extension.ListenAddr)
 	}
 
 	inFlight := 0

@@ -22,11 +22,11 @@ func (s *Server) newTamperDetector(ctx context.Context, mode string) (*tamper.De
 		BaseDir:       utils.HashStoreDir(),
 		DetectionMode: mode,
 	}
-	if s.config != nil {
-		cfg.PortScanEnabled = s.config.Tamper.PortScanEnabled
-		cfg.InsecureSkipVerify = s.config.Tamper.InsecureSkipVerify
-		if s.config.Tamper.PortScanTimeoutMs > 0 {
-			cfg.PortScanTimeout = time.Duration(s.config.Tamper.PortScanTimeoutMs) * time.Millisecond
+	if current := s.currentConfig(); current != nil {
+		cfg.PortScanEnabled = current.Tamper.PortScanEnabled
+		cfg.InsecureSkipVerify = current.Tamper.InsecureSkipVerify
+		if current.Tamper.PortScanTimeoutMs > 0 {
+			cfg.PortScanTimeout = time.Duration(current.Tamper.PortScanTimeoutMs) * time.Millisecond
 		}
 	}
 	detector := tamper.NewDetector(cfg)
@@ -93,7 +93,7 @@ func (s *Server) handleTamperCheck(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -162,7 +162,7 @@ func (s *Server) handleTamperBaseline(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -248,7 +248,7 @@ func (s *Server) handleTamperBaselineDelete(w http.ResponseWriter, r *http.Reque
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -326,7 +326,7 @@ func (s *Server) handleTamperHistoryDelete(w http.ResponseWriter, r *http.Reques
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 

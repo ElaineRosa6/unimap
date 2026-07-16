@@ -4,6 +4,7 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,6 +16,12 @@ import (
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/notify"
+)
+
+var (
+	ErrTaskNotFound = errors.New("scheduler task not found")
+	ErrPersistence  = errors.New("scheduler persistence failure")
+	ErrSchedule     = errors.New("scheduler runtime scheduling failure")
 )
 
 // NewScheduler creates a new Scheduler. If storePath is non-empty, tasks are
@@ -80,6 +87,9 @@ func (s *Scheduler) Load() error {
 			if err := s.scheduleTask(t); err != nil {
 				logger.Errorf("[scheduler] failed to schedule persisted task %s (%s): %v — task loaded but will not auto-fire", t.ID, t.Name, err)
 			}
+		} else {
+			t.RuntimeStatus = "disabled"
+			t.ScheduleError = ""
 		}
 	}
 	s.history = history
@@ -108,6 +118,21 @@ func (s *Scheduler) saveLocked() error {
 	if s.store == nil {
 		return nil
 	}
+	tasks := s.taskSnapshotLocked()
+	history := make([]ExecutionRecord, len(s.history))
+	copy(history, s.history)
+
+	return s.store.Save(tasks, history)
+}
+
+func (s *Scheduler) saveTasksLocked() error {
+	if s.store == nil {
+		return nil
+	}
+	return s.store.SaveTasks(s.taskSnapshotLocked())
+}
+
+func (s *Scheduler) taskSnapshotLocked() []*ScheduledTask {
 	tasks := make([]*ScheduledTask, 0, len(s.tasks))
 	for _, t := range s.tasks {
 		cp := *t
@@ -132,10 +157,7 @@ func (s *Scheduler) saveLocked() error {
 		}
 		tasks = append(tasks, &cp)
 	}
-	history := make([]ExecutionRecord, len(s.history))
-	copy(history, s.history)
-
-	return s.store.Save(tasks, history)
+	return tasks
 }
 
 // RegisterHandler registers a task handler. Must be called before Start().
@@ -230,16 +252,16 @@ func (s *Scheduler) AddTask(task *ScheduledTask) error {
 	prepareDelayedRunAt(task)
 
 	s.tasks[task.ID] = task
-	if err := s.saveLocked(); err != nil {
+	if err := s.saveTasksLocked(); err != nil {
 		delete(s.tasks, task.ID)
-		return fmt.Errorf("persist task: %w", err)
+		return fmt.Errorf("%w: persist task: %v", ErrPersistence, err)
 	}
 	if err := s.scheduleTask(task); err != nil {
 		delete(s.tasks, task.ID)
-		if rollbackErr := s.saveLocked(); rollbackErr != nil {
-			return fmt.Errorf("schedule task: %v; persist rollback: %w", err, rollbackErr)
+		if rollbackErr := s.saveTasksLocked(); rollbackErr != nil {
+			return fmt.Errorf("%w: schedule task: %v; persist rollback: %v", ErrPersistence, err, rollbackErr)
 		}
-		return fmt.Errorf("failed to schedule task: %w", err)
+		return fmt.Errorf("%w: %v", ErrSchedule, err)
 	}
 	return nil
 }
@@ -251,7 +273,7 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 
 	existing, ok := s.tasks[task.ID]
 	if !ok {
-		return fmt.Errorf("task %s not found", task.ID)
+		return fmt.Errorf("%w: task %s", ErrTaskNotFound, task.ID)
 	}
 	previous := cloneScheduledTask(existing)
 
@@ -343,28 +365,31 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 	prepareDelayedRunAt(existing)
 	existing.NextRunAt = nil
 
-	if err := s.saveLocked(); err != nil {
+	if err := s.saveTasksLocked(); err != nil {
 		s.tasks[task.ID] = previous
 		if previous.Enabled {
 			if scheduleErr := s.scheduleTask(previous); scheduleErr != nil {
-				return fmt.Errorf("persist task: %v; restore schedule: %w", err, scheduleErr)
+				return fmt.Errorf("%w: persist task: %v; restore schedule: %v", ErrPersistence, err, scheduleErr)
 			}
 		}
-		return fmt.Errorf("persist task: %w", err)
+		return fmt.Errorf("%w: persist task: %v", ErrPersistence, err)
 	}
 	if existing.Enabled {
 		if err := s.scheduleTask(existing); err != nil {
 			s.tasks[task.ID] = previous
-			rollbackErr := s.saveLocked()
+			rollbackErr := s.saveTasksLocked()
 			var scheduleErr error
 			if previous.Enabled {
 				scheduleErr = s.scheduleTask(previous)
 			}
 			if rollbackErr != nil || scheduleErr != nil {
-				return fmt.Errorf("schedule task: %v; persist rollback: %v; restore schedule: %v", err, rollbackErr, scheduleErr)
+				return fmt.Errorf("%w: schedule task: %v; persist rollback: %v; restore schedule: %v", ErrPersistence, err, rollbackErr, scheduleErr)
 			}
-			return fmt.Errorf("failed to schedule task: %w", err)
+			return fmt.Errorf("%w: %v", ErrSchedule, err)
 		}
+	} else {
+		existing.RuntimeStatus = "disabled"
+		existing.ScheduleError = ""
 	}
 	return nil
 }
@@ -388,6 +413,7 @@ func (s *Scheduler) unscheduleTaskLocked(task *ScheduledTask) {
 		task.timer.Stop()
 		task.timer = nil
 	}
+	task.NextRunAt = nil
 }
 
 func cloneScheduledTask(task *ScheduledTask) *ScheduledTask {
@@ -422,21 +448,29 @@ func (s *Scheduler) DeleteTask(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if entryID, ok := s.cronIDs[id]; ok {
-		s.cron.Remove(entryID)
-		delete(s.cronIDs, id)
-	}
 	task, ok := s.tasks[id]
 	if !ok {
-		return fmt.Errorf("task %s not found", id)
+		return fmt.Errorf("%w: task %s", ErrTaskNotFound, id)
 	}
+	previous := cloneScheduledTask(task)
+	previous.timer = nil
+	s.unscheduleTaskLocked(task)
 	// Stop timer for one-time tasks
 	if task.timer != nil {
 		task.timer.Stop()
 		task.timer = nil
 	}
 	delete(s.tasks, id)
-	return s.saveLocked()
+	if err := s.saveTasksLocked(); err != nil {
+		s.tasks[id] = previous
+		if previous.Enabled {
+			if restoreErr := s.scheduleTask(previous); restoreErr != nil {
+				return fmt.Errorf("%w: persist delete: %v; restore schedule: %v", ErrPersistence, err, restoreErr)
+			}
+		}
+		return fmt.Errorf("%w: persist delete: %v", ErrPersistence, err)
+	}
+	return nil
 }
 
 // EnableTask enables a task and schedules it.
@@ -445,7 +479,7 @@ func (s *Scheduler) EnableTask(id string) error {
 	defer s.mu.Unlock()
 	task, ok := s.tasks[id]
 	if !ok {
-		return fmt.Errorf("task %s not found", id)
+		return fmt.Errorf("%w: task %s", ErrTaskNotFound, id)
 	}
 
 	// Prevent re-enabling expired one-time tasks. This applies to BOTH
@@ -460,16 +494,16 @@ func (s *Scheduler) EnableTask(id string) error {
 
 	task.Enabled = true
 	prepareDelayedRunAt(task)
-	if err := s.saveLocked(); err != nil {
+	if err := s.saveTasksLocked(); err != nil {
 		task.Enabled = false
-		return fmt.Errorf("persist task: %w", err)
+		return fmt.Errorf("%w: persist task: %v", ErrPersistence, err)
 	}
 	if err := s.scheduleTask(task); err != nil {
 		task.Enabled = false
-		if rollbackErr := s.saveLocked(); rollbackErr != nil {
-			return fmt.Errorf("schedule task: %v; persist rollback: %w", err, rollbackErr)
+		if rollbackErr := s.saveTasksLocked(); rollbackErr != nil {
+			return fmt.Errorf("%w: schedule task: %v; persist rollback: %v", ErrPersistence, err, rollbackErr)
 		}
-		return fmt.Errorf("failed to schedule task: %w", err)
+		return fmt.Errorf("%w: %v", ErrSchedule, err)
 	}
 	return nil
 }
@@ -480,19 +514,24 @@ func (s *Scheduler) DisableTask(id string) error {
 	defer s.mu.Unlock()
 	task, ok := s.tasks[id]
 	if !ok {
-		return fmt.Errorf("task %s not found", id)
+		return fmt.Errorf("%w: task %s", ErrTaskNotFound, id)
 	}
+	previous := cloneScheduledTask(task)
+	previous.timer = nil
 	task.Enabled = false
-	if entryID, ok := s.cronIDs[id]; ok {
-		s.cron.Remove(entryID)
-		delete(s.cronIDs, id)
+	task.RuntimeStatus = "disabled"
+	task.ScheduleError = ""
+	s.unscheduleTaskLocked(task)
+	if err := s.saveTasksLocked(); err != nil {
+		s.tasks[id] = previous
+		if previous.Enabled {
+			if restoreErr := s.scheduleTask(previous); restoreErr != nil {
+				return fmt.Errorf("%w: persist disable: %v; restore schedule: %v", ErrPersistence, err, restoreErr)
+			}
+		}
+		return fmt.Errorf("%w: persist disable: %v", ErrPersistence, err)
 	}
-	// Stop timer for one-time tasks
-	if task.timer != nil {
-		task.timer.Stop()
-		task.timer = nil
-	}
-	return s.saveLocked()
+	return nil
 }
 
 // RunTaskNow executes a task immediately, regardless of its enabled state.
@@ -501,7 +540,7 @@ func (s *Scheduler) RunTaskNow(id string) error {
 	task, ok := s.tasks[id]
 	if !ok {
 		s.mu.RUnlock()
-		return fmt.Errorf("task %s not found", id)
+		return fmt.Errorf("%w: task %s", ErrTaskNotFound, id)
 	}
 	// Copy task data to avoid holding the lock during execution
 	handler := s.handlers[task.Type]
@@ -562,20 +601,28 @@ func (s *Scheduler) GetTask(id string) (*ScheduledTask, error) {
 	defer s.mu.RUnlock()
 	task, ok := s.tasks[id]
 	if !ok {
-		return nil, fmt.Errorf("task %s not found", id)
+		return nil, fmt.Errorf("%w: task %s", ErrTaskNotFound, id)
 	}
 	cp := *task
 	return &cp, nil
 }
 
-// GetHistory returns execution history, most recent first.
-func (s *Scheduler) GetHistory(limit int, taskType string, status string) []ExecutionRecord {
+// GetHistory returns execution history, most recent first. When taskID is
+// supplied, filtering happens before the limit is applied.
+func (s *Scheduler) GetHistory(limit int, taskType string, status string, taskIDs ...string) []ExecutionRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	taskID := ""
+	if len(taskIDs) > 0 {
+		taskID = taskIDs[0]
+	}
 	result := make([]ExecutionRecord, 0, len(s.history))
 	for i := len(s.history) - 1; i >= 0; i-- {
 		r := s.history[i]
+		if taskID != "" && r.TaskID != taskID {
+			continue
+		}
 		if taskType != "" && r.TaskType != taskType {
 			continue
 		}
@@ -671,20 +718,34 @@ func normalizeCronExpr(expr string) string {
 // must not race with concurrent readers — hence the write-lock requirement.
 func (s *Scheduler) scheduleTask(task *ScheduledTask) error {
 	if !task.Enabled {
+		task.RuntimeStatus = "disabled"
+		task.ScheduleError = ""
 		return nil
 	}
 	handler := s.handlers[task.Type]
 	if handler == nil {
-		logger.Warnf("[scheduler] no handler registered for task type %s (id=%s)", task.Type, task.ID)
-		return nil
+		err := fmt.Errorf("no handler registered for task type %s", task.Type)
+		task.RuntimeStatus = "schedule_error"
+		task.ScheduleError = err.Error()
+		logger.Warnf("[scheduler] %v (id=%s)", err, task.ID)
+		return err
 	}
 
+	var err error
 	switch task.ScheduleType {
 	case "once", "delay":
-		return s.scheduleOneTimeTask(task, handler)
+		err = s.scheduleOneTimeTask(task, handler)
 	default: // "cron"
-		return s.scheduleCronTask(task, handler)
+		err = s.scheduleCronTask(task, handler)
 	}
+	if err != nil {
+		task.RuntimeStatus = "schedule_error"
+		task.ScheduleError = err.Error()
+		return err
+	}
+	task.RuntimeStatus = "scheduled"
+	task.ScheduleError = ""
+	return nil
 }
 
 // scheduleCronTask schedules a recurring task via cron.
@@ -769,7 +830,7 @@ func (s *Scheduler) disableOneTimeTask(id string) {
 		task.Enabled = false
 		task.timer = nil
 		task.NextRunAt = nil // one-time task won't run again
-		_ = s.saveLocked()
+		_ = s.saveTasksLocked()
 	}
 }
 

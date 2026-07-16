@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/service"
 
 	"github.com/chromedp/cdproto/network"
@@ -59,7 +60,7 @@ func (s *Server) handleCDPConnect(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -105,7 +106,10 @@ func (s *Server) handleCDPConnect(w http.ResponseWriter, r *http.Request) {
 
 	online, info, err := s.waitForCDP(ctx, baseURL, 5*time.Second)
 	if online {
-		s.updateCDPConfig(baseURL)
+		if persistErr := s.updateCDPConfig(baseURL); persistErr != nil {
+			writeAPIError(w, http.StatusInternalServerError, "save_failed", "CDP connected but its URL could not be persisted", nil)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -137,8 +141,8 @@ func (s *Server) handleCDPConnect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resolveCDPURL() string {
-	if s.config != nil {
-		if raw := strings.TrimSpace(s.config.Screenshot.ChromeRemoteDebugURL); raw != "" {
+	if cfg := s.currentConfig(); cfg != nil {
+		if raw := strings.TrimSpace(cfg.Screenshot.ChromeRemoteDebugURL); raw != "" {
 			if normalized := normalizeCDPBaseURL(raw); normalized != "" {
 				return normalized
 			}
@@ -300,6 +304,7 @@ func (s *Server) startCDPChrome(baseURL string) error {
 	if s.chromeCmd != nil {
 		return nil
 	}
+	cfg := s.currentConfig()
 
 	chromePath, checked := s.resolveChromePathWithDiagnostics()
 	if chromePath == "" {
@@ -311,8 +316,8 @@ func (s *Server) startCDPChrome(baseURL string) error {
 
 	port := resolveCDPPort(baseURL)
 	debugAddr := "127.0.0.1"
-	if s.config != nil {
-		if addr := strings.TrimSpace(s.config.Screenshot.ChromeRemoteDebugAddress); addr != "" {
+	if cfg != nil {
+		if addr := strings.TrimSpace(cfg.Screenshot.ChromeRemoteDebugAddress); addr != "" {
 			if addr != "127.0.0.1" && addr != "localhost" && addr != "::1" {
 				logger.Warnf("ChromeRemoteDebugAddress=%s is not a loopback address; forcing to 127.0.0.1 for security", addr)
 				addr = "127.0.0.1"
@@ -329,20 +334,20 @@ func (s *Server) startCDPChrome(baseURL string) error {
 
 	userDataConfigured := false
 
-	if s.config != nil {
-		if dir := strings.TrimSpace(s.config.Screenshot.ChromeUserDataDir); dir != "" {
+	if cfg != nil {
+		if dir := strings.TrimSpace(cfg.Screenshot.ChromeUserDataDir); dir != "" {
 			args = append(args, "--user-data-dir="+dir)
 			userDataConfigured = true
 		}
-		if profile := strings.TrimSpace(s.config.Screenshot.ChromeProfileDir); profile != "" {
+		if profile := strings.TrimSpace(cfg.Screenshot.ChromeProfileDir); profile != "" {
 			args = append(args, "--profile-directory="+profile)
 		}
-		if proxy := strings.TrimSpace(s.config.Screenshot.ProxyServer); proxy != "" {
+		if proxy := strings.TrimSpace(cfg.Screenshot.ProxyServer); proxy != "" {
 			args = append(args, "--proxy-server="+proxy)
 		} else if proxyEnv := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PROXY_SERVER")); proxyEnv != "" {
 			args = append(args, "--proxy-server="+proxyEnv)
 		}
-		if s.config.Screenshot.Headless != nil && *s.config.Screenshot.Headless {
+		if cfg.Screenshot.Headless != nil && *cfg.Screenshot.Headless {
 			args = append(args, "--headless=new")
 		}
 	}
@@ -399,8 +404,8 @@ func (s *Server) resolveChromePathWithDiagnostics() (string, []string) {
 
 // resolveChromeFromConfigOrEnv checks config and env var for Chrome path.
 func (s *Server) resolveChromeFromConfigOrEnv(checked []string) (string, bool) {
-	if s.config != nil {
-		if raw := strings.TrimSpace(s.config.Screenshot.ChromePath); raw != "" {
+	if cfg := s.currentConfig(); cfg != nil {
+		if raw := strings.TrimSpace(cfg.Screenshot.ChromePath); raw != "" {
 			return raw, true
 		}
 	}
@@ -558,22 +563,16 @@ func resolveCDPPort(baseURL string) int {
 	return 9222
 }
 
-func (s *Server) updateCDPConfig(baseURL string) {
-	if s.config == nil {
-		return
+func (s *Server) updateCDPConfig(baseURL string) error {
+	if _, err := s.updateConfig(func(cfg *config.Config) error {
+		cfg.Screenshot.ChromeRemoteDebugURL = baseURL
+		return nil
+	}); err != nil {
+		logger.Warnf("Failed to persist CDP URL: %v", err)
+		return err
 	}
-
 	if s.screenshotMgr != nil {
 		s.screenshotMgr.SetRemoteDebugURL(baseURL)
 	}
-
-	s.configMutex.Lock()
-	s.config.Screenshot.ChromeRemoteDebugURL = baseURL
-	s.configMutex.Unlock()
-
-	if s.configManager != nil {
-		if err := s.configManager.Save(); err != nil {
-			logger.Warnf("Failed to persist CDP URL: %v", err)
-		}
-	}
+	return nil
 }

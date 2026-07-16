@@ -145,7 +145,7 @@ func TestUpdateCDPConfig_WithConfig(t *testing.T) {
 	cfg := &config.Config{}
 	s := &Server{config: cfg}
 	s.updateCDPConfig("http://localhost:9222")
-	if cfg.Screenshot.ChromeRemoteDebugURL != "http://localhost:9222" {
-		t.Fatalf("expected ChromeRemoteDebugURL to be set, got %s", cfg.Screenshot.ChromeRemoteDebugURL)
+	if got := s.currentConfig().Screenshot.ChromeRemoteDebugURL; got != "http://localhost:9222" {
+		t.Fatalf("expected ChromeRemoteDebugURL to be set, got %s", got)
 	}
 }

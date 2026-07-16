@@ -34,8 +34,8 @@ func filterStableEngines(engines []string) []string {
 
 func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, action string, queryID string, progress func(done, total int, engine string, err error)) <-chan browserQueryOutcome {
 	autoCaptureEnabled := false
-	if s.config != nil {
-		autoCaptureEnabled = s.config.Screenshot.AutoCapture.Enabled && s.config.Screenshot.AutoCapture.CaptureSearchResults
+	if cfg := s.currentConfig(); cfg != nil {
+		autoCaptureEnabled = cfg.Screenshot.AutoCapture.Enabled && cfg.Screenshot.AutoCapture.CaptureSearchResults
 	}
 
 	return s.queryApp.RunBrowserQueryAsync(
@@ -175,7 +175,7 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -245,12 +245,12 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	engines := filterStableEngines(s.orchestrator.ListAdapters())
 	var fofaCookies, hunterCookies, quakeCookies, zoomeyeCookies []config.Cookie
 	proxyServer := ""
-	if s.config != nil {
-		fofaCookies = s.config.Engines.Fofa.Cookies
-		hunterCookies = s.config.Engines.Hunter.Cookies
-		quakeCookies = s.config.Engines.Quake.Cookies
-		zoomeyeCookies = s.config.Engines.Zoomeye.Cookies
-		proxyServer = strings.TrimSpace(s.config.Screenshot.ProxyServer)
+	if cfg := s.currentConfig(); cfg != nil {
+		fofaCookies = cfg.Engines.Fofa.Cookies
+		hunterCookies = cfg.Engines.Hunter.Cookies
+		quakeCookies = cfg.Engines.Quake.Cookies
+		zoomeyeCookies = cfg.Engines.Zoomeye.Cookies
+		proxyServer = strings.TrimSpace(cfg.Screenshot.ProxyServer)
 	}
 	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "index.html", map[string]interface{}{
 		"engines":          engines,
@@ -477,6 +477,7 @@ func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 	tokenPrefix := ""
 	isMultiUser := s.userRepo != nil
 	role := ""
+	cfg := s.currentConfig()
 
 	// Try to get current user from session
 	currentUser := s.getCurrentUser(r)
@@ -487,15 +488,15 @@ func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 	} else if currentUser != nil {
 		// Synthetic admin (token auth, userID=-1)
 		role = currentUser.Role
-		if s.config != nil {
+		if cfg != nil {
 			token := s.adminToken()
 			if len(token) >= 8 {
 				tokenPrefix = token[:8]
 			}
 		}
-	} else if s.config != nil {
+	} else if cfg != nil {
 		// Legacy config-based user
-		username = s.config.Web.Auth.Username
+		username = cfg.Web.Auth.Username
 		token := s.adminToken()
 		if len(token) >= 8 {
 			tokenPrefix = token[:8]
@@ -593,12 +594,12 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.config == nil || s.configManager == nil {
+	if s.currentConfig() == nil || s.configManager == nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server configuration error"})
 		return
 	}
 
-	currentHash := s.config.Web.Auth.PasswordHash
+	currentHash := s.currentConfig().Web.Auth.PasswordHash
 	if currentHash == "" || !config.CheckPassword(req.CurrentPassword, currentHash) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current password is incorrect"})
 		return
@@ -615,15 +616,13 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.configMutex.Lock()
-	s.config.Web.Auth.PasswordHash = newHash
-	if err := s.configManager.Save(); err != nil {
-		s.config.Web.Auth.PasswordHash = currentHash
-		s.configMutex.Unlock()
+	if _, err := s.updateConfig(func(cfg *config.Config) error {
+		cfg.Web.Auth.PasswordHash = newHash
+		return nil
+	}); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to persist config"})
 		return
 	}
-	s.configMutex.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]string{"success": "password updated"})
 }

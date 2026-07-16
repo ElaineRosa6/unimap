@@ -28,13 +28,11 @@ func (s *Server) handleICPPage(w http.ResponseWriter, r *http.Request) {
 
 	defaultType := "web"
 	icpEnabled := false
-	if s.config != nil {
-		s.configMutex.Lock()
-		if v := strings.TrimSpace(s.config.ICP.DefaultType); v != "" {
+	if cfg := s.currentConfig(); cfg != nil {
+		if v := strings.TrimSpace(cfg.ICP.DefaultType); v != "" {
 			defaultType = v
 		}
-		icpEnabled = s.config.ICP.Enabled
-		s.configMutex.Unlock()
+		icpEnabled = cfg.ICP.Enabled
 	}
 
 	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "icp-page", map[string]interface{}{
@@ -125,12 +123,11 @@ func (s *Server) handleICPQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getICPConfig() (enabled bool, baseURL, apiKey, defaultType string) {
-	if s.config == nil {
+	cfg := s.currentConfig()
+	if cfg == nil {
 		return
 	}
-	s.configMutex.Lock()
-	defer s.configMutex.Unlock()
-	return s.config.ICP.Enabled, strings.TrimSpace(s.config.ICP.BaseURL), s.config.ICP.APIKey, s.config.ICP.DefaultType
+	return cfg.ICP.Enabled, strings.TrimSpace(cfg.ICP.BaseURL), cfg.ICP.APIKey, cfg.ICP.DefaultType
 }
 
 func parseICPQueryTypes(w http.ResponseWriter, r *http.Request, defaultType string) ([]string, bool) {
@@ -193,16 +190,15 @@ func (s *Server) handleICPHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.config == nil {
+	cfg := s.currentConfig()
+	if cfg == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "config_not_loaded", "config not loaded", nil)
 		return
 	}
 
-	s.configMutex.Lock()
-	baseURL := strings.TrimSpace(s.config.ICP.BaseURL)
-	apiKey := s.config.ICP.APIKey
-	timeout := s.config.ICP.Timeout
-	s.configMutex.Unlock()
+	baseURL := strings.TrimSpace(cfg.ICP.BaseURL)
+	apiKey := cfg.ICP.APIKey
+	timeout := cfg.ICP.Timeout
 
 	if baseURL == "" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{

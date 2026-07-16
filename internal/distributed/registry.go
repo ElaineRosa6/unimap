@@ -95,7 +95,11 @@ func (r *Registry) cleanupStaleNodes() {
 		if !record.Online && now.Sub(record.LastHeartbeatAt) > cutoff {
 			// Release orphaned tasks from stale node before removing record
 			if r.taskQueue != nil {
-				released := r.taskQueue.ReleaseNodeTasks(nodeID)
+				released, err := r.taskQueue.ReleaseNodeTasks(nodeID)
+				if err != nil {
+					logger.Errorf("registry: keep stale node %s after task release failure: %v", nodeID, err)
+					continue
+				}
 				if released > 0 {
 					logger.Infof("registry: released %d orphaned task(s) from stale node %s", released, nodeID)
 				}
@@ -289,6 +293,14 @@ func (r *Registry) MarkOffline(nodeID string) error {
 	}
 
 	wasOnline := record.Online
+	recoveredTasks := 0
+	if wasOnline && r.taskQueue != nil {
+		var err error
+		recoveredTasks, err = r.taskQueue.ReleaseNodeTasks(nodeID)
+		if err != nil {
+			return fmt.Errorf("release tasks before marking node offline: %w", err)
+		}
+	}
 	record.Online = false
 	record.HealthStatus = "offline"
 
@@ -299,8 +311,7 @@ func (r *Registry) MarkOffline(nodeID string) error {
 	}
 
 	// Release tasks if node was online and we have a task queue
-	if wasOnline && r.taskQueue != nil {
-		recoveredTasks := r.taskQueue.ReleaseNodeTasks(nodeID)
+	if wasOnline {
 		record.TaskRecoveryCount += recoveredTasks
 	}
 
@@ -401,7 +412,9 @@ func (r *Registry) Deregister(nodeID string) error {
 
 	// Release tasks before removing
 	if r.taskQueue != nil {
-		r.taskQueue.ReleaseNodeTasks(nodeID)
+		if _, err := r.taskQueue.ReleaseNodeTasks(nodeID); err != nil {
+			return fmt.Errorf("release tasks before deregistering node: %w", err)
+		}
 	}
 
 	delete(r.nodes, nodeID)

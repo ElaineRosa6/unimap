@@ -698,7 +698,7 @@
 					body: JSON.stringify({ section: "notifications", data: data })
 				});
 				var result = await resp.json();
-				showResult("feishu-app-result", result.success ? "ok" : "fail", result.success ? (result.message || "已保存，重启后生效") : extractErrorMsg(result));
+			showResult("feishu-app-result", result.success ? "ok" : "fail", result.success ? (result.restart_required ? "已保存，重启后生效" : "已保存并生效") : extractErrorMsg(result));
 				if (result.success) loadConfig();
 			} catch (e) { showResult("feishu-app-result", "fail", "保存失败: " + e.message); }
 		};
@@ -737,7 +737,7 @@
 			});
 			var result = await resp.json();
 			showResult('engines-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '全部保存成功') : extractErrorMsg(result));
-			Object.keys(data).forEach(function(eng) {
+			if (resp.ok && result.success) Object.keys(data).forEach(function(eng) {
 				var d = document.getElementById(eng + '-dot');
 				if (d) d.className = 'dot ' + (data[eng].enabled ? 'on' : 'off');
 			});
@@ -798,7 +798,7 @@
 				}})
 			});
 			var result = await resp.json();
-			showResult('screenshot-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '保存成功') : extractErrorMsg(result));
+			showResult('screenshot-result', result.success ? 'ok' : 'fail', result.success ? (result.restart_required ? '已保存，重启后生效' : '已保存并生效') : extractErrorMsg(result));
 		} catch (e) { showResult('screenshot-result', 'fail', '保存失败: ' + e.message); }
 	};
 
@@ -814,7 +814,7 @@
 				}})
 			});
 			var result = await resp.json();
-			showResult('system-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '保存成功') : extractErrorMsg(result));
+			showResult('system-result', result.success ? 'ok' : 'fail', result.success ? (result.restart_required ? '已保存，重启后生效' : '已保存并生效') : extractErrorMsg(result));
 		} catch (e) { showResult('system-result', 'fail', '保存失败: ' + e.message); }
 	};
 

@@ -33,6 +33,11 @@ CLI 示例：
 
 ```bash
 go run ./cmd/unimap-cli -q 'country="CN" && port="80"' -e fofa,hunter -l 100
+
+# API 子命令（默认认证开启时推荐 token 文件）
+go run ./cmd/unimap-cli query --admin-token-file ./.secrets/unimap-admin-token -q 'port="443"' -e fofa
+go run ./cmd/unimap-cli scheduler --admin-token-file ./.secrets/unimap-admin-token list
+go run ./cmd/unimap-cli screenshot-batch --admin-token-file ./.secrets/unimap-admin-token --urls https://example.com
 ```
 
 GUI：

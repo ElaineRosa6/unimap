@@ -94,14 +94,14 @@ func (s *Server) handleImportURLs(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
 	// 解析multipart表单
 	maxMultipartMemory := int64(10 << 20)
-	if s.config != nil && s.config.Web.RequestLimits.MaxMultipartMemory > 0 {
-		maxMultipartMemory = s.config.Web.RequestLimits.MaxMultipartMemory
+	if cfg := s.currentConfig(); cfg != nil && cfg.Web.RequestLimits.MaxMultipartMemory > 0 {
+		maxMultipartMemory = cfg.Web.RequestLimits.MaxMultipartMemory
 	}
 	err := r.ParseMultipartForm(maxMultipartMemory)
 	if err != nil {
@@ -165,7 +165,7 @@ func (s *Server) handleURLReachability(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -222,7 +222,7 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusServiceUnavailable, "monitor_not_available", "monitor service not available", nil)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -356,7 +356,7 @@ func (s *Server) handleProbeWebService(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -392,7 +392,7 @@ func (s *Server) handleProbeWebServiceBatch(w http.ResponseWriter, r *http.Reque
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 

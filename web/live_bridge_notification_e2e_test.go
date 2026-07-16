@@ -315,7 +315,7 @@ func TestLiveAPIScheduledQueryNotificationDetails(t *testing.T) {
 	// Production cmd/unimap-web registers configured adapters before NewServer.
 	// This package-level E2E constructs the service directly, so mirror that
 	// registration step without exposing any credential values.
-	srv.registerCoreEngineAdapters()
+	srv.registerCoreEngineAdapters(cfg)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

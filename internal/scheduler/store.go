@@ -70,6 +70,17 @@ func (s *Store) Save(tasks []*ScheduledTask, history []ExecutionRecord) error {
 	return nil
 }
 
+// SaveTasks persists only task configuration. Task mutations use this path so
+// an unrelated history-file failure cannot create a half-committed rollback.
+func (s *Store) SaveTasks(tasks []*ScheduledTask) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.saveTasks(tasks); err != nil {
+		return fmt.Errorf("save tasks: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) loadTasks() ([]*ScheduledTask, error) {
 	data, err := os.ReadFile(s.taskPath)
 	if err != nil {

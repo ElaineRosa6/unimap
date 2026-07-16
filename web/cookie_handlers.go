@@ -18,10 +18,10 @@ func (s *Server) handleImportCookieJSON(w http.ResponseWriter, r *http.Request) 
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
-	if s.config == nil {
+	if s.currentConfig() == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "config_not_loaded", "config not loaded", nil)
 		return
 	}
@@ -42,30 +42,21 @@ func (s *Server) handleImportCookieJSON(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.configMutex.Lock()
-	switch strings.ToLower(engine) {
-	case "fofa":
-		s.config.Engines.Fofa.Cookies = cookies
-	case "hunter":
-		s.config.Engines.Hunter.Cookies = cookies
-	case "quake":
-		s.config.Engines.Quake.Cookies = cookies
-	case "zoomeye":
-		s.config.Engines.Zoomeye.Cookies = cookies
-	default:
-		s.configMutex.Unlock()
+	engine = strings.ToLower(engine)
+	if engine != "fofa" && engine != "hunter" && engine != "quake" && engine != "zoomeye" {
 		writeAPIError(w, http.StatusBadRequest, "unsupported_engine", "unsupported engine", map[string]string{"engine": engine})
+		return
+	}
+	if _, err := s.updateConfig(func(cfg *config.Config) error {
+		setEngineCookies(cfg, engine, cookies)
+		return nil
+	}); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "save_failed", "failed to persist cookies", nil)
 		return
 	}
 	if s.screenshotMgr != nil {
 		s.screenshotMgr.SetCookies(engine, convertConfigCookies(cookies))
 	}
-	if s.configManager != nil {
-		if err := s.configManager.Save(); err != nil {
-			logger.Warnf("Failed to persist cookies: %v", err)
-		}
-	}
-	s.configMutex.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	payload := map[string]interface{}{
@@ -130,7 +121,7 @@ func (s *Server) handleSaveCookies(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -154,142 +145,87 @@ func (s *Server) handleSaveCookies(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) applyCookiesFromRequest(r *http.Request) {
-	if s.config == nil {
+	if s.currentConfig() == nil {
 		return
 	}
 	_ = r.ParseForm()
 
-	s.configMutex.Lock()
-	defer s.configMutex.Unlock()
-
-	if s.currentScreenshotEngine() == "extension" {
-		s.applyCookiesExtensionMode(r)
+	clear := strings.EqualFold(strings.TrimSpace(r.FormValue("clear_cookies")), "true")
+	proxy, proxyPresent := r.Form["proxy_server"]
+	committed, err := s.updateConfig(func(cfg *config.Config) error {
+		if clear {
+			clearEngineCookies(cfg)
+		}
+		if !clear {
+			for _, engine := range []string{"fofa", "hunter", "zoomeye", "quake"} {
+				value := strings.TrimSpace(r.FormValue("cookie_" + engine))
+				if value == "" {
+					continue
+				}
+				cookies := config.ParseCookieHeader(value, config.DefaultCookieDomain(engine))
+				if len(cookies) > 0 {
+					setEngineCookies(cfg, engine, cookies)
+				}
+			}
+		}
+		if proxyPresent {
+			cfg.Screenshot.ProxyServer = strings.TrimSpace(proxy[0])
+		}
+		return nil
+	})
+	if err != nil {
+		logger.Warnf("Failed to persist cookies: %v", err)
 		return
 	}
-
-	s.applyCDPCookiesFromForm(r)
-}
-
-// applyCookiesExtensionMode handles cookie/proxy updates when using extension engine.
-// Must be called with configMutex held.
-func (s *Server) applyCookiesExtensionMode(r *http.Request) {
-	changed := false
-	clear := strings.EqualFold(strings.TrimSpace(r.FormValue("clear_cookies")), "true")
-	if clear {
-		s.clearAllEngineCookies()
-		changed = true
-	}
-
-	for _, engine := range []string{"fofa", "hunter", "zoomeye", "quake"} {
-		if !clear {
-			changed = s.applySingleEngineCookie(engine, r.FormValue("cookie_"+engine)) || changed
-		}
-	}
-
-	if _, present := r.Form["proxy_server"]; present {
-		proxy := strings.TrimSpace(r.FormValue("proxy_server"))
-		if s.config.Screenshot.ProxyServer != proxy {
-			s.config.Screenshot.ProxyServer = proxy
-			changed = true
-			if s.screenshotMgr != nil {
-				s.screenshotMgr.SetProxyServer(proxy)
-			}
-		}
-	}
-
-	if changed && s.configManager != nil {
-		if err := s.configManager.Save(); err != nil {
-			logger.Warnf("Failed to persist extension proxy config: %v", err)
-		}
-	}
-	logger.Infof("Cookie apply mode=extension_session: cookies stored for CDP fallback, extension session remains primary")
-}
-
-// applyCDPCookiesFromForm applies cookies and proxy from form values for CDP engine mode.
-// Must be called with configMutex held.
-func (s *Server) applyCDPCookiesFromForm(r *http.Request) {
-	changed := false
-	clear := strings.EqualFold(strings.TrimSpace(r.FormValue("clear_cookies")), "true")
-	if clear {
-		s.clearAllEngineCookies()
-		changed = true
-	}
-
-	for _, engine := range []string{"fofa", "hunter", "zoomeye", "quake"} {
-		if !clear {
-			changed = s.applySingleEngineCookie(engine, r.FormValue("cookie_"+engine)) || changed
-		}
-	}
-
-	if _, present := r.Form["proxy_server"]; present {
-		proxy := strings.TrimSpace(r.FormValue("proxy_server"))
-		if s.config.Screenshot.ProxyServer != proxy {
-			s.config.Screenshot.ProxyServer = proxy
-			changed = true
-			if s.screenshotMgr != nil {
-				s.screenshotMgr.SetProxyServer(proxy)
-			}
-		}
-	}
-
-	if changed && s.configManager != nil {
-		if err := s.configManager.Save(); err != nil {
-			logger.Warnf("Failed to persist cookies: %v", err)
-		}
-	}
-	logger.Infof("Cookie apply mode=cdp_cookie_injection: cookie/proxy updates applied")
-}
-
-// clearAllEngineCookies resets all engine cookies and the screenshot manager.
-func (s *Server) clearAllEngineCookies() {
-	s.config.Engines.Fofa.Cookies = nil
-	s.config.Engines.Hunter.Cookies = nil
-	s.config.Engines.Quake.Cookies = nil
-	s.config.Engines.Zoomeye.Cookies = nil
 	if s.screenshotMgr != nil {
-		s.screenshotMgr.SetCookies("fofa", nil)
-		s.screenshotMgr.SetCookies("hunter", nil)
-		s.screenshotMgr.SetCookies("quake", nil)
-		s.screenshotMgr.SetCookies("zoomeye", nil)
+		for _, engine := range []string{"fofa", "hunter", "zoomeye", "quake"} {
+			s.screenshotMgr.SetCookies(engine, convertConfigCookies(engineCookies(committed, engine)))
+		}
+		s.screenshotMgr.SetProxyServer(committed.Screenshot.ProxyServer)
 	}
 }
 
-// applySingleEngineCookie parses and applies a cookie header string for one engine.
-// Returns true if the config was changed.
-func (s *Server) applySingleEngineCookie(engine, value string) bool {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return false
-	}
-	cookies := config.ParseCookieHeader(value, config.DefaultCookieDomain(engine))
-	if len(cookies) == 0 {
-		return false
-	}
-
-	switch strings.ToLower(engine) {
+func setEngineCookies(cfg *config.Config, engine string, cookies []config.Cookie) {
+	switch engine {
 	case "fofa":
-		s.config.Engines.Fofa.Cookies = cookies
+		cfg.Engines.Fofa.Cookies = cookies
 	case "hunter":
-		s.config.Engines.Hunter.Cookies = cookies
+		cfg.Engines.Hunter.Cookies = cookies
 	case "quake":
-		s.config.Engines.Quake.Cookies = cookies
+		cfg.Engines.Quake.Cookies = cookies
 	case "zoomeye":
-		s.config.Engines.Zoomeye.Cookies = cookies
-	default:
-		return false
+		cfg.Engines.Zoomeye.Cookies = cookies
 	}
-
-	if s.screenshotMgr != nil {
-		s.screenshotMgr.SetCookies(engine, convertConfigCookies(cookies))
+}
+func engineCookies(cfg *config.Config, engine string) []config.Cookie {
+	switch engine {
+	case "fofa":
+		return cfg.Engines.Fofa.Cookies
+	case "hunter":
+		return cfg.Engines.Hunter.Cookies
+	case "quake":
+		return cfg.Engines.Quake.Cookies
+	case "zoomeye":
+		return cfg.Engines.Zoomeye.Cookies
 	}
-	return true
+	return nil
+}
+func clearEngineCookies(cfg *config.Config) {
+	setEngineCookies(cfg, "fofa", nil)
+	setEngineCookies(cfg, "hunter", nil)
+	setEngineCookies(cfg, "quake", nil)
+	setEngineCookies(cfg, "zoomeye", nil)
 }
 
 func (s *Server) currentScreenshotEngine() string {
-	if s == nil || s.config == nil {
+	if s == nil {
 		return "cdp"
 	}
-	engine := strings.ToLower(strings.TrimSpace(s.config.Screenshot.Engine))
+	cfg := s.currentConfig()
+	if cfg == nil {
+		return "cdp"
+	}
+	engine := strings.ToLower(strings.TrimSpace(cfg.Screenshot.Engine))
 	if engine == "extension" {
 		return "extension"
 	}
@@ -681,26 +617,25 @@ func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpC
 
 // engineCookieConfigured checks if cookies are configured for the given engine.
 func (s *Server) engineCookieConfigured(engine string) bool {
-	if s.config == nil {
+	cfg := s.currentConfig()
+	if cfg == nil {
 		return false
 	}
-	s.configMutex.Lock()
-	defer s.configMutex.Unlock()
 	switch engine {
 	case "fofa":
-		return hasCookies(s.config.Engines.Fofa.Cookies)
+		return hasCookies(cfg.Engines.Fofa.Cookies)
 	case "hunter":
-		return hasCookies(s.config.Engines.Hunter.Cookies)
+		return hasCookies(cfg.Engines.Hunter.Cookies)
 	case "quake":
-		return hasCookies(s.config.Engines.Quake.Cookies)
+		return hasCookies(cfg.Engines.Quake.Cookies)
 	case "zoomeye":
-		return hasCookies(s.config.Engines.Zoomeye.Cookies)
+		return hasCookies(cfg.Engines.Zoomeye.Cookies)
 	case "shodan":
-		return strings.TrimSpace(s.config.Engines.Shodan.APIKey) != ""
+		return strings.TrimSpace(cfg.Engines.Shodan.APIKey) != ""
 	case "censys":
-		return strings.TrimSpace(s.config.Engines.Censys.APIID) != "" && strings.TrimSpace(s.config.Engines.Censys.APISecret) != ""
+		return strings.TrimSpace(cfg.Engines.Censys.APIID) != "" && strings.TrimSpace(cfg.Engines.Censys.APISecret) != ""
 	case "daydaymap":
-		return strings.TrimSpace(s.config.Engines.Daydaymap.APIKey) != ""
+		return strings.TrimSpace(cfg.Engines.Daydaymap.APIKey) != ""
 	}
 	return false
 }

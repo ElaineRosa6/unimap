@@ -423,8 +423,8 @@ func TestHandleUpdateTask_NotFound_Returns404(t *testing.T) {
 	req.Header.Set("Origin", "http://localhost:8448")
 	s.handleUpdateTask(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 4xx, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 

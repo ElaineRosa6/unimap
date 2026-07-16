@@ -22,6 +22,14 @@ func (s *blockingFailStore) Load() ([]*ScheduledTask, []ExecutionRecord, error) 
 }
 
 func (s *blockingFailStore) Save([]*ScheduledTask, []ExecutionRecord) error {
+	return s.fail()
+}
+
+func (s *blockingFailStore) SaveTasks([]*ScheduledTask) error {
+	return s.fail()
+}
+
+func (s *blockingFailStore) fail() error {
 	close(s.started)
 	<-s.release
 	return errors.New("forced persistence failure")
@@ -52,6 +60,31 @@ func TestAddTaskDoesNotArmBeforePersistenceSucceeds(t *testing.T) {
 	close(store.release)
 	if err := <-done; err == nil {
 		t.Fatal("AddTask succeeded despite persistence failure")
+	}
+}
+
+func TestLoadExposesScheduleErrorWithoutChangingEnabledIntent(t *testing.T) {
+	dir := t.TempDir()
+	taskPath := filepath.Join(dir, "tasks.json")
+	historyPath := filepath.Join(dir, "history.json")
+	store := NewStore(taskPath, historyPath)
+	if err := store.SaveTasks([]*ScheduledTask{{
+		ID: "missing-handler", Name: "missing handler", Type: TaskType("unknown"),
+		Enabled: true, ScheduleType: "cron", CronExpr: "0 * * * * *",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewScheduler(taskPath, historyPath, 10)
+	if err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.GetTask("missing-handler")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !task.Enabled || task.RuntimeStatus != "schedule_error" || task.ScheduleError == "" {
+		t.Fatalf("unexpected runtime diagnostic: %+v", task)
 	}
 }
 
@@ -391,6 +424,19 @@ func TestGetHistoryFilter(t *testing.T) {
 	tHistory := s.GetHistory(10, string(TaskTamperCheck), "")
 	if len(tHistory) < 1 {
 		t.Errorf("expected tamper history records, got %d", len(tHistory))
+	}
+}
+
+func TestGetHistoryFiltersTaskBeforeApplyingLimit(t *testing.T) {
+	s := NewScheduler("", "", 1000)
+	s.history = append(s.history, ExecutionRecord{TaskID: "target", Status: "success"})
+	for i := 0; i < 600; i++ {
+		s.history = append(s.history, ExecutionRecord{TaskID: "noise", Status: "success"})
+	}
+
+	history := s.GetHistory(1, "", "", "target")
+	if len(history) != 1 || history[0].TaskID != "target" {
+		t.Fatalf("task filter was applied after the global window: %#v", history)
 	}
 }
 

@@ -11,7 +11,8 @@ import (
 
 // isAuthEnabled returns true if the server has auth configured.
 func (s *Server) isAuthEnabled() bool {
-	return s.config != nil && s.config.Web.Auth.Enabled
+	cfg := s.currentConfig()
+	return cfg != nil && cfg.Web.Auth.Enabled
 }
 
 // handleCreateBackup POST /api/v1/backup/create
@@ -20,7 +21,7 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use POST", nil)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 	if s.isAuthEnabled() {
@@ -34,15 +35,15 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 	backupDir := "./backups"
 	backupPrefix := "unimap"
 	maxBackups := 5
-	if s.config != nil {
-		if s.config.Backup.OutputDir != "" {
-			backupDir = s.config.Backup.OutputDir
+	if current := s.currentConfig(); current != nil {
+		if current.Backup.OutputDir != "" {
+			backupDir = current.Backup.OutputDir
 		}
-		if s.config.Backup.Prefix != "" {
-			backupPrefix = s.config.Backup.Prefix
+		if current.Backup.Prefix != "" {
+			backupPrefix = current.Backup.Prefix
 		}
-		if s.config.Backup.MaxBackups > 0 {
-			maxBackups = s.config.Backup.MaxBackups
+		if current.Backup.MaxBackups > 0 {
+			maxBackups = current.Backup.MaxBackups
 		}
 	}
 
@@ -91,11 +92,13 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 
 	backupDir := "./backups"
 	backupPrefix := "unimap"
-	if s.config != nil && s.config.Backup.OutputDir != "" {
-		backupDir = s.config.Backup.OutputDir
-	}
-	if s.config != nil && s.config.Backup.Prefix != "" {
-		backupPrefix = s.config.Backup.Prefix
+	if current := s.currentConfig(); current != nil {
+		if current.Backup.OutputDir != "" {
+			backupDir = current.Backup.OutputDir
+		}
+		if current.Backup.Prefix != "" {
+			backupPrefix = current.Backup.Prefix
+		}
 	}
 
 	backups, err := backup.ListBackups(backupDir, backupPrefix)
@@ -119,9 +122,9 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 // buildBackupSources 构建备份源列表
 func (s *Server) buildBackupSources() []string {
 	// 如果配置了自定义源，使用配置的
-	if s.config != nil && len(s.config.Backup.Sources) > 0 {
+	if current := s.currentConfig(); current != nil && len(current.Backup.Sources) > 0 {
 		var sources []string
-		for _, src := range s.config.Backup.Sources {
+		for _, src := range current.Backup.Sources {
 			if dirExists(src) {
 				sources = append(sources, src)
 			}

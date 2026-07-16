@@ -36,7 +36,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", map[string]string{"expected": http.MethodGet})
 		return
 	}
-	if s.config != nil && s.config.Web.Auth.Enabled {
+	if cfg := s.currentConfig(); cfg != nil && cfg.Web.Auth.Enabled {
 		token := extractBearerToken(r.Header.Get("Authorization"))
 		if token == "" {
 			token = r.Header.Get("X-Admin-Token")

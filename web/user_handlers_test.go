@@ -43,6 +43,13 @@ func (m *mockUserRepo) Create(username, passwordHash, role string) (*auth.User, 
 	return u, nil
 }
 
+func (m *mockUserRepo) CreateBootstrapAdmin(username, passwordHash string) (*auth.User, error) {
+	if len(m.users) != 0 {
+		return nil, auth.ErrBootstrapAlreadyCompleted
+	}
+	return m.Create(username, passwordHash, "admin")
+}
+
 func (m *mockUserRepo) GetByID(id int64) (*auth.User, error) {
 	u, ok := m.users[id]
 	if !ok {
@@ -81,6 +88,7 @@ func (m *mockUserRepo) Delete(id int64) error {
 func (m *mockUserRepo) UpdatePassword(id int64, passwordHash string) error {
 	if u, ok := m.users[id]; ok {
 		u.PasswordHash = passwordHash
+		u.SessionVersion++
 	}
 	return nil
 }

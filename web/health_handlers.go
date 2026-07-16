@@ -177,12 +177,7 @@ func (s *Server) handleHealthReady(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) healthConfigSnapshot() *config.Config {
-	s.configMutex.Lock()
-	defer s.configMutex.Unlock()
-	if s.config == nil {
-		return nil
-	}
-	return s.config.Clone()
+	return s.currentConfig()
 }
 
 func configuredEngineRequired(cfg *config.Config) bool {

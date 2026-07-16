@@ -63,8 +63,8 @@ func (s *Server) handleHistorySave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	maxResults := 1000
-	if s.config != nil && s.config.History.MaxResults > 0 {
-		maxResults = s.config.History.MaxResults
+	if cfg := s.currentConfig(); cfg != nil && cfg.History.MaxResults > 0 {
+		maxResults = cfg.History.MaxResults
 	}
 	if len(req.Results) > maxResults {
 		req.Results = req.Results[:maxResults]
