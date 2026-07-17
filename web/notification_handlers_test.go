@@ -267,6 +267,108 @@ func TestHandleNotifyChannelSave_Success(t *testing.T) {
 	}
 }
 
+func TestHandleNotifyChannelSave_EditPreservesOmittedCredentials(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Notifications.Channels = []config.NotificationChannelCfg{{
+		ID: "existing", Type: "webhook", Enabled: true,
+		WebhookURL: "https://existing.example.com/hook", Secret: "existing-secret",
+		AllowPrivateIP: true,
+	}}
+	cfgManager := config.NewManager(filepath.Join(t.TempDir(), "config.yaml"))
+	cfgManager.SetConfig(cfg)
+	s := &Server{config: cfg, configManager: cfgManager}
+	rec := httptest.NewRecorder()
+	body := `{"id":"existing","type":"webhook","enabled":false,"preserve_existing":true}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/channels", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+
+	s.handleNotifyChannelSave(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got := s.currentConfig().Notifications.Channels[0]
+	if got.WebhookURL != "https://existing.example.com/hook" || got.Secret != "existing-secret" {
+		t.Fatalf("omitted existing credentials were not preserved: %#v", got)
+	}
+	if got.Enabled {
+		t.Fatal("editable non-secret field was not updated")
+	}
+}
+
+func TestHandleNotifyChannelSave_EditFeishuPreservesSecretAndUpdatesMetadata(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Notifications.Channels = []config.NotificationChannelCfg{{
+		ID: "feishu", Type: "feishu_app", Enabled: true,
+		AppID: "old-app", AppSecret: "opaque-app-value", ChatID: "old-chat",
+		Headers: map[string]string{"X-Trace": "keep"},
+	}}
+	cfgManager := config.NewManager(filepath.Join(t.TempDir(), "config.yaml"))
+	cfgManager.SetConfig(cfg)
+	s := &Server{config: cfg, configManager: cfgManager}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/channels",
+		strings.NewReader(`{"id":"feishu","type":"feishu_app","enabled":true,"app_id":"new-app","chat_id":"new-chat","preserve_existing":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+
+	s.handleNotifyChannelSave(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got := s.currentConfig().Notifications.Channels[0]
+	if got.AppID != "new-app" || got.ChatID != "new-chat" || got.AppSecret != "opaque-app-value" {
+		t.Fatalf("unexpected Feishu edit result: %#v", got)
+	}
+	if got.Headers["X-Trace"] != "keep" {
+		t.Fatalf("omitted headers were not preserved: %#v", got.Headers)
+	}
+}
+
+func TestHandleNotifyChannelSave_CannotPreserveMissingChannel(t *testing.T) {
+	cfg := &config.Config{}
+	cfgManager := config.NewManager(filepath.Join(t.TempDir(), "config.yaml"))
+	cfgManager.SetConfig(cfg)
+	s := &Server{config: cfg, configManager: cfgManager}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/channels",
+		strings.NewReader(`{"id":"missing","type":"webhook","preserve_existing":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+
+	s.handleNotifyChannelSave(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleNotifyChannelSave_CannotChangeTypeWhilePreservingCredentials(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Notifications.Channels = []config.NotificationChannelCfg{{
+		ID: "existing", Type: "webhook", WebhookURL: "https://existing.example.com/hook",
+	}}
+	cfgManager := config.NewManager(filepath.Join(t.TempDir(), "config.yaml"))
+	cfgManager.SetConfig(cfg)
+	s := &Server{config: cfg, configManager: cfgManager}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/channels",
+		strings.NewReader(`{"id":"existing","type":"log","preserve_existing":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+
+	s.handleNotifyChannelSave(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := s.currentConfig().Notifications.Channels[0].Type; got != "webhook" {
+		t.Fatalf("channel type changed despite rejected edit: %q", got)
+	}
+}
+
 func TestHandleNotifyChannelSave_SSRFBlocked(t *testing.T) {
 	cfg := &config.Config{}
 	tmpDir := t.TempDir()
@@ -317,7 +419,7 @@ func TestHandleNotificationChannels_ConfigNil(t *testing.T) {
 func TestHandleNotificationChannels_Success(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Notifications.Channels = []config.NotificationChannelCfg{
-		{ID: "ch1", Type: "webhook", Enabled: true},
+		{ID: "ch1", Type: "feishu_app", Enabled: true, AppID: "app-id", AppSecret: "opaque-app-value", ChatID: "chat-id", Secret: "opaque-signing-value", WebhookURL: "https://not-returned.invalid/path", AllowPrivateIP: true},
 		{ID: "ch2", Type: "log", Enabled: false},
 	}
 	s := &Server{config: cfg}
@@ -331,18 +433,29 @@ func TestHandleNotificationChannels_Success(t *testing.T) {
 		Success bool `json:"success"`
 		Data    struct {
 			Channels []struct {
-				ID      string `json:"id"`
-				Type    string `json:"type"`
-				Enabled bool   `json:"enabled"`
+				ID             string `json:"id"`
+				Type           string `json:"type"`
+				Enabled        bool   `json:"enabled"`
+				AppID          string `json:"app_id"`
+				ChatID         string `json:"chat_id"`
+				AllowPrivateIP bool   `json:"allow_private_ip"`
 			} `json:"channels"`
 		} `json:"data"`
 	}
-	json.NewDecoder(rec.Body).Decode(&resp)
+	raw := rec.Body.String()
+	if strings.Contains(raw, "opaque-app-value") || strings.Contains(raw, "opaque-signing-value") || strings.Contains(raw, "not-returned.invalid") {
+		t.Fatalf("channel list exposed credential material: %s", raw)
+	}
+	json.NewDecoder(strings.NewReader(raw)).Decode(&resp)
 	if !resp.Success {
 		t.Fatal("expected success=true")
 	}
 	if len(resp.Data.Channels) != 2 {
 		t.Fatalf("expected 2 channels, got %d", len(resp.Data.Channels))
+	}
+	first := resp.Data.Channels[0]
+	if first.AppID != "app-id" || first.ChatID != "chat-id" || !first.AllowPrivateIP {
+		t.Fatalf("editable non-secret fields missing from channel response: %#v", first)
 	}
 }
 

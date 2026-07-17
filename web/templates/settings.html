@@ -1072,6 +1072,7 @@
 
 		if (isEdit) {
 			document.getElementById('nch-id').disabled = true;
+			document.getElementById('nch-type').disabled = true;
 			var ch = findChannel(isEdit);
 			if (ch) {
 				document.getElementById('nch-id').value = ch.id;
@@ -1082,10 +1083,12 @@
 				document.getElementById('nch-app-secret').value = '';
 				document.getElementById('nch-chat-id').value = ch.chat_id || '';
 				document.getElementById('nch-enabled').checked = ch.enabled;
+				document.getElementById('nch-private-ip').checked = !!ch.allow_private_ip;
 			}
 			document.getElementById('btn-nch-test').style.display = 'inline-block';
 		} else {
 			document.getElementById('nch-id').disabled = false;
+			document.getElementById('nch-type').disabled = false;
 			document.getElementById('nch-id').value = '';
 			document.getElementById('nch-type').value = 'dingtalk';
 			document.getElementById('nch-url').value = '';
@@ -1105,6 +1108,7 @@
 		document.getElementById('notify-form-panel').style.display = 'none';
 		editingChannelId = null;
 		document.getElementById('nch-id').disabled = false;
+		document.getElementById('nch-type').disabled = false;
 		document.getElementById('btn-nch-test').style.display = 'none';
 	}
 
@@ -1128,10 +1132,10 @@
 
 		if (!id) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '请输入渠道 ID'); return; }
 		if (type === 'feishu_app') {
-			if (!appId || !appSecret || !chatId) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '飞书应用需要填写 App ID、App Secret 和 Chat ID'); return; }
-		} else if (type !== 'log' && !url) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '请输入 Webhook URL'); return; }
+			if (!appId || !chatId || (!editingChannelId && !appSecret)) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '飞书应用需要填写 App ID、App Secret 和 Chat ID'); return; }
+		} else if (type !== 'log' && !url && !editingChannelId) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '请输入 Webhook URL'); return; }
 
-		var body = { id: id, type: type, enabled: enabled, webhook_url: url, allow_private_ip: allowPrivate };
+		var body = { id: id, type: type, enabled: enabled, webhook_url: url, allow_private_ip: allowPrivate, preserve_existing: !!editingChannelId };
 		if (secret) body.secret = secret;
 		if (type === 'feishu_app') {
 			body.app_id = appId;

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -30,9 +31,12 @@ func (s *Server) handleNotificationChannels(w http.ResponseWriter, r *http.Reque
 	infos := make([]model.NotificationChannelInfo, len(channels))
 	for i, ch := range channels {
 		infos[i] = model.NotificationChannelInfo{
-			ID:      ch.ID,
-			Type:    ch.Type,
-			Enabled: ch.Enabled,
+			ID:             ch.ID,
+			Type:           ch.Type,
+			Enabled:        ch.Enabled,
+			AppID:          ch.AppID,
+			ChatID:         ch.ChatID,
+			AllowPrivateIP: ch.AllowPrivateIP,
 		}
 	}
 
@@ -188,16 +192,50 @@ func (s *Server) reloadBrowserFallbackConfig(cfg *config.Config) {
 
 // notifyChannelSaveRequest is the JSON body for handleNotifyChannelSave.
 type notifyChannelSaveRequest struct {
-	ID             string            `json:"id"`
-	Type           string            `json:"type"`
-	Enabled        bool              `json:"enabled"`
-	WebhookURL     string            `json:"webhook_url"`
-	Secret         string            `json:"secret"`
-	AppID          string            `json:"app_id"`
-	AppSecret      string            `json:"app_secret"`
-	ChatID         string            `json:"chat_id"`
-	Headers        map[string]string `json:"headers"`
-	AllowPrivateIP bool              `json:"allow_private_ip"`
+	ID               string            `json:"id"`
+	Type             string            `json:"type"`
+	Enabled          bool              `json:"enabled"`
+	WebhookURL       string            `json:"webhook_url"`
+	Secret           string            `json:"secret"`
+	AppID            string            `json:"app_id"`
+	AppSecret        string            `json:"app_secret"`
+	ChatID           string            `json:"chat_id"`
+	Headers          map[string]string `json:"headers"`
+	AllowPrivateIP   bool              `json:"allow_private_ip"`
+	PreserveExisting bool              `json:"preserve_existing"`
+}
+
+type notifyChannelInputError struct {
+	status  int
+	code    string
+	message string
+	details any
+}
+
+func (e *notifyChannelInputError) Error() string { return e.message }
+
+func notifyChannelRequiredFieldsError(req notifyChannelSaveRequest) *notifyChannelInputError {
+	if req.Type == "feishu_app" && (req.AppID == "" || req.AppSecret == "" || req.ChatID == "") {
+		return &notifyChannelInputError{
+			status: http.StatusBadRequest, code: "missing_feishu_app_params",
+			message: "feishu_app requires app_id, app_secret, and chat_id",
+		}
+	}
+	if req.Type != "log" && req.Type != "feishu_app" && req.WebhookURL == "" {
+		return &notifyChannelInputError{
+			status: http.StatusBadRequest, code: "missing_webhook_url",
+			message: "webhook_url is required for this channel type",
+		}
+	}
+	return nil
+}
+
+func validateNotifyChannelRequiredFields(w http.ResponseWriter, req notifyChannelSaveRequest) bool {
+	if inputErr := notifyChannelRequiredFieldsError(req); inputErr != nil {
+		writeAPIError(w, inputErr.status, inputErr.code, inputErr.message, inputErr.details)
+		return false
+	}
+	return true
 }
 
 // parseNotifyChannelSaveRequest decodes, trims, and validates the channel save request.
@@ -228,17 +266,31 @@ func parseNotifyChannelSaveRequest(w http.ResponseWriter, r *http.Request) (noti
 			"unsupported channel type", map[string]string{"type": req.Type})
 		return req, false
 	}
-	if req.Type == "feishu_app" {
-		if req.AppID == "" || req.AppSecret == "" || req.ChatID == "" {
-			writeAPIError(w, http.StatusBadRequest, "missing_feishu_app_params",
-				"feishu_app requires app_id, app_secret, and chat_id", nil)
-			return req, false
-		}
-	} else if req.Type != "log" && req.WebhookURL == "" {
-		writeAPIError(w, http.StatusBadRequest, "missing_webhook_url", "webhook_url is required for this channel type", nil)
+	if !req.PreserveExisting && !validateNotifyChannelRequiredFields(w, req) {
 		return req, false
 	}
 	return req, true
+}
+
+func mergeExistingNotifyChannel(req *notifyChannelSaveRequest, existing config.NotificationChannelCfg) {
+	if req.WebhookURL == "" {
+		req.WebhookURL = existing.WebhookURL
+	}
+	if req.Secret == "" {
+		req.Secret = existing.Secret
+	}
+	if req.AppID == "" {
+		req.AppID = existing.AppID
+	}
+	if req.AppSecret == "" {
+		req.AppSecret = existing.AppSecret
+	}
+	if req.ChatID == "" {
+		req.ChatID = existing.ChatID
+	}
+	if req.Headers == nil {
+		req.Headers = existing.Headers
+	}
 }
 
 // upsertNotifyChannel inserts or updates a channel in a candidate config.
@@ -289,24 +341,55 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-
-	// P2-12: SSRF 校验 — webhook URL 保存时检查是否为私有/内网地址
-	if req.Type == "webhook" && req.WebhookURL != "" && !req.AllowPrivateIP {
-		if _, err := urlguard.Check(req.WebhookURL, urlguard.CheckOptions{
-			AllowPrivate:   false,
-			AllowedSchemes: []string{"http", "https"},
-		}); err != nil {
-			writeAPIError(w, http.StatusBadRequest, "blocked_webhook_url", "webhook URL resolves to private/internal address: "+sanitizeError(err.Error()), nil)
-			return
-		}
-	}
-
 	_, saveErr := s.updateConfig(func(cfg *config.Config) error {
-		upsertNotifyChannel(cfg, req)
+		resolved := req
+		if resolved.PreserveExisting {
+			found := false
+			for _, channel := range cfg.Notifications.Channels {
+				if channel.ID == resolved.ID {
+					if channel.Type != resolved.Type {
+						return &notifyChannelInputError{
+							status: http.StatusBadRequest, code: "channel_type_change_not_supported",
+							message: "changing channel type requires deleting and recreating the channel",
+						}
+					}
+					mergeExistingNotifyChannel(&resolved, channel)
+					found = true
+					break
+				}
+			}
+			if !found {
+				return &notifyChannelInputError{
+					status: http.StatusNotFound, code: "not_found", message: "channel to edit was not found",
+					details: map[string]string{"id": resolved.ID},
+				}
+			}
+			if inputErr := notifyChannelRequiredFieldsError(resolved); inputErr != nil {
+				return inputErr
+			}
+		}
+		// Validate the resolved URL's scheme and literal address here. The notify
+		// client's guarded dialer performs the authoritative DNS/IP check at send time.
+		if resolved.Type == "webhook" && resolved.WebhookURL != "" && !resolved.AllowPrivateIP {
+			if _, err := urlguard.Check(resolved.WebhookURL, urlguard.CheckOptions{
+				AllowPrivate: false, AllowedSchemes: []string{"http", "https"},
+			}); err != nil {
+				return &notifyChannelInputError{
+					status: http.StatusBadRequest, code: "blocked_webhook_url",
+					message: "webhook URL is not allowed: " + sanitizeError(err.Error()),
+				}
+			}
+		}
+		upsertNotifyChannel(cfg, resolved)
 		return nil
 	})
 
 	if saveErr != nil {
+		var inputErr *notifyChannelInputError
+		if errors.As(saveErr, &inputErr) {
+			writeAPIError(w, inputErr.status, inputErr.code, inputErr.message, inputErr.details)
+			return
+		}
 		logger.Warnf("notify channel save failed: %v", saveErr)
 		writeAPIError(w, http.StatusInternalServerError, "save_failed", "failed to persist config: "+sanitizeError(saveErr.Error()), nil)
 		return
