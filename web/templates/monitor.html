@@ -538,15 +538,25 @@ document.addEventListener('DOMContentLoaded', function() {
 			const jobID = data.job_id;
 			const total = data.total || urls.length;
 			progressText.textContent = `正在截图... (0/${total})`;
+			let pollSettled = false;
+			let pollTimeout;
+			function finishPolling(message) {
+				if (pollSettled) return;
+				pollSettled = true;
+				clearInterval(pollInterval);
+				if (pollTimeout) clearTimeout(pollTimeout);
+				if (message) progressText.textContent = message;
+				btn.disabled = false;
+				btn.textContent = '批量截图';
+			}
 
 			const pollInterval = setInterval(async function() {
 				try {
 					const pResp = await fetch(`/api/v1/screenshot/batch/progress?job_id=${encodeURIComponent(jobID)}`);
 					const job = await pResp.json();
+					if (pollSettled) return;
 					if (!pResp.ok || job.error) {
-						clearInterval(pollInterval);
-						progressText.textContent = '截图进度查询失败: ' + ((job.error && job.error.message) || job.error || `HTTP ${pResp.status}`);
-						btn.disabled = false; btn.textContent = '批量截图';
+						finishPolling('截图进度查询失败: ' + ((job.error && job.error.message) || job.error || `HTTP ${pResp.status}`));
 						return;
 					}
 
@@ -559,9 +569,8 @@ document.addEventListener('DOMContentLoaded', function() {
 					progressText.textContent = `正在截图... ${completed}/${total} (${success} 成功, ${failed} 失败)`;
 
 					if (job.status === 'completed' || job.status === 'failed') {
-						clearInterval(pollInterval);
 						progressBarFill.style.width = '100%';
-						progressText.textContent = job.status === 'completed' ? `截图完成: ${success} 成功, ${failed} 失败` : `截图失败: ${job.error || '未知错误'}`;
+						finishPolling(job.status === 'completed' ? `截图完成: ${success} 成功, ${failed} 失败` : `截图失败: ${job.error || '未知错误'}`);
 						resultsSection.classList.remove('hidden');
 						document.querySelector('.tab[data-tab="screenshot"]').click();
 						const container = document.getElementById('screenshot-results');
@@ -572,15 +581,14 @@ document.addEventListener('DOMContentLoaded', function() {
 							div.innerHTML = `<strong>${escapeHtml(r.url || r.URL)}</strong> — ${r.success ? '✅ 成功' : '❌ 失败'} ${escapeHtml(r.error || r.Error || '')}`;
 							container.appendChild(div);
 						});
-						btn.disabled = false; btn.textContent = '批量截图';
 					}
 				} catch(e) {
-					clearInterval(pollInterval);
-					progressText.textContent = '截图进度查询失败: ' + e.message;
-					btn.disabled = false; btn.textContent = '批量截图';
+					finishPolling('截图进度查询失败: ' + e.message);
 				}
 			}, 2000);
-			setTimeout(function() { clearInterval(pollInterval); btn.disabled = false; btn.textContent = '批量截图'; }, 600000);
+			pollTimeout = setTimeout(function() {
+				finishPolling(`截图进度查询超时，后台任务可能仍在运行（任务 ID: ${jobID}）`);
+			}, 600000);
 		} catch(e) {
 			progressText.textContent = '截图失败: ' + e.message;
 			btn.disabled = false; btn.textContent = '批量截图';

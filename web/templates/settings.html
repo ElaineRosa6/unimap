@@ -775,7 +775,7 @@
 			if (data.success) {
 				showResult('icp-result', 'ok', '连接成功: ' + (data.base_url || ''));
 			} else {
-				showResult('icp-result', 'fail', '连接失败: ' + (data.error || '未知错误'));
+				showResult('icp-result', 'fail', '连接失败: ' + extractErrorMsg(data));
 			}
 		} catch (e) {
 			showResult('icp-result', 'fail', '检测失败: ' + e.message);
