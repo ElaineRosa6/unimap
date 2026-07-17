@@ -484,6 +484,14 @@
 			const records = await res.json();
 			const tbody = document.getElementById('history-list');
 			tbody.innerHTML = '';
+			if (!res.ok) {
+				tbody.innerHTML = '<tr><td colspan="7" class="empty-state">加载失败: ' + escHtml(extractErr(records)) + '</td></tr>';
+				return;
+			}
+			if (!Array.isArray(records)) {
+				tbody.innerHTML = '<tr><td colspan="7" class="empty-state">加载失败: 响应格式错误</td></tr>';
+				return;
+			}
 
 			records.forEach(r => {
 				const tr = document.createElement('tr');

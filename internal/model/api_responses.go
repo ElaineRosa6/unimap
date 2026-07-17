@@ -34,10 +34,13 @@ type UserListResponse struct {
 
 // NotificationChannelInfo represents a notification channel in API responses.
 type NotificationChannelInfo struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Name    string `json:"name"`
-	Enabled bool   `json:"enabled"`
+	ID             string `json:"id"`
+	Type           string `json:"type"`
+	Name           string `json:"name"`
+	Enabled        bool   `json:"enabled"`
+	AppID          string `json:"app_id,omitempty"`
+	ChatID         string `json:"chat_id,omitempty"`
+	AllowPrivateIP bool   `json:"allow_private_ip"`
 }
 
 // NodeInfo represents a distributed node in API responses.

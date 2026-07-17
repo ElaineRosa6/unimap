@@ -115,6 +115,13 @@
 				setTimeout(() => t.style.display = 'none', 3000);
 			}
 
+			function extractAccountError(data, fallback) {
+				if (data && data.error && typeof data.error === 'object' && data.error.message) return data.error.message;
+				if (data && typeof data.error === 'string') return data.error;
+				if (data && data.message) return data.message;
+				return fallback || '未知错误';
+			}
+
 			// Tab switching
 			document.querySelectorAll('.tab-btn').forEach(function(btn) {
 				btn.addEventListener('click', function() {
@@ -305,7 +312,7 @@
 					const res = await fetch('/api/v1/users/' + id, {method: 'DELETE'});
 					if (!res.ok) {
 						let msg = '删除失败';
-						try { const d = await res.json(); msg = d.error || msg; } catch(e) { console.warn('Delete user error response was not JSON:', e); }
+						try { const d = await res.json(); msg = extractAccountError(d, msg); } catch(e) { console.warn('Delete user error response was not JSON:', e); }
 						showToast(msg, 'error'); return;
 					}
 					showToast('用户已删除', 'success');
@@ -327,14 +334,27 @@
 						body: JSON.stringify({username: username, password: password})
 					});
 					const data = await res.json();
-					if (!res.ok) { showToast((data.error && data.error.message) || data.error || '创建失败', 'error'); return; }
+					if (!res.ok) { showToast(extractAccountError(data, '创建失败'), 'error'); return; }
 					// New users always start as readonly by backend; promote if admin requested
 					if (role !== 'readonly' && data.data && data.data.id) {
-						await fetch('/api/v1/users/' + data.data.id, {
-							method: 'PUT',
-							headers: {'Content-Type': 'application/json'},
-							body: JSON.stringify({role: role})
-						});
+						let promoteRes;
+						try {
+							promoteRes = await fetch('/api/v1/users/' + data.data.id, {
+								method: 'PUT',
+								headers: {'Content-Type': 'application/json'},
+								body: JSON.stringify({role: role})
+							});
+						} catch (promoteErr) {
+							showToast('用户已创建为 readonly，但角色设置请求失败: ' + promoteErr.message, 'error');
+							loadUsers();
+							return;
+						}
+						const promoteData = await promoteRes.json().catch(() => ({}));
+						if (!promoteRes.ok) {
+							showToast('用户已创建为 readonly，但角色设置失败: ' + extractAccountError(promoteData, '未知错误'), 'error');
+							loadUsers();
+							return;
+						}
 					}
 					showToast('用户已创建 (' + role + ')', 'success');
 					e.target.reset();

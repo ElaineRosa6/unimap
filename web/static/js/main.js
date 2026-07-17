@@ -3272,12 +3272,22 @@ function captureAllScreenshots() {
 		// 轮询进度
 		let progressPollFailures = 0;
 		const maxProgressPollFailures = 5;
+		let screenshotPollSettled = false;
+		let screenshotPollTimeout;
+		function finishScreenshotPoll(statusMessage, toastMessage, toastType) {
+			if (screenshotPollSettled) return;
+			screenshotPollSettled = true;
+			clearInterval(pollInterval);
+			if (screenshotPollTimeout !== undefined) clearTimeout(screenshotPollTimeout);
+			statusEl.textContent = statusMessage;
+			if (toastMessage) showMessage(toastMessage, toastType || 'error');
+		}
 		const pollInterval = setInterval(function() {
 			apiFetch(`/api/v1/screenshot/batch/progress?job_id=${encodeURIComponent(jobID)}`)
 				.then(parseJsonResponse)
 				.then(job => {
+					if (screenshotPollSettled) return;
 					progressPollFailures = 0;
-					if (job.error) return;
 
 					const completed = job.completed || 0;
 					const success = job.success || 0;
@@ -3289,33 +3299,37 @@ function captureAllScreenshots() {
 					statusEl.textContent = `正在截图... (${completed}/${total})`;
 
 					if (job.status === 'completed' || job.status === 'failed') {
-						clearInterval(pollInterval);
 						if (job.status === 'completed') {
 							progressBar.style.width = '100%';
 							progressText.textContent = `完成: ${success} 成功, ${failed} 失败`;
-							statusEl.textContent = '所有截图完成!';
-							showMessage(`批量截图完成! 成功 ${success}/${total}`, success > 0 ? 'success' : 'warning');
+							finishScreenshotPoll('所有截图完成!', `批量截图完成! 成功 ${success}/${total}`, success > 0 ? 'success' : 'warning');
 						} else {
-							statusEl.textContent = `截图失败: ${job.error || '未知错误'}`;
-							showMessage(job.error || '截图任务失败', 'error');
+							const errorMessage = extractErrorMessage(job.error, '截图任务失败');
+							finishScreenshotPoll(`截图失败: ${errorMessage}`, errorMessage, 'error');
 						}
+						return;
+					}
+					if (job.error) {
+						const errorMessage = extractErrorMessage(job.error, '截图任务失败');
+						finishScreenshotPoll(`截图失败: ${errorMessage}`, errorMessage, 'error');
 					}
 				})
 				.catch(function() {
+					if (screenshotPollSettled) return;
 					progressPollFailures++;
 					if (progressPollFailures >= maxProgressPollFailures) {
-						clearInterval(pollInterval);
-						statusEl.textContent = '截图进度查询失败，请刷新页面';
-						showMessage('截图进度查询失败，请刷新页面', 'error');
+						finishScreenshotPoll('截图进度查询失败，请刷新页面', '截图进度查询失败，请刷新页面', 'error');
 					}
 				});
 		}, 2000);
 
 		// 安全超时：10 分钟后停止轮询
-		setTimeout(function() {
-			clearInterval(pollInterval);
-			statusEl.textContent = '截图轮询超时，请手动刷新页面查看结果';
-			showMessage('截图轮询超时，请手动刷新页面查看结果', 'warning');
+		screenshotPollTimeout = setTimeout(function() {
+			finishScreenshotPoll(
+				`截图轮询超时，后台任务可能仍在运行（任务 ID: ${jobID}）`,
+				`截图轮询超时，请稍后使用任务 ID ${jobID} 查询结果`,
+				'warning'
+			);
 		}, 600000);
 	})
 	.catch(err => {
