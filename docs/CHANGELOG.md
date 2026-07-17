@@ -4,6 +4,27 @@
 
 ---
 
+## [2026-07-17] 逻辑、API 与前后端交互修复闭环
+
+> **变更类型**: 可靠性修复 + API 契约适配 + Web UX 完善
+> **涉及模块**: config、CLI/GUI、screenshot、scheduler、distributed、users/session、query cache、notifications、Web templates、文档
+> **提交**: `d8ad66e`、`f89f642`、`80350dc`
+
+### 核心变更
+
+- 完成 14 项代码逻辑/API/体验问题修复：配置 copy-on-write、CLI 认证和调度契约、异步截图、调度与分布式持久化回滚、会话撤销、首管理员原子创建以及查询缓存元数据。
+- 补齐批量截图 timeout/failed 明确终态、ICP 对象错误解析、账号角色更新与删除错误处理、调度历史响应校验。
+- 通知编辑改为安全 DTO：列表不返回 Webhook URL、secret 或 app secret；`preserve_existing=true` 可原子保留留空凭据，且禁止直接改变渠道类型。
+- API、Runbook、问题报告、修复/回滚指南和文档索引同步到同一实现语义。
+
+### 验证结果
+
+- `go test -race ./...`、`go vet ./...`、`go build ./...` 通过。
+- GUI build/test、live Bridge E2E 编译检查和 `node --check web/static/js/main.js` 通过。
+- `govulncheck ./...` 未发现当前代码调用的已知漏洞；外部引擎真实凭据、远程扩展和生产 Redis 留待上线受控验收。
+
+---
+
 ## [2026-07-15] 持久化与查询/调度可用性完善
 
 > **变更类型**: 可靠性回归覆盖 + API 易用性增强

@@ -16,8 +16,11 @@
 | U-01/U-02 | 已完成 | `session_version` 幂等迁移与逐请求校验；首管理员单条条件 INSERT |
 | Q-01 | 已完成 | `v2` 查询 cache key 保存并恢复完整统计/错误元数据 |
 | X-01/X-02 | 已完成 | 标准错误对象解析、轮询错误可见、设置页按 applied/restart_required 展示且失败不更新状态点 |
+| 后续交互复核 | 已完成 | 截图 timeout/failed 终态、ICP 对象错误、通知安全编辑、账号角色更新与删除错误、调度历史响应校验 |
 
 兼容性说明：旧 `userID:adminToken` Cookie 按隐式 session version 0 读取；发生禁用或改密后版本递增并立即失效。调度 `enabled` 字段语义不变，新增字段仅为响应加法。
+
+实施提交：`d8ad66e` 完成初始 14 项修复，`f89f642` 关闭首轮前端 UX 遗留，`80350dc` 完成前后端交互契约复核。通知通道编辑新增 `preserve_existing=true`：仅对既有同类型通道生效，用于原子保留请求中留空的凭据；类型变更必须删除后重建。
 
 ## 1. 总体判断：修复本身可能引入什么问题
 
@@ -428,7 +431,8 @@ PASS  go build ./...
 PASS  go build -tags gui ./cmd/unimap-gui
 PASS  go test -tags gui ./cmd/unimap-gui
 PASS  go test -run '^$' -tags live_bridge_e2e ./web
+PASS  node --check web/static/js/main.js
 PASS  govulncheck ./...（未发现当前代码调用的已知漏洞）
 ```
 
-外部引擎真实账号、远程浏览器扩展和生产 Redis 不在本次本地验证权限范围内；其上线验收继续按第 6 节灰度观察项执行。
+Go 专项复核未发现 critical/high 级新增问题。外部引擎真实账号、远程浏览器扩展和生产 Redis 不在本次本地验证权限范围内；其上线验收继续按第 6 节灰度观察项执行。

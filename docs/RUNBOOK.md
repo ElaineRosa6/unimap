@@ -102,7 +102,7 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/screenshot/bridge/status
 
 `batch_id` 是创建请求中的可选 JSON 字段；列文件和删除时的查询参数叫 `batch`。
 
-POST 返回 202 只表示任务已接受。CLI/GUI 会继续轮询；手工调用时必须保存 `job_id` 并查询到 `completed`/`failed`。拿到 `job_id` 后遇到断网或超时，不要本地重跑同一批 URL，以免产生重复截图；恢复后继续查询进度。`persistence_error` 表示截图终态完成但持久化降级。
+POST 返回 202 只表示任务已接受。CLI/GUI 会继续轮询；手工调用时必须保存 `job_id` 并查询到 `completed`/`failed`。浏览器端等待超时会显示明确的超时终态和 `job_id`，但不会取消服务端任务；拿到 `job_id` 后遇到断网或超时，不要本地重跑同一批 URL，以免产生重复截图，恢复后应继续查询原任务进度。`persistence_error` 表示截图终态完成但持久化降级。
 
 ## 6. 巡检、篡改检测或基线异常
 
@@ -124,6 +124,8 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/scheduler/history
 ```
 
 创建任务的端点是 `POST /api/v1/scheduler/tasks/create`，不是旧的 `/api/scheduler/tasks`。一次性、延迟和 cron 任务分别通过 `schedule_type` 的 `once`、`delay`、`cron` 表示。通知通道从 `GET /api/v1/notifications/channels` 查看，并可用 `/api/v1/notifications/channels/test` 验证。
+
+通知通道列表只返回编辑所需的非凭据字段，不回传 Webhook URL、签名 secret 或 app secret。编辑既有通道时应提交 `preserve_existing=true`，并将不修改的凭据留空；不要把页面掩码值重新提交。该模式只允许编辑同 ID、同类型通道，渠道类型变化必须删除旧通道后重新创建。保存后再执行测试接口，确认服务端实际配置可投递。
 
 任务列表的 `enabled=true` 表示期望启用；还要检查 `runtime_status`。`schedule_error` 表示加载或布置失败，具体诊断在同名错误字段中。删除、停用持久化失败会返回 500 并回滚内存调度状态，不应按 404 处理。
 
