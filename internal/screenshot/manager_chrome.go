@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/chromedp/chromedp"
 
@@ -57,11 +58,12 @@ func (m *Manager) buildExecAllocatorOptions(proxyOverride string) []chromedp.Exe
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", m.headless),
 		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.Flag("disable-setuid-sandbox", true),
 		chromedp.WindowSize(m.windowWidth, m.windowHeight),
 	)
+	if m.noSandbox {
+		opts = append(opts, chromedp.Flag("no-sandbox", true), chromedp.Flag("disable-setuid-sandbox", true))
+	}
 
 	if m.userDataDir != "" {
 		opts = append(opts, chromedp.UserDataDir(m.userDataDir))
@@ -82,14 +84,7 @@ func (m *Manager) buildExecAllocatorOptions(proxyOverride string) []chromedp.Exe
 		logger.Infof("Chrome proxy enabled: %s", proxyServer)
 	}
 
-	// 确定Chrome路径
-	chromePath := m.chromePath
-	if chromePath == "" {
-		chromePath = os.Getenv("UNIMAP_CHROME_PATH")
-	}
-	if chromePath == "" {
-		chromePath = findChromePath()
-	}
+	chromePath, _ := ResolveChromePath(m.chromePath)
 	if chromePath != "" {
 		opts = append(opts, chromedp.ExecPath(chromePath))
 	}
@@ -102,6 +97,38 @@ func (m *Manager) buildExecAllocatorOptions(proxyOverride string) []chromedp.Exe
 	}
 
 	return opts
+}
+
+// ResolveChromePath resolves the Chrome/Chromium executable used by the
+// managed CDP runtime. An explicit configured path is authoritative: a typo
+// must be reported instead of silently launching a different system browser.
+func ResolveChromePath(configured string) (string, error) {
+	if path := strings.TrimSpace(configured); path != "" {
+		if info, err := os.Stat(path); err != nil {
+			return "", fmt.Errorf("configured chrome path %q is unavailable: %w", path, err)
+		} else if info.IsDir() {
+			return "", fmt.Errorf("configured chrome path %q is a directory", path)
+		} else if runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
+			return "", fmt.Errorf("configured chrome path %q is not executable", path)
+		}
+		return path, nil
+	}
+
+	if path := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PATH")); path != "" {
+		if info, err := os.Stat(path); err != nil {
+			return "", fmt.Errorf("UNIMAP_CHROME_PATH %q is unavailable: %w", path, err)
+		} else if info.IsDir() {
+			return "", fmt.Errorf("UNIMAP_CHROME_PATH %q is a directory", path)
+		} else if runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
+			return "", fmt.Errorf("UNIMAP_CHROME_PATH %q is not executable", path)
+		}
+		return path, nil
+	}
+
+	if path := findChromePath(); path != "" {
+		return path, nil
+	}
+	return "", fmt.Errorf("chrome not found; install Chrome/Chromium or configure screenshot.chrome_path or UNIMAP_CHROME_PATH")
 }
 
 // findChromePath 自动查找Chrome路径
@@ -172,25 +199,55 @@ func (m *Manager) newAllocatorWithProxy(ctx context.Context, proxyOverride strin
 	if remoteURL != "" {
 		// 测试远程调试端口是否可用
 		if isRemoteDebuggerAvailable(remoteURL) {
+			release, err := m.acquireBrowserSlot(ctx)
+			if err != nil {
+				return nil, nil, fmt.Errorf("wait for browser session: %w", err)
+			}
 			logger.Infof("Using remote Chrome debugger at: %s", remoteURL)
 			allocCtx, cancel := chromedp.NewRemoteAllocator(ctx, remoteURL)
-			return allocCtx, cancel, nil
+			return allocCtx, combineCancel(cancel, release), nil
 		}
 		logger.Warnf("Remote Chrome debugger not available at %s, falling back to local Chrome", remoteURL)
 	}
 
-	// 使用本地Chrome启动allocator
-	opts := m.buildExecAllocatorOptions(proxyOverride)
-
-	// 确保有可用的Chrome路径
-	chromePath := findChromePath()
-	if chromePath == "" && os.Getenv("UNIMAP_CHROME_PATH") == "" {
-		return nil, nil, fmt.Errorf("chrome not found; please install Chrome or set UNIMAP_CHROME_PATH environment variable")
+	chromePath, err := ResolveChromePath(m.chromePath)
+	if err != nil {
+		return nil, nil, err
 	}
+	release, err := m.acquireBrowserSlot(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("wait for browser session: %w", err)
+	}
+	opts := m.buildExecAllocatorOptions(proxyOverride)
 
 	logger.Infof("Starting Chrome with options, chrome path: %s", chromePath)
 	allocCtx, cancel := chromedp.NewExecAllocator(ctx, opts...)
-	return allocCtx, cancel, nil
+	return allocCtx, combineCancel(cancel, release), nil
+}
+
+func (m *Manager) acquireBrowserSlot(ctx context.Context) (context.CancelFunc, error) {
+	if m == nil || m.sessionSlots == nil {
+		return func() {}, nil
+	}
+	select {
+	case m.sessionSlots <- struct{}{}:
+		var once sync.Once
+		return func() {
+			once.Do(func() { <-m.sessionSlots })
+		}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func combineCancel(cancel, release context.CancelFunc) context.CancelFunc {
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancel()
+			release()
+		})
+	}
 }
 
 // NewAllocator exposes the browser allocator so other browser-driven features

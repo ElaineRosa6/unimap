@@ -7,6 +7,7 @@
 - UQL 统一查询、结果归并与 CSV/Excel/JSON 导出。
 - 稳定 Web UI 支持 FOFA、Hunter、ZoomEye、Quake、Shodan 五个引擎；Censys、DayDayMap 已有适配器与扩展选择器，但尚不在稳定 UI 引擎列表内。
 - CDP 与 Chrome Extension 双截图引擎，可在 `cdp`、`extension`、`auto` 间切换。
+- Linux/容器可直接使用无 `DISPLAY` 的 Chromium headless；统一路由覆盖截图、浏览器采集、调度与巡检，并限制浏览器会话避免云主机 OOM。
 - 网页巡检：`strict`、`relaxed`、`security`、`balanced`、`precise` 五种模式。
 - 巡检历史：支持 URL、类型、模式、关键词过滤，以及受限的 `limit` / `offset` 分页；详见 [API 文档](docs/API.md)。
 - 调度、通知、分布式节点、备份、Prometheus 指标与操作历史。
@@ -48,10 +49,15 @@ go run -tags gui ./cmd/unimap-gui
 
 完整命令见 [快速开始](docs/QUICKSTART.md)，接口见 [API 文档](docs/API.md)，运维见 [Runbook](docs/RUNBOOK.md)。2026-07-17 的逻辑、API 与前后端交互修复状态见[问题报告](docs/CODE_LOGIC_API_UX_REVIEW_2026-07-17.md)和[修复/回滚指南](docs/REMEDIATION_GUIDE_2026-07-17.md)。
 
+无图形界面云主机的容器和原生部署要求、readiness 判断与最终验收清单见 [Runbook 的 headless 章节](docs/RUNBOOK.md#无图形界面的-linux--云主机)。
+
 ## 验证
 
 ```bash
 go test -race ./...
+
+# 显式真实浏览器测试（默认测试不会启动 Chrome）
+UNIMAP_CHROME_PATH=/path/to/chrome go test -tags=headless_e2e ./internal/screenshot ./internal/tamper
 ```
 
 ## 合规与安全

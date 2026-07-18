@@ -1,6 +1,6 @@
 # UniMap 运维 Runbook
 
-> 最后按代码核对：2026-07-17。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
+> 最后按代码核对：2026-07-19。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
 
 ## 0. 先确认服务与认证
 
@@ -37,6 +37,16 @@ go test ./...
 go vet ./...
 go test -race ./...
 ```
+
+默认测试层不得启动 Chrome/Edge 或产生可见浏览器窗口。真实浏览器测试使用独立 build tag：
+
+```powershell
+$env:UNIMAP_CHROME_PATH = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+go test -tags headless_e2e -run TestHeadlessChromeExecutesJavaScriptAndCapturesPNG ./internal/screenshot
+go test -tags headless_e2e -run 'TestRelaxed_|TestStrict_MD5Change|TestNormalDynamic' ./internal/tamper
+```
+
+`headless_e2e` 会短暂产生多个 Chrome renderer/GPU/network 子进程，这是 Chrome 的正常多进程模型；测试结束后不得有新增进程残留。
 
 不要把现有审计报告中的 `P0` 自动扫描计数当作已确认漏洞；测试占位密钥、固定文案 `innerHTML` 和历史归档脚本已经在人工审查中去重。
 
@@ -78,6 +88,38 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8448/api/v1/screenshot/set-
 ```
 
 单站截图使用 `POST /api/v1/screenshot`，请求体仅需 `{"url":"https://example.com"}`。目标 URL 被校验为公网 HTTP/HTTPS 地址；被拒绝的内网、loopback 或私有地址不是截图服务故障。
+
+### 无图形界面的 Linux / 云主机
+
+CDP 模式使用 Chrome/Chromium 自带的新版 headless，不依赖桌面环境、`DISPLAY`、X11 或 VNC。建议优先使用容器基线：
+
+```bash
+# 默认使用 configs/config.docker.yaml；自定义时设置 UNIMAP_CONFIG_FILE
+# 云主机建议 screenshot.mode=cdp、headless=true、max_sessions=1
+export UNIMAP_BOOTSTRAP_PASSWORD='使用密码管理器生成的随机长密码'
+docker compose up -d --build
+curl --fail http://127.0.0.1:8448/health/ready
+```
+
+Compose 通过专用的 `UNIMAP_CONTAINER_BIND_ADDRESS` 显式切换为 `0.0.0.0`，并要求 `UNIMAP_BOOTSTRAP_PASSWORD`；后者只在启动配置阶段用于生成 bcrypt 哈希，不写回配置或日志。使用完整自定义配置时执行 `UNIMAP_CONFIG_FILE=./configs/config.yaml docker compose up -d`。若不使用 Compose，镜像基线保持 loopback，仅可通过容器内检查或自行提供安全的公开监听配置访问。
+
+镜像内置 Chromium 和中日韩字体，固定 `UNIMAP_CHROME_PATH=/usr/bin/chromium`，并持久化 `/app/data`、`/app/screenshots`、`/app/chrome-profile`。Compose 把 `/dev/shm` 提高到 256 MiB；容器基线显式设置 `no_sandbox: true`，普通主机应保持 false 以使用 Chrome sandbox。不得删掉 `--disable-dev-shm-usage` 或独立 `user-data-dir`。持久化 Chrome profile 有独占锁，程序会把其并发会话自动限制为 1；不使用固定 profile 时可按内存逐步提高 `screenshot.max_sessions`。
+
+非容器部署至少确认：
+
+```bash
+command -v google-chrome || command -v chromium || command -v chromium-browser
+export UNIMAP_CHROME_PATH=/usr/bin/chromium
+export UNIMAP_DATA_DIR=/var/lib/unimap
+export UNIMAP_CHROME_USER_DATA_DIR=/var/lib/unimap/chrome-profile
+unset DISPLAY
+```
+
+`/health/live` 只证明进程存活；部署流量必须以 `/health/ready` 为准。截图启用时，readiness 会按配置模式判断真正可用的后端：强制 `extension` 且没有在线扩展时不会因为本机有 Chrome 就误报就绪，除非明确开启 fallback。`/api/v1/screenshot/router/status` 同时返回 `configured_mode`、`current_mode`、`ready` 和两个后端健康状态。
+
+Windows 上 readiness 对 Chrome/Edge 使用 PE 静态验证，不执行 `chrome.exe --version`。后者会被已运行的 Chrome 转交给用户会话，可能打开或激活可见窗口。Router 未配置 CDP provider 时完全跳过 CDP 探针。
+
+本地无法替代真实云机的最终验收项包括：目标发行版的 Chromium 包、容器运行时、出站 DNS/TLS、机器内存和供应商安全组。拿到正式测试机后，再执行镜像启动、ready、单 URL PNG、批量任务、浏览器采集、巡检和重启后持久化验收。
 
 ## 4. 浏览器扩展无法配对或截图
 

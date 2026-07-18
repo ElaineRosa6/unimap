@@ -3,6 +3,7 @@ package screenshot
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,6 +23,7 @@ const (
 
 // RouterConfig holds the routing configuration.
 type RouterConfig struct {
+	Mode          ScreenshotMode // Desired mode: cdp, extension, or auto
 	Priority      ScreenshotMode // Primary mode to prefer
 	Fallback      bool           // Whether to fall back to the other mode on failure
 	ProbeInterval time.Duration  // How often to run health checks
@@ -41,6 +43,7 @@ type ScreenshotRouter struct {
 
 	// Current active mode (atomic for lock-free reads)
 	currentMode atomic.Value // ScreenshotMode
+	desiredMode atomic.Value // ScreenshotMode
 
 	// Per-mode health status
 	cdpHealthy atomic.Bool
@@ -100,10 +103,12 @@ func NewScreenshotRouter(cfg RouterConfig, cdp Provider, extBridge *BridgeServic
 	// Initialize health checkers
 	if cdp != nil {
 		remoteURL := ""
+		configuredChromePath := ""
 		if mgr != nil {
 			remoteURL = mgr.RemoteDebugURL()
+			configuredChromePath = mgr.chromePath
 		}
-		r.cdpChecker = &CDPHealthChecker{RemoteDebugURL: remoteURL}
+		r.cdpChecker = &CDPHealthChecker{RemoteDebugURL: remoteURL, ConfiguredChromePath: configuredChromePath}
 		r.cdpHealthy.Store(true) // CDP available
 	} else {
 		r.cdpChecker = &CDPHealthChecker{RemoteDebugURL: ""}
@@ -113,8 +118,24 @@ func NewScreenshotRouter(cfg RouterConfig, cdp Provider, extBridge *BridgeServic
 	r.extChecker = &ExtensionHealthChecker{BridgeService: extBridge}
 	r.extHealthy.Store(false)
 
-	// Set initial mode
-	r.currentMode.Store(cfg.Priority)
+	desired := cfg.Mode
+	if desired == "" {
+		desired = cfg.Priority
+	}
+	if desired != ModeCDP && desired != ModeExtension && desired != ModeAuto {
+		desired = ModeCDP
+	}
+	priority := cfg.Priority
+	if priority != ModeCDP && priority != ModeExtension {
+		priority = ModeCDP
+		r.cfg.Priority = priority
+	}
+	r.desiredMode.Store(desired)
+	initial := desired
+	if desired == ModeAuto {
+		initial = priority
+	}
+	r.currentMode.Store(initial)
 
 	return r
 }
@@ -163,10 +184,16 @@ func (r *ScreenshotRouter) runProbes(ctx context.Context) {
 	probeCtx, cancel := context.WithTimeout(ctx, r.cfg.ProbeTimeout)
 	defer cancel()
 
-	cdpOK, _ := r.cdpChecker.Check(probeCtx)
+	cdpOK := false
+	if r.cdp != nil {
+		cdpOK, _ = r.cdpChecker.Check(probeCtx)
+	}
 	r.cdpHealthy.Store(cdpOK)
 
-	extOK, _ := r.extChecker.Check(probeCtx)
+	extOK := false
+	if r.extBridge != nil {
+		extOK, _ = r.extChecker.Check(probeCtx)
+	}
 	r.extHealthy.Store(extOK)
 
 	// Metrics
@@ -185,7 +212,7 @@ func (r *ScreenshotRouter) runProbes(ctx context.Context) {
 
 	// Determine best mode
 	current := r.loadMode()
-	best := r.determineBestMode(current, cdpOK, extOK)
+	best := r.determineBestMode(r.configuredMode(), cdpOK, extOK)
 	if best != current {
 		r.currentMode.Store(best)
 		if r.onModeSwitch != nil {
@@ -198,7 +225,7 @@ func (r *ScreenshotRouter) determineBestMode(current ScreenshotMode, cdpOK, extO
 	// Auto mode: pick the healthiest provider
 	if current == ModeAuto {
 		if cdpOK && extOK {
-			return ModeCDP // prefer CDP when both healthy
+			return r.cfg.Priority
 		}
 		if cdpOK {
 			return ModeCDP
@@ -231,6 +258,20 @@ func (r *ScreenshotRouter) determineBestMode(current ScreenshotMode, cdpOK, extO
 	return current
 }
 
+func (r *ScreenshotRouter) configuredMode() ScreenshotMode {
+	v := r.desiredMode.Load()
+	if mode, ok := v.(ScreenshotMode); ok {
+		return mode
+	}
+	return ModeCDP
+}
+
+// ConfiguredMode returns the operator-selected mode before health-based
+// fallback chooses the active backend.
+func (r *ScreenshotRouter) ConfiguredMode() ScreenshotMode {
+	return r.configuredMode()
+}
+
 // loadMode safely reads the current screenshot mode from atomic.Value.
 func (r *ScreenshotRouter) loadMode() ScreenshotMode {
 	v := r.currentMode.Load()
@@ -254,6 +295,22 @@ func (r *ScreenshotRouter) HealthStatus() (cdpHealthy, extHealthy bool) {
 	return r.cdpHealthy.Load(), r.extHealthy.Load()
 }
 
+// Ready reports whether the configured mode can execute browser work now.
+// A healthy non-selected backend only counts when fallback is enabled or the
+// configured mode is auto.
+func (r *ScreenshotRouter) Ready() bool {
+	cdpOK, extOK := r.HealthStatus()
+	best := r.determineBestMode(r.configuredMode(), cdpOK, extOK)
+	switch best {
+	case ModeCDP:
+		return cdpOK && r.cdp != nil
+	case ModeExtension:
+		return extOK && r.extBridge != nil
+	default:
+		return false
+	}
+}
+
 // Config returns the router configuration.
 func (r *ScreenshotRouter) Config() RouterConfig {
 	return r.cfg
@@ -267,13 +324,15 @@ func (r *ScreenshotRouter) SetMode(mode ScreenshotMode) {
 	if mode != ModeCDP && mode != ModeExtension && mode != ModeAuto {
 		return
 	}
+	r.desiredMode.Store(mode)
 	old := r.loadMode()
-	if old == mode {
-		return
-	}
-	r.currentMode.Store(mode)
+	cdpOK, extOK := r.HealthStatus()
+	active := r.determineBestMode(mode, cdpOK, extOK)
+	r.currentMode.Store(active)
 	if r.onModeSwitch != nil {
-		r.onModeSwitch(old, mode)
+		if old != active {
+			r.onModeSwitch(old, active)
+		}
 	}
 }
 
@@ -291,11 +350,58 @@ func (r *ScreenshotRouter) CaptureSearchEngineResult(ctx context.Context, engine
 	return provider.CaptureSearchEngineResult(ctx, engine, query, queryID)
 }
 
+// CaptureSearchEngineResultWithProxy forwards a request-level proxy when the
+// active provider supports it. Extension capture has no per-request proxy
+// concept and therefore uses its normal capture method.
+func (r *ScreenshotRouter) CaptureSearchEngineResultWithProxy(ctx context.Context, engine, query, queryID, proxy string) (string, error) {
+	provider, err := r.resolveProvider(r.loadMode())
+	if err != nil {
+		return "", err
+	}
+	if withProxy, ok := provider.(interface {
+		CaptureSearchEngineResultWithProxy(context.Context, string, string, string, string) (string, error)
+	}); ok && strings.TrimSpace(proxy) != "" {
+		return withProxy.CaptureSearchEngineResultWithProxy(ctx, engine, query, queryID, proxy)
+	}
+	return provider.CaptureSearchEngineResult(ctx, engine, query, queryID)
+}
+
+// SupportsRequestProxy reports whether the provider selected by current
+// health/fallback state can actually apply a per-request proxy.
+func (r *ScreenshotRouter) SupportsRequestProxy() bool {
+	provider, err := r.resolveProvider(r.loadMode())
+	if err != nil {
+		return false
+	}
+	_, searchOK := provider.(interface {
+		CaptureSearchEngineResultWithProxy(context.Context, string, string, string, string) (string, error)
+	})
+	_, targetOK := provider.(interface {
+		CaptureTargetWebsiteWithProxy(context.Context, string, string, string, string, string, string) (string, error)
+	})
+	return searchOK && targetOK
+}
+
 // CaptureTargetWebsite captures a target website using the active mode.
 func (r *ScreenshotRouter) CaptureTargetWebsite(ctx context.Context, targetURL, ip, port, protocol, queryID string) (string, error) {
 	provider, err := r.resolveProvider(r.loadMode())
 	if err != nil {
 		return "", err
+	}
+	return provider.CaptureTargetWebsite(ctx, targetURL, ip, port, protocol, queryID)
+}
+
+// CaptureTargetWebsiteWithProxy is the target equivalent of
+// CaptureSearchEngineResultWithProxy.
+func (r *ScreenshotRouter) CaptureTargetWebsiteWithProxy(ctx context.Context, targetURL, ip, port, protocol, queryID, proxy string) (string, error) {
+	provider, err := r.resolveProvider(r.loadMode())
+	if err != nil {
+		return "", err
+	}
+	if withProxy, ok := provider.(interface {
+		CaptureTargetWebsiteWithProxy(context.Context, string, string, string, string, string, string) (string, error)
+	}); ok && strings.TrimSpace(proxy) != "" {
+		return withProxy.CaptureTargetWebsiteWithProxy(ctx, targetURL, ip, port, protocol, queryID, proxy)
 	}
 	return provider.CaptureTargetWebsite(ctx, targetURL, ip, port, protocol, queryID)
 }

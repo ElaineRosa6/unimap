@@ -4,20 +4,25 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // AppDataDir 返回跨平台的应用数据目录。
 //
 // 查找顺序：
-//  1. os.UserConfigDir()/unimap/<subPaths...>
-//  2. os.UserHomeDir()/.unimap/<subPaths...>
-//  3. ./data/<subPaths...>（最后的 fallback，用于开发环境）
+//  1. UNIMAP_DATA_DIR/<subPaths...>
+//  2. os.UserConfigDir()/unimap/<subPaths...>
+//  3. os.UserHomeDir()/.unimap/<subPaths...>
+//  4. ./data/<subPaths...>（最后的 fallback，用于开发环境）
 //
 // 各平台对应路径：
 //   - Linux:   ~/.config/unimap/<subPaths...>
 //   - macOS:   ~/Library/Application Support/unimap/<subPaths...>
 //   - Windows: %APPDATA%\unimap\<subPaths...>
 func AppDataDir(subPaths ...string) string {
+	if root := strings.TrimSpace(os.Getenv("UNIMAP_DATA_DIR")); root != "" {
+		return filepath.Join(root, filepath.Join(subPaths...))
+	}
 	base := filepath.Join("data", filepath.Join(subPaths...))
 
 	// 优先使用 XDG / macOS Application Support / Windows %APPDATA%

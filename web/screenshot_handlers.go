@@ -445,11 +445,12 @@ func (s *Server) handleSearchEngineScreenshot(w http.ResponseWriter, r *http.Req
 	var screenshotPath string
 	var err error
 
-	if s.screenshotRouter != nil {
-		screenshotPath, err = s.screenshotRouter.CaptureSearchEngineResult(r.Context(), engine, query, queryID)
-	} else {
-		proxy := s.selectRequestProxy()
-		screenshotPath, _, _, _, err = s.screenshotApp.CaptureSearchEngineResultWithProxy(r.Context(), s.screenshotMgr, engine, query, queryID, proxy)
+	proxy := ""
+	if s.screenshotRouter == nil || s.screenshotRouter.SupportsRequestProxy() {
+		proxy = s.selectRequestProxy()
+	}
+	screenshotPath, _, _, _, err = s.screenshotApp.CaptureSearchEngineResultWithProxy(r.Context(), s.screenshotMgr, engine, query, queryID, proxy)
+	if proxy != "" {
 		s.reportRequestProxy(proxy, err == nil)
 	}
 
@@ -527,28 +528,14 @@ func (s *Server) handleTargetScreenshot(w http.ResponseWriter, r *http.Request) 
 	var screenshotPath, targetURL, ip, port, protocol, queryID string
 	var err error
 
-	if s.screenshotRouter != nil {
-		screenshotPath, err = s.screenshotRouter.CaptureTargetWebsite(r.Context(), req.URL, req.IP, req.Port, req.Protocol, req.QueryID)
-		targetURL = req.URL
-		ip = req.IP
-		port = req.Port
-		protocol = req.Protocol
-		queryID = req.QueryID
-		if queryID == "" {
-			queryID = fmt.Sprintf("%d", time.Now().UnixNano())
-		}
-	} else {
-		proxy := s.selectRequestProxy()
-		screenshotPath, targetURL, ip, port, protocol, queryID, err = s.screenshotApp.CaptureTargetWebsiteWithProxy(
-			r.Context(),
-			s.screenshotMgr,
-			req.URL,
-			req.IP,
-			req.Port,
-			req.Protocol,
-			req.QueryID,
-			proxy,
-		)
+	proxy := ""
+	if s.screenshotRouter == nil || s.screenshotRouter.SupportsRequestProxy() {
+		proxy = s.selectRequestProxy()
+	}
+	screenshotPath, targetURL, ip, port, protocol, queryID, err = s.screenshotApp.CaptureTargetWebsiteWithProxy(
+		r.Context(), s.screenshotMgr, req.URL, req.IP, req.Port, req.Protocol, req.QueryID, proxy,
+	)
+	if proxy != "" {
 		s.reportRequestProxy(proxy, err == nil)
 	}
 	if err != nil {
@@ -1111,12 +1098,14 @@ func (s *Server) handleScreenshotRouterStatus(w http.ResponseWriter, r *http.Req
 	cfg := s.screenshotRouter.Config()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"router_enabled": true,
-		"current_mode":   string(s.screenshotRouter.ActiveMode()),
-		"cdp_healthy":    cdpHealthy,
-		"ext_healthy":    extHealthy,
-		"priority":       string(cfg.Priority),
-		"fallback":       cfg.Fallback,
+		"router_enabled":  true,
+		"configured_mode": string(s.screenshotRouter.ConfiguredMode()),
+		"current_mode":    string(s.screenshotRouter.ActiveMode()),
+		"ready":           s.screenshotRouter.Ready(),
+		"cdp_healthy":     cdpHealthy,
+		"ext_healthy":     extHealthy,
+		"priority":        string(cfg.Priority),
+		"fallback":        cfg.Fallback,
 	})
 }
 

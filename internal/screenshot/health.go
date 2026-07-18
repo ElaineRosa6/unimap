@@ -3,6 +3,7 @@ package screenshot
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/unimap/project/internal/logger"
@@ -30,11 +31,13 @@ type LocalChromeFinder func() string
 //
 // Override is honored first when non-nil (test hook).
 type CDPHealthChecker struct {
-	RemoteDebugURL string
+	RemoteDebugURL       string
+	ConfiguredChromePath string
 	// LocalChromeFinder, if non-nil, is invoked when RemoteDebugURL is empty.
 	// It returns the resolved Chrome path or "" if not found. Defaults to
 	// findChromePath when nil.
 	LocalChromeFinder LocalChromeFinder
+	ChromeProbe       func(context.Context, string) bool
 	// Override, if non-nil, overrides the actual health check result (for testing).
 	Override *bool
 }
@@ -47,17 +50,26 @@ func (c *CDPHealthChecker) Check(ctx context.Context) (bool, error) {
 	}
 
 	if c.RemoteDebugURL == "" {
+		if strings.TrimSpace(c.ConfiguredChromePath) != "" {
+			path, err := ResolveChromePath(c.ConfiguredChromePath)
+			if err != nil {
+				logger.Debugf("CDP health: configured Chrome is unavailable: %v", err)
+				return false, nil
+			}
+			return c.probeChrome(ctx, path), nil
+		}
 		// No remote URL: rely on a local Chrome being launchable. Without one
 		// we'd just fail at first capture, so report unhealthy now.
 		finder := c.LocalChromeFinder
-		if finder == nil {
-			finder = findChromePath
+		if finder != nil {
+			if finder() != "" {
+				return true, nil
+			}
+		} else if path, err := ResolveChromePath(""); err == nil {
+			return c.probeChrome(ctx, path), nil
 		}
-		if finder() == "" {
-			logger.Debugf("CDP health: no remote debug URL and no local Chrome binary found")
-			return false, nil
-		}
-		return true, nil
+		logger.Debugf("CDP health: no remote debug URL and no local Chrome binary found")
+		return false, nil
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -77,6 +89,19 @@ func (c *CDPHealthChecker) Check(ctx context.Context) (bool, error) {
 	defer resp.Body.Close()
 
 	return resp.StatusCode == http.StatusOK, nil
+}
+
+func (c *CDPHealthChecker) probeChrome(ctx context.Context, path string) bool {
+	if c.ChromeProbe != nil {
+		return c.ChromeProbe(ctx, path)
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if !validateChromeBinary(probeCtx, path) {
+		logger.Debugf("CDP health: Chrome binary validation failed for %s", path)
+		return false
+	}
+	return true
 }
 
 // LiveClientProvider reports whether at least one extension client is

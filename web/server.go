@@ -299,10 +299,12 @@ func initScreenshotManager(cfg *config.Config) *screenshot.Manager {
 		ProfileDir:     cfg.Screenshot.ChromeProfileDir,
 		RemoteDebugURL: remoteDebugURL,
 		Headless:       headless,
+		NoSandbox:      cfg.Screenshot.NoSandbox,
 		Timeout:        time.Duration(cfg.Screenshot.Timeout) * time.Second,
 		WindowWidth:    cfg.Screenshot.WindowWidth,
 		WindowHeight:   cfg.Screenshot.WindowHeight,
 		WaitTime:       time.Duration(cfg.Screenshot.WaitTime) * time.Millisecond,
+		MaxSessions:    cfg.Screenshot.MaxSessions,
 	}
 	mgr := screenshot.NewManager(screenshotCfg)
 
@@ -651,7 +653,7 @@ func reloadNotifyChannelConfigs(reg *notify.Registry, cfg *config.Config) {
 	reg.Reload(chanCfgs)
 }
 
-// initScreenshotMode initializes the screenshot router or extension bridge based on config mode.
+// initScreenshotMode initializes one unified router for every screenshot mode.
 func initScreenshotMode(srv *Server, cfg *config.Config, screenshotProvider screenshot.Provider,
 	screenshotMgr *screenshot.Manager, screenshotApp *service.ScreenshotAppService,
 	shutdownCtx context.Context) {
@@ -664,10 +666,11 @@ func initScreenshotMode(srv *Server, cfg *config.Config, screenshotProvider scre
 		}
 	}
 
-	if screenshotMode == "auto" {
-		initScreenshotRouter(srv, cfg, screenshotProvider, screenshotMgr, screenshotApp, shutdownCtx)
-	} else if cfg != nil && (screenshotMode == "extension" || strings.EqualFold(strings.TrimSpace(cfg.Screenshot.Engine), "extension")) {
-		initExtensionBridge(srv, cfg, screenshotApp, shutdownCtx)
+	initScreenshotRouter(srv, cfg, screenshotProvider, screenshotMgr, screenshotApp, shutdownCtx)
+	if srv.screenshotRouter != nil {
+		srv.screenshotRouter.SetMode(screenshot.ScreenshotMode(screenshotMode))
+		screenshotApp.SetProvider(srv.screenshotRouter)
+		screenshotApp.SetEngine("auto")
 	}
 }
 
@@ -707,6 +710,7 @@ func initScreenshotRouter(srv *Server, cfg *config.Config, screenshotProvider sc
 
 	fallback := true
 	priority := screenshot.ScreenshotMode("cdp")
+	mode := screenshot.ModeCDP
 	if cfg != nil {
 		if cfg.Screenshot.Fallback != nil {
 			fallback = *cfg.Screenshot.Fallback
@@ -715,9 +719,14 @@ func initScreenshotRouter(srv *Server, cfg *config.Config, screenshotProvider sc
 		if priority == "" {
 			priority = screenshot.ModeCDP
 		}
+		mode = screenshot.ScreenshotMode(strings.ToLower(strings.TrimSpace(cfg.Screenshot.Mode)))
+		if mode == "" {
+			mode = screenshot.ModeCDP
+		}
 	}
 
 	routerCfg := screenshot.RouterConfig{
+		Mode:          mode,
 		Priority:      priority,
 		Fallback:      fallback,
 		ProbeInterval: 30 * time.Second,

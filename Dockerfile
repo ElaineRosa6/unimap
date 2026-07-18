@@ -23,13 +23,16 @@ FROM alpine:3.21
 WORKDIR /app
 
 # 安装依赖（HTTPS + chromedp 截图需要 Chromium）
-RUN apk add --no-cache ca-certificates chromium ttf-freefont
+RUN apk add --no-cache ca-certificates chromium font-noto-cjk ttf-freefont
 
 # 复制构建结果
 COPY --from=builder /app/unimap-web /app/
 
 # 复制配置文件
 COPY configs /app/configs
+
+# 允许镜像不依赖宿主机 bind mount 直接启动；生产环境仍可挂载自定义配置。
+RUN cp /app/configs/config.docker.yaml /app/configs/config.yaml
 
 # 复制Web文件
 COPY web /app/web
@@ -38,7 +41,11 @@ COPY web /app/web
 RUN addgroup -S unimap && adduser -S -G unimap -h /app unimap
 
 # 设置目录所有权
-RUN chown -R unimap:unimap /app
+RUN mkdir -p /app/data /app/screenshots /app/chrome-profile /app/logs && chown -R unimap:unimap /app
+
+ENV UNIMAP_CHROME_PATH=/usr/bin/chromium \
+    UNIMAP_CHROME_USER_DATA_DIR=/app/chrome-profile \
+    UNIMAP_DATA_DIR=/app/data
 
 # 切换到非root用户
 USER unimap:unimap
@@ -48,7 +55,7 @@ EXPOSE 8448
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8448/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8448/health/ready || exit 1
 
 # 启动应用
 CMD ["./unimap-web"]

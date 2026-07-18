@@ -91,14 +91,13 @@ func (s *Server) handleHealthReady(w http.ResponseWriter, r *http.Request) {
 	// 检查截图路由
 	if s.screenshotRouter != nil {
 		cdpHealthy, extHealthy := s.screenshotRouter.HealthStatus()
-		if !cdpHealthy && !extHealthy {
-			checks["screenshot"] = "degraded (no healthy backend)"
+		if !s.screenshotRouter.Ready() {
+			checks["screenshot"] = fmt.Sprintf("degraded (mode=%s, cdp=%v, ext=%v)", s.screenshotRouter.ConfiguredMode(), cdpHealthy, extHealthy)
 			if required["screenshot"] {
 				ready = false
 			}
 		} else {
-			mode := s.screenshotRouter.ActiveMode()
-			checks["screenshot"] = fmt.Sprintf("ok (mode=%s, cdp=%v, ext=%v)", mode, cdpHealthy, extHealthy)
+			checks["screenshot"] = fmt.Sprintf("ok (configured=%s, active=%s, cdp=%v, ext=%v)", s.screenshotRouter.ConfiguredMode(), s.screenshotRouter.ActiveMode(), cdpHealthy, extHealthy)
 		}
 	} else {
 		checks["screenshot"] = "not configured"
