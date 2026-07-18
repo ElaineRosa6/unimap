@@ -135,7 +135,7 @@ func SafeHTTPClient(opts CheckOptions, timeout time.Duration) *http.Client {
 	}
 
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
+		Proxy:           http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			// When a proxy is configured, DialContext connects to the proxy
