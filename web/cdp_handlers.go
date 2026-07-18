@@ -325,44 +325,15 @@ func (s *Server) startCDPChrome(baseURL string) error {
 			debugAddr = addr
 		}
 	}
-	args := []string{
-		fmt.Sprintf("--remote-debugging-port=%d", port),
-		fmt.Sprintf("--remote-debugging-address=%s", debugAddr),
-		"--no-first-run",
-		"--no-default-browser-check",
-	}
-
-	userDataConfigured := false
-
-	if cfg != nil {
-		if dir := strings.TrimSpace(cfg.Screenshot.ChromeUserDataDir); dir != "" {
-			args = append(args, "--user-data-dir="+dir)
-			userDataConfigured = true
-		}
-		if profile := strings.TrimSpace(cfg.Screenshot.ChromeProfileDir); profile != "" {
-			args = append(args, "--profile-directory="+profile)
-		}
-		if proxy := strings.TrimSpace(cfg.Screenshot.ProxyServer); proxy != "" {
-			args = append(args, "--proxy-server="+proxy)
-		} else if proxyEnv := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PROXY_SERVER")); proxyEnv != "" {
-			args = append(args, "--proxy-server="+proxyEnv)
-		}
-		if cfg.Screenshot.Headless != nil && *cfg.Screenshot.Headless {
-			args = append(args, "--headless=new")
-		}
-	}
-
-	// 若未配置用户目录，使用独立目录启动，避免参数被已运行的浏览器实例吞掉。
-	if !userDataConfigured {
-		fallbackUserDataDir := filepath.Join(os.TempDir(), "unimap-cdp-profile")
-		if err := os.MkdirAll(fallbackUserDataDir, 0755); err == nil {
-			args = append(args, "--user-data-dir="+fallbackUserDataDir)
-		}
+	fallbackUserDataDir := filepath.Join(os.TempDir(), "unimap-cdp-profile")
+	args, userDataDir := buildCDPChromeArgs(cfg, port, debugAddr, fallbackUserDataDir)
+	if err := os.MkdirAll(userDataDir, 0755); err != nil {
+		return fmt.Errorf("create Chrome user data directory %s: %w", userDataDir, err)
 	}
 
 	cmd := exec.Command(chromePath, args...)
 	if err := cmd.Start(); err != nil {
-		return err
+		return fmt.Errorf("start Chrome: %w", err)
 	}
 
 	// Start a goroutine to wait for the process to prevent zombie processes
@@ -380,6 +351,44 @@ func (s *Server) startCDPChrome(baseURL string) error {
 
 	s.chromeCmd = cmd.Process
 	return nil
+}
+
+func buildCDPChromeArgs(cfg *config.Config, port int, debugAddr, fallbackUserDataDir string) ([]string, string) {
+	args := []string{
+		fmt.Sprintf("--remote-debugging-port=%d", port),
+		fmt.Sprintf("--remote-debugging-address=%s", debugAddr),
+		"--no-first-run", "--no-default-browser-check",
+		"--disable-dev-shm-usage", "--disable-gpu",
+	}
+	userDataDir := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_USER_DATA_DIR"))
+	headless := true
+	if cfg != nil {
+		if dir := strings.TrimSpace(cfg.Screenshot.ChromeUserDataDir); dir != "" {
+			userDataDir = dir
+		}
+		if profile := strings.TrimSpace(cfg.Screenshot.ChromeProfileDir); profile != "" {
+			args = append(args, "--profile-directory="+profile)
+		}
+		if proxy := strings.TrimSpace(cfg.Screenshot.ProxyServer); proxy != "" {
+			args = append(args, "--proxy-server="+proxy)
+		} else if proxyEnv := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PROXY_SERVER")); proxyEnv != "" {
+			args = append(args, "--proxy-server="+proxyEnv)
+		}
+		if cfg.Screenshot.Headless != nil {
+			headless = *cfg.Screenshot.Headless
+		}
+		if cfg.Screenshot.NoSandbox {
+			args = append(args, "--no-sandbox", "--disable-setuid-sandbox")
+		}
+	}
+	if userDataDir == "" {
+		userDataDir = fallbackUserDataDir
+	}
+	args = append(args, "--user-data-dir="+userDataDir)
+	if headless {
+		args = append(args, "--headless=new")
+	}
+	return args, userDataDir
 }
 
 // nolint:unused

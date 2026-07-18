@@ -44,12 +44,14 @@ type Manager struct {
 	profileDir     string
 	remoteDebugURL string
 	headless       bool
+	noSandbox      bool
 	cookies        map[string][]Cookie // 各引擎的Cookie
 	cookiesMutex   sync.RWMutex
 	timeout        time.Duration
 	windowWidth    int
 	windowHeight   int
 	waitTime       time.Duration // 页面加载后等待时间
+	sessionSlots   chan struct{}
 }
 
 // Cookie Cookie信息
@@ -71,10 +73,12 @@ type Config struct {
 	ProfileDir     string
 	RemoteDebugURL string
 	Headless       bool
+	NoSandbox      bool
 	Timeout        time.Duration
 	WindowWidth    int
 	WindowHeight   int
 	WaitTime       time.Duration
+	MaxSessions    int
 }
 
 // NewManager 创建截图管理器
@@ -91,6 +95,18 @@ func NewManager(cfg Config) *Manager {
 	if cfg.WaitTime == 0 {
 		cfg.WaitTime = 500 * time.Millisecond
 	}
+	if cfg.MaxSessions <= 0 {
+		cfg.MaxSessions = 2
+	}
+	// Chromium takes an exclusive lock on a user-data directory. Multiple
+	// processes sharing a persistent profile are therefore serialized.
+	if cfg.UserDataDir == "" {
+		cfg.UserDataDir = strings.TrimSpace(os.Getenv("UNIMAP_CHROME_USER_DATA_DIR"))
+	}
+	if cfg.UserDataDir != "" && cfg.MaxSessions > 1 {
+		logger.Warnf("Chrome user data directory is shared; limiting browser sessions to 1")
+		cfg.MaxSessions = 1
+	}
 
 	return &Manager{
 		baseDir:        cfg.BaseDir,
@@ -100,11 +116,13 @@ func NewManager(cfg Config) *Manager {
 		profileDir:     cfg.ProfileDir,
 		remoteDebugURL: cfg.RemoteDebugURL,
 		headless:       cfg.Headless,
+		noSandbox:      cfg.NoSandbox,
 		cookies:        make(map[string][]Cookie),
 		timeout:        cfg.Timeout,
 		windowWidth:    cfg.WindowWidth,
 		windowHeight:   cfg.WindowHeight,
 		waitTime:       cfg.WaitTime,
+		sessionSlots:   make(chan struct{}, cfg.MaxSessions),
 	}
 }
 

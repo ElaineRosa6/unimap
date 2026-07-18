@@ -61,9 +61,6 @@ func (s *Server) browserQueryProvider() screenshot.Provider {
 	if s.screenshotRouter != nil {
 		return s.screenshotRouter
 	}
-	if s.bridge != nil && s.bridge.Service != nil {
-		return screenshot.NewExtensionProvider(s.bridge.Service, s.screenshotMgr)
-	}
 	if s.screenshotMgr != nil {
 		return screenshot.NewCDPProvider(s.screenshotMgr)
 	}

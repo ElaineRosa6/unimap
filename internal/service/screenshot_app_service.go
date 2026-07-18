@@ -64,6 +64,18 @@ func (s *ScreenshotAppService) SetBridgeService(bridge *screenshot.BridgeService
 	s.mu.Unlock()
 }
 
+// SetProvider atomically replaces the browser provider used by screenshot and
+// scheduler flows. Production startup wires the unified router here so callers
+// cannot bypass health-based backend selection.
+func (s *ScreenshotAppService) SetProvider(provider screenshot.Provider) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.provider = provider
+	s.mu.Unlock()
+}
+
 func (s *ScreenshotAppService) SetFallbackToCDP(enabled bool) {
 	if s == nil {
 		return
@@ -80,10 +92,16 @@ func (s *ScreenshotAppService) SetMode(mode string) {
 		return
 	}
 	mode = strings.ToLower(strings.TrimSpace(mode))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, routed := s.provider.(*screenshot.ScreenshotRouter); routed {
+		// The router owns selection, health checks, and fallback. Keeping the
+		// application service in auto avoids its legacy extension-first branch.
+		s.engine = "auto"
+		return
+	}
 	if mode == "cdp" || mode == "extension" {
-		s.mu.Lock()
 		s.engine = mode
-		s.mu.Unlock()
 	}
 	// "auto" leaves engine as-is; the router handles mode selection.
 }
@@ -93,6 +111,7 @@ type appConfigSnapshot struct {
 	engine        string
 	bridgeService *screenshot.BridgeService
 	fallbackToCDP bool
+	provider      screenshot.Provider
 }
 
 func (s *ScreenshotAppService) configSnapshot() appConfigSnapshot {
@@ -102,12 +121,13 @@ func (s *ScreenshotAppService) configSnapshot() appConfigSnapshot {
 		engine:        s.engine,
 		bridgeService: s.bridgeService,
 		fallbackToCDP: s.fallbackToCDP,
+		provider:      s.provider,
 	}
 }
 
 // IsCaptureAvailable reports whether screenshot capture can run with current dependencies.
 func (s *ScreenshotAppService) IsCaptureAvailable(mgr *screenshot.Manager) bool {
-	if s != nil && s.provider != nil {
+	if s != nil && s.configSnapshot().provider != nil {
 		return true
 	}
 	return mgr != nil

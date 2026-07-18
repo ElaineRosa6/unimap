@@ -95,6 +95,8 @@ type Config struct {
 		ChromeProfileDir         string `yaml:"chrome_profile_dir"`
 		ChromeRemoteDebugURL     string `yaml:"chrome_remote_debug_url"`
 		ChromeRemoteDebugAddress string `yaml:"chrome_remote_debug_address"`
+		MaxSessions              int    `yaml:"max_sessions"`
+		NoSandbox                bool   `yaml:"no_sandbox"`
 		Extension                struct {
 			Enabled                      bool   `yaml:"enabled"`
 			ListenAddr                   string `yaml:"listen_addr"`

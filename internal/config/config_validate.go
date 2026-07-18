@@ -166,6 +166,9 @@ func validateScreenshotConfig(config *Config) error {
 	if priority != "" && priority != "cdp" && priority != "extension" {
 		return fmt.Errorf("screenshot priority must be one of: cdp, extension")
 	}
+	if config.Screenshot.MaxSessions <= 0 {
+		return fmt.Errorf("screenshot max_sessions must be greater than 0")
+	}
 	ext := config.Screenshot.Extension
 	if ext.TokenTTLSeconds <= 0 {
 		return fmt.Errorf("screenshot extension token_ttl_seconds must be greater than 0")

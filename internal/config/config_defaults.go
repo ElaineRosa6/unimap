@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -174,6 +175,9 @@ func (m *Manager) applyScreenshotDefaults(config *Config) {
 	if config.Screenshot.Timeout == 0 {
 		config.Screenshot.Timeout = 30
 	}
+	if config.Screenshot.MaxSessions == 0 {
+		config.Screenshot.MaxSessions = 2
+	}
 	if config.Screenshot.WindowWidth == 0 {
 		config.Screenshot.WindowWidth = 1365
 	}
@@ -192,6 +196,11 @@ func (m *Manager) applyWebDefaults(config *Config) {
 	}
 	if config.Web.BindAddress == "" {
 		config.Web.BindAddress = "127.0.0.1"
+	}
+	// Container deployment is an explicit operational override, distinct from
+	// ordinary same-name YAML environment substitution.
+	if bind := strings.TrimSpace(os.Getenv("UNIMAP_CONTAINER_BIND_ADDRESS")); bind != "" {
+		config.Web.BindAddress = bind
 	}
 	if len(config.Web.CORS.AllowedOrigins) == 0 {
 		config.Web.CORS.AllowedOrigins = []string{"http://localhost:8448", "http://127.0.0.1:8448"}
@@ -232,6 +241,16 @@ func isLoopbackBind(addr string) bool {
 
 // applyAuthDefaults 应用认证默认配置（admin token + 登录凭据）
 func (m *Manager) applyAuthDefaults(config *Config) {
+	if strings.TrimSpace(config.Web.Auth.PasswordHash) == "" {
+		if password := os.Getenv("UNIMAP_BOOTSTRAP_PASSWORD"); strings.TrimSpace(password) != "" {
+			hash, err := HashPassword(password)
+			if err != nil {
+				logger.Warnf("[config] failed to hash bootstrap password: %v", err)
+			} else {
+				config.Web.Auth.PasswordHash = hash
+			}
+		}
+	}
 	if strings.TrimSpace(config.Web.Auth.AdminToken) == "" {
 		if !isLoopbackBind(config.Web.BindAddress) {
 			config.Web.Auth.AdminToken = generateSecureToken(32)

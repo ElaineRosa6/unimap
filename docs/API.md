@@ -73,7 +73,7 @@
 | DELETE | `/api/v1/screenshot/batches/delete?batch=...` | 删除批次 |
 | DELETE | `/api/v1/screenshot/file/delete?batch=...&file=...` | 删除批次中的文件 |
 | GET | `/screenshots/{batch}/{file}` | 图片预览；要求受信任 Origin/Referer，且仅允许图片扩展名 |
-| GET | `/api/v1/screenshot/router/status` | 截图路由与健康状态 |
+| GET | `/api/v1/screenshot/router/status` | 截图路由状态；返回 `configured_mode`、实际 `current_mode`、`ready`、`cdp_healthy`、`ext_healthy`、优先级与 fallback |
 | POST | `/api/v1/screenshot/set-mode` | JSON：`{"mode":"cdp|extension|auto"}` |
 
 启动成功返回 202 和 `{job_id,total,status}`，调用方必须轮询进度直到 `completed` 或 `failed`，不能把 202 当作完成。重复 `batch_id` 返回 409；创建阶段无法持久化任务返回 503。完成响应可能包含 `persistence_error`，表示截图已完成但结果持久化降级。
@@ -81,6 +81,8 @@
 非空的自定义 `query_id` / `batch_id` 不能是 `.`、`..`，也不能包含 `/` 或 `\`。handler 会在任务创建前拒绝非法值并返回 400：分别使用 `invalid_query_id` 与 `invalid_batch_id`；省略可选 ID 或传空字符串时由服务生成安全 ID。
 
 URL、目标截图和批量 URL 路径会拒绝私有、回环与内部地址；不要将其当作内网探测接口。
+
+截图启用时，`GET /health/ready` 以配置模式的可执行性为准，而不是“任一浏览器后端存在”即通过。CDP 本地模式要求配置或探测到有效 Chrome/Chromium；Extension 模式要求存在在线且近期活动的扩展客户端。`auto` 或明确开启 fallback 时，健康的备用后端才可满足就绪条件。
 
 ## Screenshot Extension Bridge
 

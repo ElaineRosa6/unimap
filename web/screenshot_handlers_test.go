@@ -677,13 +677,23 @@ func TestHandleBatchURLsScreenshot_InvalidJSON(t *testing.T) {
 // ============================================================
 
 func TestHandleScreenshotRouterStatus(t *testing.T) {
-	s := &Server{}
+	router := screenshot.NewScreenshotRouter(screenshot.RouterConfig{
+		Mode: screenshot.ModeAuto, Priority: screenshot.ModeCDP, Fallback: true,
+	}, nil, nil, nil)
+	s := &Server{screenshotRouter: router}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/router/status", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshotRouterStatus(w, req)
 
 	if w.Code != http.StatusOK && w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 200 or 503, got %d", w.Code)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["configured_mode"] != "auto" || body["ready"] != false {
+		t.Fatalf("unexpected router status: %v", body)
 	}
 }
 
@@ -828,7 +838,7 @@ func TestHandleSetScreenshotMode_PersistenceFailureKeepsRuntimeMode(t *testing.T
 	}
 	mgr := config.NewManager(filepath.Join(blocked, "config.yaml"))
 	mgr.SetConfig(cfg.Clone())
-	router := screenshot.NewScreenshotRouter(screenshot.RouterConfig{Priority: screenshot.ModeAuto}, nil, nil, nil)
+	router := screenshot.NewScreenshotRouter(screenshot.RouterConfig{Mode: screenshot.ModeAuto, Priority: screenshot.ModeCDP}, nil, nil, nil)
 	s := &Server{config: cfg, configManager: mgr, screenshotRouter: router}
 
 	body := `{"mode":"cdp"}`
@@ -841,8 +851,11 @@ func TestHandleSetScreenshotMode_PersistenceFailureKeepsRuntimeMode(t *testing.T
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
 	}
-	if got := router.CurrentMode(); got != screenshot.ModeAuto {
-		t.Fatalf("runtime mode changed after persistence failure: %q", got)
+	if got := router.ConfiguredMode(); got != screenshot.ModeAuto {
+		t.Fatalf("configured runtime mode changed after persistence failure: %q", got)
+	}
+	if got := router.CurrentMode(); got != screenshot.ModeCDP {
+		t.Fatalf("active runtime mode changed after persistence failure: %q", got)
 	}
 	if got := mgr.GetConfig().Screenshot.Mode; got != "auto" {
 		t.Fatalf("persisted snapshot changed after persistence failure: %q", got)

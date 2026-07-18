@@ -633,8 +633,10 @@ func TestBrowserQueryProvider_ScreenshotRouterAvailable_ReturnsRouter(t *testing
 	}
 }
 
-func TestBrowserQueryProvider_ExtensionAvailable_ReturnsExtensionProvider(t *testing.T) {
-	// Arrange: no router, but bridge.Service is set
+func TestBrowserQueryProvider_ExtensionWithoutRouter_ReturnsNil(t *testing.T) {
+	// An allocated bridge service is not proof that an extension client is live.
+	// Production initializes the router for all modes; incomplete wiring must
+	// fail closed instead of returning an unusable extension provider.
 	s := &Server{
 		screenshotRouter: nil,
 		screenshotMgr:    nil,
@@ -647,11 +649,8 @@ func TestBrowserQueryProvider_ExtensionAvailable_ReturnsExtensionProvider(t *tes
 	provider := s.browserQueryProvider()
 
 	// Assert
-	if provider == nil {
-		t.Fatal("expected non-nil provider when bridge.Service is set")
-	}
-	if _, ok := provider.(*screenshot.ExtensionProvider); !ok {
-		t.Fatalf("expected *screenshot.ExtensionProvider, got %T", provider)
+	if provider != nil {
+		t.Fatalf("expected nil without the unified router, got %T", provider)
 	}
 }
 
@@ -694,7 +693,7 @@ func TestBrowserQueryProvider_PriorityRouterOverExtension(t *testing.T) {
 	}
 }
 
-func TestBrowserQueryProvider_PriorityExtensionOverCDP(t *testing.T) {
+func TestBrowserQueryProvider_CDPFallbackIgnoresUnroutedBridge(t *testing.T) {
 	// Arrange: no router, but both bridge.Service and screenshotMgr are set
 	s := &Server{
 		screenshotRouter: nil,
@@ -707,9 +706,9 @@ func TestBrowserQueryProvider_PriorityExtensionOverCDP(t *testing.T) {
 	// Act
 	provider := s.browserQueryProvider()
 
-	// Assert: extension takes priority over CDP when router is absent
-	if _, ok := provider.(*screenshot.ExtensionProvider); !ok {
-		t.Fatalf("expected *screenshot.ExtensionProvider (priority over CDP), got %T", provider)
+	// Assert: an unwired bridge cannot bypass router health selection.
+	if _, ok := provider.(*screenshot.CDPProvider); !ok {
+		t.Fatalf("expected *screenshot.CDPProvider, got %T", provider)
 	}
 }
 
@@ -769,15 +768,15 @@ func TestBrowserQueryProvider_Table(t *testing.T) {
 			expectedType: "*screenshot.ScreenshotRouter",
 		},
 		{
-			name:             "extension when no router",
+			name:             "unrouted extension is unavailable",
 			hasBridgeService: true,
-			expectedType:     "*screenshot.ExtensionProvider",
+			expectedNil:      true,
 		},
 		{
-			name:             "extension over CDP when no router",
+			name:             "CDP fallback ignores unrouted extension",
 			hasBridgeService: true,
 			hasScreenshotMgr: true,
-			expectedType:     "*screenshot.ExtensionProvider",
+			expectedType:     "*screenshot.CDPProvider",
 		},
 		{
 			name:             "CDP only fallback",

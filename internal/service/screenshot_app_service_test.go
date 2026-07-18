@@ -6,7 +6,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/unimap/project/internal/screenshot"
 )
+
+func TestSetModeDoesNotBypassUnifiedRouter(t *testing.T) {
+	svc := NewScreenshotAppService("./screenshots")
+	router := screenshot.NewScreenshotRouter(
+		screenshot.RouterConfig{Mode: screenshot.ModeExtension, Priority: screenshot.ModeCDP, Fallback: true},
+		&mockScreenshotProvider{}, nil, nil,
+	)
+	svc.SetProvider(router)
+	svc.SetMode("extension")
+
+	if got := svc.configSnapshot().engine; got != "auto" {
+		t.Fatalf("engine = %q, want auto delegation to the router", got)
+	}
+}
 
 // ===== normalizePathToken =====
 

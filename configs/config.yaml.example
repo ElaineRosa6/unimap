@@ -74,6 +74,10 @@ screenshot:
     chrome_profile_dir: "Default"
     chrome_remote_debug_url: "http://127.0.0.1:9222"
     headless: true
+    # 仅容器/受限运行环境在确认需要时开启；普通主机保持 false 以保留 Chrome sandbox
+    no_sandbox: false
+    # 单机同时运行的 Chrome/CDP 会话上限；持久化 profile 会自动限制为 1
+    max_sessions: 1
     timeout: 30
     window_width: 1365
     window_height: 768

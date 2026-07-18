@@ -7,6 +7,7 @@
 - [API](API.md)：当前 `/api/v1` HTTP 契约。
 - [运维 Runbook](RUNBOOK.md)：服务、认证、截图、Bridge、调度和节点排障。
 - [截图扩展运维](OPS_SCREENSHOT_EXTENSION.md)：本机配对、Bridge token 与回调协议。
+- [无图形浏览器运行时决策](DECISIONS/0006-headless-browser-runtime.md)：云主机 CDP、统一路由、会话限制和容器边界。
 - [架构](ARCHITECTURE.md) 与 [业务架构](BUSINESS_AND_LOGIC_ARCHITECTURE.md)。
 - [UQL 指南](UQL_GUIDE.md) 与 [搜索引擎语法快照](SEARCH_ENGINE_SYNTAX.md)。
 - [插件架构](PLUGIN_ARCHITECTURE.md) 与 [插件开发](PLUGIN_DEVELOPMENT_GUIDE.md)。
