@@ -4,6 +4,32 @@
 
 ---
 
+## [2026-07-20] 云服务器部署评估记录
+
+> **变更类型**: 部署评估 + 文档纠偏
+> **涉及模块**: Docker、Compose、SQLite、headless Chrome、Runbook、文档索引
+
+### 核查结论
+
+- 确认无图形 Linux 可使用 CDP headless，不需要桌面、X11、VNC 或 GPU；持久化 Chrome profile 继续强制截图会话串行。
+- 确认当前 `Dockerfile` 的 `CGO_ENABLED=0` 与 `go-sqlite3` 不兼容。相同构建条件下，`internal/auth`、`internal/history`、`internal/screenshot/batchdb` 的数据库测试均因 CGO stub 失败；该问题记录为容器生产发布阻断，尚未在本次文档变更中修复。
+- 现有 Compose 的 2 CPU / 1 GiB 限制不再表述为生产推荐值；单机完整功能建议从 4 vCPU、8 GiB RAM、80–100 GiB SSD 起步，并在真实云机压测后调整。
+- 补充生产 Compose 差距：开发静态目录挂载、8448 直接公开、`/app/backups` 未持久化、只读配置的运行语义、资源限制可能未被平台实现以及日志/TLS/异机备份要求。
+- 补充固定管理令牌、引擎真实凭据、Web-only adapter 边界、端口与 `CAP_NET_RAW` 权限、磁盘估算和正式云机十二项验收清单。
+
+### 文档
+
+- 新增 `docs/CLOUD_DEPLOYMENT_ASSESSMENT_2026-07-20.md`。
+- 更新 Runbook 云主机章节，阻止在 CGO/SQLite 修复前误用当前镜像投产。
+- 更新文档索引。
+
+### 验证边界
+
+- 已执行 `CGO_ENABLED=0 go test ./internal/auth ./internal/history ./internal/screenshot/batchdb -count=1`，预期复现并确认发布阻断。
+- 本机没有 Docker CLI，本轮未执行 Compose 渲染、镜像构建或真实云机验证。
+
+---
+
 ## [2026-07-17] 逻辑、API 与前后端交互修复闭环
 
 > **变更类型**: 可靠性修复 + API 契约适配 + Web UX 完善

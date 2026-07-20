@@ -1,6 +1,6 @@
 # UniMap 运维 Runbook
 
-> 最后按代码核对：2026-07-19。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
+> 最后按代码核对：2026-07-20。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
 
 ## 0. 先确认服务与认证
 
@@ -91,7 +91,11 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8448/api/v1/screenshot/set-
 
 ### 无图形界面的 Linux / 云主机
 
-CDP 模式使用 Chrome/Chromium 自带的新版 headless，不依赖桌面环境、`DISPLAY`、X11 或 VNC。建议优先使用容器基线：
+CDP 模式使用 Chrome/Chromium 自带的新版 headless，不依赖桌面环境、`DISPLAY`、X11 或 VNC。
+
+> **当前容器发布阻断（2026-07-20）**：`Dockerfile` 仍以 `CGO_ENABLED=0` 构建，但当前 SQLite 驱动 `github.com/mattn/go-sqlite3` 需要 CGO。按相同条件运行 `go test ./internal/auth ./internal/history ./internal/screenshot/batchdb -count=1` 已确认数据库初始化失败。修复镜像构建并完成镜像内 SQLite 验收前，不得把下面命令当作可投产步骤。完整证据、容量和验收要求见 [云服务器部署评估](CLOUD_DEPLOYMENT_ASSESSMENT_2026-07-20.md)。
+
+修复该阻断后的容器启动基线是：
 
 ```bash
 # 默认使用 configs/config.docker.yaml；自定义时设置 UNIMAP_CONFIG_FILE
@@ -103,7 +107,11 @@ curl --fail http://127.0.0.1:8448/health/ready
 
 Compose 通过专用的 `UNIMAP_CONTAINER_BIND_ADDRESS` 显式切换为 `0.0.0.0`，并要求 `UNIMAP_BOOTSTRAP_PASSWORD`；后者只在启动配置阶段用于生成 bcrypt 哈希，不写回配置或日志。使用完整自定义配置时执行 `UNIMAP_CONFIG_FILE=./configs/config.yaml docker compose up -d`。若不使用 Compose，镜像基线保持 loopback，仅可通过容器内检查或自行提供安全的公开监听配置访问。
 
+生产部署还必须设置固定管理令牌和非默认管理员用户名；只启用拥有有效凭据的查询引擎。缺少 API Key 时注册的 Web-only adapter 并不代表真实查询已经可用，必须执行一次真实查询或浏览器采集验收。配置以 `:ro` 挂载时，Web 设置页不能持久化修改，应通过声明式配置更新并重启。
+
 镜像内置 Chromium 和中日韩字体，固定 `UNIMAP_CHROME_PATH=/usr/bin/chromium`，并持久化 `/app/data`、`/app/screenshots`、`/app/chrome-profile`。Compose 把 `/dev/shm` 提高到 256 MiB；容器基线显式设置 `no_sandbox: true`，普通主机应保持 false 以使用 Chrome sandbox。不得删掉 `--disable-dev-shm-usage` 或独立 `user-data-dir`。持久化 Chrome profile 有独占锁，程序会把其并发会话自动限制为 1；不使用固定 profile 时可按内存逐步提高 `screenshot.max_sessions`。
+
+现有 Compose 的 2 CPU / 1 GiB 限制不是已验收的生产容量。单机完整功能建议从 4 vCPU、8 GiB RAM、80–100 GiB SSD 和 2–4 GiB swap 起步，容器内存限制从 4–6 GiB 起步，并按真实批量负载调整。生产还应删除 `./web:/app/web` 开发挂载、仅向反向代理暴露 8448、持久化 `/app/backups`、配置日志轮转并把备份复制到异机位置。
 
 非容器部署至少确认：
 
