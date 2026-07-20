@@ -80,16 +80,26 @@ Binary was compiled with 'CGO_ENABLED=0', go-sqlite3 requires cgo to work. This 
 3. 完成用户登录、查询历史写入、截图批次写入和容器重启后重读；
 4. 保存镜像标签、架构、测试输出和回滚镜像。
 
-### B-02：生产 Compose 尚未定型
+### B-02：生产 Compose 尚未定型 — 部分已落实
 
 当前 Compose 还存在以下生产差距：
 
-- `./web:/app/web` 是开发式 bind mount，生产应使用镜像内已打包的静态资源；
-- `8448:8448` 会直接绑定宿主机所有接口，生产应只绑定 loopback 或内部网络，再由反向代理提供 HTTPS；
-- `/app/backups` 没有持久化，容器重建可能丢失本地备份；
-- 配置文件以 `:ro` 挂载，适合声明式配置，但 Web 设置页的持久化保存会失败，必须明确采用“改部署配置并重启”的流程；
+- ~~`./web:/app/web` 是开发式 bind mount~~ — ✅ `docker-compose.prod.yaml` 已移除该 mount，使用镜像内静态资源；
+- ~~`8448:8448` 会直接绑定宿主机所有接口~~ — ✅ prod 覆盖文件改为 `127.0.0.1:8448:8448`，由反向代理提供 HTTPS；
+- ~~`/app/backups` 没有持久化~~ — ✅ prod 覆盖文件新增 `unimap_backups` 卷；
+- 配置文件以 `:ro` 挂载，适合声明式配置，但 Web 设置页的持久化保存会失败，必须明确采用”改部署配置并重启”的流程；
 - `deploy.resources` 属于平台可选能力，部署后需检查 cgroup 是否真正应用 CPU/内存限制；
 - 没有日志轮转、TLS 反向代理和异机备份基线。
+
+**已新增**：`docker-compose.prod.yaml` 作为生产覆盖配置，与基础 `docker-compose.yml` 合并使用：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yaml up -d --build
+```
+
+覆盖内容包括：loopback 端口绑定、移除 web bind mount、挂载 backups 卷、日志轮转（50MB × 5 文件）、生产资源限制（4 CPU / 6G RAM）、强制 `UNIMAP_ADMIN_TOKEN` 和 `UNIMAP_DISTRIBUTED_ADMIN_TOKEN` 环境变量。
+
+仍待验证：实际云机上 cgroup 资源限制生效、日志轮转生效、反向代理 TLS 配置、异机备份流程。
 
 ## 建议容量
 
@@ -208,8 +218,8 @@ SQLite WAL 文件、日志、导出文件、Chrome profile 和镜像层应另留
 
 ## 后续顺序
 
-1. 修复并验证 CGO/SQLite 镜像构建；
-2. 新增生产 Compose 与生产配置模板；
-3. 在正式云机执行完整验收；
+1. ~~修复并验证 CGO/SQLite 镜像构建~~ — ✅ 已完成（commit `5e136cb`）；
+2. ~~新增生产 Compose 与生产配置模板~~ — ✅ 已完成（`docker-compose.prod.yaml`）；
+3. 在正式云机执行完整验收（B-01 镜像内 SQLite 闭环 + B-02 cgroup/日志/TLS/备份验证）；
 4. 根据实测容量调整实例规格、保留周期和告警阈值；
-5. 验收通过后再更新本文，将 B-01/B-02 标记为已关闭并附提交与测试证据。
+5. 验收通过后更新本文，将 B-01/B-02 标记为已关闭并附提交与测试证据。
