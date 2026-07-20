@@ -224,6 +224,13 @@ go run -tags gui ./cmd/unimap-gui
 | `.audit-results/audit_report_final.json` 3 个 P1 | ✅ 已修 | config/history handler 已加 `requireAdmin`；`go.mod` 与本机工具链现为 Go 1.26.5 |
 | 健康检查端点缺失 | ✅ 报告过期 | 当前已有 `/health`、`/health/ready`、`/health/live` |
 
+#### 2026-07-20 云部署评估修复
+
+| 项目 | 状态 | 说明 |
+|---|---|---|
+| **B-01** CGO/SQLite 容器构建阻断 | ✅ 已修 | `Dockerfile` builder 安装 `build-base`，构建改为 `CGO_ENABLED=1`；CI 全局 env + Docker build-arg 同步；commit `5e136cb` |
+| **B-02** 生产 Compose 定型 | 🟡 部分完成 | 新增 `docker-compose.prod.yaml`（loopback 端口、移除 dev bind mount、backups 卷、日志轮转、资源限制、强制 admin token env）；commit `ebc87dd`。云机 cgroup/日志/TLS/备份验证仍待执行 |
+
 ### ✅ 已全部修复
 - C-01 ~ C-04 (Critical)、H-01 ~ H-05 (High) — 全部闭环
 - M-02 ~ M-06, M-08, M-09 (Medium) — 全部闭环
@@ -578,6 +585,16 @@ SQL 注入防护 ✅ | bcrypt 密码哈希 ✅ | 常量时间比较 ✅ | Sessio
    - `govulncheck ./...` 0 漏洞
    - `go build -tags gui ./cmd/unimap-gui` 修复 `apiTamperHistoryItem` → `guiTamperHistoryRecord` 类型名不匹配（`monitor_native.go:610,647`）
    - 验证：本地 `build`/`vet`/`race`/`gofmt`/`Extension JS syntax`/`govulncheck` 全部通过
+
+### 当前剩余问题（2026-07-20 更新）
+
+| # | 级别 | 问题 | 状态 | 说明 |
+|---|---|---|---|---|
+| 1 | P1 | 配额页面趋势图/告警功能（FINDING-006） | ⚠️ MITIGATED | 入口已禁用并提示"尚未实现"；功能本身未实现，产品决策待定 |
+| 2 | P2 | Tamper Export 组合过滤 + 错误路径测试 | 🟡 PARTIAL | 过滤参数已补齐，handler 测试存在；组合覆盖和错误分支覆盖待加强 |
+| 3 | — | 测试覆盖率未达 80% | 🟡 迭代 | web(59.9%) / screenshot(43.8%) / service(49.9%) / scheduler(60%) |
+| 4 | P1/P2 | QA 扫描 30 项待人工复核 | 🟡 待定性 | 含 `icp.go:495`、`manager.go:175` 等生产代码位置 |
+| 5 | — | CLAUDE.md 分支标注 | ✅ 已修正 | 当前在 `develop`，与顶部标注一致 |
 
 ### 2026-06-20 移除 BinaryEdge/Onyphe/GreyNoise 三引擎（commit fb6dcdb）
 
