@@ -1,4 +1,4 @@
-# UniMap 云服务器部署评估（2026-07-20）
+# UniMap 云服务器部署评估（2026-07-20 初版 / 2026-07-20 B-01 修复）
 
 > 本文记录 2026-07-20 对当前工作区的静态核查与定向验证结果。容量规格属于部署建议，必须在正式云机上用真实任务复测；已确认缺陷则在修复并重新验收前持续作为发布阻断项。
 
@@ -6,7 +6,16 @@
 
 当前代码已经具备无图形 Linux 的 CDP headless 运行路径：运行镜像安装 Chromium 与中日韩字体，截图模式可固定为 `cdp`，不依赖桌面环境、`DISPLAY`、X11、VNC 或 GPU。持久化 Chrome profile 存在独占锁，程序会把共享 profile 的浏览器会话自动限制为 1。
 
-但是，当前 `Dockerfile` 使用 `CGO_ENABLED=0` 构建，而用户、操作历史、截图批次、ICP 和巡检等持久化模块使用 `github.com/mattn/go-sqlite3`。按镜像相同条件执行定向测试后，SQLite 初始化稳定失败，因此当前容器镜像不能作为生产发布物。必须先修复 CGO 构建并完成镜像内数据库与 headless 闭环验收。
+### B-01 修复状态（2026-07-20）
+
+原阻断项 `Dockerfile` 使用 `CGO_ENABLED=0` 构建导致 `go-sqlite3` 初始化失败，已修复：
+
+- `Dockerfile` builder 阶段安装 Alpine `build-base`（C 工具链），构建命令改为 `CGO_ENABLED=1`；
+- `.github/workflows/ci.yml` 全局 `CGO_ENABLED` 同步改为 `1`，Docker build-arg 同步调整；
+- 本地定向验证：`CGO_ENABLED=1 go test ./internal/auth ./internal/history ./internal/screenshot/batchdb` 全部通过；
+- 全量 `go test -race ./...`、`go vet ./...`、`go build ./...` 通过。
+
+但镜像内完整数据库与 headless 闭环仍需在正式云机执行验收（见下方验收清单第 3–8 项）。
 
 推荐的单机完整功能基线是 **4 vCPU、8 GiB RAM、80–100 GiB SSD、2–4 GiB swap、x86_64 Linux**。现有 Compose 的 2 CPU / 1 GiB 限制只可视为未验收的启动下限，不适合作为批量截图和定时巡检的生产容量。
 
@@ -42,9 +51,9 @@ Binary was compiled with 'CGO_ENABLED=0', go-sqlite3 requires cgo to work. This 
 
 ## 部署前发布阻断项
 
-### B-01：镜像构建禁用 CGO，SQLite 不可用
+### B-01：镜像构建禁用 CGO，SQLite 不可用 — ✅ 代码已修复
 
-影响：
+原影响：
 
 - 用户数据库无法初始化，认证启用时 readiness 不通过；
 - 操作历史无法持久化；
@@ -52,13 +61,24 @@ Binary was compiled with 'CGO_ENABLED=0', go-sqlite3 requires cgo to work. This 
 - ICP、巡检等其他 SQLite 路径同样存在运行时失败风险；
 - 镜像可以完成编译，但不能据此判定可运行。
 
-修复验收至少包括：
+**修复内容**（commit `5e136cb`）：
 
-1. 构建阶段安装 Alpine C 工具链并以 `CGO_ENABLED=1` 编译，或迁移到经过验证的纯 Go SQLite 驱动；
-2. 在最终运行镜像内启动服务；
-3. `/health/ready` 返回 200，`user_db`、`history_db` 和 `screenshot` 为 `ok`；
-4. 完成用户登录、查询历史写入、截图批次写入和容器重启后重读；
-5. 保存镜像标签、架构、测试输出和回滚镜像。
+1. `Dockerfile` builder 阶段安装 Alpine `build-base`，构建命令改为 `CGO_ENABLED=1`；
+2. `.github/workflows/ci.yml` 全局 `CGO_ENABLED` 同步改为 `1`，Docker build-arg 同步调整。
+
+**已验证**：
+
+- `CGO_ENABLED=1 go build ./...` — PASS
+- `CGO_ENABLED=1 go test ./internal/auth ./internal/history ./internal/screenshot/batchdb` — PASS
+- `CGO_ENABLED=1 go test -race ./...` — PASS
+- `CGO_ENABLED=1 go vet ./...` — PASS
+
+**仍需在正式云机执行的验收**（镜像内 SQLite + headless 闭环）：
+
+1. 构建镜像并在容器内启动服务；
+2. `/health/ready` 返回 200，`user_db`、`history_db` 和 `screenshot` 为 `ok`；
+3. 完成用户登录、查询历史写入、截图批次写入和容器重启后重读；
+4. 保存镜像标签、架构、测试输出和回滚镜像。
 
 ### B-02：生产 Compose 尚未定型
 

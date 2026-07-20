@@ -93,7 +93,7 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8448/api/v1/screenshot/set-
 
 CDP 模式使用 Chrome/Chromium 自带的新版 headless，不依赖桌面环境、`DISPLAY`、X11 或 VNC。
 
-> **当前容器发布阻断（2026-07-20）**：`Dockerfile` 仍以 `CGO_ENABLED=0` 构建，但当前 SQLite 驱动 `github.com/mattn/go-sqlite3` 需要 CGO。按相同条件运行 `go test ./internal/auth ./internal/history ./internal/screenshot/batchdb -count=1` 已确认数据库初始化失败。修复镜像构建并完成镜像内 SQLite 验收前，不得把下面命令当作可投产步骤。完整证据、容量和验收要求见 [云服务器部署评估](CLOUD_DEPLOYMENT_ASSESSMENT_2026-07-20.md)。
+> **B-01 已修复（2026-07-20）**：`Dockerfile` 和 CI 均已改为 `CGO_ENABLED=1` 并安装 Alpine `build-base`。本地 `go test ./internal/auth ./internal/history ./internal/screenshot/batchdb` 验证通过。容器镜像内 SQLite 与 headless 闭环仍需在正式云机执行验收（见 [云服务器部署评估](CLOUD_DEPLOYMENT_ASSESSMENT_2026-07-20.md)）。
 
 修复该阻断后的容器启动基线是：
 
