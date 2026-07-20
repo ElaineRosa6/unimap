@@ -10,11 +10,14 @@ COPY go.mod go.sum ./
 # 下载依赖
 RUN go mod download
 
+# 安装 C 工具链（go-sqlite3 需要 CGO）
+RUN apk add --no-cache build-base
+
 # 复制源代码
 COPY . .
 
 # 构建应用（Web）
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o unimap-web ./cmd/unimap-web
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o unimap-web ./cmd/unimap-web
 
 # 使用alpine作为运行环境（固定版本）
 FROM alpine:3.21

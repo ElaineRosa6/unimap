@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CGO_ENABLED: 0
+  CGO_ENABLED: 1
 
 jobs:
   # --- Build ---
@@ -234,7 +234,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            CGO_ENABLED=0
+            CGO_ENABLED=1
 
       - name: Verify image
         run: |
