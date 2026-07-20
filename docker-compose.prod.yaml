@@ -1,0 +1,45 @@
+version: '3.8'
+
+# 生产环境 Compose 覆盖配置
+# 使用方式：docker compose -f docker-compose.yml -f docker-compose.prod.yaml up -d --build
+
+services:
+  unimap:
+    ports:
+      # 仅绑定 loopback，由反向代理提供 HTTPS 公网入口
+      - "127.0.0.1:8448:8448"
+
+    volumes:
+      # 移除开发式 bind mount；生产使用镜像内已打包的静态资源
+      # - ./web:/app/web
+      - unimap_backups:/app/backups
+
+    environment:
+      # 生产环境强制要求固定管理令牌
+      UNIMAP_ADMIN_TOKEN: ${UNIMAP_ADMIN_TOKEN:?set UNIMAP_ADMIN_TOKEN in the deployment environment}
+      UNIMAP_DISTRIBUTED_ADMIN_TOKEN: ${UNIMAP_DISTRIBUTED_ADMIN_TOKEN:?set UNIMAP_DISTRIBUTED_ADMIN_TOKEN}
+
+    deploy:
+      resources:
+        limits:
+          # 单机完整功能建议起点：4 vCPU / 4-6 GiB RAM
+          cpus: '4'
+          memory: 6G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+    # 日志轮转：防止日志占满磁盘
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    # 生产环境不建议使用 restart: unless-stopped 与 deploy 同时配置；
+    # Swarm/Kubernetes 模式下 deploy.restart_policy 优先。
+    # Compose standalone 下 unless-stopped 仍可保留（docker-compose.yml 已有）。
+
+volumes:
+  unimap_backups:
+    driver: local
