@@ -51,6 +51,30 @@ func TestMainScreenshotPollingFinalizesFailedJobsAndCancelsTimeout(t *testing.T)
 	}
 }
 
+func TestMainQueryLifecycleAvoidsAuditedInnerHTMLSinks(t *testing.T) {
+	script := readTemplateContract(t, "../static/js/main.js")
+	for _, forbidden := range []string{
+		"resultBox.innerHTML = ''",
+		"resultsContent.innerHTML = `",
+		"resultsPage.innerHTML = `",
+		"main.innerHTML = ''",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Errorf("audited DOM sink remains in main query lifecycle: %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"resultBox.replaceChildren()",
+		"resultsContent.replaceChildren(statusPanel)",
+		"main.replaceChildren(resultsPage)",
+		"browserSummary.textContent",
+	} {
+		if !strings.Contains(script, required) {
+			t.Errorf("safe query DOM contract missing %q", required)
+		}
+	}
+}
+
 func TestAccountUserCreationChecksRolePromotionAndFormatsDeleteErrors(t *testing.T) {
 	template := readTemplateContract(t, "account.html")
 	for _, want := range []string{

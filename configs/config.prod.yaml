@@ -1,0 +1,38 @@
+# Production container baseline. Secrets are resolved from the deployment
+# environment at startup; do not replace these placeholders with committed values.
+web:
+  bind_address: 127.0.0.1
+  port: 8448
+  auth:
+    enabled: true
+    admin_token: "${UNIMAP_ADMIN_TOKEN}"
+    username: "${UNIMAP_ADMIN_USERNAME}"
+    password_hash: ""
+
+distributed:
+  enabled: false
+  admin_token: "${UNIMAP_DISTRIBUTED_ADMIN_TOKEN}"
+  node_auth_tokens: {}
+  scheduler:
+    strategy: health_load
+
+screenshot:
+  enabled: true
+  mode: cdp
+  priority: cdp
+  fallback: false
+  base_dir: /app/screenshots
+  chrome_path: /usr/bin/chromium
+  chrome_user_data_dir: /app/chrome-profile
+  headless: true
+  no_sandbox: true
+  max_sessions: 1
+  timeout: 30
+  window_width: 1365
+  window_height: 768
+  wait_time: 500
+
+log:
+  level: info
+  encoding: console
+  file: /app/logs/unimap.log
