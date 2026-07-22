@@ -108,6 +108,7 @@ func (m *Manager) resolveEnv(config *Config) {
 		config.Distributed.NodeAuthTokens[nodeID] = m.ResolveEnv(token)
 	}
 	config.Web.Auth.AdminToken = m.ResolveEnv(config.Web.Auth.AdminToken)
+	config.Web.Auth.Username = m.ResolveEnv(config.Web.Auth.Username)
 
 	// 解析旧版告警 Webhook 配置
 	config.Alerting.Webhook.URL = m.ResolveEnv(config.Alerting.Webhook.URL)

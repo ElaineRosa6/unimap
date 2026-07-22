@@ -2,22 +2,28 @@ version: '3.8'
 
 # 生产环境 Compose 覆盖配置
 # 使用方式：docker compose -f docker-compose.yml -f docker-compose.prod.yaml up -d --build
+# !override 需要 Docker Compose 2.24.4 或更高版本。
 
 services:
   unimap:
-    ports:
+    ports: !override
       # 仅绑定 loopback，由反向代理提供 HTTPS 公网入口
       - "127.0.0.1:8448:8448"
 
-    volumes:
-      # 移除开发式 bind mount；生产使用镜像内已打包的静态资源
-      # - ./web:/app/web
+    volumes: !override
+      # 完整替换基础卷列表，生产使用镜像内已打包的静态资源。
+      - ${UNIMAP_CONFIG_FILE:-./configs/config.prod.yaml}:/app/configs/config.yaml:ro
+      - ./logs:/app/logs
+      - unimap_data:/app/data
+      - unimap_screenshots:/app/screenshots
+      - unimap_chrome_profile:/app/chrome-profile
       - unimap_backups:/app/backups
 
     environment:
       # 生产环境强制要求固定管理令牌
       UNIMAP_ADMIN_TOKEN: ${UNIMAP_ADMIN_TOKEN:?set UNIMAP_ADMIN_TOKEN in the deployment environment}
       UNIMAP_DISTRIBUTED_ADMIN_TOKEN: ${UNIMAP_DISTRIBUTED_ADMIN_TOKEN:?set UNIMAP_DISTRIBUTED_ADMIN_TOKEN}
+      UNIMAP_ADMIN_USERNAME: ${UNIMAP_ADMIN_USERNAME:?set a non-default UNIMAP_ADMIN_USERNAME}
 
     deploy:
       resources:

@@ -1,8 +1,8 @@
 # Audit Remediation Guide — Persistence Findings (2026-07-10 Re-audit)
 
-> **状态说明（2026-07-15）**：以下章节保留原始审计背景，但“当前状态”和行动项已按代码复核更新。历史索引支持 SQL 页查询及受限的 HTTP `offset` 分页；告警采用临时文件+rename；导出已有基础 handler 回归测试，组合与错误路径仍可加强。
+> **状态说明（2026-07-23）**：以下章节保留原始审计背景，但“当前状态”和行动项已按代码复核更新。历史索引支持 SQL 页查询及受限的 HTTP `offset` 分页；告警采用临时文件+rename；篡改历史导出的组合过滤、存储错误与错误方法回归测试已补齐。
 
-**Last Updated:** 2026-07-15
+**Last Updated:** 2026-07-23
 **Audit Scope:** Commits `fbfe82f` through current HEAD
 **Auditor:** Hermes Agent
 **Project:** `D:/Project/Go_project/unimap`
@@ -16,8 +16,8 @@ This document tracks the remediation status of persistence-related security and 
 | Severity | Total | Fixed | Partial | Open |
 |----------|-------|-------|---------|------|
 | P1 | 3 | 3 | 0 | 0 |
-| P2 | 5 | 4 | 1 | 0 |
-| **Total** | **8** | **7** | **1** | **0** |
+| P2 | 5 | 5 | 0 | 0 |
+| **Total** | **8** | **8** | **0** | **0** |
 
 ---
 
@@ -397,9 +397,10 @@ func (s *Server) handleTamperHistoryExport(w http.ResponseWriter, r *http.Reques
 - ✅ Encoder errors return 500 instead of being silently ignored
 - ✅ Basic export handler regression test exists
 
-**What's Still Missing:**
-- ❌ No test for filter combinations
-- ❌ No test for error handling paths
+**Additional Regression Coverage (2026-07-23):**
+- ✅ Combined URL/type/mode/query/limit filtering
+- ✅ Storage/query failure returns stable `export_history_failed`
+- ✅ Non-GET methods are rejected
 
 **Recommended Tests:**
 ```go
@@ -422,11 +423,7 @@ func TestTamperHistoryExport(t *testing.T) {
 
 ## Remaining Action Item
 
-1. **Export Handler Combination/Error Tests** (Finding #8)
-   - **Priority:** MEDIUM
-   - **File:** `web/tamper_handlers_test.go`
-   - **Change:** Extend the existing regression test with filter combinations and error paths
-   - **Impact:** Regression prevention
+Finding #8 的代码级回归覆盖已在 2026-07-23 补齐；本报告当前没有遗留代码行动项。正式云机、容器和真实浏览器验收仍属于发布环境验证，不应标记为由单元测试替代。
 
 ---
 

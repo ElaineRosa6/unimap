@@ -1,4 +1,4 @@
-# UniMap 云服务器部署评估（2026-07-20 初版 / 2026-07-20 B-01 修复）
+# UniMap 云服务器部署评估（2026-07-20 初版 / 2026-07-23 配置复核）
 
 > 本文记录 2026-07-20 对当前工作区的静态核查与定向验证结果。容量规格属于部署建议，必须在正式云机上用真实任务复测；已确认缺陷则在修复并重新验收前持续作为发布阻断项。
 
@@ -80,16 +80,16 @@ Binary was compiled with 'CGO_ENABLED=0', go-sqlite3 requires cgo to work. This 
 3. 完成用户登录、查询历史写入、截图批次写入和容器重启后重读；
 4. 保存镜像标签、架构、测试输出和回滚镜像。
 
-### B-02：生产 Compose 尚未定型 — 部分已落实
+### B-02：生产 Compose 代码基线已落实 — 待云机验收
 
 当前 Compose 还存在以下生产差距：
 
-- ~~`./web:/app/web` 是开发式 bind mount~~ — ✅ `docker-compose.prod.yaml` 已移除该 mount，使用镜像内静态资源；
-- ~~`8448:8448` 会直接绑定宿主机所有接口~~ — ✅ prod 覆盖文件改为 `127.0.0.1:8448:8448`，由反向代理提供 HTTPS；
+- ~~`./web:/app/web` 是开发式 bind mount~~ — ✅ `docker-compose.prod.yaml` 使用 `volumes: !override` 完整替换基础卷，使用镜像内静态资源；
+- ~~`8448:8448` 会直接绑定宿主机所有接口~~ — ✅ 使用 `ports: !override` 后仅保留 `127.0.0.1:8448:8448`，由反向代理提供 HTTPS；
 - ~~`/app/backups` 没有持久化~~ — ✅ prod 覆盖文件新增 `unimap_backups` 卷；
 - 配置文件以 `:ro` 挂载，适合声明式配置，但 Web 设置页的持久化保存会失败，必须明确采用”改部署配置并重启”的流程；
 - `deploy.resources` 属于平台可选能力，部署后需检查 cgroup 是否真正应用 CPU/内存限制；
-- 没有日志轮转、TLS 反向代理和异机备份基线。
+- ~~没有日志轮转~~ — ✅ prod 覆盖文件设置 `50m × 5`；TLS 反向代理和异机备份仍由部署环境落实。
 
 **已新增**：`docker-compose.prod.yaml` 作为生产覆盖配置，与基础 `docker-compose.yml` 合并使用：
 
@@ -97,7 +97,7 @@ Binary was compiled with 'CGO_ENABLED=0', go-sqlite3 requires cgo to work. This 
 docker compose -f docker-compose.yml -f docker-compose.prod.yaml up -d --build
 ```
 
-覆盖内容包括：loopback 端口绑定、移除 web bind mount、挂载 backups 卷、日志轮转（50MB × 5 文件）、生产资源限制（4 CPU / 6G RAM）、强制 `UNIMAP_ADMIN_TOKEN` 和 `UNIMAP_DISTRIBUTED_ADMIN_TOKEN` 环境变量。
+覆盖内容包括：通过 `!override` 形成唯一 loopback 端口绑定并移除 web bind mount、挂载 backups 卷、日志轮转（50MB × 5 文件）、生产资源限制（4 CPU / 6G RAM），以及通过 `configs/config.prod.yaml` 解析固定 `UNIMAP_ADMIN_TOKEN`、`UNIMAP_DISTRIBUTED_ADMIN_TOKEN` 和非默认 `UNIMAP_ADMIN_USERNAME`。`!override` 要求 Docker Compose 2.24.4 或更高版本。
 
 仍待验证：实际云机上 cgroup 资源限制生效、日志轮转生效、反向代理 TLS 配置、异机备份流程。
 
@@ -134,7 +134,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yaml up -d --build
 - 域名对应的 CORS origin；
 - 使用反向代理时，精确配置代理容器/主机网段到 `trusted_proxy_cidrs`。
 
-环境变量只有在 YAML 中写成 `$VAR` 或 `${VAR}` 占位符，且 Compose 把该变量传入容器时才会解析。不要直接复制本机 `configs/config.yaml` 到服务器；应从容器基线或示例生成独立生产配置，并轮换已经在开发环境使用过的凭据。
+环境变量只有在 YAML 中写成 `$VAR` 或 `${VAR}` 占位符，且 Compose 把该变量传入容器时才会解析。生产覆盖默认挂载 `configs/config.prod.yaml`，其中已显式声明三个认证占位符。不要直接复制本机 `configs/config.yaml` 到服务器；如需自定义，应从生产基线或示例生成独立配置，并轮换已经在开发环境使用过的凭据。
 
 ### 查询引擎
 
@@ -191,7 +191,7 @@ screenshot:
 - `/app/screenshots`：截图文件；
 - `/app/chrome-profile`：浏览器登录态；
 - `/app/logs`：应用日志；
-- `/app/backups`：本地备份输出，当前 Compose 需要补挂载。
+- `/app/backups`：本地备份输出，生产覆盖已挂载 `unimap_backups`。
 
 截图容量估算：
 

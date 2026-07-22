@@ -615,7 +615,7 @@ function verifyCookies(button) {
 		.then(data => {
 			if (!resultBox) return;
 			if (data && data.results) {
-				resultBox.innerHTML = '';
+				resultBox.replaceChildren();
 				Object.keys(data.results).forEach(engine => {
 					const item = data.results[engine];
 					const ok = item && item.ok;
@@ -1277,26 +1277,39 @@ function removeLoadingIndicator() {
 
 function handleQueryStart(message) {
 	currentQueryID = message.query_id;
-	const status = message.status;
-	const queryID = escapeHtml(status && status.ID ? status.ID : '');
-	const queryStatus = escapeHtml(status && status.Status ? status.Status : '');
+	const status = message.status || {};
+	const queryID = status.ID || '';
+	const queryStatus = status.Status || '';
 	const startTime = status && status.StartTime ? new Date(status.StartTime).toLocaleString() : '';
 
 	// 更新结果页面
 	const resultsContent = document.getElementById('results-content');
 	if (resultsContent) {
-		resultsContent.innerHTML = `
-			<div class="query-status">
-				<h3>查询状态</h3>
-				<p>查询ID: ${queryID}</p>
-				<p>状态: ${queryStatus}</p>
-				<p>进度: <span id="progress-bar">0%</span></p>
-				<div class="progress-container">
-					<div id="progress-fill" class="progress-fill" style="width: 0%"></div>
-				</div>
-				<p>开始时间: ${escapeHtml(startTime)}</p>
-			</div>
-		`;
+		const statusPanel = document.createElement('div');
+		statusPanel.className = 'query-status';
+		const heading = document.createElement('h3');
+		heading.textContent = '查询状态';
+		const queryLine = document.createElement('p');
+		queryLine.textContent = `查询ID: ${queryID}`;
+		const statusLine = document.createElement('p');
+		statusLine.textContent = `状态: ${queryStatus}`;
+		const progressLine = document.createElement('p');
+		progressLine.appendChild(document.createTextNode('进度: '));
+		const progressBar = document.createElement('span');
+		progressBar.id = 'progress-bar';
+		progressBar.textContent = '0%';
+		progressLine.appendChild(progressBar);
+		const progressContainer = document.createElement('div');
+		progressContainer.className = 'progress-container';
+		const progressFill = document.createElement('div');
+		progressFill.id = 'progress-fill';
+		progressFill.className = 'progress-fill';
+		progressFill.style.width = '0%';
+		progressContainer.appendChild(progressFill);
+		const startLine = document.createElement('p');
+		startLine.textContent = `开始时间: ${startTime}`;
+		statusPanel.append(heading, queryLine, statusLine, progressLine, progressContainer, startLine);
+		resultsContent.replaceChildren(statusPanel);
 	}
 }
 
@@ -1376,32 +1389,38 @@ function handleQueryComplete(message) {
 
 // 执行异步查询（WebSocket版本）
 function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, browserQuery, browserAction) {
-	const safeQuery = escapeHtml(query);
-	const safeEnginesText = engines.map(engine => escapeHtml(engine)).join(', ');
-
 	// 创建结果页面
 	const resultsPage = document.createElement('div');
 	resultsPage.className = 'results-page';
-	resultsPage.innerHTML = `
-		<div class="results-header">
-			<h2>查询结果</h2>
-			<p>查询语句: <code>${safeQuery}</code></p>
-			<p>使用引擎: ${safeEnginesText}</p>
-			<p>浏览器查询: ${browserQuery ? '已开启' : '未开启'}${browserAction ? ' (' + browserAction + ')' : ''}</p>
-			<div class="loading-indicator">
-				<div class="spinner"></div>
-				<p>正在查询...请稍候</p>
-			</div>
-		</div>
-		<div id="results-content" class="results-content">
-			<!-- 结果将在这里动态加载 -->
-		</div>
-	`;
+	const resultsHeader = document.createElement('div');
+	resultsHeader.className = 'results-header';
+	const heading = document.createElement('h2');
+	heading.textContent = '查询结果';
+	const querySummary = document.createElement('p');
+	querySummary.appendChild(document.createTextNode('查询语句: '));
+	const queryCode = document.createElement('code');
+	queryCode.textContent = query;
+	querySummary.appendChild(queryCode);
+	const engineSummary = document.createElement('p');
+	engineSummary.textContent = `使用引擎: ${engines.join(', ')}`;
+	const browserSummary = document.createElement('p');
+	browserSummary.textContent = `浏览器查询: ${browserQuery ? '已开启' : '未开启'}${browserAction ? ' (' + browserAction + ')' : ''}`;
+	const loading = document.createElement('div');
+	loading.className = 'loading-indicator';
+	const spinner = document.createElement('div');
+	spinner.className = 'spinner';
+	const loadingText = document.createElement('p');
+	loadingText.textContent = '正在查询...请稍候';
+	loading.append(spinner, loadingText);
+	resultsHeader.append(heading, querySummary, engineSummary, browserSummary, loading);
+	const resultsContent = document.createElement('div');
+	resultsContent.id = 'results-content';
+	resultsContent.className = 'results-content';
+	resultsPage.append(resultsHeader, resultsContent);
 	
 	// 替换当前页面内容
 	const main = document.querySelector('main');
-	main.innerHTML = '';
-	main.appendChild(resultsPage);
+	main.replaceChildren(resultsPage);
 
 	// 检查WebSocket连接
 	if (!wsConnected || wsConnection.readyState !== WebSocket.OPEN) {
@@ -1424,8 +1443,8 @@ function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, 
 	// P1-2: 客户端超时检测
 	currentQueryTimeout = setTimeout(function() {
 		removeLoadingIndicator();
-		const resultsContent = document.getElementById('results-content');
-		if (resultsContent) {
+		const timeoutResultsContent = document.getElementById('results-content');
+		if (timeoutResultsContent) {
 			const wrap = document.createElement('div');
 			wrap.style.cssText = 'color:#856404; background:#fff3cd; padding:16px; border-radius:6px; border:1px solid #ffc107;';
 			const h4 = document.createElement('h4');
@@ -1442,8 +1461,7 @@ function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, 
 			wrap.appendChild(h4);
 			wrap.appendChild(p);
 			wrap.appendChild(btn);
-			resultsContent.innerHTML = '';
-			resultsContent.appendChild(wrap);
+			timeoutResultsContent.replaceChildren(wrap);
 		}
 		// 恢复按钮状态
 		if (submitBtn) {

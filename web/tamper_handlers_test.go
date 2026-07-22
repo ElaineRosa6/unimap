@@ -104,6 +104,78 @@ func TestHandleTamperHistoryExport(t *testing.T) {
 	}
 }
 
+func TestHandleTamperHistoryExportCombinesFiltersAndLimit(t *testing.T) {
+	dir := t.TempDir()
+	targetURL := "https://keep.example.test/admin"
+	storage := tamper.NewHashStorage(dir)
+	records := []*tamper.CheckRecord{
+		{ID: "keep", URL: targetURL, CheckType: "normal", DetectionMode: "security", Tampered: true, Timestamp: 300},
+		{ID: "wrong-mode", URL: targetURL, CheckType: "normal", DetectionMode: "balanced", Tampered: true, Timestamp: 200},
+		{ID: "wrong-url", URL: "https://other.example.test/admin", CheckType: "normal", DetectionMode: "security", Tampered: true, Timestamp: 100},
+	}
+	for _, record := range records {
+		if err := storage.SaveCheckRecord(record.URL, record); err != nil {
+			t.Fatalf("save check record %s: %v", record.ID, err)
+		}
+	}
+
+	s := &Server{tamperApp: service.NewTamperAppService(dir, nil)}
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/tamper/history/export?url="+targetURL+"&type=tampered&mode=security&q=keep&limit=1", nil)
+	w := httptest.NewRecorder()
+	s.handleTamperHistoryExport(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var exported []struct {
+		ID            string `json:"id"`
+		URL           string `json:"url"`
+		Status        string `json:"status"`
+		DetectionMode string `json:"detection_mode"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &exported); err != nil {
+		t.Fatalf("decode export: %v", err)
+	}
+	if len(exported) != 1 || exported[0].ID != "keep" || exported[0].URL != targetURL || exported[0].Status != "tampered" || exported[0].DetectionMode != "security" {
+		t.Fatalf("unexpected filtered export: %+v", exported)
+	}
+}
+
+func TestHandleTamperHistoryExportReturnsStableErrorWhenStorageFails(t *testing.T) {
+	dir := t.TempDir()
+	blockedBaseDir := filepath.Join(dir, "not-a-directory")
+	if err := os.WriteFile(blockedBaseDir, []byte("block directory creation"), 0o600); err != nil {
+		t.Fatalf("create blocking file: %v", err)
+	}
+
+	s := &Server{tamperApp: service.NewTamperAppService(blockedBaseDir, nil)}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tamper/history/export", nil)
+	w := httptest.NewRecorder()
+	s.handleTamperHistoryExport(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	var response apiErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode API error: %v", err)
+	}
+	if response.Success || response.Error.Code != "export_history_failed" || response.Error.Message != "export history failed" {
+		t.Fatalf("unexpected API error: %+v", response)
+	}
+}
+
+func TestHandleTamperHistoryExportRejectsWrongMethod(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tamper/history/export", nil)
+	w := httptest.NewRecorder()
+	s.handleTamperHistoryExport(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
 func TestHandleTamperBaselineDeleteMethodContract(t *testing.T) {
 	s := &Server{tamperApp: service.NewTamperAppService("./hash_store", nil)}
 

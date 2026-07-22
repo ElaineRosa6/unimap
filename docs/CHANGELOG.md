@@ -4,6 +4,16 @@
 
 ---
 
+## [2026-07-23] 审计跟进与生产部署契约修复
+
+- 修正生产 Compose 合并语义：以 `!override` 完整替换基础端口和卷，避免公网 `8448` 与开发 `web` bind mount 在合并后残留；最低要求 Docker Compose 2.24.4。
+- 新增 `configs/config.prod.yaml`，让固定 Web/分布式管理令牌与非默认管理员名真正从部署环境解析。
+- 查询状态与结果页改用 DOM 节点和 `textContent` 构造，移除审计点名的动态 `innerHTML` 注入面。
+- 补齐篡改历史导出的组合过滤、存储错误和错误方法回归测试；持久化审计 Finding #8 闭环。
+- 本机仍无 Docker CLI，Compose 渲染、镜像运行、TLS、cgroup 和异机备份留待正式云机验收。
+
+---
+
 ## [2026-07-20] 云服务器部署评估记录
 
 > **变更类型**: 部署评估 + 文档纠偏
@@ -282,6 +292,5 @@ config.Engines.Fofa.UseWebAPI = true
 - `go test -race ./...` — 全部通过（0 failures, 0 races）
 
 ---
-
 
 
