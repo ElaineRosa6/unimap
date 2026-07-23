@@ -18,6 +18,13 @@ func TestDockerBaselineConfigLoads(t *testing.T) {
 	if cfg.Web.BindAddress != "127.0.0.1" || !cfg.Screenshot.Enabled || cfg.Screenshot.Mode != "cdp" {
 		t.Fatalf("unexpected Docker baseline: bind=%q screenshot=%v mode=%q", cfg.Web.BindAddress, cfg.Screenshot.Enabled, cfg.Screenshot.Mode)
 	}
+	if !cfg.Engines.Fofa.Enabled || !cfg.Engines.Hunter.Enabled || !cfg.Engines.Zoomeye.Enabled ||
+		!cfg.Engines.Quake.Enabled || !cfg.Engines.Shodan.Enabled {
+		t.Fatal("Docker baseline must explicitly enable the five stable Web engines")
+	}
+	if cfg.Engines.Censys.Enabled || cfg.Engines.Daydaymap.Enabled {
+		t.Fatal("Docker baseline must not enable API-only engines without credentials")
+	}
 }
 
 func TestDeploymentYAMLFilesAreSyntacticallyValid(t *testing.T) {
@@ -61,13 +68,50 @@ func TestProductionComposeReplacesDevelopmentPortsAndVolumes(t *testing.T) {
 		t.Fatalf("production volumes tag = %q, want !override so the development web mount is removed", volumes.Tag)
 	}
 	joined := strings.Join(yamlScalarValues(volumes), "\n")
-	for _, required := range []string{"/app/configs/config.yaml:ro", "/app/logs", "/app/data", "/app/screenshots", "/app/chrome-profile", "/app/backups"} {
+	for _, required := range []string{"unimap_config:/app/runtime-config", "/app/logs", "/app/data", "/app/screenshots", "/app/chrome-profile", "/app/backups"} {
 		if !strings.Contains(joined, required) {
 			t.Errorf("production volumes missing %q: %s", required, joined)
 		}
 	}
 	if strings.Contains(joined, "./web:/app/web") {
 		t.Fatalf("production volumes retain the development web bind mount: %s", joined)
+	}
+}
+
+func TestProductionRuntimeConfigIsInitializedAndWritable(t *testing.T) {
+	checks := map[string][]string{
+		filepath.Join("..", "..", "Dockerfile"): {
+			"COPY scripts/docker-entrypoint.sh /usr/local/bin/unimap-entrypoint",
+			"/app/runtime-config",
+			`ENTRYPOINT ["unimap-entrypoint"]`,
+		},
+		filepath.Join("..", "..", "docker-compose.prod.yaml"): {
+			"UNIMAP_CONFIG_PATH: /app/runtime-config/config.yaml",
+			"UNIMAP_CONFIG_TEMPLATE: /app/configs/config.prod.yaml",
+			"unimap_config:/app/runtime-config",
+			"unimap_config:",
+		},
+		filepath.Join("..", "..", "scripts", "docker-entrypoint.sh"): {
+			`config_path="${UNIMAP_CONFIG_PATH:-/app/configs/config.yaml}"`,
+			`config_template="${UNIMAP_CONFIG_TEMPLATE:-/app/configs/config.docker.yaml}"`,
+			`if [ ! -f "$config_path" ]; then`,
+			`cp "$config_template" "$config_path"`,
+			`chmod 600 "$config_path"`,
+			`exec "$@"`,
+		},
+	}
+	for path, required := range checks {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+		for _, value := range required {
+			if !strings.Contains(content, value) {
+				t.Errorf("%s missing runtime config contract %q", path, value)
+			}
+		}
 	}
 }
 
@@ -175,6 +219,50 @@ func TestProductionConfigResolvesStableAdminTokens(t *testing.T) {
 	}
 	if cfg.Web.Auth.PasswordHash == "" || cfg.Web.Auth.PasswordHash == "a-long-random-deployment-password" {
 		t.Fatal("production bootstrap password was not securely hashed")
+	}
+}
+
+func TestProductionConfigEnablesSelectedTrialEngines(t *testing.T) {
+	t.Setenv("UNIMAP_ADMIN_TOKEN", "stable-web-admin-token")
+	t.Setenv("UNIMAP_DISTRIBUTED_ADMIN_TOKEN", "stable-distributed-admin-token")
+	t.Setenv("UNIMAP_ADMIN_USERNAME", "prod-operator")
+	t.Setenv("UNIMAP_BOOTSTRAP_PASSWORD", "a-long-random-deployment-password")
+	t.Setenv("HUNTER_API_KEY", "hunter-test-key")
+	t.Setenv("QUAKE_API_KEY", "quake-test-key")
+
+	mgr := NewManager(filepath.Join("..", "..", "configs", "config.prod.yaml"))
+	if err := mgr.Load(); err != nil {
+		t.Fatalf("load production config: %v", err)
+	}
+	cfg := mgr.GetConfig()
+	if !cfg.Engines.Hunter.Enabled || cfg.Engines.Hunter.APIKey != "hunter-test-key" {
+		t.Fatalf("unexpected Hunter trial config: enabled=%v key_set=%v", cfg.Engines.Hunter.Enabled, cfg.Engines.Hunter.APIKey != "")
+	}
+	if cfg.Engines.Hunter.BaseURL != "https://hunter.qianxin.com" {
+		t.Fatalf("Hunter base URL = %q", cfg.Engines.Hunter.BaseURL)
+	}
+	if !cfg.Engines.Quake.Enabled || cfg.Engines.Quake.APIKey != "quake-test-key" {
+		t.Fatalf("unexpected Quake trial config: enabled=%v key_set=%v", cfg.Engines.Quake.Enabled, cfg.Engines.Quake.APIKey != "")
+	}
+	if cfg.Engines.Quake.BaseURL != "https://quake.360.net/api" {
+		t.Fatalf("Quake base URL = %q", cfg.Engines.Quake.BaseURL)
+	}
+	if cfg.Engines.Censys.Enabled || cfg.Engines.Daydaymap.Enabled {
+		t.Fatal("API-only engines must remain disabled in the production trial template")
+	}
+
+	compose, err := os.ReadFile(filepath.Join("..", "..", "docker-compose.prod.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(compose)
+	for _, required := range []string{
+		"HUNTER_API_KEY: ${HUNTER_API_KEY:-}",
+		"QUAKE_API_KEY: ${QUAKE_API_KEY:-}",
+	} {
+		if !strings.Contains(content, required) {
+			t.Errorf("production Compose missing engine secret pass-through %q", required)
+		}
 	}
 }
 

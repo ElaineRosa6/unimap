@@ -5,6 +5,8 @@
 > **后续勘误（2026-07-14）**：本记录中“截图引擎不可用”仅是当日 Chrome Extension 未连接的环境状态。受控本机 Bridge 的后续成功态证据见 [`E2E_BRIDGE_SCREENSHOT_NOTIFICATION_2026-07-14.md`](E2E_BRIDGE_SCREENSHOT_NOTIFICATION_2026-07-14.md)。
 >
 > **后续勘误（2026-07-15）**：下文 ICP history `keyword` 精确匹配与调度 payload 严格格式仅是本次验收当日行为。当前 `keyword` 已支持字面量部分匹配；调度器已支持创建期 Runner 校验、逗号字符串数组及 `targets`/`engine` 兼容。当前契约以 [`API.md`](API.md) 为准。
+>
+> **后续勘误（2026-07-23）**：本记录中的 Censys、DayDayMap 结果属于 API 查询证据，不是 Bridge 或 CDP 抓取证据。两者当前仍未接入稳定 Web UI，也未完成 Bridge/CDP 结构化采集和 live E2E。
 
 ## 测试范围
 

@@ -1,6 +1,6 @@
 # UniMap 业务与逻辑架构
 
-> 当前状态：2026-07-13，基于 `develop` 工作区代码核对。本文替代 2026-06-05 的旧分支快照；接口细节见 [API.md](API.md)。
+> 当前状态：2026-07-23，基于 `develop` 工作区代码核对。本文替代 2026-06-05 的旧分支快照；接口细节见 [API.md](API.md)。
 
 ## 业务能力
 
@@ -23,7 +23,7 @@
 
 ## 引擎范围
 
-Web UI 的稳定引擎为 FOFA、Hunter、ZoomEye、Quake、Shodan。Censys 和 DayDayMap 可由服务端/CLI 在已配置时注册，扩展也有选择器，但不应被描述为稳定 UI 能力。
+Web UI 的稳定引擎为 FOFA、Hunter、ZoomEye、Quake、Shodan。Censys 和 DayDayMap 当前只完成服务端/CLI API 适配与 API 实机验证；未接入稳定 UI，Bridge/CDP 结构化抓取和真实测试也未完成。仓库中的泛化选择器占位不能视为已支持。
 
 ## 核心逻辑
 
@@ -36,6 +36,8 @@ UQL → Parser → EngineOrchestrator → 多个 EngineAdapter
 
 Web API 查询是 `POST /api/v1/query` 的表单协议；最大 `page_size` 为 500。浏览器采集是可选并行路径，不替代 API 适配器。
 
+五个稳定引擎过去的真实结构化采集结果来自 Bridge。CDP 目前仅能确认代码链路存在以及普通网页截图可用，尚不能确认测绘引擎结果页能稳定返回结构化资产。
+
 ### 截图与巡检
 
 ```text
@@ -47,7 +49,7 @@ Web API 查询是 `POST /api/v1/query` 的表单协议；最大 `page_size` 为 
 
 ### 调度与通知
 
-`ScheduledTask` 支持 `cron`、`once`、`delay`。当前工作区定义 23 种任务类型，包含尚未提交的备份任务变更；发布说明必须随提交状态确认。通知通道实际由注册表决定，不能把文档中的数字当作静态协议。
+`ScheduledTask` 支持 `cron`、`once`、`delay`。当前工作区定义 23 种已提交任务类型，包含备份任务。通知通道实际由注册表决定，不能把文档中的数字当作静态协议。
 
 ### 分布式
 

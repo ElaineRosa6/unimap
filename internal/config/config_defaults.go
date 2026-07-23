@@ -18,13 +18,6 @@ type engineDefaults struct {
 
 // applyEngineDefaults 应用搜索引擎默认配置
 func (m *Manager) applyEngineDefaults(config *Config) {
-	config.Engines.Quake.Enabled = true
-	config.Engines.Zoomeye.Enabled = true
-	config.Engines.Hunter.Enabled = true
-	config.Engines.Fofa.Enabled = true
-	config.Engines.Shodan.Enabled = true
-	config.Engines.Censys.Enabled = true
-	config.Engines.Daydaymap.Enabled = true
 	config.Engines.Fofa.UseWebAPI = true
 
 	applyEngineDefaultsSimple(&config.Engines.Quake.BaseURL, &config.Engines.Quake.QPS, &config.Engines.Quake.Timeout,

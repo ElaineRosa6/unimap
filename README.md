@@ -5,12 +5,15 @@
 ## 能力概览
 
 - UQL 统一查询、结果归并与 CSV/Excel/JSON 导出。
-- 稳定 Web UI 支持 FOFA、Hunter、ZoomEye、Quake、Shodan 五个引擎；Censys、DayDayMap 已有适配器与扩展选择器，但尚不在稳定 UI 引擎列表内。
+- 稳定 Web UI 支持 FOFA、Hunter、ZoomEye、Quake、Shodan 五个引擎。Censys、DayDayMap 当前只完成服务端/CLI API 适配与 API 实机验证；虽然仓库内存在部分泛化选择器占位，但尚未接入稳定 UI，也未完成 Bridge/CDP 结构化抓取与真实测试。
 - CDP 与 Chrome Extension 双截图引擎，可在 `cdp`、`extension`、`auto` 间切换。
 - Linux/容器可直接使用无 `DISPLAY` 的 Chromium headless；统一路由覆盖截图、浏览器采集、调度与巡检，并限制浏览器会话避免云主机 OOM。
+- 历史测绘引擎结构化采集 E2E 使用 Extension Bridge；五个稳定引擎的 CDP 结构化抓取尚待真实账号逐项验收，不能仅凭普通网页 CDP 截图判定通过。
 - 网页巡检：`strict`、`relaxed`、`security`、`balanced`、`precise` 五种模式。
 - 巡检历史：支持 URL、类型、模式、关键词过滤，以及受限的 `limit` / `offset` 分页；详见 [API 文档](docs/API.md)。
 - 调度、通知、分布式节点、备份、Prometheus 指标与操作历史。
+
+当前明确未完成项和优先级见 [本地剩余工作清单](docs/REMAINING_WORK_2026-07-23.md)。
 
 ## 技术栈
 

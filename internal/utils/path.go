@@ -102,10 +102,14 @@ func RelDataPath(relPath string) string {
 	return relPath
 }
 
-// ConfigPath 返回跨平台的默认配置文件路径。
-// 优先查找 configs/config.yaml（项目相对路径，用于开发），
+// DefaultConfigPath 返回跨平台的默认配置文件路径。
+// 显式 UNIMAP_CONFIG_PATH 优先；否则查找 configs/config.yaml（项目相对路径，用于开发），
 // 若不可用则回退到用户配置目录。
 func DefaultConfigPath() string {
+	if path := os.Getenv("UNIMAP_CONFIG_PATH"); path != "" {
+		return path
+	}
+
 	// 开发环境优先：项目相对路径
 	if _, err := os.Stat("configs/config.yaml"); err == nil {
 		return "configs/config.yaml"

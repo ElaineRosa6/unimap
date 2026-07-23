@@ -16,6 +16,25 @@ distributed:
   scheduler:
     strategy: health_load
 
+engines:
+  hunter:
+    enabled: true
+    api_key: "${HUNTER_API_KEY}"
+    base_url: "https://hunter.qianxin.com"
+    qps: 1
+    timeout: 30
+  quake:
+    enabled: true
+    api_key: "${QUAKE_API_KEY}"
+    base_url: "https://quake.360.net/api"
+    qps: 1
+    timeout: 30
+  # Censys 与 DayDayMap 当前仅支持 API，未完成 Web/Bridge/CDP 验收。
+  censys:
+    enabled: false
+  daydaymap:
+    enabled: false
+
 screenshot:
   enabled: true
   mode: cdp

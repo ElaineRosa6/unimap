@@ -106,6 +106,21 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, "unimap:", cfg.Cache.Redis.Prefix)
 }
 
+func TestApplyDefaultsDoesNotEnableUnconfiguredEngines(t *testing.T) {
+	mgr := NewManager("test.yaml")
+	var cfg Config
+
+	mgr.applyDefaults(&cfg)
+
+	assert.False(t, cfg.Engines.Fofa.Enabled)
+	assert.False(t, cfg.Engines.Hunter.Enabled)
+	assert.False(t, cfg.Engines.Zoomeye.Enabled)
+	assert.False(t, cfg.Engines.Quake.Enabled)
+	assert.False(t, cfg.Engines.Shodan.Enabled)
+	assert.False(t, cfg.Engines.Censys.Enabled)
+	assert.False(t, cfg.Engines.Daydaymap.Enabled)
+}
+
 func TestValidate(t *testing.T) {
 	mgr := NewManager("test.yaml")
 

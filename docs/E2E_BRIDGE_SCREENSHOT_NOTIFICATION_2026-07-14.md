@@ -1,6 +1,8 @@
 # 2026-07-14 Bridge 搜索截图与通知验收
 
 > **历史验收快照**：本记录仅说明 2026-07-14 本机受控会话中的结果，不代表任意部署、账号或后续页面版本。未记录 API Key、Cookie、Bridge token、通知凭证或资产目标。
+>
+> **2026-07-23 范围勘误**：本文验证的是 Extension Bridge，不是 CDP。Censys、DayDayMap 不在本次范围内，当前也没有完成它们的 Bridge/CDP 抓取与 live E2E。
 
 ## 范围与边界
 
