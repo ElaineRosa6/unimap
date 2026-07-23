@@ -123,6 +123,7 @@ func TestProductionComposeRequiresPepperAndSupportsCapacityOverrides(t *testing.
 	}
 	content := string(data)
 	for _, required := range []string{
+		"image: ${UNIMAP_IMAGE:-unimap:local}",
 		"UNIMAP_NOTIFY_PEPPER: ${UNIMAP_NOTIFY_PEPPER:?",
 		"cpus: ${UNIMAP_CPU_LIMIT:-4}",
 		"memory: ${UNIMAP_MEMORY_LIMIT:-6G}",
