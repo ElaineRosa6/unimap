@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,11 +12,41 @@ import (
 	"testing"
 	"time"
 
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
 )
+
+type successfulScreenshotProvider struct {
+	path string
+}
+
+func (p *successfulScreenshotProvider) CaptureSearchEngineResult(context.Context, string, string, string) (string, error) {
+	return p.path, nil
+}
+
+func (p *successfulScreenshotProvider) CaptureTargetWebsite(_ context.Context, _, _, _, _, queryID string) (string, error) {
+	if err := screenshot.ValidateIdentifier(queryID); err != nil {
+		return "", err
+	}
+	return p.path, nil
+}
+
+func (p *successfulScreenshotProvider) CaptureBatchURLs(context.Context, []string, string, int) ([]screenshot.BatchScreenshotResult, error) {
+	return nil, nil
+}
+
+func (p *successfulScreenshotProvider) GetScreenshotDirectory() string { return filepath.Dir(p.path) }
+
+func (p *successfulScreenshotProvider) OpenSearchEngineResult(context.Context, string, string) (string, error) {
+	return p.path, nil
+}
+
+func (p *successfulScreenshotProvider) CollectSearchEngineResult(context.Context, string, string, string) ([]collection.CollectResult, error) {
+	return nil, nil
+}
 
 func buildTestServerWithScreenshotBase(baseDir string) *Server {
 	cfg := &config.Config{}
@@ -342,6 +373,37 @@ func TestHandleScreenshot_PrivateIPBlockedLocalhost(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "blocked_url") {
 		t.Fatalf("expected 'blocked_url' in body, got %q", w.Body.String())
+	}
+}
+
+func TestHandleScreenshotGeneratesSafeIdentifier(t *testing.T) {
+	pngPath := filepath.Join(t.TempDir(), "capture.png")
+	png := []byte("\x89PNG\r\n\x1a\nacceptance")
+	if err := os.WriteFile(pngPath, png, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	provider := &successfulScreenshotProvider{path: pngPath}
+	router := screenshot.NewScreenshotRouter(screenshot.RouterConfig{
+		Mode:     screenshot.ModeCDP,
+		Priority: screenshot.ModeCDP,
+	}, provider, nil, nil)
+	s := &Server{screenshotRouter: router}
+	body := strings.NewReader(`{"url":"https://93.184.216.34"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot", body)
+	req.Host = "localhost:8448"
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+
+	s.handleScreenshot(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.HasPrefix(w.Header().Get("Content-Type"), "image/png") {
+		t.Fatalf("content type = %q, want image/png", w.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(w.Body.String(), "acceptance") {
+		t.Fatalf("unexpected image response: %q", w.Body.String())
 	}
 }
 

@@ -1,6 +1,10 @@
 # 使用官方Go镜像作为构建环境
 FROM golang:1.26.5-alpine AS builder
 
+ARG UNIMAP_VERSION=dev
+ARG UNIMAP_GIT_COMMIT=unknown
+ARG UNIMAP_BUILD_TIME=unknown
+
 # 设置工作目录
 WORKDIR /app
 
@@ -17,7 +21,9 @@ RUN apk add --no-cache build-base
 COPY . .
 
 # 构建应用（Web）
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o unimap-web ./cmd/unimap-web
+RUN CGO_ENABLED=1 GOOS=linux go build \
+    -ldflags="-s -w -X github.com/unimap/project/internal/appversion.Version=${UNIMAP_VERSION} -X github.com/unimap/project/internal/appversion.GitCommit=${UNIMAP_GIT_COMMIT} -X github.com/unimap/project/internal/appversion.BuildTime=${UNIMAP_BUILD_TIME}" \
+    -o unimap-web ./cmd/unimap-web
 
 # 使用alpine作为运行环境（固定版本）
 FROM alpine:3.21
