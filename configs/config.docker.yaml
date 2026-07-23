@@ -10,6 +10,24 @@ web:
     username: admin
     password_hash: ""
 
+engines:
+  # 开发容器保留五个已接入浏览器链路的引擎；未填写 Key 时使用 Web-only。
+  fofa:
+    enabled: true
+  hunter:
+    enabled: true
+  zoomeye:
+    enabled: true
+  quake:
+    enabled: true
+  shodan:
+    enabled: true
+  # 当前仅支持 API，不能在缺少凭据时报告成 Web-only。
+  censys:
+    enabled: false
+  daydaymap:
+    enabled: false
+
 screenshot:
   enabled: true
   mode: cdp

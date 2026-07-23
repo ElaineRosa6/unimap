@@ -64,7 +64,7 @@ go test -tags headless_e2e -run 'TestRelaxed_|TestStrict_MD5Change|TestNormalDyn
 1. 先确认登录状态：`GET /api/v1/cookies/login-status`。
 2. 使用 API 查询时发送表单字段 `query`、可选 `engines` 与 `page_size`；不要发送旧文档中的 JSON `limit/offset/timeout` 请求体。
 3. `page_size` 最大为 500。查询状态使用 `GET /api/v1/query/status?query_id=...`。
-4. 检查目标引擎 API Key、Cookie、额度和网络连通性。当前 Web UI 展示核心五引擎；Censys/DayDayMap 已有适配器但不属于稳定 UI 列表。
+4. 检查目标引擎 API Key、Cookie、额度和网络连通性。当前 Web UI 展示核心五引擎；Censys/DayDayMap 只有服务端/CLI API 适配和 API 实机证据，不属于稳定 UI，也没有 Bridge/CDP 抓取通过记录。
 
 ## 3. Chrome/CDP 或截图失败
 
@@ -98,22 +98,27 @@ CDP 模式使用 Chrome/Chromium 自带的新版 headless，不依赖桌面环�
 修复该阻断后的容器启动基线是：
 
 ```bash
-# 生产覆盖默认使用 configs/config.prod.yaml；自定义时设置 UNIMAP_CONFIG_FILE
+# 生产覆盖首次启动从镜像内 configs/config.prod.yaml 初始化可写运行卷
 # 云主机建议 screenshot.mode=cdp、headless=true、max_sessions=1
 export UNIMAP_BOOTSTRAP_PASSWORD='使用密码管理器生成的随机长密码'
 export UNIMAP_ADMIN_USERNAME='非默认管理员名'
 export UNIMAP_ADMIN_TOKEN='使用密码管理器生成的随机令牌'
 export UNIMAP_DISTRIBUTED_ADMIN_TOKEN='另一枚独立随机令牌'
 export UNIMAP_NOTIFY_PEPPER='独立于管理令牌的随机 pepper'
+# 可选：留空时 Quake/Hunter 使用 Web-only/CDP 路径，仍必须另行准备登录态
+export HUNTER_API_KEY=''
+export QUAKE_API_KEY=''
 docker compose -f docker-compose.yml -f docker-compose.prod.yaml up -d --build
 curl --fail http://127.0.0.1:8448/health/ready
 ```
 
 生产覆盖使用 Compose 的 `!override` 完整替换基础端口和卷，因此要求 Docker Compose **2.24.4 或更高版本**。部署前先运行 `docker compose version`；合并结果必须只有 `127.0.0.1:8448:8448`，且不得出现 `./web:/app/web`。检查 `docker compose config` 输出时先脱敏，禁止把展开后的令牌保存到日志或工单。
 
-Compose 通过专用的 `UNIMAP_CONTAINER_BIND_ADDRESS` 显式切换为容器内 `0.0.0.0`，并要求 `UNIMAP_BOOTSTRAP_PASSWORD`；后者只在启动配置阶段用于生成 bcrypt 哈希，不写回配置或日志。`configs/config.prod.yaml` 显式解析固定管理令牌和非默认管理用户名。使用完整自定义配置时给同一双文件命令设置 `UNIMAP_CONFIG_FILE=./configs/config.yaml`。若不使用 Compose，镜像基线保持 loopback，仅可通过容器内检查或自行提供安全的公开监听配置访问。
+Compose 通过专用的 `UNIMAP_CONTAINER_BIND_ADDRESS` 显式切换为容器内 `0.0.0.0`，并要求 `UNIMAP_BOOTSTRAP_PASSWORD`；后者只在启动配置阶段用于生成 bcrypt 哈希，不写回配置或日志。生产入口仅在 `unimap_config` 卷中不存在 `config.yaml` 时，从镜像内 `configs/config.prod.yaml` 初始化并设为 `0600`；应用通过 `UNIMAP_CONFIG_PATH=/app/runtime-config/config.yaml` 读取。更新镜像不会覆盖已存在的运行配置。环境变量占位符在加载时解析；设置页保存会把解析后的候选配置写入运行卷，因此 Key 轮换不能依赖修改环境变量永久覆盖已经持久化的值。若不使用 Compose，镜像基线保持 loopback，仅可通过容器内检查或自行提供安全的公开监听配置访问。
 
-生产部署还必须设置固定管理令牌和非默认管理员用户名；只启用拥有有效凭据的查询引擎。缺少 API Key 时注册的 Web-only adapter 并不代表真实查询已经可用，必须执行一次真实查询或浏览器采集验收。配置以 `:ro` 挂载时，Web 设置页不能持久化修改，应通过声明式配置更新并重启。
+生产部署还必须设置固定管理令牌和非默认管理员用户名。生产模板显式启用 Quake、Hunter，QPS 为 1；缺少 API Key 时注册的 Web-only adapter 并不代表真实查询已经可用，必须执行一次真实查询或浏览器采集验收。未配置的其他引擎默认禁用；Censys、DayDayMap 缺少完整 API 凭据时直接跳过注册，不会伪装成 Web-only。
+
+当前阿里云试运行机的 SSH 隧道登录、Quake/Hunter API Key 与 Cookie 准备、秘密录入限制和验证顺序见 [云服务器常态化运行准备与协作清单的操作章节](CLOUD_STEADY_STATE_PLAN_2026-07-23.md#10-管理登录与凭据录入操作)。首次录入后必须完成保存、容器重启和恢复验证；本地代码测试不能替代该云机证据。
 
 镜像内置 Chromium 和中日韩字体，固定 `UNIMAP_CHROME_PATH=/usr/bin/chromium`，并持久化 `/app/data`、`/app/screenshots`、`/app/chrome-profile`。Compose 把 `/dev/shm` 提高到 256 MiB；容器基线显式设置 `no_sandbox: true`，普通主机应保持 false 以使用 Chrome sandbox。不得删掉 `--disable-dev-shm-usage` 或独立 `user-data-dir`。持久化 Chrome profile 有独占锁，程序会把其并发会话自动限制为 1；不使用固定 profile 时可按内存逐步提高 `screenshot.max_sessions`。
 
@@ -185,7 +190,7 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/scheduler/history
 
 任务列表的 `enabled=true` 表示期望启用；还要检查 `runtime_status`。`schedule_error` 表示加载或布置失败，具体诊断在同名错误字段中。删除、停用持久化失败会返回 500 并回滚内存调度状态，不应按 404 处理。
 
-需要定时查询的完整 Bridge 闭环时，`query` 任务 payload 必须包含：
+需要定时查询的完整浏览器采集与截图闭环时，`query` 任务 payload 必须包含：
 
 ```json
 {
@@ -198,13 +203,17 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/scheduler/history
 }
 ```
 
-并为任务启用成功通知及至少一个支持图片的渠道。排障顺序：
+该工作流通过当前 ScreenshotRouter 后端执行：`cdp` 模式使用 headless Chromium，`extension` 模式使用在线扩展，`auto` 模式按健康状态和 fallback 配置选择。Bridge 不是该 payload 的必需条件。为任务启用成功通知及至少一个支持图片的渠道后，按实际后端排障：
 
-1. `/api/v1/screenshot/bridge/status` 显示扩展近期有拉取或回调活动。
-2. 调度执行结果包含“Bridge 截图保存”和“采集结果已合并并持久化”。
+不要用历史 Bridge E2E 代替 CDP 验收。当前五个稳定引擎的真实结构化采集证据来自 Bridge；CDP 必须逐引擎检查真实结果页、非空结构化资产和截图。Censys、DayDayMap 暂不允许进入该浏览器闭环验收，直至 URL 构造、采集器、登录态、UI 和 live E2E 全部接通。
+
+1. `/api/v1/screenshot/router/status` 的 `current_mode` 与预期一致且 `ready=true`；CDP 再检查 `/api/v1/cdp/status`，Extension 再检查 `/api/v1/screenshot/bridge/status` 的近期拉取或回调活动。
+2. 调度执行结果包含浏览器截图保存以及“采集结果已合并并持久化”；不能只根据 PNG 文件存在判断结构化采集成功。
 3. `/api/v1/history?type=query` 只有一条对应查询历史，并能读取结果明细。
 4. `/api/v1/scheduler/history` 中该次执行为 `success`，且 `result` 含“查询结果明细”和至少一条已持久化资产；不能只核对总数。
 5. 通知接收端确认文字明细与图片均送达。`notification_detail_limit` 默认 50、最大 100，正文另有约 20 KiB 的渠道安全上限；超过部分仍持久化并在通知中提示。通知投递仍是任务完成后的异步阶段，投递失败会记录日志和指标，不会回滚已经持久化的查询结果。
+
+云服务器常态化运行的输入、Cookie/Profile 约束和完全通过门槛见 [云服务器常态化运行准备与协作清单](CLOUD_STEADY_STATE_PLAN_2026-07-23.md)。
 
 普通 API 定时查询不设置 `browser_query`，但通知明细规则相同。真实 API 配置可用时可执行显式联调：
 

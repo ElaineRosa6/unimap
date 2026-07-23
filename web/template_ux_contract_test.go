@@ -35,6 +35,26 @@ func TestSettingsICPHealthUsesStandardErrorMessage(t *testing.T) {
 	}
 }
 
+func TestSettingsEngineBaseURLHintsMatchAdapterDefaults(t *testing.T) {
+	template := readTemplateContract(t, "settings.html")
+	for _, want := range []string{
+		`id="hunter-base-url" placeholder="https://hunter.qianxin.com"`,
+		`id="quake-base-url" placeholder="https://quake.360.net/api"`,
+	} {
+		if !strings.Contains(template, want) {
+			t.Errorf("settings engine base URL contract missing %q", want)
+		}
+	}
+	for _, stale := range []string{
+		`id="hunter-base-url" placeholder="https://hunter.qianxin.com/api"`,
+		`id="quake-base-url" placeholder="https://quake.360.net/api/v1"`,
+	} {
+		if strings.Contains(template, stale) {
+			t.Errorf("settings retains stale engine base URL %q", stale)
+		}
+	}
+}
+
 func TestMainScreenshotPollingFinalizesFailedJobsAndCancelsTimeout(t *testing.T) {
 	script := readTemplateContract(t, "../static/js/main.js")
 	for _, want := range []string{

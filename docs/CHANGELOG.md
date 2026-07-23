@@ -7,10 +7,17 @@
 ## [2026-07-23] 审计跟进与生产部署契约修复
 
 - 在阿里云 Ubuntu 24.04 主机完成真实容器条件验收，报告见 `docs/CLOUD_ACCEPTANCE_2026-07-23.md`。
+- 补记验收边界：普通网页 CDP 截图已通过，真实测绘引擎 CDP `collect_and_capture` 与 Extension Bridge 尚未在该主机验收；新增 `docs/CLOUD_STEADY_STATE_PLAN_2026-07-23.md` 记录常态化运行分工和门槛。
+- 纠正引擎能力记录：Censys、DayDayMap 仅 API 适配与 API 实机验证完成，稳定 UI、Bridge/CDP 抓取和 live E2E 未完成；历史测绘数据抓取证据来自 Bridge，不能作为 CDP 通过证据。
+- 新增 `docs/REMAINING_WORK_2026-07-23.md`，统一记录七引擎支持矩阵、生产配置、CDP 实测、Cookie 生命周期、UI 和发布清理待办。
 - 现场修复单 URL 截图空 ID、生产资源硬编码、版本提交不可追踪、通知 pepper 缺失、Compose 废弃 version 警告以及 logs/backups 非 root 不可写问题。
 - 实测通过 CGO/SQLite、CDP headless、单图、2/2 异步批量截图、security 巡检、调度备份、CSRF 登录、备份异机复制和容器重启持久化。
 - 修正生产 Compose 合并语义：以 `!override` 完整替换基础端口和卷，避免公网 `8448` 与开发 `web` bind mount 在合并后残留；最低要求 Docker Compose 2.24.4。
 - 新增 `configs/config.prod.yaml`，让固定 Web/分布式管理令牌与非默认管理员名真正从部署环境解析。
+- 生产配置由只读单文件挂载改为 `unimap_config` 可写命名卷；入口脚本只在首次启动时初始化 `0600` 配置，支持设置页原子保存与重启持久化。
+- 未配置引擎不再被默认强制启用；Censys、DayDayMap 缺少完整 API 凭据时不再注册不可执行的 Web-only adapter。
+- 开发 Docker 基线显式启用五个稳定 Web 引擎，避免移除隐式默认后出现兼容性回退。
+- 生产模板显式启用低 QPS 的 Quake/Hunter 并透传可选 API Key；设置页 Hunter/Quake Base URL 提示与适配器默认值统一。
 - 查询状态与结果页改用 DOM 节点和 `textContent` 构造，移除审计点名的动态 `innerHTML` 注入面。
 - 补齐篡改历史导出的组合过滤、存储错误和错误方法回归测试；持久化审计 Finding #8 闭环。
 - 本机仍无 Docker CLI，Compose 渲染、镜像运行、TLS、cgroup 和异机备份留待正式云机验收。
@@ -295,4 +302,3 @@ config.Engines.Fofa.UseWebAPI = true
 - `go test -race ./...` — 全部通过（0 failures, 0 races）
 
 ---
-

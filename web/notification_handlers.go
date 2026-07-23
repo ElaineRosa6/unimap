@@ -101,7 +101,7 @@ func (s *Server) reloadEngineAdapters() {
 	if s.orchestrator == nil || cfg == nil {
 		return
 	}
-	for _, name := range []string{"fofa", "hunter", "zoomeye", "quake", "shodan"} {
+	for _, name := range []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"} {
 		s.orchestrator.UnregisterAdapter(name)
 	}
 	s.registerCoreEngineAdapters(cfg)
@@ -111,62 +111,65 @@ func (s *Server) reloadEngineAdapters() {
 	s.reloadBrowserFallbackConfig(cfg)
 }
 
-// registerCoreEngineAdapters 注册核心 5 引擎适配器。新引擎适配器代码保留，未来启用时取消注释即可。
+// registerCoreEngineAdapters 根据当前能力边界注册引擎适配器。
 func (s *Server) registerCoreEngineAdapters(cfg *config.Config) {
 	type engineReg struct {
-		enabled bool
-		apiKey  string
-		regAPI  func()
-		regWeb  func()
-		name    string
+		enabled     bool
+		hasCreds    bool
+		supportsWeb bool
+		regAPI      func()
+		regWeb      func()
+		name        string
 	}
 	engines := []engineReg{
-		{cfg.Engines.Fofa.Enabled, cfg.Engines.Fofa.APIKey,
+		{cfg.Engines.Fofa.Enabled, cfg.Engines.Fofa.APIKey != "", true,
 			func() {
 				s.orchestrator.RegisterAdapter(adapter.NewFofaAdapter(cfg.Engines.Fofa.APIBaseURL, cfg.Engines.Fofa.APIKey, cfg.Engines.Fofa.Email, cfg.Engines.Fofa.QPS, time.Duration(cfg.Engines.Fofa.Timeout)*time.Second))
 			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewFofaAdapterWebOnly()) }, "FOFA"},
-		{cfg.Engines.Hunter.Enabled, cfg.Engines.Hunter.APIKey,
+		{cfg.Engines.Hunter.Enabled, cfg.Engines.Hunter.APIKey != "", true,
 			func() {
 				s.orchestrator.RegisterAdapter(adapter.NewHunterAdapter(cfg.Engines.Hunter.BaseURL, cfg.Engines.Hunter.APIKey, cfg.Engines.Hunter.QPS, time.Duration(cfg.Engines.Hunter.Timeout)*time.Second))
 			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewHunterAdapterWebOnly()) }, "Hunter"},
-		{cfg.Engines.Zoomeye.Enabled, cfg.Engines.Zoomeye.APIKey,
+		{cfg.Engines.Zoomeye.Enabled, cfg.Engines.Zoomeye.APIKey != "", true,
 			func() {
 				s.orchestrator.RegisterAdapter(adapter.NewZoomEyeAdapter(cfg.Engines.Zoomeye.BaseURL, cfg.Engines.Zoomeye.APIKey, cfg.Engines.Zoomeye.QPS, time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second))
 			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewZoomEyeAdapterWebOnly()) }, "ZoomEye"},
-		{cfg.Engines.Quake.Enabled, cfg.Engines.Quake.APIKey,
+		{cfg.Engines.Quake.Enabled, cfg.Engines.Quake.APIKey != "", true,
 			func() {
 				s.orchestrator.RegisterAdapter(adapter.NewQuakeAdapter(cfg.Engines.Quake.BaseURL, cfg.Engines.Quake.APIKey, cfg.Engines.Quake.QPS, time.Duration(cfg.Engines.Quake.Timeout)*time.Second))
 			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewQuakeAdapterWebOnly()) }, "Quake"},
-		{cfg.Engines.Shodan.Enabled, cfg.Engines.Shodan.APIKey,
+		{cfg.Engines.Shodan.Enabled, cfg.Engines.Shodan.APIKey != "", true,
 			func() {
 				s.orchestrator.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second))
 			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewShodanAdapterWebOnly()) }, "Shodan"},
-		{cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID,
+		{cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID != "" && cfg.Engines.Censys.APISecret != "", false,
 			func() {
 				s.orchestrator.RegisterAdapter(adapter.NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second))
 			},
-			func() { s.orchestrator.RegisterAdapter(adapter.NewCensysAdapterWebOnly()) }, "Censys"},
-		{cfg.Engines.Daydaymap.Enabled, cfg.Engines.Daydaymap.APIKey,
+			nil, "Censys"},
+		{cfg.Engines.Daydaymap.Enabled, cfg.Engines.Daydaymap.APIKey != "", false,
 			func() {
 				s.orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second))
 			},
-			func() { s.orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapterWebOnly()) }, "DayDayMap"},
+			nil, "DayDayMap"},
 	}
 	for _, e := range engines {
 		if !e.enabled {
 			continue
 		}
-		if e.apiKey != "" {
+		if e.hasCreds {
 			e.regAPI()
 			logger.Infof("%s engine re-registered (API mode)", e.name)
-		} else {
+		} else if e.supportsWeb {
 			e.regWeb()
 			logger.Infof("%s engine re-registered (Web-only mode)", e.name)
+		} else {
+			logger.Warnf("%s engine is enabled but requires complete API credentials; registration skipped", e.name)
 		}
 	}
 }

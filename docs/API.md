@@ -47,6 +47,13 @@
 
 响应为 `QueryAPIPayload`，核心字段是 `query`、`engines`、`assets`、`totalCount`、`engineStats`、`errors`、`persistence`，并可能附带浏览器采集状态。缓存使用版本化 key 并保存 `engineStats`/`errors` 元数据，因此首次响应与缓存命中的统计语义一致。`persistence.status` 为 `persisted`、`failed` 或 `disabled`。`GET /query` 是页面跳转入口，不是等价的 JSON 查询接口。
 
+引擎能力边界：
+
+- FOFA、Hunter、ZoomEye、Quake、Shodan 属于稳定 Web UI；历史真实结构化采集 E2E 使用 Bridge；
+- CDP 对上述五个引擎存在采集与截图代码路径，但尚未完成真实账号逐引擎验证；
+- Censys、DayDayMap 当前为服务端/CLI API-only；API 适配与 API 实机验证已完成，但未接入稳定 Web UI，Bridge/CDP 搜索抓取也未完成；
+- `browser_query=true` 只表示请求浏览器工作流，不能据此推断所选引擎已经通过对应后端验收。
+
 ## Cookie 与 CDP
 
 | 方法 | 路径 | 说明 |
@@ -165,7 +172,7 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 
 通知通道列表返回 `id`、`type`、`enabled`，以及编辑所需的非凭据字段 `app_id`、`chat_id`、`allow_private_ip`；不会返回 Webhook URL、签名 secret 或 app secret。编辑既有通道时，POST 请求可设置 `preserve_existing=true`，服务端会在同一配置事务内保留请求中留空的 Webhook URL、secret、app 凭据、chat ID 和 headers；该标志不能用于不存在的通道，也不能用于修改渠道类型。类型变更应删除旧渠道后按新类型创建。新建通道仍必须提供对应类型的全部必填字段。
 
-调度器任务请求的权威字段是 `web/scheduler_handlers.go` 中的创建/更新结构：`name`、`type`、`enabled`、`cron_expr`、`payload`、`timeout_seconds`、`max_retries`，以及可选 `notifications`、`schedule_type`、`run_at`、`delay_seconds`。任务响应额外包含只读 `runtime_status`（`scheduled`、`disabled`、`schedule_error`）和可选 `schedule_error`；`enabled` 仍表示用户期望，不代表任务一定已成功布置。当前工作区定义 23 种任务类型；其中备份任务属于未提交工作区改动，发布说明应随提交状态更新。
+调度器任务请求的权威字段是 `web/scheduler_handlers.go` 中的创建/更新结构：`name`、`type`、`enabled`、`cron_expr`、`payload`、`timeout_seconds`、`max_retries`，以及可选 `notifications`、`schedule_type`、`run_at`、`delay_seconds`。任务响应额外包含只读 `runtime_status`（`scheduled`、`disabled`、`schedule_error`）和可选 `schedule_error`；`enabled` 仍表示用户期望，不代表任务一定已成功布置。当前工作区定义 23 种已提交任务类型，包含备份任务。
 
 ### 通用规则
 

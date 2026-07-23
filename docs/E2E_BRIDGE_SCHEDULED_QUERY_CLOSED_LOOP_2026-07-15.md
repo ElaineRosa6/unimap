@@ -1,6 +1,8 @@
 # 2026-07-15 查询通知与 Bridge 定时闭环验收
 
 > **日期化验收记录**：本文只说明 2026-07-15 本机受控会话的结果，不承诺任意部署、账号或未来页面版本。未记录 API Key、Cookie、Bridge token、通知凭证或具体资产明细。
+>
+> **2026-07-23 范围勘误**：本文的结构化采集证据来自 Extension Bridge，不是 CDP。测试白名单只有 FOFA、Hunter、ZoomEye、Quake、Shodan；Censys、DayDayMap 当时只完成 API 适配/验证，没有 Bridge/CDP 抓取通过记录。
 
 ## 本次修订
 

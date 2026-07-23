@@ -6,6 +6,22 @@
 
 本次验收为**条件通过**：固定提交 `bce3ee3` 的容器构建、CGO/SQLite、CDP headless、单图、异步批量截图、网页巡检、调度、备份、登录和容器重启持久化均通过；但该主机低于生产容量基线，真实搜索引擎查询、TLS 反向代理、阿里云安全组和高负载容量仍需另行验收。
 
+## 当前能力边界补记
+
+截至 2026-07-23，本报告中的“CDP headless、单图和异步批量截图通过”只证明云端 Chromium 可以稳定打开并截图普通公网网页，**不等于真实测绘引擎的 CDP 查询闭环已经通过**。
+
+| 能力 | 当前状态 | 说明 |
+|---|---|---|
+| 普通公网网页 CDP 截图 | 已通过 | 已在无图形容器内验证单图及 2/2 异步批量截图 |
+| 五个稳定引擎结果页 CDP 截图 | 待验收 | FOFA、Hunter、ZoomEye、Quake、Shodan 有 CDP 代码路径，但尚未使用有效登录会话实测；以前的数据抓取 E2E 使用 Bridge |
+| 五个稳定引擎 CDP 结构化采集与截图闭环 | 待验收 | `browser_query=true`、`browser_action=collect_and_capture` 尚未在真实引擎完成采集、截图、SQLite 和通知闭环 |
+| Censys/DayDayMap API | 已有历史实机证据 | 仅限服务端/CLI API 适配；本次云机没有重新执行 |
+| Censys/DayDayMap UI、Bridge、CDP | 未完成 | 未进入稳定 UI；Bridge/CDP URL 构造和结构化采集未接通，也没有 live E2E |
+| Extension Bridge | 未部署、未验收 | 当前容器没有在线扩展客户端；无桌面主机若使用 Bridge，需要 Xvfb、headful Chromium、扩展和持久化 Profile |
+| Cookie 长期无人值守 | 未达到 | 服务端会话无法保证永久有效，需要持久化 Profile、周期登录探针、失效熔断、通知和安全续期流程 |
+
+当前生产基线继续选择 `cdp`、`headless=true`、持久化 `/app/chrome-profile` 和单会话串行。Bridge 不是云端常态化运行的前置条件；只有真实引擎无法通过 CDP 适配时，再单独部署和验收 Xvfb + Extension 方案。
+
 ## 环境准备
 
 - 安装 Ubuntu 仓库 Docker 29.1.3 与 Docker Compose 2.40.3；
@@ -64,3 +80,5 @@
 ## 后续上线门槛
 
 使用至少 4 vCPU / 8 GiB / 80–100 GiB 的正式测试机，提供实际启用引擎的测试凭据、域名和反向代理配置；核查安全组后执行真实查询、并发批量任务、备份恢复演练和 24 小时资源观测，再给出完全通过结论。
+
+常态化运行的分工、凭据交付方式、分阶段实施和最终验收标准见 [云服务器常态化运行准备与协作清单](CLOUD_STEADY_STATE_PLAN_2026-07-23.md)。

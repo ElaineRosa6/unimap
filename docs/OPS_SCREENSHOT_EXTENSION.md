@@ -66,7 +66,7 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8448/api/v1/screenshot/brid
 
 ## 受支持的采集目标
 
-当前扩展源码含 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap 的页面识别和选择器。Web 界面仅将前五个作为稳定引擎展示；后两个的 API 适配器与扩展选择器存在，但不应据此承诺 UI 已全面启用。
+当前扩展源码含 FOFA、Hunter、ZoomEye、Quake、Shodan 以及 Censys、DayDayMap 的页面识别/泛化选择器，但服务端 Bridge 搜索 URL 只支持前五个，live E2E 白名单也只有前五个。Censys、DayDayMap 的选择器属于未接通、未验证的占位，不能据此承诺 Bridge 抓取可用；两者当前只有 API 适配与 API 实机验证通过。
 
 ## 常用验证
 

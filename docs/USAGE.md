@@ -20,7 +20,7 @@ GUI 构建所需的系统图形依赖见 [GUI_BUILD.md](GUI_BUILD.md)。
 
 ## 配置引擎
 
-复制 `configs/config.yaml.example` 为 `configs/config.yaml`，再配置所需引擎。稳定 Web UI 支持 FOFA、Hunter、ZoomEye、Quake、Shodan；CLI/服务端还可注册已配置的 Censys 与 DayDayMap。
+复制 `configs/config.yaml.example` 为 `configs/config.yaml`，再配置所需引擎。稳定 Web UI 支持 FOFA、Hunter、ZoomEye、Quake、Shodan；CLI/服务端还可通过 API 适配器注册已配置的 Censys 与 DayDayMap。后两者尚未接入稳定 UI，也没有 Bridge/CDP 抓取通过记录。
 
 GUI 的引擎配置对话框在保存时调用配置管理器的 `Save()`，会写入当前配置文件。配置文件和备份可能包含敏感值，应限制访问权限；不要在截图、日志、Issue 或聊天记录中粘贴真实凭证。
 
