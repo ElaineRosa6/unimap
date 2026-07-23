@@ -11,7 +11,7 @@ services:
     volumes: !override
       # 完整替换基础卷列表，生产使用镜像内已打包的静态资源。
       - ${UNIMAP_CONFIG_FILE:-./configs/config.prod.yaml}:/app/configs/config.yaml:ro
-      - ./logs:/app/logs
+      - unimap_logs:/app/logs
       - unimap_data:/app/data
       - unimap_screenshots:/app/screenshots
       - unimap_chrome_profile:/app/chrome-profile
@@ -46,5 +46,7 @@ services:
     # Compose standalone 下 unless-stopped 仍可保留（docker-compose.yml 已有）。
 
 volumes:
+  unimap_logs:
+    driver: local
   unimap_backups:
     driver: local

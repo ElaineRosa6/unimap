@@ -129,6 +129,31 @@ func TestDockerBuildInjectsVersionMetadata(t *testing.T) {
 	}
 }
 
+func TestProductionImagePreparesWritableLogsAndBackups(t *testing.T) {
+	dockerfile, err := os.ReadFile(filepath.Join("..", "..", "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(dockerfile), "/app/logs /app/backups") {
+		t.Error("Dockerfile does not create and chown both logs and backups before switching to the non-root user")
+	}
+
+	compose, err := os.ReadFile(filepath.Join("..", "..", "docker-compose.prod.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(compose)
+	if !strings.Contains(content, "unimap_logs:/app/logs") {
+		t.Error("production Compose must use the initialized logs volume")
+	}
+	if strings.Contains(content, "./logs:/app/logs") {
+		t.Error("production Compose retains a host log bind mount with uncontrolled ownership")
+	}
+	if !strings.Contains(content, "unimap_logs:") {
+		t.Error("production Compose does not declare the logs volume")
+	}
+}
+
 func TestProductionConfigResolvesStableAdminTokens(t *testing.T) {
 	t.Setenv("UNIMAP_ADMIN_TOKEN", "stable-web-admin-token")
 	t.Setenv("UNIMAP_DISTRIBUTED_ADMIN_TOKEN", "stable-distributed-admin-token")

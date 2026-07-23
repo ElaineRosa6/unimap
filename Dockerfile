@@ -50,7 +50,7 @@ COPY web /app/web
 RUN addgroup -S unimap && adduser -S -G unimap -h /app unimap
 
 # 设置目录所有权
-RUN mkdir -p /app/data /app/screenshots /app/chrome-profile /app/logs && chown -R unimap:unimap /app
+RUN mkdir -p /app/data /app/screenshots /app/chrome-profile /app/logs /app/backups && chown -R unimap:unimap /app
 
 ENV UNIMAP_CHROME_PATH=/usr/bin/chromium \
     UNIMAP_CHROME_USER_DATA_DIR=/app/chrome-profile \
