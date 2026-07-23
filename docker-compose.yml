@@ -1,8 +1,11 @@
-version: '3.8'
-
 services:
   unimap:
-    build: .
+    build:
+      context: .
+      args:
+        UNIMAP_VERSION: ${UNIMAP_VERSION:-dev}
+        UNIMAP_GIT_COMMIT: ${UNIMAP_GIT_COMMIT:-unknown}
+        UNIMAP_BUILD_TIME: ${UNIMAP_BUILD_TIME:-unknown}
     ports:
       - "8448:8448"
     volumes:

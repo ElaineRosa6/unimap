@@ -235,6 +235,9 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             CGO_ENABLED=1
+            UNIMAP_VERSION=${{ github.ref_name }}
+            UNIMAP_GIT_COMMIT=${{ github.sha }}
+            UNIMAP_BUILD_TIME=${{ github.event.head_commit.timestamp }}
 
       - name: Verify image
         run: |

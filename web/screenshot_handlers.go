@@ -393,7 +393,8 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	screenshotPath, err := s.screenshotRouter.CaptureTargetWebsite(ctx, targetURL, "", "", "", "")
+	queryID := fmt.Sprintf("single_%d", time.Now().UnixNano())
+	screenshotPath, err := s.screenshotRouter.CaptureTargetWebsite(ctx, targetURL, "", "", "", queryID)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "screenshot_failed", "screenshot failed", sanitizeError(err.Error()))
 		return

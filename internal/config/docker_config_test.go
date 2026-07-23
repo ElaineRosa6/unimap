@@ -71,6 +71,64 @@ func TestProductionComposeReplacesDevelopmentPortsAndVolumes(t *testing.T) {
 	}
 }
 
+func TestProductionComposeRequiresPepperAndSupportsCapacityOverrides(t *testing.T) {
+	path := filepath.Join("..", "..", "docker-compose.prod.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, required := range []string{
+		"UNIMAP_NOTIFY_PEPPER: ${UNIMAP_NOTIFY_PEPPER:?",
+		"cpus: ${UNIMAP_CPU_LIMIT:-4}",
+		"memory: ${UNIMAP_MEMORY_LIMIT:-6G}",
+		"cpus: ${UNIMAP_CPU_RESERVATION:-2}",
+		"memory: ${UNIMAP_MEMORY_RESERVATION:-4G}",
+	} {
+		if !strings.Contains(content, required) {
+			t.Errorf("production Compose missing deployment contract %q", required)
+		}
+	}
+	if strings.HasPrefix(strings.TrimSpace(content), "version:") {
+		t.Error("production Compose retains obsolete top-level version")
+	}
+}
+
+func TestDockerBuildInjectsVersionMetadata(t *testing.T) {
+	checks := map[string][]string{
+		filepath.Join("..", "..", "Dockerfile"): {
+			"ARG UNIMAP_VERSION=dev",
+			"ARG UNIMAP_GIT_COMMIT=unknown",
+			"ARG UNIMAP_BUILD_TIME=unknown",
+			"appversion.Version=${UNIMAP_VERSION}",
+			"appversion.GitCommit=${UNIMAP_GIT_COMMIT}",
+			"appversion.BuildTime=${UNIMAP_BUILD_TIME}",
+		},
+		filepath.Join("..", "..", "docker-compose.yml"): {
+			"UNIMAP_VERSION: ${UNIMAP_VERSION:-dev}",
+			"UNIMAP_GIT_COMMIT: ${UNIMAP_GIT_COMMIT:-unknown}",
+			"UNIMAP_BUILD_TIME: ${UNIMAP_BUILD_TIME:-unknown}",
+		},
+		filepath.Join("..", "..", ".github", "workflows", "ci.yml"): {
+			"UNIMAP_VERSION=${{ github.ref_name }}",
+			"UNIMAP_GIT_COMMIT=${{ github.sha }}",
+			"UNIMAP_BUILD_TIME=${{ github.event.head_commit.timestamp }}",
+		},
+	}
+	for path, required := range checks {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(data)
+		for _, value := range required {
+			if !strings.Contains(content, value) {
+				t.Errorf("%s missing version build contract %q", path, value)
+			}
+		}
+	}
+}
+
 func TestProductionConfigResolvesStableAdminTokens(t *testing.T) {
 	t.Setenv("UNIMAP_ADMIN_TOKEN", "stable-web-admin-token")
 	t.Setenv("UNIMAP_DISTRIBUTED_ADMIN_TOKEN", "stable-distributed-admin-token")

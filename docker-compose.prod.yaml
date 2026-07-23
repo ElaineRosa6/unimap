@@ -1,5 +1,3 @@
-version: '3.8'
-
 # 生产环境 Compose 覆盖配置
 # 使用方式：docker compose -f docker-compose.yml -f docker-compose.prod.yaml up -d --build
 # !override 需要 Docker Compose 2.24.4 或更高版本。
@@ -24,16 +22,17 @@ services:
       UNIMAP_ADMIN_TOKEN: ${UNIMAP_ADMIN_TOKEN:?set UNIMAP_ADMIN_TOKEN in the deployment environment}
       UNIMAP_DISTRIBUTED_ADMIN_TOKEN: ${UNIMAP_DISTRIBUTED_ADMIN_TOKEN:?set UNIMAP_DISTRIBUTED_ADMIN_TOKEN}
       UNIMAP_ADMIN_USERNAME: ${UNIMAP_ADMIN_USERNAME:?set a non-default UNIMAP_ADMIN_USERNAME}
+      UNIMAP_NOTIFY_PEPPER: ${UNIMAP_NOTIFY_PEPPER:?set an independent UNIMAP_NOTIFY_PEPPER}
 
     deploy:
       resources:
         limits:
           # 单机完整功能建议起点：4 vCPU / 4-6 GiB RAM
-          cpus: '4'
-          memory: 6G
+          cpus: ${UNIMAP_CPU_LIMIT:-4}
+          memory: ${UNIMAP_MEMORY_LIMIT:-6G}
         reservations:
-          cpus: '2'
-          memory: 4G
+          cpus: ${UNIMAP_CPU_RESERVATION:-2}
+          memory: ${UNIMAP_MEMORY_RESERVATION:-4G}
 
     # 日志轮转：防止日志占满磁盘
     logging:
