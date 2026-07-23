@@ -1,6 +1,6 @@
 # UniMap HTTP API
 
-> 最后按代码核对：2026-07-17。路由的唯一事实来源是 `web/router.go`；handler 的请求/响应细节以对应 `web/*_handlers.go` 为准。
+> 最后按代码核对：2026-07-23。路由的唯一事实来源是 `web/router.go`；handler 的请求/响应细节以对应 `web/*_handlers.go` 为准。
 
 ## 约定
 

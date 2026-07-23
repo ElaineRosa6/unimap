@@ -7,6 +7,7 @@
 - [API](API.md)：当前 `/api/v1` HTTP 契约。
 - [运维 Runbook](RUNBOOK.md)：服务、认证、截图、Bridge、调度和节点排障。
 - [云服务器部署评估（2026-07-20）](CLOUD_DEPLOYMENT_ASSESSMENT_2026-07-20.md)：容量建议、CGO/SQLite 发布阻断、生产配置、端口、持久化与正式云机验收清单。
+- [阿里云真实环境验收（2026-07-23）](CLOUD_ACCEPTANCE_2026-07-23.md)：真实容器、headless、截图、巡检、调度、备份和持久化证据及剩余边界。
 - [截图扩展运维](OPS_SCREENSHOT_EXTENSION.md)：本机配对、Bridge token 与回调协议。
 - [无图形浏览器运行时决策](DECISIONS/0006-headless-browser-runtime.md)：云主机 CDP、统一路由、会话限制和容器边界。
 - [架构](ARCHITECTURE.md) 与 [业务架构](BUSINESS_AND_LOGIC_ARCHITECTURE.md)。
