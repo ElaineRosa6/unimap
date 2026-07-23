@@ -1,6 +1,6 @@
 # UniMap 云服务器部署评估（2026-07-20 初版 / 2026-07-23 配置复核）
 
-> 本文记录 2026-07-20 对当前工作区的静态核查与定向验证结果。容量规格属于部署建议，必须在正式云机上用真实任务复测；已确认缺陷则在修复并重新验收前持续作为发布阻断项。
+> 本文记录 2026-07-20 对当前工作区的静态核查与定向验证结果。2026-07-23 已在阿里云低规格主机完成条件验收，详见 [CLOUD_ACCEPTANCE_2026-07-23.md](CLOUD_ACCEPTANCE_2026-07-23.md)。容量规格仍必须在满足推荐配置的正式云机上复测。
 
 ## 结论
 
@@ -99,7 +99,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yaml up -d --build
 
 覆盖内容包括：通过 `!override` 形成唯一 loopback 端口绑定并移除 web bind mount、挂载 backups 卷、日志轮转（50MB × 5 文件）、生产资源限制（4 CPU / 6G RAM），以及通过 `configs/config.prod.yaml` 解析固定 `UNIMAP_ADMIN_TOKEN`、`UNIMAP_DISTRIBUTED_ADMIN_TOKEN` 和非默认 `UNIMAP_ADMIN_USERNAME`。`!override` 要求 Docker Compose 2.24.4 或更高版本。
 
-仍待验证：实际云机上 cgroup 资源限制生效、日志轮转生效、反向代理 TLS 配置、异机备份流程。
+2026-07-23 实测已确认 Compose 资源限制、非 root 卷权限、日志轮转配置解析、异机备份复制和重启持久化；TLS 反向代理、安全组控制台和破坏性恢复演练仍待验证。
 
 ## 建议容量
 

@@ -6,6 +6,9 @@
 
 ## [2026-07-23] 审计跟进与生产部署契约修复
 
+- 在阿里云 Ubuntu 24.04 主机完成真实容器条件验收，报告见 `docs/CLOUD_ACCEPTANCE_2026-07-23.md`。
+- 现场修复单 URL 截图空 ID、生产资源硬编码、版本提交不可追踪、通知 pepper 缺失、Compose 废弃 version 警告以及 logs/backups 非 root 不可写问题。
+- 实测通过 CGO/SQLite、CDP headless、单图、2/2 异步批量截图、security 巡检、调度备份、CSRF 登录、备份异机复制和容器重启持久化。
 - 修正生产 Compose 合并语义：以 `!override` 完整替换基础端口和卷，避免公网 `8448` 与开发 `web` bind mount 在合并后残留；最低要求 Docker Compose 2.24.4。
 - 新增 `configs/config.prod.yaml`，让固定 Web/分布式管理令牌与非默认管理员名真正从部署环境解析。
 - 查询状态与结果页改用 DOM 节点和 `textContent` 构造，移除审计点名的动态 `innerHTML` 注入面。
@@ -292,5 +295,4 @@ config.Engines.Fofa.UseWebAPI = true
 - `go test -race ./...` — 全部通过（0 failures, 0 races）
 
 ---
-
 

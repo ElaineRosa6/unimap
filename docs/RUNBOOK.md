@@ -104,6 +104,7 @@ export UNIMAP_BOOTSTRAP_PASSWORD='使用密码管理器生成的随机长密码'
 export UNIMAP_ADMIN_USERNAME='非默认管理员名'
 export UNIMAP_ADMIN_TOKEN='使用密码管理器生成的随机令牌'
 export UNIMAP_DISTRIBUTED_ADMIN_TOKEN='另一枚独立随机令牌'
+export UNIMAP_NOTIFY_PEPPER='独立于管理令牌的随机 pepper'
 docker compose -f docker-compose.yml -f docker-compose.prod.yaml up -d --build
 curl --fail http://127.0.0.1:8448/health/ready
 ```
@@ -116,7 +117,7 @@ Compose 通过专用的 `UNIMAP_CONTAINER_BIND_ADDRESS` 显式切换为容器内
 
 镜像内置 Chromium 和中日韩字体，固定 `UNIMAP_CHROME_PATH=/usr/bin/chromium`，并持久化 `/app/data`、`/app/screenshots`、`/app/chrome-profile`。Compose 把 `/dev/shm` 提高到 256 MiB；容器基线显式设置 `no_sandbox: true`，普通主机应保持 false 以使用 Chrome sandbox。不得删掉 `--disable-dev-shm-usage` 或独立 `user-data-dir`。持久化 Chrome profile 有独占锁，程序会把其并发会话自动限制为 1；不使用固定 profile 时可按内存逐步提高 `screenshot.max_sessions`。
 
-基础 Compose 的 2 CPU / 1 GiB 限制不是已验收的生产容量；生产覆盖已改为 4 CPU / 6 GiB。单机完整功能建议从 4 vCPU、8 GiB RAM、80–100 GiB SSD 和 2–4 GiB swap 起步，并按真实批量负载调整。生产覆盖已移除 `./web:/app/web`、仅向 loopback 暴露 8448、持久化 `/app/backups` 并配置日志轮转；异机备份和 TLS 反向代理仍需部署方完成。
+基础 Compose 的 2 CPU / 1 GiB 限制不是已验收的生产容量；生产覆盖默认 4 CPU / 6 GiB。可通过 `UNIMAP_CPU_LIMIT`、`UNIMAP_MEMORY_LIMIT`、`UNIMAP_CPU_RESERVATION`、`UNIMAP_MEMORY_RESERVATION` 适配验收环境，但降低参数不代表达到生产容量。单机完整功能建议从 4 vCPU、8 GiB RAM、80–100 GiB SSD 和 2–4 GiB swap 起步，并按真实批量负载调整。生产覆盖已移除 `./web:/app/web`、仅向 loopback 暴露 8448，并以命名卷持久化 `/app/logs` 和 `/app/backups`；异机备份和 TLS 反向代理仍需部署方完成。2026-07-23 实测证据见 [阿里云真实环境验收](CLOUD_ACCEPTANCE_2026-07-23.md)。
 
 非容器部署至少确认：
 
