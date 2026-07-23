@@ -4,6 +4,9 @@
 
 services:
   unimap:
+    # 生产可直接使用已构建并固定摘要的镜像，避免运行主机依赖 Docker Hub。
+    image: ${UNIMAP_IMAGE:-unimap:local}
+
     ports: !override
       # 仅绑定 loopback，由反向代理提供 HTTPS 公网入口
       - "127.0.0.1:8448:8448"

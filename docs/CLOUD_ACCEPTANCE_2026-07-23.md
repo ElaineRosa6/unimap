@@ -4,7 +4,7 @@
 
 ## 结论
 
-本次验收为**条件通过**：固定提交 `bce3ee3` 的容器构建、CGO/SQLite、CDP headless、单图、异步批量截图、网页巡检、调度、备份、登录和容器重启持久化均通过；但该主机低于生产容量基线，真实搜索引擎查询、TLS 反向代理、阿里云安全组和高负载容量仍需另行验收。
+本次验收为**条件通过**：固定提交 `643432d` 的 ACR 镜像部署、CGO/SQLite、CDP headless、单图、异步批量截图、网页巡检、调度、备份、可写配置卷和容器重启持久化均通过；但该主机低于生产容量基线，真实搜索引擎查询、TLS 反向代理、阿里云安全组和高负载容量仍需另行验收。
 
 ## 当前能力边界补记
 
@@ -26,7 +26,7 @@
 
 - 安装 Ubuntu 仓库 Docker 29.1.3 与 Docker Compose 2.40.3；
 - 新增并持久化 2 GiB swap，验收期间未发生 OOM，swap 使用量保持 0；
-- Docker Hub 在该主机超时。验收 Dockerfile 临时使用 DaoCloud 基础镜像代理、阿里云 Alpine 镜像和 `goproxy.cn`，应用源码、Go/Alpine 版本及构建参数不变；正式部署应使用组织批准的镜像仓库并固定摘要；
+- Docker Hub 在该主机超时，阿里云个人镜像加速器对所需基础镜像返回 403。提交 `643432d` 改由 ACR 海外构建并以固定摘要拉取，运行主机不再承担基础镜像构建；
 - 生产 Compose 使用 `UNIMAP_CPU_LIMIT=2`、`UNIMAP_MEMORY_LIMIT=1536M`、`UNIMAP_CPU_RESERVATION=1`、`UNIMAP_MEMORY_RESERVATION=512M` 适配验收机。默认生产值仍为 4 CPU / 6 GiB。
 
 ## 现场发现与修复
@@ -50,6 +50,8 @@
 - 版本：`acceptance (commit=bce3ee3, built=2026-07-23T10:30:00+08:00)`；
 - 容器用户为 `unimap:unimap`，实际限制为 2 CPU / 1.5 GiB；
 - 容器内 Chromium 136.0.7103.113、`Noto Sans CJK SC`、DNS 和 HTTPS 均正常。
+- ACR 镜像平台为 `linux/amd64`，镜像摘要为 `sha256:4776f33b86d30657506e2381ecc9b85bfa4c56ead1f8cf141869d276703a69a0`；
+- `unimap_config` 命名卷挂载到 `/app/runtime-config`，`config.yaml` 权限为 `0600`，归属非 root 运行用户。
 
 ### 功能闭环
 
@@ -60,6 +62,8 @@
 - 调度：创建禁用的 backup 任务，手动执行后历史为 `success`，耗时 5 ms；
 - 登录：按真实 CSRF Cookie 流程登录成功，随后已注销并删除临时 Cookie；
 - 重启持久化：容器重启后，调度任务、成功历史、备份和 2/2 截图批次均可读取；readiness 继续为 200。
+- 配置持久化：通过受信 Origin 和管理员令牌保存 `cdp` 模式后配置哈希发生变化，容器重启后哈希保持一致；
+- 配置恢复：创建 `0600` 受限配置归档，临时切换为 `auto` 后原子恢复并重启，哈希及 `configured_mode=cdp` 均恢复；业务备份 API 同时成功生成可读归档。
 
 ### 网络与资源
 

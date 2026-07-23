@@ -108,13 +108,19 @@ export UNIMAP_NOTIFY_PEPPER='独立于管理令牌的随机 pepper'
 # 可选：留空时 Quake/Hunter 使用 Web-only/CDP 路径，仍必须另行准备登录态
 export HUNTER_API_KEY=''
 export QUAKE_API_KEY=''
+# 二选一：
+# A. 构建机可访问基础镜像时，本机构建
 docker compose -f docker-compose.yml -f docker-compose.prod.yaml up -d --build
+# B. 运行机只拉取组织 ACR 中已验签/固定摘要的镜像
+export UNIMAP_IMAGE='registry.example.com/team/unimap@sha256:<digest>'
+docker compose -f docker-compose.yml -f docker-compose.prod.yaml pull unimap
+docker compose -f docker-compose.yml -f docker-compose.prod.yaml up -d --no-build
 curl --fail http://127.0.0.1:8448/health/ready
 ```
 
 生产覆盖使用 Compose 的 `!override` 完整替换基础端口和卷，因此要求 Docker Compose **2.24.4 或更高版本**。部署前先运行 `docker compose version`；合并结果必须只有 `127.0.0.1:8448:8448`，且不得出现 `./web:/app/web`。检查 `docker compose config` 输出时先脱敏，禁止把展开后的令牌保存到日志或工单。
 
-Compose 通过专用的 `UNIMAP_CONTAINER_BIND_ADDRESS` 显式切换为容器内 `0.0.0.0`，并要求 `UNIMAP_BOOTSTRAP_PASSWORD`；后者只在启动配置阶段用于生成 bcrypt 哈希，不写回配置或日志。生产入口仅在 `unimap_config` 卷中不存在 `config.yaml` 时，从镜像内 `configs/config.prod.yaml` 初始化并设为 `0600`；应用通过 `UNIMAP_CONFIG_PATH=/app/runtime-config/config.yaml` 读取。更新镜像不会覆盖已存在的运行配置。环境变量占位符在加载时解析；设置页保存会把解析后的候选配置写入运行卷，因此 Key 轮换不能依赖修改环境变量永久覆盖已经持久化的值。若不使用 Compose，镜像基线保持 loopback，仅可通过容器内检查或自行提供安全的公开监听配置访问。
+Compose 通过专用的 `UNIMAP_CONTAINER_BIND_ADDRESS` 显式切换为容器内 `0.0.0.0`，并要求 `UNIMAP_BOOTSTRAP_PASSWORD`；后者只在启动配置阶段用于生成 bcrypt 哈希，不写回配置或日志。生产环境可通过 `UNIMAP_IMAGE` 指定预构建镜像，推荐使用 `仓库@sha256:摘要` 而不是可变 `latest`，并以 `pull` + `up --no-build` 部署。生产入口仅在 `unimap_config` 卷中不存在 `config.yaml` 时，从镜像内 `configs/config.prod.yaml` 初始化并设为 `0600`；应用通过 `UNIMAP_CONFIG_PATH=/app/runtime-config/config.yaml` 读取。更新镜像不会覆盖已存在的运行配置。环境变量占位符在加载时解析；设置页保存会把解析后的候选配置写入运行卷，因此 Key 轮换不能依赖修改环境变量永久覆盖已经持久化的值。若不使用 Compose，镜像基线保持 loopback，仅可通过容器内检查或自行提供安全的公开监听配置访问。
 
 生产部署还必须设置固定管理令牌和非默认管理员用户名。生产模板显式启用 Quake、Hunter，QPS 为 1；缺少 API Key 时注册的 Web-only adapter 并不代表真实查询已经可用，必须执行一次真实查询或浏览器采集验收。未配置的其他引擎默认禁用；Censys、DayDayMap 缺少完整 API 凭据时直接跳过注册，不会伪装成 Web-only。
 

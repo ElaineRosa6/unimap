@@ -15,6 +15,7 @@
 - 修正生产 Compose 合并语义：以 `!override` 完整替换基础端口和卷，避免公网 `8448` 与开发 `web` bind mount 在合并后残留；最低要求 Docker Compose 2.24.4。
 - 新增 `configs/config.prod.yaml`，让固定 Web/分布式管理令牌与非默认管理员名真正从部署环境解析。
 - 生产配置由只读单文件挂载改为 `unimap_config` 可写命名卷；入口脚本只在首次启动时初始化 `0600` 配置，支持设置页原子保存与重启持久化。
+- 生产 Compose 支持 `UNIMAP_IMAGE` 预构建镜像；运行主机可固定 ACR 摘要并使用 `pull` + `up --no-build`，不再依赖 Docker Hub 构建。
 - 未配置引擎不再被默认强制启用；Censys、DayDayMap 缺少完整 API 凭据时不再注册不可执行的 Web-only adapter。
 - 开发 Docker 基线显式启用五个稳定 Web 引擎，避免移除隐式默认后出现兼容性回退。
 - 生产模板显式启用低 QPS 的 Quake/Hunter 并透传可选 API Key；设置页 Hunter/Quake Base URL 提示与适配器默认值统一。
