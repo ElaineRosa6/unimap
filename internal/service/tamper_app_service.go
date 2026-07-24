@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/unimap/project/internal/alerting"
 	"github.com/unimap/project/internal/metrics"
@@ -16,19 +17,36 @@ import (
 // TamperAllocatorFactory 用于注入浏览器 allocator，便于复用 screenshot 的 CDP/本地启动策略。
 type TamperAllocatorFactory func(ctx context.Context) (context.Context, context.CancelFunc, error)
 
-// TamperAppService 封装篡改检测应用层流程。
-type TamperAppService struct {
-	baseDir      string
-	alertManager *alerting.Manager
+// TamperRuntimeConfig contains the detector settings that may change while the
+// process is running.
+type TamperRuntimeConfig struct {
+	InsecureSkipVerify bool
+	PortScanEnabled    bool
+	PortScanTimeout    time.Duration
 }
 
-func NewTamperAppService(baseDir string, alertManager *alerting.Manager) *TamperAppService {
+// TamperRuntimeConfigProvider returns the latest committed detector settings.
+type TamperRuntimeConfigProvider func() TamperRuntimeConfig
+
+// TamperAppService 封装篡改检测应用层流程。
+type TamperAppService struct {
+	baseDir               string
+	alertManager          *alerting.Manager
+	runtimeConfigProvider TamperRuntimeConfigProvider
+}
+
+func NewTamperAppService(baseDir string, alertManager *alerting.Manager, providers ...TamperRuntimeConfigProvider) *TamperAppService {
 	if strings.TrimSpace(baseDir) == "" {
 		baseDir = utils.HashStoreDir()
 	}
+	var provider TamperRuntimeConfigProvider
+	if len(providers) > 0 {
+		provider = providers[0]
+	}
 	return &TamperAppService{
-		baseDir:      baseDir,
-		alertManager: alertManager,
+		baseDir:               baseDir,
+		alertManager:          alertManager,
+		runtimeConfigProvider: provider,
 	}
 }
 
@@ -244,6 +262,8 @@ type HistoryFilter struct {
 	TypeFilter  string
 	ModeFilter  string
 	QueryFilter string
+	StartTime   int64
+	EndTime     int64
 	Limit       int
 	Offset      int
 }
@@ -276,9 +296,11 @@ func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, e
 	storage := tamper.NewHashStorage(s.baseDir)
 	if canPageHistoryInStorage(filter) {
 		page, err := storage.ListCheckRecords(tamper.CheckRecordQuery{
-			URL:    strings.TrimSpace(filter.URLFilter),
-			Limit:  filter.Limit,
-			Offset: filter.Offset,
+			URL:       strings.TrimSpace(filter.URLFilter),
+			StartTime: filter.StartTime,
+			EndTime:   filter.EndTime,
+			Limit:     filter.Limit,
+			Offset:    filter.Offset,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list history page: %w", err)
@@ -291,7 +313,7 @@ func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, e
 			recordURL := strings.TrimSpace(rec.URL)
 			records = append(records, buildHistoryRecord(rec, recordURL, computeTamperStatus(rec), resolveDetectionMode(rec.DetectionMode)))
 		}
-		return &HistoryResult{Records: records, URLOptions: page.URLs, Count: len(records)}, nil
+		return &HistoryResult{Records: records, URLOptions: page.URLs, Count: page.Total}, nil
 	}
 
 	allRecords, err := storage.ListAllCheckRecords()
@@ -311,7 +333,7 @@ func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, e
 			status := computeTamperStatus(rec)
 			recordMode := resolveDetectionMode(rec.DetectionMode)
 
-			if !matchesHistoryFilter(filter, recordURL, rec.CheckType, status, recordMode) {
+			if !matchesHistoryFilter(filter, recordURL, rec.CheckType, status, recordMode, rec.Timestamp) {
 				continue
 			}
 
@@ -322,6 +344,7 @@ func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, e
 	}
 
 	sort.Slice(records, func(i, j int) bool { return records[i].Timestamp > records[j].Timestamp })
+	total := len(records)
 	records = limitHistoryRecords(records, filter.Limit, filter.Offset)
 
 	urlOptions := make([]string, 0, len(urlSet))
@@ -330,7 +353,7 @@ func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, e
 	}
 	sort.Strings(urlOptions)
 
-	return &HistoryResult{Records: records, URLOptions: urlOptions, Count: len(records)}, nil
+	return &HistoryResult{Records: records, URLOptions: urlOptions, Count: total}, nil
 }
 
 func canPageHistoryInStorage(filter HistoryFilter) bool {
@@ -363,7 +386,13 @@ func resolveDetectionMode(mode string) string {
 }
 
 // matchesHistoryFilter 检查记录是否匹配过滤条件
-func matchesHistoryFilter(filter HistoryFilter, recordURL, checkType, status, mode string) bool {
+func matchesHistoryFilter(filter HistoryFilter, recordURL, checkType, status, mode string, timestamp int64) bool {
+	if filter.StartTime > 0 && timestamp < filter.StartTime {
+		return false
+	}
+	if filter.EndTime > 0 && timestamp > filter.EndTime {
+		return false
+	}
 	urlLower := strings.ToLower(recordURL)
 	if filter.URLFilter != "" && urlLower != strings.ToLower(filter.URLFilter) {
 		return false
@@ -411,8 +440,8 @@ func limitHistoryRecords(records []HistoryRecord, limit, offset int) []HistoryRe
 	if limit <= 0 {
 		limit = 200
 	}
-	if limit > 1000 {
-		limit = 1000
+	if limit > 10000 {
+		limit = 10000
 	}
 	if offset < 0 {
 		offset = 0
@@ -428,11 +457,7 @@ func limitHistoryRecords(records []HistoryRecord, limit, offset int) []HistoryRe
 }
 
 func (s *TamperAppService) newDetector(ctx context.Context, mode string, allocatorFactory TamperAllocatorFactory) (*tamper.Detector, context.CancelFunc, error) {
-	detector := tamper.NewDetector(tamper.DetectorConfig{
-		BaseDir:       s.baseDir,
-		DetectionMode: mode,
-		AlertManager:  s.alertManager,
-	})
+	detector := tamper.NewDetector(s.detectorConfig(mode))
 	cleanup := func() {}
 
 	if allocatorFactory == nil {
@@ -447,4 +472,19 @@ func (s *TamperAppService) newDetector(ctx context.Context, mode string, allocat
 	cleanup = allocCancel
 
 	return detector, cleanup, nil
+}
+
+func (s *TamperAppService) detectorConfig(mode string) tamper.DetectorConfig {
+	cfg := tamper.DetectorConfig{
+		BaseDir:       s.baseDir,
+		DetectionMode: mode,
+		AlertManager:  s.alertManager,
+	}
+	if s.runtimeConfigProvider != nil {
+		runtimeCfg := s.runtimeConfigProvider()
+		cfg.InsecureSkipVerify = runtimeCfg.InsecureSkipVerify
+		cfg.PortScanEnabled = runtimeCfg.PortScanEnabled
+		cfg.PortScanTimeout = runtimeCfg.PortScanTimeout
+	}
+	return cfg
 }

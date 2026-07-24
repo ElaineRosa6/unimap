@@ -4,6 +4,22 @@
 
 ---
 
+## [2026-07-24] 巡检运行时、历史筛选与证据截图
+
+- 将根目录临时 Chrome 测速入口迁移到 `tools/chrome-speedtest`，使用
+  `manual_browser_test` build tag、显式 headless 和单浏览器顺序导航；默认 build/test 不再纳入该工具。
+- `TamperAppService` 每次构造 Detector 时读取最新提交的端口扫描、TLS 和超时配置，删除 Web
+  handler 内未被业务路径使用的重复构造逻辑。
+- 定时基线刷新复用截图管理器 allocator，并按 `saved` 摘要判定真实成功，避免初始化失败仍误报刷新成功。
+- 巡检历史新增包含边界的 `start_time`、`end_time`，列表和导出保持一致；`count` 改为过滤后真实总数，
+  URL 选项也遵循时间范围。
+- 独立审查确认浏览器层尚不能抵御跨主机重定向和 DNS rebinding；因此未启用自动变化证据截图，
+  该能力继续保留为待办，避免把调用前检查误当作完整 SSRF 防护。
+- 全量 race、vet、默认/GUI build、手动工具仅编译和前端语法检查通过；真实云端页面变化与
+  飞书图片送达仍需受控验收。
+
+---
+
 ## [2026-07-23] 审计跟进与生产部署契约修复
 
 - 在阿里云 Ubuntu 24.04 主机完成真实容器条件验收，报告见 `docs/CLOUD_ACCEPTANCE_2026-07-23.md`。

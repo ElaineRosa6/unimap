@@ -87,11 +87,16 @@ func (r *AlertSummaryRunner) Execute(ctx context.Context, payload *model.TaskPay
 // --- BaselineRefreshRunner (ST-15) ---
 
 type BaselineRefreshRunner struct {
-	tamperSvc *service.TamperAppService
+	tamperSvc        *service.TamperAppService
+	allocatorFactory service.TamperAllocatorFactory
 }
 
-func NewBaselineRefreshRunner(svc *service.TamperAppService) *BaselineRefreshRunner {
-	return &BaselineRefreshRunner{tamperSvc: svc}
+func NewBaselineRefreshRunner(svc *service.TamperAppService, factories ...service.TamperAllocatorFactory) *BaselineRefreshRunner {
+	var factory service.TamperAllocatorFactory
+	if len(factories) > 0 {
+		factory = factories[0]
+	}
+	return &BaselineRefreshRunner{tamperSvc: svc, allocatorFactory: factory}
 }
 
 func (r *BaselineRefreshRunner) Type() TaskType { return TaskBaselineRefresh }
@@ -141,10 +146,10 @@ func (r *BaselineRefreshRunner) Execute(ctx context.Context, payload *model.Task
 			defer func() { <-sem }()
 
 			req := service.TamperBaselineRequest{URLs: []string{url}}
-			_, err := r.tamperSvc.SetBaseline(ctx, req, nil)
+			response, err := r.tamperSvc.SetBaseline(ctx, req, r.allocatorFactory)
 			mu.Lock()
 			defer mu.Unlock()
-			if err != nil {
+			if err != nil || response == nil || response.Summary["saved"] != 1 {
 				failed++
 				failedURLs = append(failedURLs, url)
 				return

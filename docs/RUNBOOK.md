@@ -1,6 +1,6 @@
 # UniMap 运维 Runbook
 
-> 最后按代码核对：2026-07-23。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
+> 最后按代码核对：2026-07-24。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
 
 ## 0. 先确认服务与认证
 
@@ -178,8 +178,11 @@ POST 返回 202 只表示任务已接受。CLI/GUI 会继续轮询；手工调�
 - 检测：`POST /api/v1/tamper/check`，JSON：`urls`、可选 `concurrency`、`mode`。
 - 设置基线：`POST /api/v1/tamper/baseline`。
 - 删除基线：`DELETE /api/v1/tamper/baseline/delete?url=...`。
-- 历史：`GET /api/v1/tamper/history?limit=...&offset=...&url=...&type=...&mode=...&q=...`；`limit` 最大 1000，`offset` 最大 100000。
+- 历史：`GET /api/v1/tamper/history?limit=...&offset=...&url=...&type=...&mode=...&q=...&start_time=...&end_time=...`；`limit` 最大 1000，`offset` 最大 100000，时间接受 Unix 秒或 RFC3339。
 - 导出：`GET /api/v1/tamper/history/export`，支持同样的过滤参数。
+
+历史响应的 `count` 是过滤后总数。巡检的手动检查、定时检查和基线刷新复用当前 Tamper
+配置；定时基线刷新也复用截图管理器的 allocator，不应再把 SPA 的 HTTP 空内容误当作有效基线。
 
 这些 URL 也会进行 SSRF 防护。对于 SPA 目标，先确认截图/浏览器能力可用，再判断空 hash 或不可达结果。
 

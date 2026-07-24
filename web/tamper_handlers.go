@@ -13,15 +13,10 @@ import (
 
 	"github.com/unimap/project/internal/exporter"
 	"github.com/unimap/project/internal/service"
-	"github.com/unimap/project/internal/tamper"
-	"github.com/unimap/project/internal/utils"
 )
 
-func (s *Server) newTamperDetector(ctx context.Context, mode string) (*tamper.Detector, context.CancelFunc, error) {
-	cfg := tamper.DetectorConfig{
-		BaseDir:       utils.HashStoreDir(),
-		DetectionMode: mode,
-	}
+func (s *Server) tamperRuntimeConfig() service.TamperRuntimeConfig {
+	cfg := service.TamperRuntimeConfig{}
 	if current := s.currentConfig(); current != nil {
 		cfg.PortScanEnabled = current.Tamper.PortScanEnabled
 		cfg.InsecureSkipVerify = current.Tamper.InsecureSkipVerify
@@ -29,21 +24,7 @@ func (s *Server) newTamperDetector(ctx context.Context, mode string) (*tamper.De
 			cfg.PortScanTimeout = time.Duration(current.Tamper.PortScanTimeoutMs) * time.Millisecond
 		}
 	}
-	detector := tamper.NewDetector(cfg)
-
-	cleanup := func() {}
-	if s.screenshotMgr == nil {
-		return detector, cleanup, nil
-	}
-
-	allocCtx, allocCancel, err := s.screenshotMgr.NewAllocator(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to initialize browser for tamper detection: %w", err)
-	}
-
-	detector.SetAllocator(ctx, allocCtx, allocCancel)
-	cleanup = allocCancel
-	return detector, cleanup, nil
+	return cfg
 }
 
 func (s *Server) handleTamperHistoryExport(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +37,11 @@ func (s *Server) handleTamperHistoryExport(w http.ResponseWriter, r *http.Reques
 			limit = value
 		}
 	}
-	filter := service.HistoryFilter{URLFilter: strings.TrimSpace(r.URL.Query().Get("url")), TypeFilter: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type"))), ModeFilter: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode"))), QueryFilter: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))), Limit: limit}
+	filter, err := tamperHistoryFilterFromRequest(r, limit, 0)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_time_range", err.Error(), nil)
+		return
+	}
 	result, err := s.tamperApp.QueryHistory(filter)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "export_history_failed", "export history failed", nil)
@@ -297,13 +282,10 @@ func (s *Server) handleTamperHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	filter := service.HistoryFilter{
-		URLFilter:   strings.TrimSpace(r.URL.Query().Get("url")),
-		TypeFilter:  strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type"))),
-		ModeFilter:  strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode"))),
-		QueryFilter: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))),
-		Limit:       limit,
-		Offset:      offset,
+	filter, err := tamperHistoryFilterFromRequest(r, limit, offset)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_time_range", err.Error(), nil)
+		return
 	}
 
 	result, err := s.tamperApp.QueryHistory(filter)
@@ -319,6 +301,51 @@ func (s *Server) handleTamperHistory(w http.ResponseWriter, r *http.Request) {
 		"records": result.Records,
 		"urls":    result.URLOptions,
 	})
+}
+
+func tamperHistoryFilterFromRequest(r *http.Request, limit, offset int) (service.HistoryFilter, error) {
+	startTime, err := parseTamperHistoryTime(strings.TrimSpace(r.URL.Query().Get("start_time")))
+	if err != nil {
+		return service.HistoryFilter{}, fmt.Errorf("invalid start_time: %w", err)
+	}
+	endTime, err := parseTamperHistoryTime(strings.TrimSpace(r.URL.Query().Get("end_time")))
+	if err != nil {
+		return service.HistoryFilter{}, fmt.Errorf("invalid end_time: %w", err)
+	}
+	if startTime > 0 && endTime > 0 && startTime > endTime {
+		return service.HistoryFilter{}, fmt.Errorf("start_time must not be later than end_time")
+	}
+	return service.HistoryFilter{
+		URLFilter:   strings.TrimSpace(r.URL.Query().Get("url")),
+		TypeFilter:  strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type"))),
+		ModeFilter:  strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode"))),
+		QueryFilter: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))),
+		StartTime:   startTime,
+		EndTime:     endTime,
+		Limit:       limit,
+		Offset:      offset,
+	}, nil
+}
+
+func parseTamperHistoryTime(raw string) (int64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	if unixTime, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		if unixTime <= 0 {
+			return 0, fmt.Errorf("must be a positive Unix timestamp")
+		}
+		return unixTime, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return 0, fmt.Errorf("must be Unix seconds or RFC3339")
+	}
+	unixTime := parsed.Unix()
+	if unixTime <= 0 {
+		return 0, fmt.Errorf("must be later than 1970-01-01T00:00:00Z")
+	}
+	return unixTime, nil
 }
 
 // handleTamperHistoryDelete 处理删除指定URL的检测历史请求

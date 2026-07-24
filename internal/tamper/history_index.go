@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -13,9 +14,11 @@ import (
 // CheckRecordQuery selects a page of tamper check records. URL is optional;
 // an empty URL selects records across all monitored targets.
 type CheckRecordQuery struct {
-	URL    string
-	Limit  int
-	Offset int
+	URL       string
+	StartTime int64
+	EndTime   int64
+	Limit     int
+	Offset    int
 }
 
 // CheckRecordPage is a timestamp-descending page of check records.
@@ -104,8 +107,8 @@ func normalizeCheckRecordQuery(query CheckRecordQuery) CheckRecordQuery {
 	if query.Limit <= 0 {
 		query.Limit = 200
 	}
-	if query.Limit > 1000 {
-		query.Limit = 1000
+	if query.Limit > 10000 {
+		query.Limit = 10000
 	}
 	if query.Offset < 0 {
 		query.Offset = 0
@@ -120,12 +123,7 @@ func (s *HashStorage) listIndexedCheckRecordPage(query CheckRecordQuery) (CheckR
 	}
 	defer db.Close()
 
-	where := ""
-	args := make([]any, 0, 3)
-	if query.URL != "" {
-		where = " WHERE url = ?"
-		args = append(args, query.URL)
-	}
+	where, args := checkRecordWhere(query, true)
 
 	var total int
 	if err := db.QueryRow("SELECT COUNT(*) FROM check_records"+where, args...).Scan(&total); err != nil {
@@ -169,7 +167,8 @@ func listIndexedCheckRecordURLs(db *sql.DB, query CheckRecordQuery, total int) (
 		return []string{query.URL}, nil
 	}
 
-	rows, err := db.Query(`SELECT DISTINCT url FROM check_records ORDER BY url`)
+	where, args := checkRecordWhere(query, false)
+	rows, err := db.Query(`SELECT DISTINCT url FROM check_records`+where+` ORDER BY url`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list indexed check record URLs: %w", err)
 	}
@@ -186,6 +185,27 @@ func listIndexedCheckRecordURLs(db *sql.DB, query CheckRecordQuery, total int) (
 		return nil, fmt.Errorf("iterate indexed check record URLs: %w", err)
 	}
 	return urls, nil
+}
+
+func checkRecordWhere(query CheckRecordQuery, includeURL bool) (string, []any) {
+	clauses := make([]string, 0, 3)
+	args := make([]any, 0, 3)
+	if includeURL && query.URL != "" {
+		clauses = append(clauses, "url = ?")
+		args = append(args, query.URL)
+	}
+	if query.StartTime > 0 {
+		clauses = append(clauses, "timestamp >= ?")
+		args = append(args, query.StartTime)
+	}
+	if query.EndTime > 0 {
+		clauses = append(clauses, "timestamp <= ?")
+		args = append(args, query.EndTime)
+	}
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
 }
 
 func (s *HashStorage) deleteIndexedCheckRecords(url string) error {
