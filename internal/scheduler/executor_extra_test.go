@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -713,6 +714,29 @@ func TestBaselineRefreshRunner_Execute_NilService(t *testing.T) {
 	_, err := r.Execute(context.Background(), nil)
 	if err == nil {
 		t.Fatal("expected error for nil service")
+	}
+}
+
+func TestBaselineRefreshRunner_Execute_UsesAllocatorFactory(t *testing.T) {
+	sentinel := errors.New("allocator unavailable")
+	var calls atomic.Int32
+	factory := func(context.Context) (context.Context, context.CancelFunc, error) {
+		calls.Add(1)
+		return nil, nil, sentinel
+	}
+	r := NewBaselineRefreshRunner(service.NewTamperAppService(t.TempDir(), nil), factory)
+
+	result, err := r.Execute(context.Background(), &model.TaskPayload{Extra: map[string]any{
+		"urls": []string{"https://example.test"},
+	}})
+	if err != nil {
+		t.Fatalf("Execute returned unexpected error: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("allocator factory calls = %d, want 1", calls.Load())
+	}
+	if !strings.Contains(result, "失败: 1") {
+		t.Fatalf("result should report failed refresh, got %q", result)
 	}
 }
 

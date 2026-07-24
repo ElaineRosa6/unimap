@@ -410,13 +410,20 @@ document.addEventListener('DOMContentLoaded', function() {
 			const urlFilter = document.getElementById('history-url-filter')?.value;
 			const typeFilter = document.getElementById('history-type-filter')?.value;
 			const modeFilter = document.getElementById('history-mode-filter')?.value;
+			const startTime = document.getElementById('history-start-time')?.value;
+			const endTime = document.getElementById('history-end-time')?.value;
 			if (q) params.set('q', q);
 			if (urlFilter) params.set('url', urlFilter);
 			if (typeFilter) params.set('type', typeFilter);
 			if (modeFilter) params.set('mode', modeFilter);
+			if (startTime) params.set('start_time', Math.floor(new Date(startTime).getTime() / 1000));
+			if (endTime) params.set('end_time', Math.floor(new Date(endTime).getTime() / 1000));
 
 			const resp = await fetch('/api/v1/tamper/history?' + params.toString());
 			const data = await resp.json();
+			if (!resp.ok || data.success === false) {
+				throw new Error(data.error?.message || data.error || '加载历史失败');
+			}
 			resultsSection.classList.remove('hidden');
 			document.querySelector('.tab[data-tab="history"]').click();
 

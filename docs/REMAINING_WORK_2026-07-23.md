@@ -1,6 +1,8 @@
 # UniMap 当前剩余工作清单
 
-> 最后核对：2026-07-23。本文是当前本地待办入口；历史审计、计划和 E2E 报告只表达对应日期的事实。完成项必须同时满足代码、测试和所声明后端的真实验收，不能因存在选择器、接口或单元测试就标记完成。
+> 最后核对：2026-07-24。本文是当前本地待办入口；实施顺序和按旬排期见
+> [后续实施计划](IMPLEMENTATION_PLAN_2026-07-23.md)。历史审计、计划和 E2E 报告只表达对应日期的事实。
+> 完成项必须同时满足代码、测试和所声明后端的真实验收，不能因存在选择器、接口或单元测试就标记完成。
 
 ## 1. 引擎能力事实矩阵
 
@@ -118,15 +120,28 @@ Censys/DayDayMap Web-only 后端计为可用。后续若选择浏览器路线，
 
 ### RW-08 发布与工作区清理
 
+- 状态：**进行中（2026-07-24 已完成临时工具迁移和文档保留）**。
 - 审查并提交本轮文档；
-- 确认用户改动的 `CLAUDE.md` 是否保留；
-- 删除或移动根目录 `tmp_speedtest.go`，避免 `go run .` 意外启动 Chrome；
+- `CLAUDE.md` 已按用户要求保留并同步当前事实；**已完成**
+- 根目录 `tmp_speedtest.go` 已迁移为带 `manual_browser_test` 标签的
+  `tools/chrome-speedtest` 手动工具；**已完成**
 - 推送 `develop` 当前领先远端的提交；
-- 发布前再次执行 `go test -race ./...`、`go vet ./...`、`go build ./...` 和 GUI build tag。
+- 发布前再次执行 `go test -race ./...`、`go vet ./...`、`go build ./...` 和 GUI build tag。**已完成**
+
+### RW-09 网页巡检确定性收尾
+
+状态：**部分完成（2026-07-24），安全证据截图与云端真实闭环待完成**。
+
+- 手动巡检、定时巡检与基线刷新读取同一套实时 Tamper 配置和浏览器 allocator；
+- 基线刷新按实际 `saved` 结果统计，不再把业务失败计为成功；
+- 历史列表和导出支持 `start_time`、`end_time`，`count` 返回过滤后总数；
+- “发现变化 → 证据截图 → 图片通知”未启用：当前调用前 URL 检查不能阻止浏览器后续跨主机
+  重定向或 DNS rebinding，必须先在 CDP/Extension 浏览器层形成逐跳/连接级 SSRF 防护；
+- 尚需在云端用受控页面完成基线、真实变化、历史、飞书图片送达、恢复和重启后复验。
 
 ## 4. P3：可选增强
 
-- 历史 API 增加 `start_time`、`end_time`；
+- ~~历史 API 增加 `start_time`、`end_time`；~~ **已完成（2026-07-24）**
 - 提供受控恢复命令或恢复 API，而不只提供备份创建/列表；
 - 完成配额趋势与告警后增加长期数据保留策略；
 - ARM64 镜像与 Chromium 验收。
@@ -140,16 +155,18 @@ Censys/DayDayMap Web-only 后端计为可用。后续若选择浏览器路线，
 - 未配置引擎不再被默认强制启用，Censys/DayDayMap 缺凭据时不再伪注册 Web-only；
 - Quake/Hunter 生产模板和设置页 Base URL 已统一；
 - 当前权威文档统一使用本文件的支持矩阵和待办编号。
+- 巡检运行时配置、基线 allocator、时间筛选和真实总数已完成代码收口；变化证据截图因浏览器层
+  SSRF 防护不足继续保留待办。
 
-## 6. 本地验证（2026-07-23）
+## 6. 本地验证（2026-07-24）
 
 - `go test -race ./...`：通过；
 - `go vet ./...`：通过；
 - `go build ./...`：通过；
 - `go build -tags gui ./cmd/unimap-gui`：通过；
+- `go build -tags manual_browser_test ./tools/chrome-speedtest`：仅编译通过，未运行 Chrome；
 - `node --check web/static/js/main.js`：通过；
-- `govulncheck ./...`：当前代码调用路径未发现漏洞；
-- `sh -n scripts/docker-entrypoint.sh`：通过。
+- `git diff --check`：通过。
 
-本机没有 Docker CLI，尚未执行镜像构建、Compose 合并渲染和 `unimap_config` 命名卷的真实
-容器权限/重启恢复验证；`staticcheck`、`golangci-lint` 本机未安装。
+2026-07-23 的 `govulncheck ./...`、入口脚本语法和阿里云容器证据继续有效，但本轮没有重复
+执行真实云端页面变化与飞书图片送达；这两项仍是 RW-09 的外部验收边界。

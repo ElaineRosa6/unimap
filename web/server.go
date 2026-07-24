@@ -229,13 +229,12 @@ func newServerStruct(port int, webRoot string, templates *template.Template,
 	nodeTaskQueue *distributed.TaskQueue, alertManager *alerting.Manager,
 	shutdownCtx context.Context, shutdownCancel context.CancelFunc) *Server {
 
-	return &Server{
+	srv := &Server{
 		port:          port,
 		templates:     templates,
 		service:       unifiedSvc,
 		queryApp:      service.NewQueryAppService(unifiedSvc, orchestrator),
 		monitorApp:    service.NewMonitorAppService(proxyPool),
-		tamperApp:     service.NewTamperAppService(utils.HashStoreDir(), alertManager),
 		screenshotApp: screenshotApp,
 		orchestrator:  orchestrator,
 		upgrader:      upgrader,
@@ -263,6 +262,8 @@ func newServerStruct(port int, webRoot string, templates *template.Template,
 		shutdownCancel:    shutdownCancel,
 		revocationStore:   newSessionRevocationStore(),
 	}
+	srv.tamperApp = service.NewTamperAppService(utils.HashStoreDir(), alertManager, srv.tamperRuntimeConfig)
+	return srv
 }
 
 // newWebSocketUpgrader creates a WebSocket upgrader with origin checking from config.
@@ -559,7 +560,7 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 	sched.RegisterHandler(scheduler.NewTamperCleanupRunner(srv.tamperApp, 90))
 	sched.RegisterHandler(scheduler.NewQuotaMonitorRunner(orchestrator, 10))
 	sched.RegisterHandler(scheduler.NewAlertSummaryRunner(alertManager))
-	sched.RegisterHandler(scheduler.NewBaselineRefreshRunner(srv.tamperApp))
+	sched.RegisterHandler(scheduler.NewBaselineRefreshRunner(srv.tamperApp, tamperAllocFactory))
 	sched.RegisterHandler(scheduler.NewURLImportRunner(utils.AppDataDir("imports")))
 	sched.RegisterHandler(scheduler.NewBackupRunner())
 

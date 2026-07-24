@@ -143,6 +143,47 @@ func TestHashStorage_ListCheckRecordsFiltersAndPaginatesIndexedRecords(t *testin
 	}
 }
 
+func TestHashStorage_ListCheckRecordsFiltersByTimeBeforeCountingAndPagination(t *testing.T) {
+	storage := NewHashStorage(t.TempDir())
+	for _, record := range []*CheckRecord{
+		{ID: "old", URL: "https://old.example.test", Timestamp: 100},
+		{ID: "start", URL: "https://range.example.test", Timestamp: 200},
+		{ID: "end", URL: "https://range.example.test", Timestamp: 300},
+		{ID: "new", URL: "https://new.example.test", Timestamp: 400},
+	} {
+		if err := storage.SaveCheckRecord(record.URL, record); err != nil {
+			t.Fatalf("save check record: %v", err)
+		}
+	}
+
+	page, err := storage.ListCheckRecords(CheckRecordQuery{
+		StartTime: 200,
+		EndTime:   300,
+		Limit:     1,
+	})
+	if err != nil {
+		t.Fatalf("list time-filtered records: %v", err)
+	}
+	if page.Total != 2 {
+		t.Fatalf("total = %d, want 2", page.Total)
+	}
+	if len(page.Records) != 1 || page.Records[0].ID != "end" {
+		t.Fatalf("unexpected first page: %#v", page.Records)
+	}
+	if len(page.URLs) != 1 || page.URLs[0] != "https://range.example.test" {
+		t.Fatalf("URL options should respect time range: %#v", page.URLs)
+	}
+}
+
+func TestNormalizeCheckRecordQueryAllowsExportLimit(t *testing.T) {
+	if got := normalizeCheckRecordQuery(CheckRecordQuery{Limit: 10000}).Limit; got != 10000 {
+		t.Fatalf("limit = %d, want 10000", got)
+	}
+	if got := normalizeCheckRecordQuery(CheckRecordQuery{Limit: 10001}).Limit; got != 10000 {
+		t.Fatalf("capped limit = %d, want 10000", got)
+	}
+}
+
 func TestHashStorage_SaveAndLoadCheckRecords(t *testing.T) {
 	dir := t.TempDir()
 	storage := NewHashStorage(dir)

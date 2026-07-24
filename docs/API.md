@@ -1,6 +1,6 @@
 # UniMap HTTP API
 
-> 最后按代码核对：2026-07-23。路由的唯一事实来源是 `web/router.go`；handler 的请求/响应细节以对应 `web/*_handlers.go` 为准。
+> 最后按代码核对：2026-07-24。路由的唯一事实来源是 `web/router.go`；handler 的请求/响应细节以对应 `web/*_handlers.go` 为准。
 
 ## 约定
 
@@ -117,11 +117,13 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 | POST | `/api/v1/tamper/baseline` | JSON：`urls`、可选 `concurrency` |
 | GET | `/api/v1/tamper/baseline/list` | 基线 URL 列表 |
 | DELETE | `/api/v1/tamper/baseline/delete?url=...` | 删除单个基线 |
-| GET | `/api/v1/tamper/history` | 可选 `limit`（最大 1000）、`offset`（最大 100000）、`url`、`type`、`mode`、`q` |
-| GET | `/api/v1/tamper/history/export` | 可选 `limit`（最多 10000）、`url`、`type`、`mode`、`q`；下载 JSON |
+| GET | `/api/v1/tamper/history` | 可选 `limit`（最大 1000）、`offset`（最大 100000）、`url`、`type`、`mode`、`q`、`start_time`、`end_time` |
+| GET | `/api/v1/tamper/history/export` | 可选 `limit`（最多 10000）及同历史列表的过滤参数；下载 JSON |
 | DELETE | `/api/v1/tamper/history/delete?url=...` | 删除一个 URL 的巡检历史 |
 
-当前 HTTP 历史接口支持受限的 `offset` 分页；尚未公开 `start_time` 或 `end_time` 参数，不要依赖这两个参数。
+`start_time`、`end_time` 接受大于 0 的 Unix 秒或 1970 年之后的 RFC3339，边界均包含；
+开始时间晚于结束时间返回 400。
+历史响应的 `count` 是过滤后的总记录数，不是当前页条数。
 
 ### URL 端口扫描
 
@@ -223,7 +225,7 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 {
   "urls": ["http://example.com"],
   "concurrency": 5,
-  "mode": "relaxed"
+  "detection_mode": "relaxed"
 }
 ```
 
