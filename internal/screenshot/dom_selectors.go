@@ -124,8 +124,16 @@ const extractHunterJS = `
     if (cells.length < 5) return;
     var asset = {};
 
-    // Hunter Quasar UI columns: 0=checkbox, 1=序号, 2=IP, 3=域名, 4=端口/服务, 5=标题, 6=状态码, 7=ICP, 8=应用, 9=标签, 10=地区, 11=更新时间
+    // Hunter Quasar UI columns (2026-07-29 layout, no checkbox column):
+    // 0=序号, 1=IP, 2=域名, 3=端口/服务, 4=标题, 5=状态码, 6=ICP, 7=应用/组件, 8=标签, 9=地区, 10=更新时间, 11=操作
+    // Auto-detect checkbox column: if cells[0] has a checkbox, shift indices by +1.
+    var offset = 0;
+    if (cells[0] && cells[0].querySelector('input[type="checkbox"], .q-checkbox')) {
+      offset = 1;
+    }
+
     function getCellText(idx) {
+      idx += offset;
       if (idx >= cells.length) return '';
       var cell = cells[idx];
       var cellDiv = cell.querySelector('.cell');
@@ -136,43 +144,49 @@ const extractHunterJS = `
       text = text.replace(/访问[^\s]*/g, '');
       text = text.replace(/复制[^\s]*/g, '');
       text = text.replace(/云厂商/g, '');
-      text = text.replace(/-/g, '');
-      text = text.replace(/高危/g, '');
-      text = text.replace(/中危/g, '');
-      text = text.replace(/低危/g, '');
+      text = text.replace(/共\d+条/g, '');
+      text = text.replace(/共\d+个/g, '');
       return text.replace(/\s+/g, ' ').trim();
     }
 
-    asset.ip = getCellText(2);
-    var hostText = getCellText(3);
+    asset.ip = getCellText(1);
+    var hostText = getCellText(2);
     if (hostText && hostText !== asset.ip) asset.host = hostText;
-    // Port from column 4
-    var portCell = cells[cells.length > 4 ? 4 : 0].textContent || '';
-    var pm = portCell.match(/(\d{1,5})/);
+    // Port/protocol from column 3 (format: "80 http")
+    var portText = getCellText(3);
+    var pm = portText.match(/(\d{1,5})/);
     if (pm) asset.port = parseInt(pm[1]);
-    // Protocol: extract known protocol name from column 4
-    var protoMatch = portCell.match(/\b(http|https|tcp|udp|ssh|ftp|smtp|pop3|imap|mysql|rdp|smb|dns)\b/i);
+    var protoMatch = portText.match(/\b(http|https|tcp|udp|ssh|ftp|smtp|pop3|imap|mysql|rdp|smb|dns|ssl|tls)\b/i);
     if (protoMatch) asset.protocol = protoMatch[1].toLowerCase();
-    // Title from column 5 — keep only the first meaningful segment
-    var titleRaw = getCellText(5);
+    // Title from column 4
+    var titleRaw = getCellText(4);
     if (titleRaw) {
-      // Take text before Chinese category labels like "企业办公", "邮件系统"
       var titleParts = titleRaw.split(/\s+(?:企业|个人|开源|政府|金融)/);
       asset.title = titleParts[0].trim();
     }
+    // Status code from column 5
+    var statusText = getCellText(5);
+    var sm = statusText.match(/(\d{3})/);
+    if (sm) asset.status_code = parseInt(sm[1]);
+    // Region from column 9
+    var regionText = getCellText(9);
+    if (regionText) asset.region = regionText;
     asset.source = 'hunter';
 
-    // Skip empty or duplicate rows
     if (!asset.ip && !asset.host) return;
     var key = asset.ip + ':' + asset.port;
     if (asset.port > 0 && seen[key]) return;
     if (asset.port > 0) seen[key] = true;
     assets.push(asset);
   });
-  var totalEl = document.querySelector('.page-list-body_statistic');
+  var totalEl = document.querySelector('.statistic, .page-list-body_statistic');
   var total = 0;
-  if (totalEl) { var m = totalEl.textContent.match(/(\\d[\\d,]*)/); if (m) total = parseInt(m[0].replace(/,/g, '')); }
-  var hasNext = !!document.querySelector('.q-pagination button:last-child:not([disabled])');
+  if (totalEl) {
+    var m = totalEl.textContent.match(/资产总数[\s\S]*?(\d[\d,]*)/);
+    if (m) total = parseInt(m[1].replace(/,/g, ''));
+    if (!total) { var m2 = totalEl.textContent.match(/(\d[\d,]*)/); if (m2) total = parseInt(m2[1].replace(/,/g, '')); }
+  }
+  var hasNext = !!document.querySelector('.q-pagination button:last-child:not([disabled]), .q-table__pagination button:last-child:not([disabled])');
   return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
 })()
 `
