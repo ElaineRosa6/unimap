@@ -248,10 +248,13 @@ func (m *Manager) CaptureScreenshotWithProxy(ctx context.Context, targetURL stri
 		chromedp.Sleep(m.waitTime),
 	)
 
-	// 添加截图动作
-	actions = append(actions, chromedp.CaptureScreenshot(&buf))
-
+	// Run navigation and wait actions first.
 	if err := chromedp.Run(ctx, actions...); err != nil {
+		return nil, fmt.Errorf("screenshot navigation failed: %w", err)
+	}
+
+	// Capture screenshot with PNG -> JPEG fallback.
+	if err := captureScreenshotWithFallback(ctx, &buf); err != nil {
 		return nil, fmt.Errorf("screenshot failed: %w", err)
 	}
 
