@@ -133,3 +133,6 @@ web/hash_store/check_records.db
 
 # Go build cache
 .gocache/
+
+# CDP login/verification tools (local only)
+tools/cdp-login/

@@ -309,7 +309,7 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 	screenshotPath := filepath.Join(searchEngineDir, filename)
 
 	var buf []byte
-	if err := chromedp.Run(browserCtx, chromedp.CaptureScreenshot(&buf)); err != nil {
+	if err := captureScreenshotWithFallback(browserCtx, &buf); err != nil {
 		return []collection.CollectResult{collectResult}, "", fmt.Errorf("screenshot failed: %w", err)
 	}
 	if err := os.WriteFile(screenshotPath, buf, 0600); err != nil {
