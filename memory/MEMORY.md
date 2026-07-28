@@ -8,17 +8,17 @@
 
 # Project Memory Index
 
-## 当前事实快照（2026-07-24）
+## 当前事实快照（2026-07-29）
 
 - [项目当前状态与后续行动 2026-07-24](project_current_state_2026-07-24.md) — 当前提交、
   巡检收口结果、浏览器层 SSRF 安全边界、七引擎事实矩阵和下一步顺序。
 - 当前稳定 Web UI 引擎为 FOFA、Hunter、ZoomEye、Quake、Shodan；历史真实结构化采集证据来自
-  Bridge/Extension，CDP 结构化采集尚无真实引擎闭环证据。
+  Bridge/Extension，Quake/Hunter CDP 结构化采集已于 2026-07-29 通过真实验收；FOFA/ZoomEye/Shodan CDP 定级尚未执行。
 - Censys、DayDayMap 仅完成服务端/CLI API 适配与 API 实机验证，不能标记为稳定 Web UI、
   Bridge 或 CDP 已完成。
 - 自动“发现变化 → 证据截图 → 图片通知”尚未启用。调用前 URL 校验不能覆盖浏览器跨主机重定向
-  和 DNS rebinding，必须先完成浏览器逐跳/连接级 SSRF 防护。
-- `f9317a3` 是 2026-07-24 的本地代码收口提交；截至本次记录尚未推送 `origin/develop`。
+  和 DNS rebinding，浏览器层 SSRF 防护已实现（2026-07-29），自动证据截图需云端验收后启用。
+- 本地 6 个提交（最新 `ba0d449`）领先 `origin/develop`，尚未推送。
 
 > 本索引后续的日期条目是历史知识，不覆盖上述当前事实。当前实施状态以
 > [`docs/REMAINING_WORK_2026-07-23.md`](../docs/REMAINING_WORK_2026-07-23.md) 和
