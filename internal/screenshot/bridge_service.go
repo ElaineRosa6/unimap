@@ -112,6 +112,10 @@ func (s *BridgeService) Submit(ctx context.Context, task BridgeTask) (BridgeResu
 	if strings.TrimSpace(task.URL) == "" {
 		return BridgeResult{}, fmt.Errorf("%w: empty url", ErrBridgeSubmitFailed)
 	}
+	// SSRF final gate: reject private/loopback/internal targets before Bridge dispatch.
+	if err := ValidateBrowserURL(task.URL); err != nil {
+		return BridgeResult{}, fmt.Errorf("%w: %v", ErrBridgeSubmitFailed, err)
+	}
 	if !s.started.Load() {
 		return BridgeResult{}, fmt.Errorf("%w: bridge service not started", ErrBridgeInternalError)
 	}

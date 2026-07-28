@@ -15,6 +15,15 @@
 
 当前明确未完成项和优先级见 [本地剩余工作清单](docs/REMAINING_WORK_2026-07-23.md)。
 
+## 与 UniMap v2 的关系
+
+[UniMap v2](../unimap-v2/) 是面向 AI Agent 的轻量侦察 Skill（MCP Server + PDTools），与本项目是**分层互补**关系：
+
+- **本项目（v1）**：人操作平台 — Web UI、截图、巡检、调度、Bridge/CDP 浏览器自动化
+- **UniMap v2**：AI Agent 工具 — MCP 协议、PDTools 工具链、轻量引擎执行、工作流编排
+
+两者共享统一资产模型（`UnifiedAsset`），独立演进。需要浏览器结构化采集、截图、持续监控的场景使用本项目；需要 AI Agent 自动化侦察、红队信息收集的场景使用 v2。
+
 ## 技术栈
 
 - Go 1.26.5

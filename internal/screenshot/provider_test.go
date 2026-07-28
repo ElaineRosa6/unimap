@@ -57,13 +57,16 @@ func TestExtensionProvider_BuildTargetURL(t *testing.T) {
 		wantErr  bool
 	}{
 		{"url provided", "http://example.com", "", "", "", "http://example.com", false},
-		{"ip only", "", "10.0.0.1", "", "", "http://10.0.0.1", false},
-		{"ip + port 443", "", "10.0.0.1", "443", "", "https://10.0.0.1", false},
-		{"ip + port 80", "", "10.0.0.1", "80", "", "http://10.0.0.1", false},
-		{"ip + custom port", "", "10.0.0.1", "8080", "", "http://10.0.0.1:8080", false},
-		{"ip + https protocol", "", "10.0.0.1", "9090", "https", "https://10.0.0.1:9090", false},
-		{"ip + http protocol", "", "10.0.0.1", "443", "http", "http://10.0.0.1", false},
+		{"ip only", "", "93.184.216.34", "", "", "http://93.184.216.34", false},
+		{"ip + port 443", "", "93.184.216.34", "443", "", "https://93.184.216.34", false},
+		{"ip + port 80", "", "93.184.216.34", "80", "", "http://93.184.216.34", false},
+		{"ip + custom port", "", "93.184.216.34", "8080", "", "http://93.184.216.34:8080", false},
+		{"ip + https protocol", "", "93.184.216.34", "9090", "https", "https://93.184.216.34:9090", false},
+		{"ip + http protocol", "", "93.184.216.34", "443", "http", "http://93.184.216.34", false},
 		{"no url, no ip", "", "", "", "", "", true},
+		{"private ip blocked", "", "10.0.0.1", "", "", "", true},
+		{"loopback blocked", "", "127.0.0.1", "8080", "", "", true},
+		{"private url blocked", "http://192.168.1.1/admin", "", "", "", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -374,7 +377,7 @@ func TestExtensionProvider_CaptureTargetWebsite_IPPort(t *testing.T) {
 
 	p := NewExtensionProvider(svc, nil)
 
-	got, err := p.CaptureTargetWebsite(context.Background(), "", "10.0.0.1", "8080", "", "q1")
+	got, err := p.CaptureTargetWebsite(context.Background(), "", "93.184.216.34", "8080", "", "q1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

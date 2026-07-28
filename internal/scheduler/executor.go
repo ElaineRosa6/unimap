@@ -40,6 +40,7 @@ type QueryRunner struct {
 	screenshotSvc *service.ScreenshotAppService
 	mgr           *screenshot.Manager
 	browserRouter service.BrowserRouter
+	health        *SessionHealthTracker // shared session health tracker for circuit breaking
 }
 
 // NewQueryRunner creates a QueryRunner.
@@ -48,9 +49,14 @@ func NewQueryRunner(b *service.QueryAppService) *QueryRunner {
 }
 
 // NewQueryRunnerWithBrowser creates a query runner capable of completing the
-// durable Bridge collect+capture workflow.
-func NewQueryRunnerWithBrowser(b *service.QueryAppService, screenshotSvc *service.ScreenshotAppService, mgr *screenshot.Manager, browserRouter service.BrowserRouter) *QueryRunner {
-	return &QueryRunner{querySvc: b, screenshotSvc: screenshotSvc, mgr: mgr, browserRouter: browserRouter}
+// durable Bridge collect+capture workflow. An optional SessionHealthTracker
+// enables per-engine circuit breaking for browser tasks.
+func NewQueryRunnerWithBrowser(b *service.QueryAppService, screenshotSvc *service.ScreenshotAppService, mgr *screenshot.Manager, browserRouter service.BrowserRouter, health ...*SessionHealthTracker) *QueryRunner {
+	r := &QueryRunner{querySvc: b, screenshotSvc: screenshotSvc, mgr: mgr, browserRouter: browserRouter}
+	if len(health) > 0 && health[0] != nil {
+		r.health = health[0]
+	}
+	return r
 }
 
 func (r *QueryRunner) Type() TaskType { return TaskQuery }
@@ -91,6 +97,25 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 		}
 		if r.browserRouter == nil || r.screenshotSvc == nil {
 			return "", fmt.Errorf("scheduled browser query requires an available Bridge screenshot provider")
+		}
+		// Circuit breaker: skip engines whose session health is tripped.
+		if r.health != nil {
+			var allowed []string
+			var blocked []string
+			for _, eng := range engines {
+				if r.health.AllowBrowserTask(eng) {
+					allowed = append(allowed, eng)
+				} else {
+					blocked = append(blocked, eng)
+				}
+			}
+			if len(blocked) > 0 {
+				logger.Warnf("browser query: skipping circuit-open engines: %s", strings.Join(blocked, ", "))
+			}
+			if len(allowed) == 0 {
+				return "", fmt.Errorf("all engines circuit-open, browser query skipped (blocked: %s)", strings.Join(blocked, ", "))
+			}
+			engines = allowed
 		}
 		queryID := strings.TrimSpace(payload.QueryID)
 		if queryID == "" {
@@ -544,13 +569,24 @@ func (r *CookieVerifyRunner) Execute(ctx context.Context, payload *model.TaskPay
 
 // LoginStatusCheckRunner executes scheduled login status checks.
 type LoginStatusCheckRunner struct {
-	mgr *screenshot.Manager
+	mgr    *screenshot.Manager
+	health *SessionHealthTracker
 }
 
-// NewLoginStatusCheckRunner creates a LoginStatusCheckRunner.
-func NewLoginStatusCheckRunner(mgr *screenshot.Manager) *LoginStatusCheckRunner {
-	return &LoginStatusCheckRunner{mgr: mgr}
+// NewLoginStatusCheckRunner creates a LoginStatusCheckRunner. An optional
+// external SessionHealthTracker can be provided to share state with other
+// runners (e.g. QueryRunner circuit breaking); if omitted a new tracker is
+// created internally.
+func NewLoginStatusCheckRunner(mgr *screenshot.Manager, health ...*SessionHealthTracker) *LoginStatusCheckRunner {
+	h := NewSessionHealthTracker()
+	if len(health) > 0 && health[0] != nil {
+		h = health[0]
+	}
+	return &LoginStatusCheckRunner{mgr: mgr, health: h}
 }
+
+// Health returns the session health tracker for external inspection/notification.
+func (r *LoginStatusCheckRunner) Health() *SessionHealthTracker { return r.health }
 
 func (r *LoginStatusCheckRunner) Type() TaskType { return TaskLoginStatusCheck }
 
@@ -569,23 +605,44 @@ func (r *LoginStatusCheckRunner) Execute(ctx context.Context, payload *model.Tas
 	fmt.Fprintf(&b, "登录状态检查完成：%d 个引擎\n\n", len(engines))
 	failedCount := 0
 	for _, engine := range engines {
+		// Skip check if circuit is open (cooldown not elapsed)
+		if !r.health.AllowCheck(engine) {
+			h := r.health.GetHealth(engine)
+			fmt.Fprintf(&b, "⏸️ %s: 熔断中（连续失败 %d 次，%s后重试）\n", engine, h.ConsecutiveFails, h.LastFailure)
+			continue
+		}
+
 		status, err := r.mgr.CheckEngineLoginStatus(ctx, engine, testQuery)
 		if err != nil {
-			fmt.Fprintf(&b, "❌ %s: 检查失败 — %v\n", engine, err)
+			category := ClassifyFailureReason("", err.Error())
+			r.health.RecordFailure(engine, category, err.Error())
+			fmt.Fprintf(&b, "❌ %s: 检查失败 [%s] — %v\n", engine, category, err)
+			fmt.Fprintf(&b, "   💡 %s\n", RecoveryHint(category))
 			failedCount++
 			continue
 		}
 		if status.LoggedIn {
+			r.health.RecordSuccess(engine)
 			fmt.Fprintf(&b, "✅ %s: 已登录", engine)
 		} else {
-			fmt.Fprintf(&b, "❌ %s: 未登录", engine)
+			category := ClassifyFailureReason(status.Reason, status.Error)
+			r.health.RecordFailure(engine, category, status.Reason)
+			fmt.Fprintf(&b, "❌ %s: 未登录 [%s]", engine, category)
 			failedCount++
+			fmt.Fprintf(&b, "\n   💡 %s", RecoveryHint(category))
 		}
 		if status.Reason != "" {
 			fmt.Fprintf(&b, " (%s)", status.Reason)
 		}
 		b.WriteString("\n")
 	}
+
+	// Append circuit breaker summary if any engine is tripped
+	summary := r.health.Summary()
+	if summary != "" && summary != "no engine health data" {
+		fmt.Fprintf(&b, "\n--- 会话健康 ---\n%s", summary)
+	}
+
 	result := sanitizeUTF8(b.String())
 	if failedCount > 0 {
 		return result, fmt.Errorf("%d engine(s) not logged in or errored", failedCount)

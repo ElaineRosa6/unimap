@@ -197,6 +197,11 @@ func (m *Manager) CaptureScreenshot(ctx context.Context, targetURL string, cooki
 }
 
 func (m *Manager) CaptureScreenshotWithProxy(ctx context.Context, targetURL string, cookies []Cookie, proxy string) ([]byte, error) {
+	// SSRF pre-navigation gate: reject private/loopback/internal targets.
+	if err := ValidateBrowserURL(targetURL); err != nil {
+		return nil, err
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel()
 
@@ -208,6 +213,14 @@ func (m *Manager) CaptureScreenshotWithProxy(ctx context.Context, targetURL stri
 
 	ctx, taskCancel := chromedp.NewContext(allocCtx)
 	defer taskCancel()
+
+	// Enable per-hop SSRF interception to block redirects and subresource
+	// requests to internal addresses (DNS rebinding / cross-host redirect).
+	interceptor := NewSSRFInterceptor()
+	if err := interceptor.Enable(ctx); err != nil {
+		logger.Warnf("[ssrf-guard] fetch interception unavailable, falling back to static check only: %v", err)
+	}
+	defer interceptor.Cancel()
 
 	var buf []byte
 
@@ -250,6 +263,11 @@ func (m *Manager) OpenSearchEngineResult(ctx context.Context, engine, query stri
 	searchURL := m.BuildSearchEngineURL(engine, query)
 	if searchURL == "" {
 		return "", fmt.Errorf("unsupported engine: %s", engine)
+	}
+
+	// SSRF pre-navigation gate.
+	if err := ValidateBrowserURL(searchURL); err != nil {
+		return "", err
 	}
 
 	openTimeout := m.timeout

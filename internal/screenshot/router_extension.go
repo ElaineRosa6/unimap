@@ -438,6 +438,10 @@ func (p *ExtensionProvider) buildTargetURL(targetURL, ip, port, protocol string)
 	if !strings.HasPrefix(resolvedURL, "http://") && !strings.HasPrefix(resolvedURL, "https://") {
 		resolvedURL = "http://" + resolvedURL
 	}
+	// SSRF gate: reject private/loopback/internal targets before sending to Extension.
+	if err := ValidateBrowserURL(resolvedURL); err != nil {
+		return "", err
+	}
 	return resolvedURL, nil
 }
 
