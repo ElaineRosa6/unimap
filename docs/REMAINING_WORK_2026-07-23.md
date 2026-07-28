@@ -92,11 +92,27 @@ Censys/DayDayMap Web-only 后端计为可用。后续若选择浏览器路线，
 
 ### RW-05 Cookie/Profile 无人值守闭环
 
-- 周期性打开真实结果页验证登录；
-- 连续失败熔断对应浏览器任务；
-- 区分 Cookie 缺失、过期、登录墙、验证码、页面改版和网络失败；
-- 通知最后成功时间与恢复操作；
-- 更新 Cookie 后自动执行低额度恢复验收。
+状态：**核心框架已完成（2026-07-25），真实引擎验收待执行**。
+
+已完成：
+
+- `internal/scheduler/session_health.go`：`SessionHealthTracker` 实现 per-engine 熔断器（closed/open/half-open），连续失败阈值和冷却时间可配置；
+- `ClassifyFailureReason()`：将失败分为 6 类（cookie_missing / cookie_expired / login_wall / captcha / page_changed / network）；
+- `RecoveryHint()`：每类失败返回中文恢复操作指引；
+- `LoginStatusCheckRunner` 已集成 health tracker：记录成功/失败、熔断跳过、输出健康摘要和恢复提示；
+- `AllowBrowserTask()`：熔断打开时阻止对应引擎的浏览器任务，但允许登录检查（探测恢复）；
+- 单元测试覆盖熔断、冷却、分类、摘要和恢复提示。
+
+2026-07-29 新增：
+
+- AllowBrowserTask() 已接入 QueryRunner.Execute() 浏览器任务路径：熔断打开时跳过对应引擎的浏览器任务，仅允许登录检查探测恢复；
+- SessionHealthTracker 改为 web/server.go 中创建的共享实例，LoginStatusCheckRunner 和 QueryRunner 共用同一熔断状态；
+- 通知集成已由 Scheduler 后置管线覆盖：LoginStatusCheckRunner 结果文本包含健康摘要和恢复提示，任务启用通知后自动发送到飞书/Webhook。
+
+仍待完成：
+
+- 周期性打开真实结果页验证登录（需要真实引擎账号和 CDP 环境）；
+- 更新 Cookie 后自动执行低额度恢复验收（需要在设置页保存 Cookie 的 handler 中触发一次 LoginStatusCheck）。
 
 ## 3. P2：应当收尾
 

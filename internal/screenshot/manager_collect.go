@@ -42,6 +42,11 @@ func (m *Manager) collectViaDOM(ctx context.Context, engine, query, queryID stri
 		return nil, fmt.Errorf("unsupported engine: %s", engine)
 	}
 
+	// SSRF pre-navigation gate.
+	if err := ValidateBrowserURL(searchURL); err != nil {
+		return nil, err
+	}
+
 	collectTimeout := m.timeout
 	if collectTimeout <= 0 || collectTimeout > 60*time.Second {
 		collectTimeout = 60 * time.Second
@@ -58,6 +63,13 @@ func (m *Manager) collectViaDOM(ctx context.Context, engine, query, queryID stri
 
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	defer browserCancel()
+
+	// Per-hop SSRF interception for redirects and subresources.
+	interceptor := NewSSRFInterceptor()
+	if err := interceptor.Enable(browserCtx); err != nil {
+		logger.Warnf("[ssrf-guard] fetch interception unavailable for %s DOM collect: %v", engine, err)
+	}
+	defer interceptor.Cancel()
 
 	if cookies := m.GetCookies(engine); len(cookies) > 0 {
 		if err := chromedp.Run(browserCtx, setCookieActions(cookies, searchURL)...); err != nil {
@@ -192,6 +204,11 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 		return nil, "", fmt.Errorf("unsupported engine: %s", engine)
 	}
 
+	// SSRF pre-navigation gate.
+	if err := ValidateBrowserURL(searchURL); err != nil {
+		return nil, "", err
+	}
+
 	timeout := m.timeout
 	if timeout <= 0 || timeout > 60*time.Second {
 		timeout = 60 * time.Second
@@ -207,6 +224,13 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
 	defer browserCancel()
+
+	// Per-hop SSRF interception for redirects and subresources.
+	interceptor := NewSSRFInterceptor()
+	if err := interceptor.Enable(browserCtx); err != nil {
+		logger.Warnf("[ssrf-guard] fetch interception unavailable for %s collect_and_capture: %v", engine, err)
+	}
+	defer interceptor.Cancel()
 
 	if cookies := m.GetCookies(engine); len(cookies) > 0 {
 		if err := chromedp.Run(browserCtx, setCookieActions(cookies, searchURL)...); err != nil {

@@ -130,3 +130,6 @@ package-lock.json
 /docs/PLAN_*.md
 /docs/REVIEW_NOTIFY_FOFA_*.md
 web/hash_store/check_records.db
+
+# Go build cache
+.gocache/

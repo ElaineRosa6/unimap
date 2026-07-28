@@ -527,8 +527,13 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 		filepath.Join(utils.AppDataDir(), "scheduler_history.json"),
 		maxHistory)
 
+	// Shared session health tracker: enables per-engine circuit breaking across
+	// LoginStatusCheckRunner (records success/failure) and QueryRunner (skips
+	// browser tasks for circuit-open engines).
+	sessionHealth := scheduler.NewSessionHealthTracker()
+
 	// 高优先级 Runner (ST-01 ~ ST-08)
-	sched.RegisterHandler(scheduler.NewQueryRunnerWithBrowser(srv.queryApp, screenshotApp, screenshotMgr, srv.browserQueryProvider()))
+	sched.RegisterHandler(scheduler.NewQueryRunnerWithBrowser(srv.queryApp, screenshotApp, screenshotMgr, srv.browserQueryProvider(), sessionHealth))
 	sched.RegisterHandler(scheduler.NewSearchScreenshotRunner(screenshotApp, screenshotMgr))
 	var batchRepo *batchdb.Repository
 	if srv.batchDB != nil {
@@ -550,7 +555,7 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 	sched.RegisterHandler(scheduler.NewTamperCheckRunner(srv.tamperApp, tamperAllocFactory))
 	sched.RegisterHandler(scheduler.NewURLReachabilityRunner(srv.monitorApp, alertManager))
 	sched.RegisterHandler(scheduler.NewCookieVerifyRunner(screenshotApp, screenshotMgr))
-	sched.RegisterHandler(scheduler.NewLoginStatusCheckRunner(screenshotMgr))
+	sched.RegisterHandler(scheduler.NewLoginStatusCheckRunner(screenshotMgr, sessionHealth))
 	sched.RegisterHandler(scheduler.NewDistributedSubmitRunner(nodeTaskQueue))
 
 	// 中优先级 Runner (ST-09 ~ ST-16)
