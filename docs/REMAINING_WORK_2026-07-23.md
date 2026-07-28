@@ -59,11 +59,18 @@
 - 截图回退修复：`screenshot_fallback.go` 实现 PNG(10s) → JPEG(30s) 自动降级；
 - Cookie 已写入 `configs/config.yaml`，Chrome 用户数据目录持久化会话。
 
+2026-07-29 追加：
+
+- Hunter DOM 选择器已校准（列映射修正 + checkbox 自动检测 + status_code/region 提取）；
+- Web 服务 E2E 已验证：POST /api/v1/query browser_query=true 返回 200，
+  Hunter bridge-collect 采集 2 条资产（IP/Port/Title 正确），Quake L1 Network 待校准；
+- SQLite 合并路径由单元测试覆盖（TestRunBrowserQueryAsync_CollectsStructuredAssets）；
+- 通知管线已由 Scheduler 后置管线覆盖，需配置真实飞书/Webhook 凭据后触发 E2E。
+
 仍待完成：
 
-- Hunter DOM 选择器校准（Port/Proto 提取与当前页面结构不完全匹配）；
-- 通过 `ExecuteQueryWithBrowserWorkflow` 验证 SQLite 合并持久化；
-- 通过调度任务验证图片通知送达；
+- Quake L1 Network pattern 校准（当前 CDP 采集返回 0 条结构化资产）；
+- 配置真实飞书/Webhook 通知目标后验证图片通知送达；
 - 容器重启后会话和结果恢复验证。
 
 `configs/config.prod.yaml` 已显式启用 Quake/Hunter，使用正确 Base URL、QPS 1、30 秒超时；

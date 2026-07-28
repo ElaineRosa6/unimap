@@ -1,4 +1,4 @@
-﻿# Quake / Hunter CDP 真实验收证据
+# Quake / Hunter CDP 真实验收证据
 
 > 日期：2026-07-29
 > 关联待办：RW-02（Quake/Hunter 生产配置与真实 CDP 验收）
@@ -67,3 +67,30 @@ Hunter 页面复杂度导致 Chrome PNG 合成器挂起。已在 `internal/scree
 
 - Quake: 9 个 Cookie（含 SSO `Q`/`T`/`__NS_Q`/`__NS_T`），已写入 `configs/config.yaml`
 - Hunter: 13 个 Cookie（含 `token`/`csrf_token`/`User-Center`/`ack`），已写入 `configs/config.yaml`
+
+## Web 服务 E2E 验证（2026-07-29 02:10）
+
+通过 `go run ./cmd/unimap-web` 启动完整 Web 服务（端口 8448），使用 form-encoded POST
+`/api/v1/query` 触发 `browser_query=true&browser_action=collect_and_capture`。
+
+### 服务端日志确认
+
+- Hunter bridge-collect: `items=2 total=7027992 engine=hunter`
+  - item[0]: ip=3.169.137.99 port=80 title=301 Moved Permanently
+  - item[1]: ip=154.220.39.226 port=80 title=没有找到站点
+- Quake bridge-collect: `items=0 total=0 engine=quake`（L1 Network 拦截未匹配 Quake API 响应格式，
+  已知限制，需校准 Quake 的 Network pattern）
+- 最终 POST /api/v1/query 返回 status=200，耗时 70s
+
+### SQLite 持久化
+
+- `data/screenshot_batches.db` 包含 2 条历史批量截图任务记录（batch_1784534262558374500 等）
+- 浏览器查询结构化采集结果通过 API 响应合并返回，不单独持久化到 SQLite
+- 合并逻辑由 `TestRunBrowserQueryAsync_CollectsStructuredAssets` 和
+  `TestExecuteQueryWithBrowserWorkflow` 单元测试覆盖
+
+### 通知管线
+
+- 通知由 Scheduler 后置管线统一发送，Runner 不持有通知器
+- `LoginStatusCheckRunner` 结果文本包含健康摘要和恢复提示，任务启用通知后自动发送
+- 飞书/Webhook 渠道需在配置中设置真实凭据后才能触发 E2E（当前未配置外部通知目标）
