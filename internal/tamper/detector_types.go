@@ -300,8 +300,7 @@ type cacheEntry struct {
 // Detector is the main tamper-detection engine.
 type Detector struct {
 	storage            *HashStorage
-	allocCtx           context.Context
-	allocCancel        context.CancelFunc
+	browserPageLoader  BrowserPageLoader
 	detectionMode      string
 	performanceMode    string
 	alertManager       *alerting.Manager
@@ -313,6 +312,20 @@ type Detector struct {
 	cache              map[string]*cacheEntry
 	cacheMu            sync.RWMutex
 	mu                 sync.Mutex
+}
+
+// BrowserPageLoader renders one URL through the application's guarded browser
+// path and returns the final title and HTML. Implementations must apply their
+// navigation security policy before making a connection.
+type BrowserPageLoader interface {
+	LoadPage(context.Context, string) (title string, html string, err error)
+}
+
+// BrowserPageLoaderFunc adapts a function to BrowserPageLoader.
+type BrowserPageLoaderFunc func(context.Context, string) (string, string, error)
+
+func (f BrowserPageLoaderFunc) LoadPage(ctx context.Context, targetURL string) (string, string, error) {
+	return f(ctx, targetURL)
 }
 
 // DetectorConfig holds configuration for creating a new Detector.

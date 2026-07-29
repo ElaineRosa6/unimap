@@ -42,11 +42,6 @@ func (m *Manager) collectViaDOM(ctx context.Context, engine, query, queryID stri
 		return nil, fmt.Errorf("unsupported engine: %s", engine)
 	}
 
-	// SSRF pre-navigation gate.
-	if err := ValidateBrowserURL(searchURL); err != nil {
-		return nil, err
-	}
-
 	collectTimeout := m.timeout
 	if collectTimeout <= 0 || collectTimeout > 60*time.Second {
 		collectTimeout = 60 * time.Second
@@ -55,48 +50,38 @@ func (m *Manager) collectViaDOM(ctx context.Context, engine, query, queryID stri
 	ctx, cancel := context.WithTimeout(ctx, collectTimeout)
 	defer cancel()
 
-	allocCtx, allocCancel, err := m.newAllocator(ctx)
+	session, err := m.newGuardedBrowserSession(ctx, searchURL, "")
 	if err != nil {
 		return nil, err
 	}
-	defer allocCancel()
-
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	defer browserCancel()
-
-	// Per-hop SSRF interception for redirects and subresources.
-	interceptor := NewSSRFInterceptor()
-	if err := interceptor.Enable(browserCtx); err != nil {
-		logger.Warnf("[ssrf-guard] fetch interception unavailable for %s DOM collect: %v", engine, err)
-	}
-	defer interceptor.Cancel()
+	defer session.Close()
 
 	if cookies := m.GetCookies(engine); len(cookies) > 0 {
-		if err := chromedp.Run(browserCtx, setCookieActions(cookies, searchURL)...); err != nil {
+		if err := session.Run(setCookieActions(cookies, searchURL)...); err != nil {
 			logger.Warnf("inject cookies failed for %s: %v", engine, err)
 		}
 	}
 
-	if err := chromedp.Run(browserCtx, chromedp.Navigate(searchURL)); err != nil {
+	if err := session.Run(chromedp.Navigate(searchURL)); err != nil {
 		return nil, fmt.Errorf("navigate to search URL failed: %w", err)
 	}
-	if err := chromedp.Run(browserCtx, chromedp.WaitReady("body", chromedp.ByQuery)); err != nil {
+	if err := session.Run(chromedp.WaitReady("body", chromedp.ByQuery)); err != nil {
 		logger.Warnf("wait for body failed on %s: %v", engine, err)
 	}
-	if err := chromedp.Run(browserCtx, chromedp.Sleep(3*time.Second)); err != nil {
+	if err := session.Run(chromedp.Sleep(3 * time.Second)); err != nil {
 		return nil, err
 	}
 
 	sel := getSelectors(engine)
 	var extracted string
 	if sel != nil && sel.ExtractJS != "" {
-		if err := chromedp.Run(browserCtx, chromedp.Evaluate(sel.ExtractJS, &extracted)); err != nil {
+		if err := session.Run(chromedp.Evaluate(sel.ExtractJS, &extracted)); err != nil {
 			logger.Warnf("engine-specific extraction failed for %s: %v", engine, err)
 		}
 	}
 
 	title := ""
-	if err := chromedp.Run(browserCtx, chromedp.Title(&title)); err != nil {
+	if err := session.Run(chromedp.Title(&title)); err != nil {
 		logger.Warnf("failed to get page title: %v", err)
 	}
 
@@ -204,11 +189,6 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 		return nil, "", fmt.Errorf("unsupported engine: %s", engine)
 	}
 
-	// SSRF pre-navigation gate.
-	if err := ValidateBrowserURL(searchURL); err != nil {
-		return nil, "", err
-	}
-
 	timeout := m.timeout
 	if timeout <= 0 || timeout > 60*time.Second {
 		timeout = 60 * time.Second
@@ -216,43 +196,34 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	allocCtx, allocCancel, err := m.newAllocator(ctx)
+	session, err := m.newGuardedBrowserSession(ctx, searchURL, "")
 	if err != nil {
 		return nil, "", err
 	}
-	defer allocCancel()
-
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	defer browserCancel()
-
-	// Per-hop SSRF interception for redirects and subresources.
-	interceptor := NewSSRFInterceptor()
-	if err := interceptor.Enable(browserCtx); err != nil {
-		logger.Warnf("[ssrf-guard] fetch interception unavailable for %s collect_and_capture: %v", engine, err)
-	}
-	defer interceptor.Cancel()
+	defer session.Close()
+	browserCtx := session.Context()
 
 	if cookies := m.GetCookies(engine); len(cookies) > 0 {
-		if err := chromedp.Run(browserCtx, setCookieActions(cookies, searchURL)...); err != nil {
+		if err := session.Run(setCookieActions(cookies, searchURL)...); err != nil {
 			logger.Warnf("inject cookies failed for %s: %v", engine, err)
 		}
 	}
 
 	l1Result, l1Ch := collectViaNetworkOnContext(browserCtx, engine, query)
 	if l1Ch != nil {
-		if enableErr := chromedp.Run(browserCtx, network.Enable()); enableErr != nil {
+		if enableErr := session.Run(network.Enable()); enableErr != nil {
 			logger.Warnf("enable network failed on %s: %v", engine, enableErr)
 		}
 	}
 
 	// 单次导航
-	if navErr := chromedp.Run(browserCtx, chromedp.Navigate(searchURL)); navErr != nil {
+	if navErr := session.Run(chromedp.Navigate(searchURL)); navErr != nil {
 		return nil, "", fmt.Errorf("navigate to search URL failed: %w", navErr)
 	}
-	if waitErr := chromedp.Run(browserCtx, chromedp.WaitReady("body", chromedp.ByQuery)); waitErr != nil {
+	if waitErr := session.Run(chromedp.WaitReady("body", chromedp.ByQuery)); waitErr != nil {
 		logger.Warnf("wait for body failed on %s: %v", engine, waitErr)
 	}
-	if sleepErr := chromedp.Run(browserCtx, chromedp.Sleep(3*time.Second)); sleepErr != nil {
+	if sleepErr := session.Run(chromedp.Sleep(3 * time.Second)); sleepErr != nil {
 		return nil, "", sleepErr
 	}
 
@@ -260,12 +231,12 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 	sel := getSelectors(engine)
 	var extracted string
 	if sel != nil && sel.ExtractJS != "" {
-		if evalErr := chromedp.Run(browserCtx, chromedp.Evaluate(sel.ExtractJS, &extracted)); evalErr != nil {
+		if evalErr := session.Run(chromedp.Evaluate(sel.ExtractJS, &extracted)); evalErr != nil {
 			logger.Warnf("engine-specific extraction failed for %s: %v", engine, evalErr)
 		}
 	}
 	title := ""
-	if titleErr := chromedp.Run(browserCtx, chromedp.Title(&title)); titleErr != nil {
+	if titleErr := session.Run(chromedp.Title(&title)); titleErr != nil {
 		logger.Warnf("failed to get page title: %v", titleErr)
 	}
 
@@ -311,6 +282,9 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 	var buf []byte
 	if err := captureScreenshotWithFallback(browserCtx, &buf); err != nil {
 		return []collection.CollectResult{collectResult}, "", fmt.Errorf("screenshot failed: %w", err)
+	}
+	if err := session.interceptor.Err(); err != nil {
+		return []collection.CollectResult{collectResult}, "", err
 	}
 	if err := os.WriteFile(screenshotPath, buf, 0600); err != nil {
 		return []collection.CollectResult{collectResult}, "", fmt.Errorf("save screenshot failed: %w", err)

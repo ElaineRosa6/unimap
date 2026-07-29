@@ -546,13 +546,11 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 	// allocator the detector falls back to HTTP/Fast mode and may produce empty
 	// hashes for SPA targets, causing false "tampered" or "unreachable" results.
 	// When screenshotMgr is unavailable we keep the historical nil behavior.
-	var tamperAllocFactory service.TamperAllocatorFactory
+	var tamperPageLoader service.TamperPageLoader
 	if screenshotMgr != nil {
-		tamperAllocFactory = func(ctx context.Context) (context.Context, context.CancelFunc, error) {
-			return screenshotMgr.NewAllocator(ctx)
-		}
+		tamperPageLoader = screenshotMgr
 	}
-	sched.RegisterHandler(scheduler.NewTamperCheckRunner(srv.tamperApp, tamperAllocFactory))
+	sched.RegisterHandler(scheduler.NewTamperCheckRunner(srv.tamperApp, tamperPageLoader))
 	sched.RegisterHandler(scheduler.NewURLReachabilityRunner(srv.monitorApp, alertManager))
 	sched.RegisterHandler(scheduler.NewCookieVerifyRunner(screenshotApp, screenshotMgr))
 	sched.RegisterHandler(scheduler.NewLoginStatusCheckRunner(screenshotMgr, sessionHealth))
@@ -565,7 +563,7 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 	sched.RegisterHandler(scheduler.NewTamperCleanupRunner(srv.tamperApp, 90))
 	sched.RegisterHandler(scheduler.NewQuotaMonitorRunner(orchestrator, 10))
 	sched.RegisterHandler(scheduler.NewAlertSummaryRunner(alertManager))
-	sched.RegisterHandler(scheduler.NewBaselineRefreshRunner(srv.tamperApp, tamperAllocFactory))
+	sched.RegisterHandler(scheduler.NewBaselineRefreshRunner(srv.tamperApp, tamperPageLoader))
 	sched.RegisterHandler(scheduler.NewURLImportRunner(utils.AppDataDir("imports")))
 	sched.RegisterHandler(scheduler.NewBackupRunner())
 

@@ -303,6 +303,42 @@ func TestExtensionProvider_CollectAndCaptureSearchEngineResult_UsesCombinedActio
 	}
 }
 
+func TestExtensionProvider_CollectAndCaptureQuakeReturnsStructuredAssets(t *testing.T) {
+	client := &mockBridgeClient{
+		awaitResult: BridgeResult{
+			Success:   true,
+			ImagePath: "/tmp/quake.png",
+			FinalURL:  "https://quake.360.net/quake/#/searchResult",
+			StructuredCollectedData: &model.BridgeCollectedData{
+				Engine: "quake",
+				Total:  1,
+				Items: []model.CollectedDataItem{{
+					IP:       "203.0.113.10",
+					Port:     443,
+					Protocol: "https",
+					Host:     "example.test",
+				}},
+			},
+		},
+	}
+	svc := NewBridgeService(client, 1, 5*time.Second)
+	svc.urlValidator = func(context.Context, string) error { return nil }
+	svc.Start(t.Context())
+	defer svc.Stop()
+
+	provider := NewExtensionProvider(svc, nil)
+	results, imagePath, err := provider.CollectAndCaptureSearchEngineResult(t.Context(), "quake", `port:"443"`, "q1")
+	if err != nil {
+		t.Fatalf("Quake collect_and_capture failed: %v", err)
+	}
+	if imagePath != "/tmp/quake.png" || len(results) != 1 || len(results[0].Assets) != 1 {
+		t.Fatalf("unexpected Quake result: path=%q results=%#v", imagePath, results)
+	}
+	if results[0].Assets[0].IP != "203.0.113.10" {
+		t.Fatalf("Quake asset was not normalized: %#v", results[0].Assets[0])
+	}
+}
+
 func TestExtensionProvider_OpenSearchEngineResult_UsesOpenAction(t *testing.T) {
 	client := &mockBridgeClient{
 		awaitResult: BridgeResult{Success: true},
@@ -357,6 +393,7 @@ func TestExtensionProvider_CaptureTargetWebsite_BridgeSuccess(t *testing.T) {
 	defer svc.Stop()
 
 	p := NewExtensionProvider(svc, nil)
+	p.egressAttested = true
 
 	got, err := p.CaptureTargetWebsite(context.Background(), "http://example.com", "", "", "", "q1")
 	if err != nil {
@@ -364,6 +401,15 @@ func TestExtensionProvider_CaptureTargetWebsite_BridgeSuccess(t *testing.T) {
 	}
 	if got != "/tmp/target.png" {
 		t.Errorf("got path = %q, want %q", got, "/tmp/target.png")
+	}
+}
+
+func TestExtensionProvider_CaptureTargetWebsiteRequiresAttestedEgress(t *testing.T) {
+	svc := NewBridgeService(&mockBridgeClient{}, 1, time.Second)
+	p := NewExtensionProvider(svc, nil)
+	_, err := p.CaptureTargetWebsite(t.Context(), "https://example.com", "", "", "", "q1")
+	if err == nil || !strings.Contains(err.Error(), "attested browser egress") {
+		t.Fatalf("CaptureTargetWebsite error = %v, want attested-egress failure", err)
 	}
 }
 
@@ -376,6 +422,7 @@ func TestExtensionProvider_CaptureTargetWebsite_IPPort(t *testing.T) {
 	defer svc.Stop()
 
 	p := NewExtensionProvider(svc, nil)
+	p.egressAttested = true
 
 	got, err := p.CaptureTargetWebsite(context.Background(), "", "93.184.216.34", "8080", "", "q1")
 	if err != nil {
@@ -395,6 +442,7 @@ func TestExtensionProvider_CaptureBatchURLs(t *testing.T) {
 	defer svc.Stop()
 
 	p := NewExtensionProvider(svc, nil)
+	p.egressAttested = true
 
 	urls := []string{"http://example.com", "http://example.org"}
 	results, err := p.CaptureBatchURLs(context.Background(), urls, "batch1", 2)
@@ -421,6 +469,7 @@ func TestExtensionProvider_CaptureBatchURLs_InvalidURL(t *testing.T) {
 	defer svc.Stop()
 
 	p := NewExtensionProvider(svc, nil)
+	p.egressAttested = true
 
 	results, err := p.CaptureBatchURLs(context.Background(), []string{""}, "batch1", 1)
 	if err != nil {

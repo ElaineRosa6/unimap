@@ -2,6 +2,7 @@ package screenshot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -17,15 +18,48 @@ import (
 type mockBridgeClient struct {
 	mu          sync.Mutex
 	submitCalls []BridgeTask
+	submitURLs  map[string]string
 	submitErr   error
 	awaitResult BridgeResult
 	awaitErr    error
 	submitDelay time.Duration
 }
 
+type cancelAwareBridgeClient struct {
+	calls    chan string
+	release  chan struct{}
+	canceled chan string
+}
+
+func (c *cancelAwareBridgeClient) SubmitTask(ctx context.Context, task BridgeTask) error {
+	c.calls <- task.RequestID
+	if task.RequestID == "first" && c.release != nil {
+		select {
+		case <-c.release:
+		case <-ctx.Done():
+			c.canceled <- task.RequestID
+			return ctx.Err()
+		}
+	}
+	if task.RequestID == "in-flight" {
+		<-ctx.Done()
+		c.canceled <- task.RequestID
+		return ctx.Err()
+	}
+	return nil
+}
+
+func (c *cancelAwareBridgeClient) AwaitResult(_ context.Context, requestID string) (BridgeResult, error) {
+	return BridgeResult{RequestID: requestID, Success: true, FinalURL: "https://example.com"}, nil
+}
+
 func (m *mockBridgeClient) SubmitTask(ctx context.Context, task BridgeTask) error {
 	m.mu.Lock()
 	m.submitCalls = append(m.submitCalls, task)
+	if m.submitURLs == nil {
+		m.submitURLs = make(map[string]string)
+	}
+	m.submitURLs[task.RequestID] = task.URL
 	m.mu.Unlock()
 	if m.submitDelay > 0 {
 		select {
@@ -41,7 +75,13 @@ func (m *mockBridgeClient) AwaitResult(ctx context.Context, requestID string) (B
 	if m.awaitErr != nil {
 		return BridgeResult{}, m.awaitErr
 	}
-	return m.awaitResult, nil
+	m.mu.Lock()
+	result := m.awaitResult
+	if result.Success && result.FinalURL == "" {
+		result.FinalURL = m.submitURLs[requestID]
+	}
+	m.mu.Unlock()
+	return result, nil
 }
 
 // ===== NewBridgeService =====
@@ -281,6 +321,127 @@ func TestBridgeService_Submit_Canceled(t *testing.T) {
 	_, err := svc.Submit(ctx, BridgeTask{RequestID: "req-4", URL: "http://example.com"})
 	if err == nil {
 		t.Fatal("expected canceled error")
+	}
+}
+
+func TestBridgeService_CanceledQueuedTaskNeverStarts(t *testing.T) {
+	client := &cancelAwareBridgeClient{
+		calls:    make(chan string, 3),
+		release:  make(chan struct{}),
+		canceled: make(chan string, 3),
+	}
+	svc := NewBridgeService(client, 1, 5*time.Second)
+	svc.urlValidator = func(context.Context, string) error { return nil }
+	svc.Start(t.Context())
+	defer svc.Stop()
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := svc.Submit(t.Context(), BridgeTask{RequestID: "first", URL: "https://example.com"})
+		firstDone <- err
+	}()
+	if got := <-client.calls; got != "first" {
+		t.Fatalf("first client call = %q", got)
+	}
+
+	queuedCtx, cancelQueued := context.WithCancel(t.Context())
+	queuedDone := make(chan error, 1)
+	go func() {
+		_, err := svc.Submit(queuedCtx, BridgeTask{RequestID: "queued", URL: "https://example.com"})
+		queuedDone <- err
+	}()
+	deadline := time.Now().Add(time.Second)
+	for svc.QueueLen() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	cancelQueued()
+	if err := <-queuedDone; err == nil || !errors.Is(err, ErrBridgeTaskCanceled) {
+		t.Fatalf("queued Submit error = %v, want canceled", err)
+	}
+	close(client.release)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first Submit failed: %v", err)
+	}
+	select {
+	case got := <-client.calls:
+		t.Fatalf("canceled queued task reached client: %q", got)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestBridgeService_CancelPropagatesToInFlightClient(t *testing.T) {
+	client := &cancelAwareBridgeClient{
+		calls:    make(chan string, 1),
+		canceled: make(chan string, 1),
+	}
+	svc := NewBridgeService(client, 1, 5*time.Second)
+	svc.urlValidator = func(context.Context, string) error { return nil }
+	svc.Start(t.Context())
+	defer svc.Stop()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := svc.Submit(ctx, BridgeTask{RequestID: "in-flight", URL: "https://example.com"})
+		done <- err
+	}()
+	if got := <-client.calls; got != "in-flight" {
+		t.Fatalf("client call = %q", got)
+	}
+	cancel()
+	if err := <-done; err == nil || !errors.Is(err, ErrBridgeTaskCanceled) {
+		t.Fatalf("Submit error = %v, want canceled", err)
+	}
+	select {
+	case got := <-client.canceled:
+		if got != "in-flight" {
+			t.Fatalf("canceled request = %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("client did not observe caller cancellation")
+	}
+}
+
+func TestBridgeServiceValidateFinalURL(t *testing.T) {
+	svc := NewBridgeService(&mockBridgeClient{}, 1, time.Second)
+	svc.urlValidator = func(context.Context, string) error { return nil }
+	if err := svc.validateFinalURL(t.Context(), "https://quake.360.net/search", ""); err == nil {
+		t.Fatal("missing final URL must fail")
+	}
+	if err := svc.validateFinalURL(t.Context(), "https://quake.360.net/search", "https://internal.example/result"); err == nil {
+		t.Fatal("cross-host final URL must fail")
+	}
+	if err := svc.validateFinalURL(t.Context(), "https://quake.360.net/search", "http://quake.360.net/result"); err == nil {
+		t.Fatal("HTTPS to HTTP final URL downgrade must fail")
+	}
+	if err := svc.validateFinalURL(t.Context(), "https://quake.360.net/search", "https://quake.360.net:8443/result"); err == nil {
+		t.Fatal("cross-port final URL must fail")
+	}
+	if err := svc.validateFinalURL(t.Context(), "https://quake.360.net/search", "https://quake.360.net/result"); err != nil {
+		t.Fatalf("same-host final URL rejected: %v", err)
+	}
+}
+
+func TestBridgeServicePreservesPreNavigationFailureWithoutFinalURL(t *testing.T) {
+	client := &mockBridgeClient{awaitResult: BridgeResult{
+		Success: false,
+		Error:   "extension could not create tab",
+	}}
+	svc := NewBridgeService(client, 1, time.Second)
+	svc.urlValidator = func(context.Context, string) error { return nil }
+	svc.Start(t.Context())
+	defer svc.Stop()
+
+	result, err := svc.Submit(t.Context(), BridgeTask{
+		RequestID: "pre-navigation-failure",
+		URL:       "https://quake.360.net/search",
+		Action:    "collect",
+	})
+	if err != nil {
+		t.Fatalf("pre-navigation Bridge failure was replaced: %v", err)
+	}
+	if result.Error != "extension could not create tab" {
+		t.Fatalf("result error = %q", result.Error)
 	}
 }
 

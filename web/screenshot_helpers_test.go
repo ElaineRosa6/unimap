@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -111,6 +112,31 @@ func TestHandleScreenshotFile_ForbiddenOrigin(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "forbidden_origin") {
 		t.Fatalf("expected 'forbidden_origin' in body, got %q", w.Body.String())
+	}
+}
+
+func TestHandleScreenshotFileUsesContentMagicForHistoricalPNGName(t *testing.T) {
+	baseDir := t.TempDir()
+	path := filepath.Join(baseDir, "historical.png")
+	jpegHeader := []byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}
+	if err := os.WriteFile(path, jpegHeader, 0o600); err != nil {
+		t.Fatalf("write historical fixture: %v", err)
+	}
+	cfg := &config.Config{}
+	cfg.Screenshot.BaseDir = baseDir
+	s := &Server{config: cfg}
+	req := httptest.NewRequest(http.MethodGet, "/screenshots/historical.png", nil)
+	req.Host = "localhost:8448"
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+
+	s.handleScreenshotFile(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if got := w.Header().Get("Content-Type"); !strings.HasPrefix(got, "image/jpeg") {
+		t.Fatalf("Content-Type = %q, want image/jpeg from file magic", got)
 	}
 }
 

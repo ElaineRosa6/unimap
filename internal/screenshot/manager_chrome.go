@@ -18,15 +18,35 @@ import (
 
 // loadPageContent is a CDP-only helper used by cookie/session validation.
 func (m *Manager) loadPageContent(ctx context.Context, targetURL string, cookies []Cookie, title *string, html *string) error {
-	allocCtx, allocCancel, err := m.newAllocator(ctx)
-	if err != nil {
-		return err
+	loadedTitle, loadedHTML, err := m.loadBrowserPage(ctx, targetURL, cookies, "")
+	if title != nil {
+		*title = loadedTitle
 	}
-	defer allocCancel()
+	if html != nil {
+		*html = loadedHTML
+	}
+	return err
+}
 
-	ctx, cancel := chromedp.NewContext(allocCtx)
-	defer cancel()
+// LoadPage renders a URL through the guarded browser path. It implements the
+// page-loader seam consumed by browser-backed tamper detection.
+func (m *Manager) LoadPage(ctx context.Context, targetURL string) (string, string, error) {
+	return m.loadBrowserPage(ctx, targetURL, nil, "")
+}
 
+// LoadPageWithProxy is the request-proxy variant of LoadPage.
+func (m *Manager) LoadPageWithProxy(ctx context.Context, targetURL, proxy string) (string, string, error) {
+	return m.loadBrowserPage(ctx, targetURL, nil, proxy)
+}
+
+func (m *Manager) loadBrowserPage(ctx context.Context, targetURL string, cookies []Cookie, proxy string) (string, string, error) {
+	session, err := m.newGuardedBrowserSession(ctx, targetURL, proxy)
+	if err != nil {
+		return "", "", err
+	}
+	defer session.Close()
+
+	var title, html string
 	actions := []chromedp.Action{}
 
 	// 只有在非CDP模式且提供了Cookie时才设置Cookie
@@ -47,11 +67,14 @@ func (m *Manager) loadPageContent(ctx context.Context, targetURL string, cookies
 	actions = append(actions,
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.Sleep(m.waitTime),
-		chromedp.Title(title),
-		chromedp.OuterHTML("html", html, chromedp.ByQuery),
+		chromedp.Title(&title),
+		chromedp.OuterHTML("html", &html, chromedp.ByQuery),
 	)
 
-	return chromedp.Run(ctx, actions...)
+	if err := session.Run(actions...); err != nil {
+		return title, html, err
+	}
+	return title, html, nil
 }
 
 func (m *Manager) buildExecAllocatorOptions(proxyOverride string) []chromedp.ExecAllocatorOption {
@@ -80,7 +103,10 @@ func (m *Manager) buildExecAllocatorOptions(proxyOverride string) []chromedp.Exe
 		proxyServer = strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PROXY_SERVER"))
 	}
 	if proxyServer != "" {
-		opts = append(opts, chromedp.Flag("proxy-server", proxyServer))
+		opts = append(opts,
+			chromedp.Flag("proxy-server", proxyServer),
+			chromedp.Flag("proxy-bypass-list", "<-loopback>"),
+		)
 		logger.Infof("Chrome proxy enabled: %s", proxyServer)
 	}
 

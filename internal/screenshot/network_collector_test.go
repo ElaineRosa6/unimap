@@ -1,6 +1,7 @@
 package screenshot
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -206,6 +207,56 @@ func TestParseQuakeNetworkResponse_Error(t *testing.T) {
 	}
 }
 
+func TestParseQuakeNetworkResponse_CurrentArrayShape(t *testing.T) {
+	body := []byte(`{
+		"code": 0,
+		"message": "Successful.",
+		"data": [{
+			"ip": "203.0.113.10",
+			"port": 443,
+			"hostname": ["example.test"],
+			"transport": "tcp",
+			"service": {
+				"name": "https",
+				"http": {"title": "Example TLS Service"}
+			},
+			"location": {"country_code": "CN", "city_cn": "北京"},
+			"asn": 64500,
+			"org": "Example Org",
+			"isp": "Example ISP"
+		}],
+		"meta": {"pagination": {"total": 123}}
+	}`)
+	assets, total, err := parseQuakeNetworkResponse(body)
+	if err != nil {
+		t.Fatalf("parse current Quake response: %v", err)
+	}
+	if total != 123 || len(assets) != 1 {
+		t.Fatalf("total/assets = %d/%d, want 123/1", total, len(assets))
+	}
+	got := assets[0]
+	if got.IP != "203.0.113.10" || got.Port != 443 || got.Host != "example.test" {
+		t.Fatalf("unexpected asset: %#v", got)
+	}
+	if got.Title != "Example TLS Service" || got.ASN != "64500" {
+		t.Fatalf("nested fields not normalized: %#v", got)
+	}
+}
+
+func TestParseQuakeNetworkResponseDoesNotUseCountryNameAsCode(t *testing.T) {
+	body := []byte(`{"code":0,"data":[{"ip":"203.0.113.10","port":80,"location":{"country_cn":"中国"}}]}`)
+	assets, _, err := parseQuakeNetworkResponse(body)
+	if err != nil || len(assets) != 1 {
+		t.Fatalf("parse Quake response: assets=%d err=%v", len(assets), err)
+	}
+	if assets[0].CountryCode != "" {
+		t.Fatalf("CountryCode = %q, want empty without a code field", assets[0].CountryCode)
+	}
+	if assets[0].Extra["country_name"] != "中国" {
+		t.Fatalf("country name extra = %#v", assets[0].Extra)
+	}
+}
+
 func TestIsL1Supported(t *testing.T) {
 	tests := []struct {
 		engine   string
@@ -229,5 +280,16 @@ func TestIsL1Supported(t *testing.T) {
 				t.Errorf("IsL1Supported(%q) = %v, want %v", tt.engine, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestQuakeL1PatternMatchesCurrentSearchEndpoint(t *testing.T) {
+	cfg := l1SearchAPIs["quake"]
+	current := "https://quake.360.net/api/search/query_string/quake_service"
+	if !strings.Contains(current, cfg.URLPattern) {
+		t.Fatalf("Quake L1 pattern %q does not match %q", cfg.URLPattern, current)
+	}
+	if strings.Contains(cfg.URLPattern, "/visitor/") {
+		t.Fatalf("Quake L1 pattern still uses retired visitor endpoint: %q", cfg.URLPattern)
 	}
 }

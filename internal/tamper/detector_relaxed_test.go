@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newTestDetectorWithCDP 创建一个配置了 CI 安全 chromedp allocator 的 Detector。
+// newTestDetectorWithCDP 创建一个配置了 CI 安全浏览器加载器的 Detector。
 // GitHub Actions / 容器环境以 root 运行 Chrome，需要 --no-sandbox 才能启动，
 // 否则 Chrome 启动时收到 SIGABRT（"chrome failed to start: Received signal 6"）；
 // disable-dev-shm-usage 避免 /dev/shm 过小导致的崩溃。仅用于 chromedp 模式测试。
@@ -35,7 +35,18 @@ func newTestDetectorWithCDP(t *testing.T, cfg DetectorConfig) *Detector {
 	}
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	t.Cleanup(allocCancel)
-	d.SetAllocator(context.Background(), allocCtx, allocCancel)
+	d.SetBrowserPageLoader(BrowserPageLoaderFunc(func(_ context.Context, targetURL string) (string, string, error) {
+		browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+		defer browserCancel()
+		var title, html string
+		err := chromedp.Run(browserCtx,
+			chromedp.Navigate(targetURL),
+			chromedp.WaitReady("body", chromedp.ByQuery),
+			chromedp.Title(&title),
+			chromedp.OuterHTML("html", &html, chromedp.ByQuery),
+		)
+		return title, html, err
+	}))
 	return d
 }
 

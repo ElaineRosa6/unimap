@@ -128,6 +128,7 @@ func TestDetector_PortScanEnabled_RunsOnCheck(t *testing.T) {
 		PortScanList:    []int{extraPort}, // 只扫这个额外端口
 		PortScanTimeout: 500 * time.Millisecond,
 	})
+	allowLoopbackTestPageLoader(detector)
 
 	ctx := context.Background()
 

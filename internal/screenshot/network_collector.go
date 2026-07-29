@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,7 +48,7 @@ var l1SearchAPIs = map[string]l1SearchAPIConfig{
 		ParseResponse: parseHunterNetworkResponse,
 	},
 	"quake": {
-		URLPattern:    "/api/visitor/search/query_string/quake_service",
+		URLPattern:    "/api/search/query_string/quake_service",
 		Method:        "POST",
 		ParseResponse: parseQuakeNetworkResponse,
 	},
@@ -76,14 +79,12 @@ func (m *Manager) CollectViaNetwork(ctx context.Context, engine, query, queryID 
 	ctx, cancel := context.WithTimeout(ctx, collectTimeout)
 	defer cancel()
 
-	allocCtx, allocCancel, err := m.newAllocator(ctx)
+	session, err := m.newGuardedBrowserSession(ctx, searchURL, "")
 	if err != nil {
 		return nil, err
 	}
-	defer allocCancel()
-
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	defer browserCancel()
+	defer session.Close()
+	browserCtx := session.Context()
 
 	if cookies := m.GetCookies(engine); len(cookies) > 0 {
 		if err := chromedp.Run(browserCtx, setCookieActions(cookies, searchURL)...); err != nil {
@@ -93,11 +94,23 @@ func (m *Manager) CollectViaNetwork(ctx context.Context, engine, query, queryID 
 
 	var mu sync.Mutex
 	captured := &networkResponse{}
+	observedPaths := make(map[string]struct{})
 	respCh := make(chan struct{}, 1)
 
 	chromedp.ListenTarget(browserCtx, func(ev interface{}) {
 		switch e := ev.(type) {
 		case *network.EventResponseReceived:
+			if e.Type == network.ResourceTypeXHR || e.Type == network.ResourceTypeFetch {
+				label := networkResponseLabel(e.Response.URL)
+				if label == "" {
+					break
+				}
+				mu.Lock()
+				if len(observedPaths) < 50 {
+					observedPaths[label] = struct{}{}
+				}
+				mu.Unlock()
+			}
 			if strings.Contains(e.Response.URL, apiConfig.URLPattern) {
 				mu.Lock()
 				if captured.URL == "" {
@@ -138,12 +151,12 @@ func (m *Manager) CollectViaNetwork(ctx context.Context, engine, query, queryID 
 		}
 	})
 
-	if err := chromedp.Run(browserCtx, network.Enable()); err != nil {
+	if err := session.Run(network.Enable()); err != nil {
 		return nil, fmt.Errorf("enable network: %w", err)
 	}
 
 	logger.Infof("L1: navigating to %s for engine %s", searchURL, engine)
-	if err := chromedp.Run(browserCtx, chromedp.Navigate(searchURL)); err != nil {
+	if err := session.Run(chromedp.Navigate(searchURL)); err != nil {
 		return nil, fmt.Errorf("navigate failed: %w", err)
 	}
 
@@ -160,8 +173,27 @@ func (m *Manager) CollectViaNetwork(ctx context.Context, engine, query, queryID 
 		}
 		return m.buildL1Result(engine, query, resp, apiConfig.ParseResponse)
 	case <-ctx.Done():
-		return nil, fmt.Errorf("L1: timeout waiting for %s search API response", engine)
+		mu.Lock()
+		observed := make([]string, 0, len(observedPaths))
+		for path := range observedPaths {
+			observed = append(observed, path)
+		}
+		mu.Unlock()
+		sort.Strings(observed)
+		return nil, fmt.Errorf("L1: timeout waiting for %s search API response; observed=%v", engine, observed)
 	}
+}
+
+func networkResponseLabel(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Hostname() == "" {
+		return ""
+	}
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	if !strings.Contains(host, "quake") && !strings.Contains(parsed.Path, "search") && !strings.Contains(parsed.Path, "/api/") {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host + parsed.EscapedPath()
 }
 
 // buildL1Result 解析 L1 捕获的响应并构建 CollectResult
@@ -310,55 +342,126 @@ func parseHunterNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) 
 
 // parseQuakeNetworkResponse 解析 Quake 搜索 API 响应
 func parseQuakeNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) {
-	var resp struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-		Data    struct {
-			Total int `json:"total"`
-			Hits  []struct {
-				IP       string `json:"ip"`
-				Port     int    `json:"port"`
-				Hostname string `json:"hostname"`
-				Service  struct {
-					Name string `json:"name"`
-				} `json:"service"`
-				Transport string `json:"transport"`
-				Title     struct {
-					Title string `json:"title"`
-				} `json:"title"`
-				Location struct {
-					CountryCode string `json:"country_code"`
-					City        string `json:"city_cn"`
-				} `json:"location"`
-				AS struct {
-					ASN  string `json:"asn"`
-					Name string `json:"name"`
-					ISP  string `json:"isp"`
-				} `json:"autonomous_system"`
-				Server string `json:"server"`
-			} `json:"hits"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &resp); err != nil {
+	var root map[string]any
+	if err := json.Unmarshal(body, &root); err != nil {
 		return nil, 0, fmt.Errorf("failed to parse Quake response: %w", err)
 	}
-	if resp.Code != 0 {
-		return nil, 0, fmt.Errorf("Quake API error: code=%d message=%s", resp.Code, resp.Message)
+	code := quakeInt(root["code"])
+	if code != 0 {
+		return nil, 0, fmt.Errorf("Quake API error: code=%d message=%s", code, quakeString(root["message"]))
 	}
-	assets := make([]model.UnifiedAsset, 0, len(resp.Data.Hits))
-	for _, hit := range resp.Data.Hits {
-		proto := hit.Transport
-		if proto == "" {
-			proto = hit.Service.Name
+
+	var hits []any
+	total := 0
+	switch data := root["data"].(type) {
+	case []any:
+		hits = data
+	case map[string]any:
+		hits, _ = data["hits"].([]any)
+		total = quakeInt(data["total"])
+	}
+	if total == 0 {
+		total = quakeIntAt(root, "meta.pagination.total", "meta.total")
+	}
+
+	assets := make([]model.UnifiedAsset, 0, len(hits))
+	for _, rawHit := range hits {
+		hit, ok := rawHit.(map[string]any)
+		if !ok {
+			continue
+		}
+		protocol := quakeStringAt(hit, "service.name", "transport")
+		var extra map[string]interface{}
+		if countryName := quakeStringAt(hit, "location.country_cn", "location.country"); countryName != "" {
+			extra = map[string]interface{}{"country_name": countryName}
 		}
 		assets = append(assets, model.UnifiedAsset{
-			IP: hit.IP, Port: hit.Port, Protocol: proto, Host: hit.Hostname,
-			Title: hit.Title.Title, CountryCode: hit.Location.CountryCode, City: hit.Location.City,
-			ASN: hit.AS.ASN, Org: hit.AS.Name, ISP: hit.AS.ISP,
-			Server: hit.Server, Source: "quake",
+			IP:          quakeStringAt(hit, "ip"),
+			Port:        quakeIntAt(hit, "port"),
+			Protocol:    protocol,
+			Host:        quakeStringAt(hit, "hostname", "service.http.host"),
+			Title:       quakeStringAt(hit, "title.title", "service.http.title", "service.http.response.html_title"),
+			CountryCode: quakeStringAt(hit, "location.country_code"),
+			Region:      quakeStringAt(hit, "location.province_cn", "location.province"),
+			City:        quakeStringAt(hit, "location.city_cn", "location.city"),
+			ASN:         quakeStringAt(hit, "autonomous_system.asn", "asn"),
+			Org:         quakeStringAt(hit, "autonomous_system.name", "org"),
+			ISP:         quakeStringAt(hit, "autonomous_system.isp", "isp"),
+			Server:      quakeStringAt(hit, "server", "service.http.response.headers.server"),
+			Source:      "quake",
+			Extra:       extra,
 		})
 	}
-	return assets, resp.Data.Total, nil
+	collection.NormalizeAssets("quake", assets)
+	return assets, total, nil
+}
+
+func quakeStringAt(root map[string]any, paths ...string) string {
+	for _, path := range paths {
+		var current any = root
+		for _, part := range strings.Split(path, ".") {
+			object, ok := current.(map[string]any)
+			if !ok {
+				current = nil
+				break
+			}
+			current = object[part]
+		}
+		if value := quakeString(current); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func quakeIntAt(root map[string]any, paths ...string) int {
+	for _, path := range paths {
+		var current any = root
+		for _, part := range strings.Split(path, ".") {
+			object, ok := current.(map[string]any)
+			if !ok {
+				current = nil
+				break
+			}
+			current = object[part]
+		}
+		if value := quakeInt(current); value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func quakeString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case json.Number:
+		return typed.String()
+	case []any:
+		for _, item := range typed {
+			if value := quakeString(item); value != "" {
+				return value
+			}
+		}
+	}
+	return ""
+}
+
+func quakeInt(value any) int {
+	switch typed := value.(type) {
+	case float64:
+		return int(typed)
+	case json.Number:
+		parsed, _ := strconv.Atoi(typed.String())
+		return parsed
+	case string:
+		parsed, _ := strconv.Atoi(strings.TrimSpace(typed))
+		return parsed
+	}
+	return 0
 }
 
 // FetchSearchResultDirect 直接通过 HTTP 调用引擎搜索 API（不经过浏览器）

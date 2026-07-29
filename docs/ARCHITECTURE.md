@@ -1,6 +1,6 @@
 # UniMap 架构
 
-> 最后按代码核对：2026-07-24。Go 版本为 1.26.5；路由事实来源为 `web/router.go`。
+> 最后按代码核对：2026-07-29。Go 版本为 1.26.5；路由事实来源为 `web/router.go`。
 
 ## 分层
 
@@ -44,9 +44,11 @@ type EngineAdapter interface {
 - 截图、浏览器查询、调度截图与巡检共用 ScreenshotRouter；`cdp`、`extension`、`auto` 的配置模式和实际活动模式分离，仅在允许 fallback 时切换后端。
 - CDP 使用 Chrome/Chromium 新版 headless，不依赖图形会话。可执行文件按显式配置、`UNIMAP_CHROME_PATH`、平台探测顺序解析；显式路径错误会立即暴露。Windows readiness 使用无进程的 PE 静态验证，缺少 CDP provider 时不探测浏览器。浏览器 allocator 共享有界会话槽，固定 user-data-dir 时因 Chromium profile 锁自动串行。
 - Extension Bridge 的配对、任务和回调仅允许 loopback 请求，使用短期 token；可选 HMAC 签名和 nonce 防重放。
-- FOFA、Hunter、ZoomEye、Quake、Shodan 的历史结构化采集 E2E 使用 Bridge。CDP 对这五个引擎有 URL、Cookie、Network/DOM 采集和 `collect_and_capture` 代码路径，但尚未完成真实账号逐引擎验证，不能标为实测通过。
+- FOFA、Hunter、ZoomEye、Quake、Shodan 的历史结构化采集 E2E 使用 Bridge。Quake、Hunter 已有真实 CDP DOM 证据；Quake L1 Network 已按当前 endpoint/数组响应重新实测通过。FOFA、ZoomEye、Shodan 的 CDP 定级仍未执行。
+- CDP 业务入口统一通过 guarded browser session：提交前 URL/实时 DNS 校验、CDP Fetch 全资源逐跳拦截，以及在实际拨号时重新解析并固定公网 IP 的 loopback 出口代理。外部上游代理和远程 Chrome 在无法证明等价出口约束时失败关闭。
+- Extension 搜索引擎任务要求回调 `final_url` 且不得离开批准主机；未提供受控出口证明时，Extension 任意 URL 与批量截图保持禁用。
 - 巡检模式为 `strict`、`relaxed`、`security`、`balanced`、`precise`。巡检与截图入口对公网目标进行 SSRF 防护。
-- `TamperAppService` 在每次检查/设基线时读取最新已提交的端口扫描、TLS 和超时配置；手动巡检、定时巡检与基线刷新复用同一个 allocator seam。
+- `TamperAppService` 在每次检查/设基线时读取最新已提交的端口扫描、TLS 和超时配置；手动巡检、定时巡检与基线刷新复用 Screenshot Manager 的受保护页面加载接口。
 - 端口扫描采用两阶段模块：先并发解析目标并执行 SSRF、CDN 与可选授权 IPv4/CIDR 判断，再构造全局去重并随机化的 `唯一 IP × 端口` 计划。有界工作池可对每个组合执行 connect、Telnet、FIN/NULL/Xmas 与 UDP 探测及随机抖动，随后按解析关系把确定开放和 `open_filtered` 结果回填给原始目标；原始 TCP 方法强制要求显式授权范围。
 - Cookie 与登录状态 API 是 `GET /api/v1/cookies/login-status`，不是旧 `/api/cookies/...`。
 
