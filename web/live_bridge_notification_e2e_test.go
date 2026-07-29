@@ -52,18 +52,21 @@ func TestLiveBridgeSearchScreenshotNotification(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("live configuration is unavailable")
 	}
+	configureLiveBridgeExtension(cfg)
 
 	channelID := enabledFeishuAppChannelID(t, cfg)
 	engine, query := liveBridgeEngine(t)
+	port := liveBridgePort(t)
 	cfg.Web.BindAddress = "127.0.0.1"
-	cfg.Web.Port = 8448 // The extension's documented default loopback endpoint.
+	cfg.Web.Port = port
 	cfg.Screenshot.BaseDir = filepath.Join(stateDir, "screenshots")
 	cfg.History.DatabasePath = filepath.Join(stateDir, "history.db")
 	cfg.ICP.DatabasePath = filepath.Join(stateDir, "icp_results.db")
 
-	listener, err := net.Listen("tcp", "127.0.0.1:8448")
+	listenAddress := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
-		t.Fatalf("127.0.0.1:8448 is required for the extension test: %v", err)
+		t.Fatalf("%s is required for the extension test: %v", listenAddress, err)
 	}
 	if err := listener.Close(); err != nil {
 		t.Fatalf("release Bridge test port: %v", err)
@@ -176,18 +179,21 @@ func TestLiveBridgeScheduledQueryClosedLoop(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("live configuration is unavailable")
 	}
+	configureLiveBridgeExtension(cfg)
 
 	channelID := enabledFeishuAppChannelID(t, cfg)
 	engine, query := liveBridgeEngine(t)
+	port := liveBridgePort(t)
 	cfg.Web.BindAddress = "127.0.0.1"
-	cfg.Web.Port = 8448
+	cfg.Web.Port = port
 	cfg.Screenshot.BaseDir = filepath.Join(stateDir, "screenshots")
 	cfg.History.DatabasePath = filepath.Join(stateDir, "history.db")
 	cfg.ICP.DatabasePath = filepath.Join(stateDir, "icp_results.db")
 
-	listener, err := net.Listen("tcp", "127.0.0.1:8448")
+	listenAddress := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
-		t.Fatalf("127.0.0.1:8448 is required for the extension test: %v", err)
+		t.Fatalf("%s is required for the extension test: %v", listenAddress, err)
 	}
 	if err := listener.Close(); err != nil {
 		t.Fatalf("release Bridge test port: %v", err)
@@ -302,7 +308,7 @@ func TestLiveAPIScheduledQueryNotificationDetails(t *testing.T) {
 		engine = "fofa"
 	}
 	cfg.Web.BindAddress = "127.0.0.1"
-	cfg.Web.Port = 8448
+	cfg.Web.Port = liveBridgePort(t)
 	cfg.Screenshot.BaseDir = filepath.Join(stateDir, "screenshots")
 	cfg.History.DatabasePath = filepath.Join(stateDir, "history.db")
 	cfg.ICP.DatabasePath = filepath.Join(stateDir, "icp_results.db")
@@ -405,6 +411,34 @@ func liveBridgeConfigPath(t *testing.T) string {
 	return ""
 }
 
+func liveBridgePort(t *testing.T) int {
+	t.Helper()
+	raw := strings.TrimSpace(os.Getenv("UNIMAP_LIVE_BRIDGE_PORT"))
+	if raw == "" {
+		return 8448
+	}
+	port, err := strconv.Atoi(raw)
+	if err != nil || port < 1024 || port > 65535 {
+		t.Fatalf("UNIMAP_LIVE_BRIDGE_PORT=%q must be an integer from 1024 through 65535", raw)
+	}
+	return port
+}
+
+// configureLiveBridgeExtension keeps the live test independent from production
+// pairing credentials while still exercising the real Extension-only path.
+// The unpacked extension uses "dev-pair" for automatic local test pairing.
+func configureLiveBridgeExtension(cfg *config.Config) {
+	cfg.Screenshot.Enabled = true
+	cfg.Screenshot.Engine = "extension"
+	cfg.Screenshot.Mode = "extension"
+	cfg.Screenshot.Extension.Enabled = true
+	cfg.Screenshot.Extension.PairingRequired = true
+	cfg.Screenshot.Extension.PairCode = "dev-pair"
+	fallback := false
+	cfg.Screenshot.Fallback = &fallback
+	cfg.Screenshot.Extension.FallbackToCDP = false
+}
+
 func enabledFeishuAppChannelID(t *testing.T, cfg *config.Config) string {
 	t.Helper()
 	for _, channel := range cfg.Notifications.Channels {
@@ -486,7 +520,8 @@ func waitForLiveServer(t *testing.T, srv *Server, serverErr <-chan error, timeou
 			t.Fatalf("live server stopped: %v", err)
 		default:
 		}
-		req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:8448/health/live", nil) // #nosec G107 -- fixed loopback verification endpoint
+		liveURL := fmt.Sprintf("http://127.0.0.1:%d/health/live", srv.port)
+		req, err := http.NewRequest(http.MethodGet, liveURL, nil) // #nosec G107 -- fixed loopback verification endpoint
 		if err == nil {
 			resp, requestErr := http.DefaultClient.Do(req)
 			if requestErr == nil {
@@ -532,7 +567,8 @@ func liveScreenshotPath(t *testing.T, result string) string {
 
 func liveNotifyMetric(t *testing.T, srv *Server, channelType, status string) float64 {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:8448/metrics", nil) // #nosec G107 -- fixed loopback verification endpoint
+	metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", srv.port)
+	req, err := http.NewRequest(http.MethodGet, metricsURL, nil) // #nosec G107 -- fixed loopback verification endpoint
 	if err != nil {
 		t.Fatalf("create notification metrics request: %v", err)
 	}
