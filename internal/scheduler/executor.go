@@ -400,13 +400,13 @@ func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload *model.Task
 
 // TamperCheckRunner executes scheduled tamper checks.
 type TamperCheckRunner struct {
-	tamperSvc        *service.TamperAppService
-	allocatorFactory service.TamperAllocatorFactory
+	tamperSvc  *service.TamperAppService
+	pageLoader service.TamperPageLoader
 }
 
 // NewTamperCheckRunner creates a TamperCheckRunner.
-func NewTamperCheckRunner(svc *service.TamperAppService, af service.TamperAllocatorFactory) *TamperCheckRunner {
-	return &TamperCheckRunner{tamperSvc: svc, allocatorFactory: af}
+func NewTamperCheckRunner(svc *service.TamperAppService, loader service.TamperPageLoader) *TamperCheckRunner {
+	return &TamperCheckRunner{tamperSvc: svc, pageLoader: loader}
 }
 
 func (r *TamperCheckRunner) Type() TaskType { return TaskTamperCheck }
@@ -430,7 +430,7 @@ func (r *TamperCheckRunner) Execute(ctx context.Context, payload *model.TaskPayl
 		Mode:        mode,
 	}
 
-	resp, err := r.tamperSvc.Check(ctx, req, r.allocatorFactory)
+	resp, err := r.tamperSvc.Check(ctx, req, r.pageLoader)
 	if err != nil {
 		return "", fmt.Errorf("tamper check failed: %w", err)
 	}

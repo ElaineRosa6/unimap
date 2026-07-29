@@ -1,6 +1,6 @@
 # UniMap 当前剩余工作清单
 
-> 最后核对：2026-07-24。本文是当前本地待办入口；实施顺序和按旬排期见
+> 最后核对：2026-07-29。本文是当前本地待办入口；实施顺序和按旬排期见
 > [后续实施计划](IMPLEMENTATION_PLAN_2026-07-23.md)。历史审计、计划和 E2E 报告只表达对应日期的事实。
 > 完成项必须同时满足代码、测试和所声明后端的真实验收，不能因存在选择器、接口或单元测试就标记完成。
 
@@ -9,7 +9,7 @@
 | 引擎 | 稳定 Web UI | API 适配 | Bridge 结构化采集实测 | CDP 结构化采集实测 |
 |---|---|---|---|---|
 | FOFA | 已接入 | 已有适配器；历史另有真实 API 证据 | 2026-07-15 通过 | 未执行 |
-| Hunter | 已接入 | 已有适配器 | 2026-07-15 通过 | 2026-07-29 通过（10 资产 + 截图，选择器待校准） |
+| Hunter | 已接入 | 已有适配器 | 2026-07-15 通过 | 2026-07-29 通过（10 资产 + 截图，选择器已校准） |
 | ZoomEye | 已接入 | 已有适配器 | 2026-07-15 通过 | 未执行 |
 | Quake | 已接入 | 已有适配器 | 2026-07-15 通过 | 2026-07-29 通过（10 资产 + 截图） |
 | Shodan | 已接入 | 已有适配器 | 2026-07-15 因登录态失效未通过 | 未执行 |
@@ -52,24 +52,28 @@
 
 2026-07-29 验收结果（详见 [CDP_VERIFICATION_2026-07-29.md](CDP_VERIFICATION_2026-07-29.md)）：
 
-- Quake：Cookie 登录态有效（用户 360U3166720809），CDP 搜索返回 2.06 亿条结果，
+- Quake：Cookie 登录态有效，CDP 搜索返回 2.06 亿条结果，
   应用代码路径采集 10 条结构化资产，PNG 截图 375KB，人工确认非登录页；
-- Hunter：Cookie 登录态有效（用户 173******09），CDP 搜索返回 2696 万条资产，
-  应用代码路径采集 10 条结构化资产，JPEG 回退截图 246KB，人工确认非登录页；
-- 截图回退修复：`screenshot_fallback.go` 实现 PNG(10s) → JPEG(30s) 自动降级；
+- Hunter：Cookie 登录态有效，CDP 搜索返回 2696 万条资产，
+  应用代码路径采集 10 条结构化资产，历史验收截图为 JPEG 内容，人工确认非登录页；
+- 截图回退已修复为统一 PNG 契约：PNG 首次捕获失败时使用 JPEG 捕获，再转码为 PNG 后保存和返回；
 - Cookie 已写入 `configs/config.yaml`，Chrome 用户数据目录持久化会话。
 
 2026-07-29 追加：
 
 - Hunter DOM 选择器已校准（列映射修正 + checkbox 自动检测 + status_code/region 提取）；
-- Web 服务 E2E 已验证：POST /api/v1/query browser_query=true 返回 200，
-  Hunter bridge-collect 采集 2 条资产（IP/Port/Title 正确），Quake L1 Network 待校准；
+- 历史 Web 服务 E2E：POST /api/v1/query browser_query=true 返回 200，
+  Hunter bridge-collect 采集 2 条资产；当时 Quake Extension DOM 为 0 条；
+- Quake L1 已校准到 `/api/search/query_string/quake_service`，解析器兼容当前 `data` 数组响应，
+  并于 2026-07-29 使用持久化登录态获得非空真实结果；
+- Quake Extension DOM 已修复 `data-clipboard-text` 的 IP 提取并通过真实 Chrome 固定夹具；
+  更新后的真实 Bridge/Web 会话仍待复验，不能用夹具结果代替；
 - SQLite 合并路径由单元测试覆盖（TestRunBrowserQueryAsync_CollectsStructuredAssets）；
 - 通知管线已由 Scheduler 后置管线覆盖，需配置真实飞书/Webhook 凭据后触发 E2E。
 
 仍待完成：
 
-- Quake L1 Network pattern 校准（当前 CDP 采集返回 0 条结构化资产）；
+- 更新并重载 Extension 后，复验 Quake 强制 Extension 与完整 Web/Router 主链路；
 - 配置真实飞书/Webhook 通知目标后验证图片通知送达；
 - 容器重启后会话和结果恢复验证。
 
@@ -159,23 +163,24 @@ Censys/DayDayMap Web-only 后端计为可用。后续若选择浏览器路线，
 
 ### RW-08 发布与工作区清理
 
-- 状态：**本地基线已收口（2026-07-24），仅剩推送远端**。
+- 状态：**安全收口修复实施中（2026-07-29），尚未达到发布门槛**。
 - 当前代码与第一轮文档变更已审查并提交为 `f9317a3`；**已完成**
 - `CLAUDE.md` 已按用户要求保留并同步当前事实；**已完成**
 - 根目录 `tmp_speedtest.go` 已迁移为带 `manual_browser_test` 标签的
   `tools/chrome-speedtest` 手动工具；**已完成**
 - 推送 `develop` 当前领先远端的本地提交；**待用户确认远端发布时执行**
-- 发布前再次执行 `go test -race ./...`、`go vet ./...`、`go build ./...` 和 GUI build tag。**已完成**
+- 发布前再次执行 `go test -race ./...`、`go vet ./...`、`go build ./...`、GUI build tag、
+  headless SSRF、Extension Quake 夹具与 `govulncheck`。**本轮终检中**
 
 ### RW-09 网页巡检确定性收尾
 
 状态：**部分完成（2026-07-24），安全证据截图与云端真实闭环待完成**。
 
-- 手动巡检、定时巡检与基线刷新读取同一套实时 Tamper 配置和浏览器 allocator；
+- 手动巡检、定时巡检与基线刷新读取同一套实时 Tamper 配置，并统一使用 Screenshot Manager 的受保护页面加载接口；
 - 基线刷新按实际 `saved` 结果统计，不再把业务失败计为成功；
 - 历史列表和导出支持 `start_time`、`end_time`，`count` 返回过滤后总数；
-- “发现变化 → 证据截图 → 图片通知”未启用：当前调用前 URL 检查不能阻止浏览器后续跨主机
-  重定向或 DNS rebinding，必须先在 CDP/Extension 浏览器层形成逐跳/连接级 SSRF 防护；
+- “发现变化 → 证据截图 → 图片通知”仍未启用：逐跳和连接级 SSRF 代码及本地验收已完成，
+  但受控云端真实变化、图片送达和重启复验尚未完成；
 - 尚需在云端用受控页面完成基线、真实变化、历史、飞书图片送达、恢复和重启后复验。
 
 ## 4. P3：可选增强
@@ -194,11 +199,11 @@ Censys/DayDayMap Web-only 后端计为可用。后续若选择浏览器路线，
 - 未配置引擎不再被默认强制启用，Censys/DayDayMap 缺凭据时不再伪注册 Web-only；
 - Quake/Hunter 生产模板和设置页 Base URL 已统一；
 - 当前权威文档统一使用本文件的支持矩阵和待办编号。
-- 巡检运行时配置、基线 allocator、时间筛选和真实总数已完成代码收口；变化证据截图因浏览器层
-  SSRF 防护不足继续保留待办。
+- 巡检运行时配置、受保护页面加载接口、时间筛选和真实总数已完成代码收口；变化证据截图因
+  云端真实变化与图片送达尚未验收继续保留待办。
 - 本地代码基线已提交为 `f9317a3`，但截至本次核对尚未推送到 `origin/develop`。
 
-## 6. 本地验证（2026-07-24）
+## 6. 本地验证（2026-07-29）
 
 - `go test -race ./...`：通过；
 - `go vet ./...`：通过；
@@ -208,5 +213,7 @@ Censys/DayDayMap Web-only 后端计为可用。后续若选择浏览器路线，
 - `node --check web/static/js/main.js`：通过；
 - `git diff --check`：通过。
 
-2026-07-23 的 `govulncheck ./...`、入口脚本语法和阿里云容器证据继续有效，但本轮没有重复
-执行真实云端页面变化与飞书图片送达；这两项仍是 RW-09 的外部验收边界。
+本轮 Excelize 已升级到 v2.11.0，`govulncheck ./...` 返回 0 个可达漏洞；Quake L1 真实测试、
+Quake Extension DOM 固定夹具、headless 私网重定向/子资源和连接前阻断均已通过。全量 race、
+vet、默认/GUI build 和前端语法以本轮最终门禁记录为准。真实 Extension/Web Quake 复验、
+云端页面变化与图片送达仍是外部验收边界。

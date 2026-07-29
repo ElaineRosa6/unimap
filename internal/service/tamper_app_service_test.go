@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 )
 
 func TestTamperAppServiceNewDetectorUsesRuntimeConfig(t *testing.T) {
-	wantErr := errors.New("allocator sentinel")
 	providerCalls := 0
 	app := NewTamperAppService(t.TempDir(), nil, func() TamperRuntimeConfig {
 		providerCalls++
@@ -21,11 +19,12 @@ func TestTamperAppServiceNewDetectorUsesRuntimeConfig(t *testing.T) {
 		}
 	})
 
-	_, _, err := app.newDetector(context.Background(), tamper.DetectionModeSecurity, func(context.Context) (context.Context, context.CancelFunc, error) {
-		return nil, nil, wantErr
+	loader := tamper.BrowserPageLoaderFunc(func(_ context.Context, _ string) (string, string, error) {
+		return "title", "<html><body>ok</body></html>", nil
 	})
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("newDetector error = %v, want wrapped sentinel", err)
+	detector := app.newDetector(tamper.DetectionModeSecurity, loader)
+	if detector == nil {
+		t.Fatal("newDetector returned nil")
 	}
 	if providerCalls != 1 {
 		t.Fatalf("runtime config provider calls = %d, want 1", providerCalls)

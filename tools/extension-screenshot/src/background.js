@@ -55,6 +55,14 @@ async function handleTask(task, token) {
   async function reportResult(result) {
     result.batch_id = task.batch_id || "";
     result.url = task.url || "";
+    if (tabId) {
+      try {
+        const currentTab = await chrome.tabs.get(tabId);
+        result.final_url = currentTab?.url || "";
+      } catch {
+        result.final_url = "";
+      }
+    }
     await reportTaskResult(result, token);
   }
 

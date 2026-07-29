@@ -33,6 +33,7 @@ func TestRelaxed_TimeBasedDynamicContent_NoFalsePositive(t *testing.T) {
 	defer ts.Close()
 
 	detector := NewDetector(DetectorConfig{DetectionMode: DetectionModeRelaxed, PerformanceMode: PerformanceModeFast})
+	allowLoopbackTestPageLoader(detector)
 	baseline, err := detector.ComputePageHash(t.Context(), ts.URL)
 	require.NoError(t, err)
 	require.NoError(t, detector.SaveBaseline(ts.URL, baseline))
@@ -51,6 +52,7 @@ func TestRelaxed_CompletelyUnchangedPage_ReturnsNormal(t *testing.T) {
 	defer ts.Close()
 
 	detector := NewDetector(DetectorConfig{DetectionMode: DetectionModeRelaxed, PerformanceMode: PerformanceModeFast})
+	allowLoopbackTestPageLoader(detector)
 	ctx := context.Background()
 	baseline, err := detector.ComputePageHash(ctx, ts.URL)
 	require.NoError(t, err)

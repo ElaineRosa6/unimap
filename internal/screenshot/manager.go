@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -37,21 +38,23 @@ type EngineWebURL struct {
 
 // Manager 截图管理器
 type Manager struct {
-	baseDir        string
-	chromePath     string
-	proxyServer    string
-	userDataDir    string
-	profileDir     string
-	remoteDebugURL string
-	headless       bool
-	noSandbox      bool
-	cookies        map[string][]Cookie // 各引擎的Cookie
-	cookiesMutex   sync.RWMutex
-	timeout        time.Duration
-	windowWidth    int
-	windowHeight   int
-	waitTime       time.Duration // 页面加载后等待时间
-	sessionSlots   chan struct{}
+	baseDir            string
+	chromePath         string
+	proxyServer        string
+	userDataDir        string
+	profileDir         string
+	remoteDebugURL     string
+	headless           bool
+	noSandbox          bool
+	cookies            map[string][]Cookie // 各引擎的Cookie
+	cookiesMutex       sync.RWMutex
+	timeout            time.Duration
+	windowWidth        int
+	windowHeight       int
+	waitTime           time.Duration // 页面加载后等待时间
+	sessionSlots       chan struct{}
+	urlValidator       browserURLValidator
+	egressProxyFactory func(context.Context) (*browserEgressProxy, error)
 }
 
 // Cookie Cookie信息
@@ -123,7 +126,18 @@ func NewManager(cfg Config) *Manager {
 		windowHeight:   cfg.WindowHeight,
 		waitTime:       cfg.WaitTime,
 		sessionSlots:   make(chan struct{}, cfg.MaxSessions),
+		urlValidator:   ValidateBrowserURLLive,
+		egressProxyFactory: func(ctx context.Context) (*browserEgressProxy, error) {
+			return newBrowserEgressProxy(ctx, net.DefaultResolver)
+		},
 	}
+}
+
+func (m *Manager) validateBrowserURL(ctx context.Context, rawURL string) error {
+	if m == nil || m.urlValidator == nil {
+		return ValidateBrowserURLLive(ctx, rawURL)
+	}
+	return m.urlValidator(ctx, rawURL)
 }
 
 // SetCookies 设置指定引擎的Cookie
@@ -197,30 +211,14 @@ func (m *Manager) CaptureScreenshot(ctx context.Context, targetURL string, cooki
 }
 
 func (m *Manager) CaptureScreenshotWithProxy(ctx context.Context, targetURL string, cookies []Cookie, proxy string) ([]byte, error) {
-	// SSRF pre-navigation gate: reject private/loopback/internal targets.
-	if err := ValidateBrowserURL(targetURL); err != nil {
-		return nil, err
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel()
 
-	allocCtx, allocCancel, err := m.newAllocatorWithProxy(ctx, proxy)
+	session, err := m.newGuardedBrowserSession(ctx, targetURL, proxy)
 	if err != nil {
 		return nil, err
 	}
-	defer allocCancel()
-
-	ctx, taskCancel := chromedp.NewContext(allocCtx)
-	defer taskCancel()
-
-	// Enable per-hop SSRF interception to block redirects and subresource
-	// requests to internal addresses (DNS rebinding / cross-host redirect).
-	interceptor := NewSSRFInterceptor()
-	if err := interceptor.Enable(ctx); err != nil {
-		logger.Warnf("[ssrf-guard] fetch interception unavailable, falling back to static check only: %v", err)
-	}
-	defer interceptor.Cancel()
+	defer session.Close()
 
 	var buf []byte
 
@@ -249,13 +247,16 @@ func (m *Manager) CaptureScreenshotWithProxy(ctx context.Context, targetURL stri
 	)
 
 	// Run navigation and wait actions first.
-	if err := chromedp.Run(ctx, actions...); err != nil {
+	if err := session.Run(actions...); err != nil {
 		return nil, fmt.Errorf("screenshot navigation failed: %w", err)
 	}
 
 	// Capture screenshot with PNG -> JPEG fallback.
-	if err := captureScreenshotWithFallback(ctx, &buf); err != nil {
+	if err := captureScreenshotWithFallback(session.Context(), &buf); err != nil {
 		return nil, fmt.Errorf("screenshot failed: %w", err)
+	}
+	if err := session.interceptor.Err(); err != nil {
+		return nil, err
 	}
 
 	return buf, nil
@@ -268,11 +269,6 @@ func (m *Manager) OpenSearchEngineResult(ctx context.Context, engine, query stri
 		return "", fmt.Errorf("unsupported engine: %s", engine)
 	}
 
-	// SSRF pre-navigation gate.
-	if err := ValidateBrowserURL(searchURL); err != nil {
-		return "", err
-	}
-
 	openTimeout := m.timeout
 	if openTimeout <= 0 || openTimeout > 10*time.Second {
 		openTimeout = 10 * time.Second
@@ -281,14 +277,11 @@ func (m *Manager) OpenSearchEngineResult(ctx context.Context, engine, query stri
 	ctx, cancel := context.WithTimeout(ctx, openTimeout)
 	defer cancel()
 
-	allocCtx, allocCancel, err := m.newAllocator(ctx)
+	session, err := m.newGuardedBrowserSession(ctx, searchURL, "")
 	if err != nil {
 		return "", err
 	}
-	defer allocCancel()
-
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	defer browserCancel()
+	defer session.Close()
 
 	cookies := m.GetCookies(engine)
 	actions := []chromedp.Action{}
@@ -306,7 +299,7 @@ func (m *Manager) OpenSearchEngineResult(ctx context.Context, engine, query stri
 	}
 
 	actions = append(actions, chromedp.Sleep(m.waitTime))
-	if err := chromedp.Run(browserCtx, actions...); err != nil {
+	if err := session.Run(actions...); err != nil {
 		return "", fmt.Errorf("open search engine result failed: %w", err)
 	}
 
@@ -387,18 +380,9 @@ func (m *Manager) CheckEngineLoginStatus(ctx context.Context, engine, query stri
 		loginCtx, cancel := context.WithTimeout(ctx, m.timeout)
 		defer cancel()
 
-		allocCtx, allocCancel, err := m.newAllocator(loginCtx)
-		if err != nil {
-			return &EngineLoginStatus{Engine: engine, LoggedIn: false, Reason: "no_session", LoginURL: loginURL, Error: err.Error()}, nil
-		}
-		defer allocCancel()
-
-		cdpCtx, taskCancel := chromedp.NewContext(allocCtx)
-		defer taskCancel()
-
 		title := ""
 		html := ""
-		if err := m.loadPageContent(cdpCtx, searchURL, nil, &title, &html); err != nil {
+		if err := m.loadPageContent(loginCtx, searchURL, nil, &title, &html); err != nil {
 			return &EngineLoginStatus{Engine: engine, LoggedIn: false, Reason: "load_failed", LoginURL: loginURL, Title: title, Error: err.Error()}, nil
 		}
 

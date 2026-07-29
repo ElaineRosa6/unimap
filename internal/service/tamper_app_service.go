@@ -14,8 +14,9 @@ import (
 	"github.com/unimap/project/internal/utils"
 )
 
-// TamperAllocatorFactory 用于注入浏览器 allocator，便于复用 screenshot 的 CDP/本地启动策略。
-type TamperAllocatorFactory func(ctx context.Context) (context.Context, context.CancelFunc, error)
+// TamperPageLoader renders JavaScript pages through the screenshot module's
+// guarded browser seam.
+type TamperPageLoader = tamper.BrowserPageLoader
 
 // TamperRuntimeConfig contains the detector settings that may change while the
 // process is running.
@@ -72,7 +73,7 @@ type TamperBaselineResponse struct {
 	Results []tamper.PageHashResult
 }
 
-func (s *TamperAppService) Check(ctx context.Context, req TamperCheckRequest, allocatorFactory TamperAllocatorFactory) (*TamperCheckResponse, error) {
+func (s *TamperAppService) Check(ctx context.Context, req TamperCheckRequest, pageLoader TamperPageLoader) (*TamperCheckResponse, error) {
 	if len(req.URLs) == 0 {
 		return nil, fmt.Errorf("no URLs provided")
 	}
@@ -85,11 +86,7 @@ func (s *TamperAppService) Check(ctx context.Context, req TamperCheckRequest, al
 	// detector's richer thresholds from both the UI and scheduled tasks.
 	mode := tamper.NormalizeDetectionMode(req.Mode)
 
-	detector, cleanup, err := s.newDetector(ctx, mode, allocatorFactory)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
+	detector := s.newDetector(mode, pageLoader)
 
 	results, err := detector.BatchCheckTampering(ctx, req.URLs, req.Concurrency)
 	if err != nil {
@@ -148,7 +145,7 @@ func (s *TamperAppService) Check(ctx context.Context, req TamperCheckRequest, al
 	return &TamperCheckResponse{Mode: mode, Summary: summary, Results: results}, nil
 }
 
-func (s *TamperAppService) SetBaseline(ctx context.Context, req TamperBaselineRequest, allocatorFactory TamperAllocatorFactory) (*TamperBaselineResponse, error) {
+func (s *TamperAppService) SetBaseline(ctx context.Context, req TamperBaselineRequest, pageLoader TamperPageLoader) (*TamperBaselineResponse, error) {
 	if len(req.URLs) == 0 {
 		return nil, fmt.Errorf("no URLs provided")
 	}
@@ -156,11 +153,7 @@ func (s *TamperAppService) SetBaseline(ctx context.Context, req TamperBaselineRe
 		req.Concurrency = 5
 	}
 
-	detector, cleanup, err := s.newDetector(ctx, tamper.DetectionModeRelaxed, allocatorFactory)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
+	detector := s.newDetector(tamper.DetectionModeRelaxed, pageLoader)
 
 	results, err := detector.BatchSetBaseline(ctx, req.URLs, req.Concurrency)
 	if err != nil {
@@ -456,22 +449,12 @@ func limitHistoryRecords(records []HistoryRecord, limit, offset int) []HistoryRe
 	return records[offset:end]
 }
 
-func (s *TamperAppService) newDetector(ctx context.Context, mode string, allocatorFactory TamperAllocatorFactory) (*tamper.Detector, context.CancelFunc, error) {
+func (s *TamperAppService) newDetector(mode string, pageLoader TamperPageLoader) *tamper.Detector {
 	detector := tamper.NewDetector(s.detectorConfig(mode))
-	cleanup := func() {}
-
-	if allocatorFactory == nil {
-		return detector, cleanup, nil
+	if pageLoader != nil {
+		detector.SetBrowserPageLoader(pageLoader)
 	}
-
-	allocCtx, allocCancel, err := allocatorFactory(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to initialize browser for tamper detection: %w", err)
-	}
-	detector.SetAllocator(ctx, allocCtx, allocCancel)
-	cleanup = allocCancel
-
-	return detector, cleanup, nil
+	return detector
 }
 
 func (s *TamperAppService) detectorConfig(mode string) tamper.DetectorConfig {

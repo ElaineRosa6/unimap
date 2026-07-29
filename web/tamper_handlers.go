@@ -13,6 +13,7 @@ import (
 
 	"github.com/unimap/project/internal/exporter"
 	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/tamper"
 )
 
 func (s *Server) tamperRuntimeConfig() service.TamperRuntimeConfig {
@@ -61,16 +62,16 @@ func (s *Server) handleTamperHistoryExport(w http.ResponseWriter, r *http.Reques
 	_, _ = w.Write(body.Bytes())
 }
 
-func (s *Server) tamperAllocatorFactory(proxy string) service.TamperAllocatorFactory {
+func (s *Server) tamperPageLoader(proxy string) service.TamperPageLoader {
 	if s.screenshotMgr == nil {
 		return nil
 	}
-	return func(ctx context.Context) (context.Context, context.CancelFunc, error) {
-		if strings.TrimSpace(proxy) != "" {
-			return s.screenshotMgr.NewAllocatorWithProxy(ctx, proxy)
-		}
-		return s.screenshotMgr.NewAllocator(ctx)
+	if strings.TrimSpace(proxy) == "" {
+		return s.screenshotMgr
 	}
+	return tamper.BrowserPageLoaderFunc(func(ctx context.Context, targetURL string) (string, string, error) {
+		return s.screenshotMgr.LoadPageWithProxy(ctx, targetURL, proxy)
+	})
 }
 
 // handleTamperCheck 处理篡改检测请求
@@ -121,7 +122,7 @@ func (s *Server) handleTamperCheck(w http.ResponseWriter, r *http.Request) {
 		URLs:        req.URLs,
 		Concurrency: req.Concurrency,
 		Mode:        req.Mode,
-	}, s.tamperAllocatorFactory(proxy))
+	}, s.tamperPageLoader(proxy))
 	if err != nil {
 		s.reportRequestProxy(proxy, false)
 		if strings.Contains(strings.ToLower(err.Error()), "no urls") {
@@ -188,7 +189,7 @@ func (s *Server) handleTamperBaseline(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.tamperApp.SetBaseline(r.Context(), service.TamperBaselineRequest{
 		URLs:        req.URLs,
 		Concurrency: req.Concurrency,
-	}, s.tamperAllocatorFactory(proxy))
+	}, s.tamperPageLoader(proxy))
 	if err != nil {
 		s.reportRequestProxy(proxy, false)
 		if strings.Contains(strings.ToLower(err.Error()), "no urls") {

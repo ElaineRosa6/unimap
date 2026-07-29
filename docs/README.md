@@ -10,6 +10,8 @@
 - [阿里云真实环境验收（2026-07-23）](CLOUD_ACCEPTANCE_2026-07-23.md)：真实容器、headless、截图、巡检、调度、备份和持久化证据及剩余边界。
 - [云服务器常态化运行准备与协作清单（2026-07-23）](CLOUD_STEADY_STATE_PLAN_2026-07-23.md)：当前能力边界、CDP-only 架构、用户配合事项、凭据安全交付、分阶段实施与完全通过标准。
 - [当前剩余工作清单（2026-07-23）](REMAINING_WORK_2026-07-23.md)：七引擎 API/UI/Bridge/CDP 事实矩阵、浏览器层 SSRF 前置条件、优先级和完成标准。
+- [安全发布收口修复计划（2026-07-29）](SECURITY_RELEASE_CLOSURE_REPAIR_PLAN_2026-07-29.md)：SSRF、截图格式、Bridge 取消、Quake 双链路、依赖漏洞和文档同步的分阶段修复与发布门槛。
+- [安全发布收口修复记录（2026-07-29）](SECURITY_RELEASE_CLOSURE_REPAIR_REPORT_2026-07-29.md)：本轮代码修复、专项验证、Quake 分链路证据和仍待外部验收的发布边界。
 - [后续实施计划（2026-07-23）](IMPLEMENTATION_PLAN_2026-07-23.md)：按旬排期的开发阶段、当前本地提交状态、依赖、验收门槛和用户配合事项。
 - [截图扩展运维](OPS_SCREENSHOT_EXTENSION.md)：本机配对、Bridge token 与回调协议。
 - [无图形浏览器运行时决策](DECISIONS/0006-headless-browser-runtime.md)：云主机 CDP、统一路由、会话限制和容器边界。

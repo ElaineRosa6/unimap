@@ -308,6 +308,7 @@ func (f *failOpenBridgeClient) AwaitResult(ctx context.Context, requestID string
 	return BridgeResult{
 		RequestID: requestID,
 		Success:   false,
+		FinalURL:  "https://fofa.info/result",
 		Error:     "extension tab crashed",
 	}, nil
 }
@@ -345,6 +346,7 @@ func (l *loginWallBridgeClient) AwaitResult(ctx context.Context, requestID strin
 	return BridgeResult{
 		RequestID: requestID,
 		Success:   true,
+		FinalURL:  "https://fofa.info/result",
 		StructuredCollectedData: &model.BridgeCollectedData{
 			Total: 0,
 			Items: []model.CollectedDataItem{},
@@ -395,6 +397,7 @@ func (l *loginWallFailBridgeClient) AwaitResult(ctx context.Context, requestID s
 	return BridgeResult{
 		RequestID: requestID,
 		Success:   false,
+		FinalURL:  "https://fofa.info/result",
 		Error:     "login wall detected on https://fofa.info/result",
 		ErrorCode: "login_required",
 		StructuredCollectedData: &model.BridgeCollectedData{
@@ -444,6 +447,7 @@ func (l *loginWallErrorCodeClient) AwaitResult(ctx context.Context, requestID st
 	return BridgeResult{
 		RequestID: requestID,
 		Success:   false,
+		FinalURL:  "https://hunter.qianxin.com/home/list",
 		Error:     "login required for hunter",
 		ErrorCode: "login_required",
 	}, nil

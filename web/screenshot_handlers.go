@@ -342,6 +342,17 @@ func (s *Server) handleScreenshotFile(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	file, err := os.Open(absFullPath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	header := make([]byte, 512)
+	n, _ := file.Read(header)
+	_ = file.Close()
+	if n > 0 {
+		w.Header().Set("Content-Type", http.DetectContentType(header[:n]))
+	}
 
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=300")
@@ -406,7 +417,12 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "image/png")
+	contentType := http.DetectContentType(imgData)
+	if contentType != "image/png" {
+		writeAPIError(w, http.StatusInternalServerError, "screenshot_format_invalid", "screenshot provider returned a non-PNG image", nil)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
 	_, _ = w.Write(imgData)
 }
 

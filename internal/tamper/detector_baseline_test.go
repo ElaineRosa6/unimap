@@ -401,6 +401,7 @@ func TestDetector_CheckTampering_NoBaseline(t *testing.T) {
 		BaseDir:         dir,
 		PerformanceMode: PerformanceModeFast,
 	})
+	allowLoopbackTestPageLoader(d)
 
 	ctx := context.Background()
 	result, err := d.CheckTampering(ctx, ts.URL)

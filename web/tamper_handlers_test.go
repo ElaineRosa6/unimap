@@ -1,7 +1,6 @@
 package web
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -471,41 +470,29 @@ func TestTamperRuntimeConfigUsesCurrentConfig(t *testing.T) {
 }
 
 // ============================================================
-// tamperAllocatorFactory tests
+// tamperPageLoader tests
 // ============================================================
 
-func TestTamperAllocatorFactory_NilMgr(t *testing.T) {
+func TestTamperPageLoader_NilMgr(t *testing.T) {
 	s := &Server{}
-	factory := s.tamperAllocatorFactory("")
-	if factory != nil {
-		t.Fatal("expected nil factory when screenshotMgr is nil")
+	loader := s.tamperPageLoader("")
+	if loader != nil {
+		t.Fatal("expected nil loader when screenshotMgr is nil")
 	}
 }
 
-func TestTamperAllocatorFactory_WithProxy(t *testing.T) {
+func TestTamperPageLoader_WithProxy(t *testing.T) {
 	s := &Server{config: &config.Config{}, screenshotMgr: &screenshot.Manager{}}
-	factory := s.tamperAllocatorFactory("http://proxy:8080")
-	if factory == nil {
-		t.Fatal("expected non-nil factory")
+	loader := s.tamperPageLoader("http://proxy:8080")
+	if loader == nil {
+		t.Fatal("expected non-nil loader")
 	}
-	ctx, cancel, err := factory(context.Background())
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	cancel()
-	_ = ctx
 }
 
-func TestTamperAllocatorFactory_NoProxy(t *testing.T) {
+func TestTamperPageLoader_NoProxy(t *testing.T) {
 	s := &Server{config: &config.Config{}, screenshotMgr: &screenshot.Manager{}}
-	factory := s.tamperAllocatorFactory("")
-	if factory == nil {
-		t.Fatal("expected non-nil factory")
+	loader := s.tamperPageLoader("")
+	if loader == nil {
+		t.Fatal("expected non-nil loader")
 	}
-	ctx, cancel, err := factory(context.Background())
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	cancel()
-	_ = ctx
 }

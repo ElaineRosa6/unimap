@@ -7,10 +7,11 @@
 >
 > 2026-07-24 进度：P0 已完成。
 >
-> 2026-07-29 进度：浏览器层 SSRF 防护已实现（`ssrf_guard.go`）；会话熔断核心框架+接线已完成
-> （`session_health.go` + `executor.go` 共享 tracker）；Quake/Hunter CDP 真实验收通过
-> （Cookie 登录态有效、10 条结构化资产、截图人工确认）；Hunter DOM 选择器已校准；
-> 截图 JPEG 回退已实现。本地 6 个提交领先 origin/develop，尚未推送。
+> 2026-07-29 进度：CDP URL/DNS、Fetch 全请求拦截和连接级出口代理已接入全部浏览器业务入口；
+> Extension 无出口证明时禁用任意 URL，并校验搜索引擎回调最终主机；会话熔断核心框架+接线已完成。
+> Quake/Hunter CDP 真实验收通过；Quake L1 已按当前 endpoint/数组响应重新实测通过；
+> Hunter 与 Quake Extension DOM 选择器已校准。截图回退统一转码为 PNG，Bridge 取消已传播，
+> Excelize 已升级到 v2.11.0。基线提交 `0d45fad` 在修复前领先远端 7 个提交；本轮尚未提交或推送。
 
 ## 1. 目标与范围
 
@@ -206,7 +207,7 @@
 | 阶段 | 计划完成 | 当前状态 |
 |---|---|---|
 | P0 基线收口 | 2026 年 7 月下旬 | ✅ 完成：验证、审查、提交已完成；待推送远端 |
-| P1 Quake/Hunter CDP | 2026 年 8 月上旬 | 🟡 CDP 验收通过（2026-07-29）：Cookie+采集+截图+Web E2E；Quake L1 Network 待校准；通知/容器恢复待云端 |
+| P1 Quake/Hunter CDP | 2026 年 8 月上旬 | 🟡 CDP 与 Quake L1 验收通过（2026-07-29）；Quake Extension DOM 夹具通过，更新后的真实 Bridge/Web、通知和容器恢复待验收 |
 | P2 五引擎 CDP 定级 | 2026 年 8 月下旬 | 待开始 |
 | P3 会话无人值守 | 2026 年 9 月下旬 | 🟡 核心框架+接线完成（2026-07-29）：熔断器+分类+恢复指引+共享 tracker；真实引擎验收待执行 |
 | P4 新引擎完整接入 | 2026 年 11 月上旬 | 待开始 |

@@ -210,6 +210,7 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		ImageData               string                 `json:"image_data"`
 		BatchID                 string                 `json:"batch_id"`
 		URL                     string                 `json:"url"`
+		FinalURL                string                 `json:"final_url"`
 		CollectedData           string                 `json:"collected_data"`
 		StructuredCollectedData map[string]interface{} `json:"structured_collected_data"`
 		Error                   string                 `json:"error"`
@@ -249,6 +250,7 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		RequestID:               strings.TrimSpace(req.RequestID),
 		Success:                 req.Success,
 		ImagePath:               resolvedPath,
+		FinalURL:                strings.TrimSpace(req.FinalURL),
 		CollectedData:           strings.TrimSpace(req.CollectedData),
 		StructuredCollectedData: structuredData,
 		ErrorCode:               strings.TrimSpace(req.ErrorCode),
@@ -296,6 +298,7 @@ func (s *Server) resolveBridgeImagePath(w http.ResponseWriter, req *struct {
 	ImageData               string                 `json:"image_data"`
 	BatchID                 string                 `json:"batch_id"`
 	URL                     string                 `json:"url"`
+	FinalURL                string                 `json:"final_url"`
 	CollectedData           string                 `json:"collected_data"`
 	StructuredCollectedData map[string]interface{} `json:"structured_collected_data"`
 	Error                   string                 `json:"error"`

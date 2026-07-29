@@ -32,6 +32,7 @@ type BridgeResult struct {
 	RequestID               string                     `json:"request_id"`
 	Success                 bool                       `json:"success"`
 	ImagePath               string                     `json:"image_path,omitempty"`
+	FinalURL                string                     `json:"final_url,omitempty"`
 	CollectedData           string                     `json:"collected_data,omitempty"`
 	StructuredCollectedData *model.BridgeCollectedData `json:"structured_collected_data,omitempty"`
 	ErrorCode               string                     `json:"error_code,omitempty"`

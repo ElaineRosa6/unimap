@@ -1,13 +1,25 @@
 package urlguard
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"testing"
 	"time"
 )
+
+type stubSafeResolver struct {
+	ips []net.IPAddr
+	err error
+}
+
+func (r stubSafeResolver) LookupIPAddr(context.Context, string) ([]net.IPAddr, error) {
+	return r.ips, r.err
+}
 
 func TestCheck_ValidHTTPS(t *testing.T) {
 	u, err := Check("https://example.com/api/v1", CheckOptions{})
@@ -234,6 +246,32 @@ func TestCheck_RejectPrivateIPHost(t *testing.T) {
 	}
 }
 
+func TestCheck_RejectSpecialUseIPHosts(t *testing.T) {
+	for _, rawURL := range []string{
+		"https://100.64.0.1/",
+		"https://198.18.0.1/",
+		"https://192.0.2.1/",
+		"https://203.0.113.1/",
+		"https://[2001:db8::1]/",
+	} {
+		if _, err := Check(rawURL, CheckOptions{}); err == nil {
+			t.Errorf("Check(%q) allowed a special-use address", rawURL)
+		}
+	}
+}
+
+func TestCheck_RejectLocalhostVariants(t *testing.T) {
+	for _, rawURL := range []string{
+		"https://LOCALHOST/",
+		"https://localhost./",
+		"https://service.localhost/",
+	} {
+		if _, err := Check(rawURL, CheckOptions{}); err == nil {
+			t.Errorf("Check(%q) allowed a localhost variant", rawURL)
+		}
+	}
+}
+
 func TestCheck_OptionsOverrides(t *testing.T) {
 	// Custom AllowedSchemes should override defaults
 	_, err := Check("ftp://example.com/file", CheckOptions{AllowedSchemes: []string{"ftp"}})
@@ -279,6 +317,54 @@ func TestSafeHTTPClient_WithCustomSchemes(t *testing.T) {
 	client := SafeHTTPClient(CheckOptions{AllowedSchemes: []string{"https"}}, 5*time.Second)
 	if client.Timeout != 5*time.Second {
 		t.Errorf("expected 5s timeout, got %v", client.Timeout)
+	}
+}
+
+func TestSafeDialContextPinsValidatedIPAddress(t *testing.T) {
+	resolver := stubSafeResolver{ips: []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}}
+	var dialed string
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	conn, err := safeDialContext(t.Context(), resolver, func(_ context.Context, _, addr string) (net.Conn, error) {
+		dialed = addr
+		return client, nil
+	}, "tcp", "example.test:443")
+	if err != nil {
+		t.Fatalf("safeDialContext failed: %v", err)
+	}
+	_ = conn.Close()
+	if dialed != "93.184.216.34:443" {
+		t.Fatalf("dialed %q, want pinned IP", dialed)
+	}
+}
+
+func TestSafeDialContextRejectsMixedResolutionBeforeDial(t *testing.T) {
+	resolver := stubSafeResolver{ips: []net.IPAddr{
+		{IP: net.ParseIP("93.184.216.34")},
+		{IP: net.ParseIP("127.0.0.1")},
+	}}
+	called := false
+	_, err := safeDialContext(t.Context(), resolver, func(context.Context, string, string) (net.Conn, error) {
+		called = true
+		return nil, errors.New("must not dial")
+	}, "tcp", "example.test:443")
+	if err == nil {
+		t.Fatal("mixed public/private resolution must fail")
+	}
+	if called {
+		t.Fatal("dialer was called before all resolved addresses were validated")
+	}
+}
+
+func TestSafeHTTPClientDisablesEnvironmentProxyForPublicOnlyMode(t *testing.T) {
+	client := SafeHTTPClient(CheckOptions{AllowPrivate: false}, time.Second)
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type = %T", client.Transport)
+	}
+	if transport.Proxy != nil {
+		t.Fatal("public-only safe client must not trust an environment proxy")
 	}
 }
 

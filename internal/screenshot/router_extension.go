@@ -16,8 +16,9 @@ import (
 
 // ExtensionProvider implements Provider using the Extension Bridge.
 type ExtensionProvider struct {
-	bridge *BridgeService
-	mgr    *Manager
+	bridge         *BridgeService
+	mgr            *Manager
+	egressAttested bool
 }
 
 // NewExtensionProvider creates a Provider that routes through the Extension Bridge.
@@ -71,6 +72,9 @@ func (p *ExtensionProvider) CaptureTargetWebsite(ctx context.Context, targetURL,
 	if p == nil || p.bridge == nil {
 		return "", fmt.Errorf("extension provider not initialized")
 	}
+	if !p.egressAttested {
+		return "", fmt.Errorf("ssrf: arbitrary Extension screenshot requires attested browser egress")
+	}
 	resolvedURL, err := p.buildTargetURL(targetURL, ip, port, protocol)
 	if err != nil {
 		return "", err
@@ -109,6 +113,9 @@ func (p *ExtensionProvider) CaptureBatchURLs(ctx context.Context, urls []string,
 func (p *ExtensionProvider) CaptureBatchURLsWithProgress(ctx context.Context, urls []string, batchID string, concurrency int, onResult func(BatchScreenshotResult)) ([]BatchScreenshotResult, error) {
 	if p == nil || p.bridge == nil {
 		return nil, fmt.Errorf("extension provider not initialized")
+	}
+	if !p.egressAttested {
+		return nil, fmt.Errorf("ssrf: arbitrary Extension batch screenshot requires attested browser egress")
 	}
 
 	results := make([]BatchScreenshotResult, len(urls))
