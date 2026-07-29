@@ -79,6 +79,9 @@ govulncheck ./...
 - Quake 真实 Extension 完整闭环通过：10 条资产、真实 PNG、SQLite 明细和飞书图片通知；
 - 状态型 DNS 测试通过：同一主机首次解析为公网地址时固定到已验证 IP，第二次解析变为
   loopback 时重新查询并在拨号前失败关闭；受限目标实际连接数保持为 0；
+- 自动证据门禁测试通过：关闭时不调用截图，运行中关闭立即生效；开启且截图后端不可用、
+  路径为空或文件不存在时任务失败；真实变化结果可生成通知图片路径；
+- `live_dns_e2e`、`live_tamper_e2e` 和 `live_bridge_e2e` 三种显式标签均编译通过；
 - Excel 导出测试通过；
 - `govulncheck`：0 个可达漏洞。
 
@@ -88,6 +91,7 @@ govulncheck ./...
 - `go vet ./...`：通过；
 - `go build ./...`：通过；
 - `go build -tags gui ./cmd/unimap-gui`：通过（输出到本地缓存目录）；
+- `go test -tags headless_e2e ./internal/screenshot -run TestHeadless -count=3 -v`：三轮通过；
 - `node --check`：Web 主脚本及 Extension `background.js`、`capture.js` 通过；
 - `git diff --check`：通过；
 - `staticcheck`、`golangci-lint`：当前环境未安装，未执行。
@@ -106,5 +110,12 @@ Go 专项审查最初发现 Tamper 安全 HTTP 客户端存在“校验后按 ho
 真实 Quake Extension 采集、Web/调度合并、SQLite 持久化及飞书图片送达已经完成，不再列为
 发布阻断；但一次普通搜索结果截图与“受控页面发生变化后自动生成证据”的巡检语义不同，
 不能据此启用自动巡检证据截图。
+
+自动证据截图代码现已接入 `tamper_check` 调度链，但由
+`tamper.evidence_screenshot_enabled=false` 默认失败关闭。只有 `tampered` 结果会调用统一
+ScreenshotRouter，截图失败会使任务失败，成功路径可由现有通知器上传图片。DNS 变化和页面
+变化两项显式 live E2E 已提供，执行契约见
+[云端安全收口验收 Runbook](CLOUD_SECURITY_ACCEPTANCE_RUNBOOK_2026-07-29.md)；尚无外部设施
+运行结果，因此发布结论不变。
 
 因此当前可进入候选版本验证，但不能宣称“安全收口完成”，也不能启用自动巡检证据截图。

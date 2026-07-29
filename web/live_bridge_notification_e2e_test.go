@@ -1,4 +1,4 @@
-//go:build live_bridge_e2e
+//go:build live_bridge_e2e || live_tamper_e2e
 
 package web
 

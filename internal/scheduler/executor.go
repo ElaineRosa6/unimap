@@ -22,6 +22,7 @@ import (
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/tamper"
 )
 
 // --- QueryRunner (ST-01) ---
@@ -400,13 +401,43 @@ func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload *model.Task
 
 // TamperCheckRunner executes scheduled tamper checks.
 type TamperCheckRunner struct {
-	tamperSvc  *service.TamperAppService
-	pageLoader service.TamperPageLoader
+	tamperSvc       *service.TamperAppService
+	pageLoader      service.TamperPageLoader
+	evidenceCapture tamperEvidenceCapturer
+	evidenceManager *screenshot.Manager
+	evidenceEnabled func() bool
 }
 
 // NewTamperCheckRunner creates a TamperCheckRunner.
 func NewTamperCheckRunner(svc *service.TamperAppService, loader service.TamperPageLoader) *TamperCheckRunner {
 	return &TamperCheckRunner{tamperSvc: svc, pageLoader: loader}
+}
+
+type tamperEvidenceCapturer interface {
+	CaptureTargetWebsite(
+		ctx context.Context,
+		mgr *screenshot.Manager,
+		targetURL, ip, port, protocol, queryID string,
+	) (path, normalizedURL, normalizedIP, normalizedPort, normalizedProtocol, normalizedQueryID string, err error)
+}
+
+// NewTamperCheckRunnerWithEvidence creates a tamper runner with optional
+// evidence capture. Production keeps enabled=false until controlled cloud
+// page-change and browser SSRF acceptance have both passed.
+func NewTamperCheckRunnerWithEvidence(
+	svc *service.TamperAppService,
+	loader service.TamperPageLoader,
+	capturer tamperEvidenceCapturer,
+	mgr *screenshot.Manager,
+	enabled func() bool,
+) *TamperCheckRunner {
+	return &TamperCheckRunner{
+		tamperSvc:       svc,
+		pageLoader:      loader,
+		evidenceCapture: capturer,
+		evidenceManager: mgr,
+		evidenceEnabled: enabled,
+	}
 }
 
 func (r *TamperCheckRunner) Type() TaskType { return TaskTamperCheck }
@@ -434,10 +465,14 @@ func (r *TamperCheckRunner) Execute(ctx context.Context, payload *model.TaskPayl
 	if err != nil {
 		return "", fmt.Errorf("tamper check failed: %w", err)
 	}
+	evidencePaths, err := r.captureEvidence(ctx, resp.Results)
+	if err != nil {
+		return "", err
+	}
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "篡改检测完成（模式: %s）：共 %d 个 URL\n\n", mode, len(resp.Results))
-	for _, r := range resp.Results {
+	for i, r := range resp.Results {
 		switch r.Status {
 		case "tampered":
 			fmt.Fprintf(&b, "⚠️ 已篡改 %s", r.URL)
@@ -445,6 +480,9 @@ func (r *TamperCheckRunner) Execute(ctx context.Context, payload *model.TaskPayl
 				fmt.Fprintf(&b, " — 变更区域: %s", strings.Join(r.TamperedSegments, ", "))
 			}
 			b.WriteString("\n")
+			if path := evidencePaths[i]; path != "" {
+				fmt.Fprintf(&b, "  📷 证据截图保存: %s\n", path)
+			}
 		case "no_baseline":
 			fmt.Fprintf(&b, "🆕 首次检测 %s — 已建立基线\n", r.URL)
 		case "unreachable":
@@ -460,6 +498,45 @@ func (r *TamperCheckRunner) Execute(ctx context.Context, payload *model.TaskPayl
 		}
 	}
 	return sanitizeUTF8(b.String()), nil
+}
+
+func (r *TamperCheckRunner) captureEvidence(ctx context.Context, results []tamper.TamperCheckResult) (map[int]string, error) {
+	if r.evidenceEnabled == nil || !r.evidenceEnabled() {
+		return nil, nil
+	}
+	if r.evidenceCapture == nil {
+		return nil, fmt.Errorf("tamper evidence capture is enabled but screenshot provider is unavailable")
+	}
+
+	paths := make(map[int]string)
+	for i := range results {
+		result := &results[i]
+		if !result.Tampered && !strings.EqualFold(strings.TrimSpace(result.Status), "tampered") {
+			continue
+		}
+		queryID := fmt.Sprintf("tamper_evidence_%d_%d", time.Now().UnixNano(), i)
+		path, _, _, _, _, _, err := r.evidenceCapture.CaptureTargetWebsite(
+			ctx,
+			r.evidenceManager,
+			result.URL,
+			"",
+			"",
+			"",
+			queryID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("capture tamper evidence for %s: %w", result.URL, err)
+		}
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return nil, fmt.Errorf("capture tamper evidence for %s: screenshot path is empty", result.URL)
+		}
+		if _, err := os.Stat(path); err != nil {
+			return nil, fmt.Errorf("capture tamper evidence for %s: verify screenshot: %w", result.URL, err)
+		}
+		paths[i] = path
+	}
+	return paths, nil
 }
 
 // --- URLReachabilityRunner (ST-05) ---
