@@ -550,7 +550,16 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 	if screenshotMgr != nil {
 		tamperPageLoader = screenshotMgr
 	}
-	sched.RegisterHandler(scheduler.NewTamperCheckRunner(srv.tamperApp, tamperPageLoader))
+	sched.RegisterHandler(scheduler.NewTamperCheckRunnerWithEvidence(
+		srv.tamperApp,
+		tamperPageLoader,
+		screenshotApp,
+		screenshotMgr,
+		func() bool {
+			current := srv.currentConfig()
+			return current != nil && current.Tamper.EvidenceScreenshotEnabled
+		},
+	))
 	sched.RegisterHandler(scheduler.NewURLReachabilityRunner(srv.monitorApp, alertManager))
 	sched.RegisterHandler(scheduler.NewCookieVerifyRunner(screenshotApp, screenshotMgr))
 	sched.RegisterHandler(scheduler.NewLoginStatusCheckRunner(screenshotMgr, sessionHealth))

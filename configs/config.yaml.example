@@ -102,6 +102,13 @@ screenshot:
         capture_search_results: true
         capture_targets: false
 
+# 篡改巡检。自动证据截图在完成受控公网页面变化与 SSRF 云端验收前必须保持关闭。
+tamper:
+    port_scan_enabled: false
+    port_scan_timeout_ms: 800
+    insecure_skip_verify: false
+    evidence_screenshot_enabled: false
+
 # Day11 profile templates (copy to screenshot section as needed):
 #
 # profile: cdp-only

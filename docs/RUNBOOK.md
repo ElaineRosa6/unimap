@@ -231,6 +231,19 @@ $env:UNIMAP_LIVE_API_ENGINE = 'fofa'
 go test -tags live_bridge_e2e ./web -run '^TestLiveAPIScheduledQueryNotificationDetails$' -count=1 -v
 ```
 
+### 篡改证据截图门禁
+
+`tamper.evidence_screenshot_enabled` 默认为 `false`。关闭时，`tamper_check` 只执行检测和
+文字结果；兼容入口 `CaptureBatchURLsWithTamper(..., true, ...)` 会显式失败，不会把普通
+截图冒充篡改证据。调度任务每次执行前读取最新已提交配置，把开关从 `true` 改回 `false`
+会立即停止后续证据截图，不需要等待服务重启。
+
+开启后，只有状态为 `tampered` 的 URL 会通过当前 ScreenshotRouter 生成证据图；截图文件
+不存在、截图后端失败或 SSRF 门禁拒绝时，调度任务整体失败。任务成功通知会自动提取证据图
+路径并交给支持图片的通知渠道。生产启用前必须完整执行
+[云端安全收口验收 Runbook](CLOUD_SECURITY_ACCEPTANCE_RUNBOOK_2026-07-29.md)，不能用普通
+搜索结果截图替代页面变化验收。
+
 ## 8. 分布式节点不可用
 
 分布式接口只在 `distributed.enabled=true` 时可用；否则返回 `distributed_disabled`。没有单独的 `unimap-node` 可执行文件，节点应通过现有 HTTP 协议集成。

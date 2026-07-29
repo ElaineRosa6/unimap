@@ -125,6 +125,12 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 开始时间晚于结束时间返回 400。
 历史响应的 `count` 是过滤后的总记录数，不是当前页条数。
 
+定时 `tamper_check` 检出变化后可由调度器生成证据截图并附加到图片通知，但该能力受
+`tamper.evidence_screenshot_enabled` 全局门禁控制，默认必须为 `false`。证据截图只通过
+ScreenshotRouter 执行；截图失败会使任务失败，不会静默退化为仅文字“成功”。启用前按
+[云端安全收口验收 Runbook](CLOUD_SECURITY_ACCEPTANCE_RUNBOOK_2026-07-29.md) 完成受控页面、
+SSRF、通知和重启验收。
+
 ### URL 端口扫描
 
 `POST /api/v1/url/port-scan` 的 `scan_mode` 为 `common`、`custom` 或 `full`；`port_spec` 支持逗号分隔的端口和闭区间（如 `22,80,443,8000-8100`），也支持 `all` / `full`。旧版 `ports: [80,443]` 仍兼容。

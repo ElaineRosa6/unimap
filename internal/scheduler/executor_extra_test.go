@@ -107,6 +107,25 @@ func (m *mockBridgeSchedulerClient) AwaitResult(ctx context.Context, requestID s
 	return m.awaitResult, nil
 }
 
+type fakeTamperEvidenceCapturer struct {
+	path  string
+	err   error
+	calls atomic.Int32
+}
+
+func (f *fakeTamperEvidenceCapturer) CaptureTargetWebsite(
+	context.Context,
+	*screenshot.Manager,
+	string,
+	string,
+	string,
+	string,
+	string,
+) (string, string, string, string, string, string, error) {
+	f.calls.Add(1)
+	return f.path, "", "", "", "", "", f.err
+}
+
 // ===== QueryRunner Execute tests =====
 
 func TestQueryRunner_Execute_NilService(t *testing.T) {
@@ -433,6 +452,115 @@ func TestTamperCheckRunner_Execute_MissingURLs(t *testing.T) {
 	_, err := r.Execute(context.Background(), &model.TaskPayload{})
 	if err == nil {
 		t.Fatal("expected error for missing urls")
+	}
+}
+
+func TestTamperCheckRunner_CaptureEvidenceOnlyForTamperedResults(t *testing.T) {
+	evidencePath := filepath.Join(t.TempDir(), "tamper-evidence.png")
+	if err := os.WriteFile(evidencePath, []byte("\x89PNG\r\n\x1a\n"), 0o600); err != nil {
+		t.Fatalf("write evidence fixture: %v", err)
+	}
+	capturer := &fakeTamperEvidenceCapturer{path: evidencePath}
+	r := NewTamperCheckRunnerWithEvidence(
+		nil,
+		nil,
+		capturer,
+		&screenshot.Manager{},
+		func() bool { return true },
+	)
+
+	paths, err := r.captureEvidence(t.Context(), []tamper.TamperCheckResult{
+		{URL: "https://changed.example", Status: "tampered", Tampered: true},
+		{URL: "https://normal.example", Status: "normal"},
+	})
+	if err != nil {
+		t.Fatalf("captureEvidence failed: %v", err)
+	}
+	if capturer.calls.Load() != 1 {
+		t.Fatalf("capture calls = %d, want one tampered URL", capturer.calls.Load())
+	}
+	if paths[0] != evidencePath {
+		t.Fatalf("evidence path = %q, want %q", paths[0], evidencePath)
+	}
+	if _, ok := paths[1]; ok {
+		t.Fatal("normal result must not receive an evidence screenshot")
+	}
+}
+
+func TestTamperCheckRunner_CaptureEvidenceFailsClosedWithoutProvider(t *testing.T) {
+	r := NewTamperCheckRunnerWithEvidence(nil, nil, nil, nil, func() bool { return true })
+
+	if _, err := r.captureEvidence(t.Context(), []tamper.TamperCheckResult{{
+		URL: "https://changed.example", Status: "tampered", Tampered: true,
+	}}); err == nil {
+		t.Fatal("enabled evidence capture without a provider must fail")
+	}
+}
+
+func TestTamperCheckRunner_CaptureEvidenceReadsCurrentGateState(t *testing.T) {
+	var enabled atomic.Bool
+	capturer := &fakeTamperEvidenceCapturer{}
+	r := NewTamperCheckRunnerWithEvidence(nil, nil, capturer, nil, enabled.Load)
+	result := []tamper.TamperCheckResult{{
+		URL: "https://changed.example", Status: "tampered", Tampered: true,
+	}}
+
+	if paths, err := r.captureEvidence(t.Context(), result); err != nil || len(paths) != 0 {
+		t.Fatalf("disabled gate returned paths=%v err=%v", paths, err)
+	}
+	if capturer.calls.Load() != 0 {
+		t.Fatal("disabled gate invoked the evidence capturer")
+	}
+
+	enabled.Store(true)
+	if _, err := r.captureEvidence(t.Context(), result); err == nil {
+		t.Fatal("enabled gate must immediately invoke the capturer and surface its empty-path failure")
+	}
+	if capturer.calls.Load() != 1 {
+		t.Fatalf("capture calls = %d, want one after enabling the gate", capturer.calls.Load())
+	}
+}
+
+func TestTamperCheckRunner_ExecuteAttachesEvidencePath(t *testing.T) {
+	targetURL := "https://controlled.example.test/"
+	var page atomic.Value
+	page.Store("<html><body><main>stable baseline content alpha alpha alpha</main></body></html>")
+	loader := tamper.BrowserPageLoaderFunc(func(context.Context, string) (string, string, error) {
+		return "Controlled fixture", page.Load().(string), nil
+	})
+	svc := service.NewTamperAppService(t.TempDir(), nil)
+	baseline, err := svc.SetBaseline(t.Context(), service.TamperBaselineRequest{
+		URLs: []string{targetURL}, Concurrency: 1,
+	}, loader)
+	if err != nil || baseline.Summary["saved"] != 1 {
+		t.Fatalf("set baseline: saved=%d err=%v", baseline.Summary["saved"], err)
+	}
+	page.Store("<html><body><main>mutated evidence content omega omega omega</main><section>new block</section></body></html>")
+
+	evidencePath := filepath.Join(t.TempDir(), "tamper-evidence.png")
+	if err := os.WriteFile(evidencePath, []byte("\x89PNG\r\n\x1a\n"), 0o600); err != nil {
+		t.Fatalf("write evidence fixture: %v", err)
+	}
+	capturer := &fakeTamperEvidenceCapturer{path: evidencePath}
+	r := NewTamperCheckRunnerWithEvidence(
+		svc,
+		loader,
+		capturer,
+		nil,
+		func() bool { return true },
+	)
+
+	result, err := r.Execute(t.Context(), &model.TaskPayload{
+		URLs: []string{targetURL}, DetectMode: "strict",
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if !strings.Contains(result, "已篡改") || !strings.Contains(result, evidencePath) {
+		t.Fatalf("tamper result omitted evidence path:\n%s", result)
+	}
+	if paths := extractImagePaths(result); len(paths) != 1 || paths[0] != evidencePath {
+		t.Fatalf("notification image paths = %#v, want %q", paths, evidencePath)
 	}
 }
 
@@ -1178,6 +1306,14 @@ func TestExtractImagePaths_MultipleArrows(t *testing.T) {
 	}
 	if paths[0] != "screenshots/out.png" {
 		t.Errorf("expected screenshots/out.png, got %s", paths[0])
+	}
+}
+
+func TestExtractImagePaths_TamperEvidence(t *testing.T) {
+	result := "⚠️ 已篡改 https://example.com\n  📷 证据截图保存: screenshots/tamper/evidence.png"
+	paths := extractImagePaths(result)
+	if len(paths) != 1 || paths[0] != "screenshots/tamper/evidence.png" {
+		t.Fatalf("tamper evidence paths = %#v", paths)
 	}
 }
 

@@ -429,3 +429,22 @@ func TestManagerCookiesConcurrent(t *testing.T) {
 		<-done
 	}
 }
+
+func TestCaptureBatchURLsWithTamperFailsClosedWhileEvidenceCaptureIsDisabled(t *testing.T) {
+	m := NewManager(Config{BaseDir: t.TempDir()})
+
+	results, err := m.CaptureBatchURLsWithTamper(
+		t.Context(),
+		[]string{"https://example.com"},
+		"tamper-evidence",
+		1,
+		true,
+		struct{}{},
+	)
+	if err == nil {
+		t.Fatal("tamper evidence capture must fail while controlled acceptance is incomplete")
+	}
+	if results != nil {
+		t.Fatalf("results = %#v, want nil on disabled tamper evidence capture", results)
+	}
+}

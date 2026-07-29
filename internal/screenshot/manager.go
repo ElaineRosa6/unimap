@@ -613,6 +613,9 @@ func (m *Manager) captureBatchURLsWithTamper(ctx context.Context, urls []string,
 	if len(urls) == 0 {
 		return nil, fmt.Errorf("no URLs provided")
 	}
+	if enableTamper {
+		return nil, fmt.Errorf("tamper evidence capture is disabled pending controlled page-change security acceptance")
+	}
 
 	if concurrency <= 0 {
 		concurrency = 5

@@ -205,14 +205,19 @@ curl http://localhost:8448/api/v1/tamper/baseline/list
 5. **定时巡检与交互式检测能力对齐**（2026-06-30 修复）：定时 `tamper_check` 任务现已从 `screenshotMgr` 注入浏览器 allocator，可渲染 JS/SPA 页面，与交互式 `/api/v1/tamper/check` 能力一致。此前定时任务传 nil allocator 只能走 HTTP/Fast 模式，对 SPA 目标会拿空 hash 导致误报。
 6. **查看已存基线**：巡检页（`/monitor`）"设置基线"旁有"查看基线"按钮，可列出已保存的基线并逐条删除。
 
-## 集成到批量截图
+## 批量截图证据边界
 
-篡改检测功能已集成到批量截图功能中，可以在截图的同时进行篡改检测：
+`CaptureBatchURLsWithTamper` 保留为内部兼容入口，但自动篡改证据截图尚未启用。传入
+`enableTamper=true` 会显式失败关闭，不会静默退化为普通截图，也不会返回伪造或空的
+`TamperResult`。
 
-```go
-// 带篡改检测的批量截图
-results, err := manager.CaptureBatchURLsWithTamper(ctx, urls, batchID, concurrency, true, detector)
-```
+启用该能力前必须完成：
 
-返回的结果中会包含 `TamperResult` 字段，包含篡改检测结果。
+1. 受控公网页面“建立基线 → 页面变化 → 检出变化 → 证据截图”验收；
+2. 截图实际 PNG、通知图片送达和预览验收；
+3. 服务重启后基线、检测记录和任务恢复验收；
+4. CDP 逐跳及连接级 SSRF 防护在同一部署环境中通过。
+
+当前可分别使用篡改检测 API/定时 `tamper_check` 和普通批量截图，但不得把两次独立操作描述为
+自动证据闭环。
 

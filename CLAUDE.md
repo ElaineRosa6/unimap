@@ -14,7 +14,8 @@ Censys、DayDayMap 已完成服务端/CLI API 适配和 API 实机验证，但�
 
 普通公网网页的云端 CDP headless 截图已经通过。Quake、Hunter 已完成真实 CDP 登录、
 结构化采集和结果页截图；Quake L1 Network 已于 2026-07-29 按当前接口重新实测通过。
-FOFA、ZoomEye、Shodan 及图片通知仍待逐项验收。
+Quake 真实 Extension 调度闭环和飞书图片通知已通过；FOFA、ZoomEye、Shodan 的 CDP 定级及
+受控页面变化后的自动证据图片通知仍待验收。
 
 ## 技术与入口
 
@@ -150,7 +151,9 @@ go build -tags gui ./cmd/unimap-gui
 - 定时基线刷新复用正确的浏览器 allocator；**代码与自动测试完成**
 - 将端口扫描、TLS 等配置传入实际 Detector；**代码与自动测试完成**
 - 接通历史开始时间和结束时间筛选；**代码与自动测试完成**
-- 浏览器逐跳与连接级 SSRF 代码及本地 headless 验收已完成；在受控云端页面变化和图片送达验收前，继续禁用“发现变化 → 证据截图 → 图片通知”；
+- 浏览器逐跳与连接级 SSRF 代码及本地 headless 验收已完成；自动证据链代码由
+  `tamper.evidence_screenshot_enabled=false` 默认关闭，DNS 和页面变化 live E2E 已就绪；
+  在受控云端验收前继续禁用“发现变化 → 证据截图 → 图片通知”；
 - 执行云端真实基线、页面变化、告警和恢复闭环。
 
 ### P1：浏览器与引擎验收

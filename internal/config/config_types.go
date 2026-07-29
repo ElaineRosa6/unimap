@@ -274,9 +274,10 @@ type Config struct {
 
 	// Tamper 篡改检测配置
 	Tamper struct {
-		PortScanEnabled    bool `yaml:"port_scan_enabled"`    // 巡检时附带端口扫描
-		PortScanTimeoutMs  int  `yaml:"port_scan_timeout_ms"` // 单端口超时（毫秒），默认 800
-		InsecureSkipVerify bool `yaml:"insecure_skip_verify"` // 跳过 SSL 证书验证（内网/自签证书）
+		PortScanEnabled           bool `yaml:"port_scan_enabled"`           // 巡检时附带端口扫描
+		PortScanTimeoutMs         int  `yaml:"port_scan_timeout_ms"`        // 单端口超时（毫秒），默认 800
+		InsecureSkipVerify        bool `yaml:"insecure_skip_verify"`        // 跳过 SSL 证书验证（内网/自签证书）
+		EvidenceScreenshotEnabled bool `yaml:"evidence_screenshot_enabled"` // 篡改后自动截图；外部安全验收前必须保持 false
 	} `yaml:"tamper"`
 }
 
