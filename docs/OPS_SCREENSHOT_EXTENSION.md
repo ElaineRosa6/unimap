@@ -1,6 +1,6 @@
 # Screenshot Extension Ops Runbook
 
-> 最后按代码核对：2026-07-15。适用于 `tools/extension-screenshot` manifest 0.4.1。
+> 最后按代码核对：2026-07-29。适用于 `tools/extension-screenshot` manifest 0.4.2。
 
 ## 运行边界
 
@@ -94,7 +94,7 @@ GET /api/v1/screenshot/batch/progress?job_id=<job_id>
 
 ## Bridge 查询、截图与通知联调
 
-以下显式标签测试会启动一个仅监听 `127.0.0.1:8448` 的临时服务，创建一次
+以下显式标签测试会启动一个仅监听 loopback 的临时服务，创建一次
 搜索截图任务，并验证 Bridge 回调、截图文件及飞书应用图片通知：
 
 ```powershell
@@ -108,6 +108,26 @@ go test -tags live_bridge_e2e ./web -run '^TestLiveBridgeScheduledQueryClosedLoo
 ```
 
 默认引擎为 FOFA；可在 PowerShell 设置 `UNIMAP_LIVE_BRIDGE_ENGINE` 为 `hunter`、`zoomeye`、`quake` 或 `shodan` 后执行同一命令。
+
+如果日常 Chrome 中已有另一个 UniMap Extension，它也可能轮询默认 8448 并与测试实例竞争任务。
+实机验收应给测试 Extension 设置独立端口，并让测试服务使用同一端口。例如先在测试
+Extension 的 service worker 控制台执行：
+
+```javascript
+chrome.storage.local.set({ apiBaseURL: "http://127.0.0.1:18448" })
+```
+
+再运行：
+
+```powershell
+$env:UNIMAP_LIVE_BRIDGE_PORT = '18448'
+$env:UNIMAP_LIVE_BRIDGE_ENGINE = 'quake'
+go test -tags live_bridge_e2e ./web -run '^TestLiveBridgeScheduledQueryClosedLoop$' -count=1 -v
+```
+
+测试端口必须在 1024—65535 范围内且未被占用。验收结束后，如该测试 Extension 还要连接
+默认服务，应把 `apiBaseURL` 恢复为 `http://127.0.0.1:8448`。生产配对码和管理令牌不得
+复制到测试代码、命令历史或验收文档。
 
 测试除非空截图外，还要求 Bridge 结构化结果非空、SQLite 明细非空、调度通知正文包含已持久化资产，并验证真实通知成功指标。若截图是登录页，即使 PNG 非空也必须判为失败；先恢复对应引擎登录态再重跑。
 

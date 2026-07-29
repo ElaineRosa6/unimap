@@ -2,6 +2,7 @@
 
 > 日期：2026-07-29
 > 基线：`develop` / `0d45fad`
+> 代码修复提交：`0a4cb53`
 > 对应计划：[安全发布收口修复计划](SECURITY_RELEASE_CLOSURE_REPAIR_PLAN_2026-07-29.md)
 > 当前结论：代码阻断项已修复并进入全量门禁；外部真实验收完成前仍不能标记“安全收口完成”
 
@@ -41,9 +42,19 @@ CDP 浏览器业务统一经过三层防护：
 |---|---|---|
 | CDP DOM | 通过 | 2026-07-29 既有真实登录态，10 条资产与截图人工确认 |
 | CDP L1 Network | 通过 | 当前 endpoint 与数组响应修复后，真实登录态 live E2E 返回非空资产 |
-| Extension DOM | 代码/夹具通过 | 真实 Chrome 固定 DOM 夹具返回 IP、端口、Host；尚未重载真实 Extension |
+| Extension DOM | 真实验收通过 | 独立 loopback 端口加载当前 Extension，Quake 返回 10 条结构化资产 |
 | Router 合并 | 自动测试通过 | Quake `collect_and_capture` 非空结构化结果与图片路径测试通过 |
-| 完整 Web + 真实 Extension | 待验收 | 需要重载扩展并再次调用 `/api/v1/query`，不得用夹具代替 |
+| 完整 Web/调度 + 真实 Extension | 真实验收通过 | Query → Bridge collect_and_capture → SQLite → 通知明细与飞书图片发送闭环通过 |
+
+2026-07-29 实机复验使用独立 `127.0.0.1:18448` 测试端口，避免日常 Chrome 中同 ID 旧
+Extension 抢占任务。结果为 10 条持久化资产、真实 PNG 380161 字节，PNG magic 正确，
+证据图人工确认是 Quake `port:443` 结果页，飞书应用图片通知成功。证据图保存在忽略目录，
+未写入仓库；SHA-256 前缀为 `6B788185DFC6`。
+
+复验同时发现 Extension 成功回调在标签页导航状态竞争时可能缺少 `final_url`。当前实现已改为
+最多三次读取标签页 URL，并以页面 `location.href` 作为实际页面兜底；仍无法观测最终 URL 时
+失败关闭，不再提交“成功但空 URL”。新增三项独立 JavaScript 测试覆盖瞬时失败、页面兜底和
+无法观测时失败关闭；Extension manifest 已升级到 `0.4.2`，部署验收必须确认已重载该版本。
 
 ## 4. 已执行专项验证
 
@@ -53,6 +64,8 @@ go test -race ./internal/screenshot ./internal/tamper ./internal/service ./inter
 go test -tags headless_e2e ./internal/screenshot -run TestHeadless -count=1 -v
 go test -tags live_e2e ./internal/screenshot -run TestLiveQuakeL1NetworkCollection -count=1 -v
 node --test tools/extension-screenshot/test/capture_quake.test.mjs
+node --test tools/extension-screenshot/test/tab_url.test.mjs
+go test -tags live_bridge_e2e ./web -run '^TestLiveBridgeScheduledQueryClosedLoop$' -count=1 -v
 go test -race ./internal/exporter -count=1
 govulncheck ./...
 ```
@@ -63,6 +76,9 @@ govulncheck ./...
 - headless JavaScript/PNG、私网重定向和私网子资源阻断通过；
 - Quake L1 真实测试通过；
 - Quake Extension DOM 固定夹具通过；
+- Quake 真实 Extension 完整闭环通过：10 条资产、真实 PNG、SQLite 明细和飞书图片通知；
+- 状态型 DNS 测试通过：同一主机首次解析为公网地址时固定到已验证 IP，第二次解析变为
+  loopback 时重新查询并在拨号前失败关闭；受限目标实际连接数保持为 0；
 - Excel 导出测试通过；
 - `govulncheck`：0 个可达漏洞。
 
@@ -84,8 +100,11 @@ Go 专项审查最初发现 Tamper 安全 HTTP 客户端存在“校验后按 ho
 
 代码层 P1 阻断已修复，但以下外部证据仍未完成：
 
-1. 更新后的真实 Extension Quake 非空采集与完整 Web/Router 合并；
-2. 受控 DNS 变化环境下的云端连接级复验；
-3. 受控页面真实变化、证据截图、图片通知送达和重启恢复。
+1. 受控 DNS 变化环境下的云端连接级复验（本地状态型 resolver 与连接前阻断已通过）；
+2. 受控页面真实变化后的差异判定、证据截图和重启恢复。
+
+真实 Quake Extension 采集、Web/调度合并、SQLite 持久化及飞书图片送达已经完成，不再列为
+发布阻断；但一次普通搜索结果截图与“受控页面发生变化后自动生成证据”的巡检语义不同，
+不能据此启用自动巡检证据截图。
 
 因此当前可进入候选版本验证，但不能宣称“安全收口完成”，也不能启用自动巡检证据截图。

@@ -68,3 +68,39 @@ func TestResolveBrowserDialTargetsFailsClosed(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveBrowserDialTargetsRevalidatesDNSOnEveryConnection(t *testing.T) {
+	resolver := &changingBrowserResolver{
+		first:  []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}},
+		second: []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}},
+	}
+
+	targets, err := resolveBrowserDialTargets(t.Context(), resolver, "rebind.example.test:443")
+	if err != nil {
+		t.Fatalf("first public resolution failed: %v", err)
+	}
+	if len(targets) != 1 || targets[0] != "93.184.216.34:443" {
+		t.Fatalf("first targets = %v, want pinned public IP", targets)
+	}
+
+	if _, err := resolveBrowserDialTargets(t.Context(), resolver, "rebind.example.test:443"); err == nil ||
+		!strings.Contains(err.Error(), "restricted") {
+		t.Fatalf("second private resolution error = %v, want restricted-address failure", err)
+	}
+	if resolver.calls.Load() != 2 {
+		t.Fatalf("resolver calls = %d, want one lookup per connection", resolver.calls.Load())
+	}
+}
+
+type changingBrowserResolver struct {
+	calls  atomic.Int32
+	first  []net.IPAddr
+	second []net.IPAddr
+}
+
+func (r *changingBrowserResolver) LookupIPAddr(context.Context, string) ([]net.IPAddr, error) {
+	if r.calls.Add(1) == 1 {
+		return r.first, nil
+	}
+	return r.second, nil
+}

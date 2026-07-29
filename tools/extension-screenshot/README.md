@@ -2,7 +2,7 @@
 
 Chrome Manifest V3 扩展，为 UniMap 提供浏览器页面截图与结构化采集。
 
-> 当前 manifest 版本：0.4.1。服务端协议以 `web/router.go` 和 `web/screenshot_bridge_handlers.go` 为准。
+> 当前 manifest 版本：0.4.2。服务端协议以 `web/router.go` 和 `web/screenshot_bridge_handlers.go` 为准。
 
 ## 安装与配置
 

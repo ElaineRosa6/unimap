@@ -2,6 +2,7 @@ import { apiGet, apiPostBridgeSigned, bridgeRotateToken } from "./api.js";
 import { ensureTab, waitForPageReady, captureVisible, normalizeImagePayload, releaseTab, cleanupTabPool, normalizeCollectPayload, extractEngineAssets, checkLoginCookies } from "./capture.js";
 import { loadSessionToken, isTokenExpired, saveSessionToken, saveRuntimeState, saveLastError, loadAdminToken } from "./storage.js";
 import { pairAndStore } from "./pairing.js";
+import { resolveTabFinalURL } from "./tab_url.js";
 
 const POLL_INTERVAL_MS = 1000;
 const CAPTURE_MIN_INTERVAL_MS = 1200;
@@ -57,9 +58,11 @@ async function handleTask(task, token) {
     result.url = task.url || "";
     if (tabId) {
       try {
-        const currentTab = await chrome.tabs.get(tabId);
-        result.final_url = currentTab?.url || "";
+        result.final_url = await resolveTabFinalURL(tabId);
       } catch {
+        if (result.success) {
+          throw new Error("plugin_final_url_unavailable");
+        }
         result.final_url = "";
       }
     }
