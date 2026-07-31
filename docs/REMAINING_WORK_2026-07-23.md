@@ -24,6 +24,8 @@
 - `live_bridge_e2e` 白名单只有五个稳定引擎；
 - 2026-07-23 已修复 Censys、DayDayMap 的能力误报：缺少完整 API 凭据时不再注册 Web-only adapter；两者仍未实现 Bridge/CDP；
 - 普通网页 CDP 截图通过不等于测绘引擎 CDP 结构化采集通过。
+- 2026-08-01：五引擎均已有 L1 Network 解析器（FOFA/Shodan 新增，待 P2 真实校准）；
+  FOFA DOM 选择器已加固（4 级行选择器回退）。
 
 ## 2. P1：下一阶段必须完成
 
@@ -173,7 +175,7 @@ Censys/DayDayMap Web-only 后端计为可用。后续若选择浏览器路线，
   headless SSRF、Extension Quake 夹具与 `govulncheck`。**本轮终检中**
 - 云端安全验收 fixture 已构建（`tools/acceptance-fixture/`）：DNS rebinding 控制 API +
   可变页面 + 私网 sink + Cloudflare DNS 翻转 + Caddy HTTPS + Docker Compose。
-  部署到受控服务器后即可运行 `live_dns_e2e` 和 `live_tamper_e2e`。
+  部署到受控服务器后即可运行 `live_dns_e2e` 和 `live_tamper_e2e`。**部署计划：2026-08-02。**
 
 ### RW-09 网页巡检确定性收尾
 
