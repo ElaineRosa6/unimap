@@ -1,6 +1,6 @@
 # UniMap
 
-多引擎网络空间资产查询与网页巡检工具，提供 Web、CLI 和可选 GUI 入口。
+多引擎网络空间资产查询与网页巡检工具，提供 Web 和 CLI 入口。
 
 ## 能力概览
 
@@ -53,7 +53,6 @@ go run ./cmd/unimap-cli scheduler --admin-token-file ./.secrets/unimap-admin-tok
 go run ./cmd/unimap-cli screenshot-batch --admin-token-file ./.secrets/unimap-admin-token --urls https://example.com
 ```
 
-GUI：
 
 ```bash
 ```

@@ -40,3 +40,5 @@
 ## 安全与隐私
 
 部分历史资料仍在仓库内，用于追溯决策和验证；它们不应被当作当前事实或操作步骤。所有文档、测试记录和 issue 中都不得新增真实 API Key、Cookie、管理令牌、Bridge token、通知凭证或未授权资产信息。
+
+| [CLI_AGENT_GUIDE.md](CLI_AGENT_GUIDE.md) | CLI Agent 友好化接口规范 |
