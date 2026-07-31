@@ -104,13 +104,13 @@ func TestSchedulerSubcommandContracts(t *testing.T) {
 	}))
 	defer server.Close()
 	prefix := "/api/v1/scheduler"
-	schedulerList(server.URL, prefix, 5)
-	schedulerRun([]string{"--id", "task-1"}, server.URL, prefix, 5)
-	schedulerCreate([]string{"--name", "daily", "--type", "query", "--cron", "0 * * * *"}, server.URL, prefix, 5)
-	schedulerToggle([]string{"--id", "task-1"}, "enable", server.URL, prefix, 5)
-	schedulerToggle([]string{"--id", "task-1"}, "disable", server.URL, prefix, 5)
-	schedulerDelete([]string{"--id", "task-1"}, server.URL, prefix, 5)
-	schedulerHistory([]string{"--task-id", "task-1", "--limit", "9"}, server.URL, prefix, 5)
+	schedulerList(server.URL, prefix, 5, "table")
+	schedulerRun([]string{"--id", "task-1"}, server.URL, prefix, 5, "table")
+	schedulerCreate([]string{"--name", "daily", "--type", "query", "--cron", "0 * * * *"}, server.URL, prefix, 5, "table")
+	schedulerToggle([]string{"--id", "task-1"}, "enable", server.URL, prefix, 5, "table")
+	schedulerToggle([]string{"--id", "task-1"}, "disable", server.URL, prefix, 5, "table")
+	schedulerDelete([]string{"--id", "task-1"}, server.URL, prefix, 5, "table")
+	schedulerHistory([]string{"--task-id", "task-1", "--limit", "9"}, server.URL, prefix, 5, "table")
 
 	want := []requestRecord{
 		{http.MethodGet, prefix + "/tasks", "", "Bearer contract-token"},
@@ -216,3 +216,4 @@ func TestDoFormRequestSuccessAndFailure(t *testing.T) {
 		t.Fatalf("expected status in error, got: %v", err)
 	}
 }
+
