@@ -52,6 +52,18 @@ var l1SearchAPIs = map[string]l1SearchAPIConfig{
 		Method:        "POST",
 		ParseResponse: parseQuakeNetworkResponse,
 	},
+	// FOFA and Shodan L1 patterns added for P2 CDP grading prep (2026-08-01).
+	// URL patterns and response parsers need real calibration during P2.
+	"fofa": {
+		URLPattern:    "/api/search",
+		Method:        "GET",
+		ParseResponse: parseFofaNetworkResponse,
+	},
+	"shodan": {
+		URLPattern:    "/api/search",
+		Method:        "GET",
+		ParseResponse: parseShodanNetworkResponse,
+	},
 }
 
 // IsL1Supported 检查引擎是否支持 L1 Network 采集
@@ -462,6 +474,195 @@ func quakeInt(value any) int {
 		return parsed
 	}
 	return 0
+}
+
+// parseFofaNetworkResponse 解析 FOFA 搜索 API 响应。
+// FOFA Web 前端调用 /api/search 返回两种已知格式：
+//   - 对象数组：{"error":false,"size":N,"results":[{"ip":"...","port":"80",...}]}
+//   - 二维数组：{"error":false,"results":[["1.1.1.1","80","http","title","CN"],...]}
+//
+// 本解析器兼容两种格式。字段名基于 FOFA 公开 API 文档，P2 真实定级时需校准。
+func parseFofaNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(body, &root); err != nil {
+		return nil, 0, fmt.Errorf("failed to parse FOFA response: %w", err)
+	}
+
+	// Check error flag.
+	if errRaw, ok := root["error"]; ok {
+		var errVal bool
+		if json.Unmarshal(errRaw, &errVal) == nil && errVal {
+			msg := "unknown FOFA error"
+			if emsg, ok := root["errmsg"]; ok {
+				var s string
+				if json.Unmarshal(emsg, &s) == nil && s != "" {
+					msg = s
+				}
+			}
+			return nil, 0, fmt.Errorf("FOFA API error: %s", msg)
+		}
+	}
+
+	total := 0
+	if sizeRaw, ok := root["size"]; ok {
+		var n json.Number
+		if json.Unmarshal(sizeRaw, &n) == nil {
+			total, _ = strconv.Atoi(n.String())
+		}
+	}
+
+	resultsRaw, ok := root["results"]
+	if !ok {
+		return nil, 0, fmt.Errorf("FOFA response missing results field")
+	}
+
+	// Try object array format first.
+	var objResults []map[string]any
+	if json.Unmarshal(resultsRaw, &objResults) == nil && len(objResults) > 0 {
+		return parseFofaObjectResults(objResults, total)
+	}
+
+	// Fall back to 2D array format.
+	var arrResults [][]string
+	if json.Unmarshal(resultsRaw, &arrResults) == nil && len(arrResults) > 0 {
+		return parseFofaArrayResults(arrResults, total)
+	}
+
+	return nil, 0, nil // empty results
+}
+
+func parseFofaObjectResults(results []map[string]any, total int) ([]model.UnifiedAsset, int, error) {
+	var assets []model.UnifiedAsset
+	for _, hit := range results {
+		port := 0
+		if p := quakeStringAt(hit, "port"); p != "" {
+			port, _ = strconv.Atoi(p)
+		}
+		assets = append(assets, model.UnifiedAsset{
+			IP:          quakeStringAt(hit, "ip", "host", "domain"),
+			Port:        port,
+			Protocol:    quakeStringAt(hit, "protocol", "service"),
+			Host:        quakeStringAt(hit, "host", "domain"),
+			Title:       quakeStringAt(hit, "title", "header"),
+			CountryCode: quakeStringAt(hit, "country_code", "country"),
+			Region:      quakeStringAt(hit, "region", "province"),
+			City:        quakeStringAt(hit, "city"),
+			Org:         quakeStringAt(hit, "org", "isp"),
+			Server:      quakeStringAt(hit, "server", "product"),
+			Source:      "fofa",
+		})
+	}
+	collection.NormalizeAssets("fofa", assets)
+	return assets, total, nil
+}
+
+// parseFofaArrayResults handles the legacy 2D array format where fields are
+// positionally mapped: [ip, port, protocol, title, country, city, org, ...].
+func parseFofaArrayResults(results [][]string, total int) ([]model.UnifiedAsset, int, error) {
+	var assets []model.UnifiedAsset
+	for _, row := range results {
+		if len(row) < 2 {
+			continue
+		}
+		asset := model.UnifiedAsset{Source: "fofa"}
+		if len(row) > 0 {
+			asset.IP = strings.TrimSpace(row[0])
+		}
+		if len(row) > 1 {
+			asset.Port, _ = strconv.Atoi(strings.TrimSpace(row[1]))
+		}
+		if len(row) > 2 {
+			asset.Protocol = strings.TrimSpace(row[2])
+		}
+		if len(row) > 3 {
+			asset.Title = strings.TrimSpace(row[3])
+		}
+		if len(row) > 4 {
+			asset.CountryCode = strings.TrimSpace(row[4])
+		}
+		if len(row) > 5 {
+			asset.City = strings.TrimSpace(row[5])
+		}
+		if len(row) > 6 {
+			asset.Org = strings.TrimSpace(row[6])
+		}
+		if asset.IP != "" || asset.Host != "" {
+			assets = append(assets, asset)
+		}
+	}
+	collection.NormalizeAssets("fofa", assets)
+	return assets, total, nil
+}
+
+// parseShodanNetworkResponse 解析 Shodan 搜索 API 响应。
+// Shodan Web 前端可能调用 /api/search 或内部端点。响应格式基于 Shodan 公开 API：
+//
+//	{"total":N,"matches":[{"ip_str":"...","port":80,"transport":"tcp",...}]}
+//
+// P2 真实定级时需校准实际 Web 前端调用的端点和字段。
+func parseShodanNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) {
+	var resp struct {
+		Total   int `json:"total"`
+		Matches []struct {
+			IPStr     string   `json:"ip_str"`
+			Port      int      `json:"port"`
+			Transport string   `json:"transport"`
+			Hostnames []string `json:"hostnames"`
+			Location  struct {
+				CountryCode string `json:"country_code"`
+				CountryName string `json:"country_name"`
+				City        string `json:"city"`
+				RegionCode  string `json:"region_code"`
+			} `json:"location"`
+			HTTP struct {
+				Title  string `json:"title"`
+				Server string `json:"server"`
+				Host   string `json:"host"`
+			} `json:"http"`
+			Org     string `json:"org"`
+			ISP     string `json:"isp"`
+			Product string `json:"product"`
+			Version string `json:"version"`
+		} `json:"matches"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, 0, fmt.Errorf("failed to parse Shodan response: %w", err)
+	}
+	if resp.Error != "" {
+		return nil, 0, fmt.Errorf("Shodan API error: %s", resp.Error)
+	}
+
+	var assets []model.UnifiedAsset
+	for _, m := range resp.Matches {
+		host := ""
+		if len(m.Hostnames) > 0 {
+			host = m.Hostnames[0]
+		}
+		if host == "" {
+			host = m.HTTP.Host
+		}
+		region := m.Location.RegionCode
+		org := m.Org
+		if org == "" {
+			org = m.ISP
+		}
+		assets = append(assets, model.UnifiedAsset{
+			IP:          m.IPStr,
+			Port:        m.Port,
+			Protocol:    m.Transport,
+			Host:        host,
+			Title:       m.HTTP.Title,
+			CountryCode: m.Location.CountryCode,
+			Region:      region,
+			City:        m.Location.City,
+			Org:         org,
+			Server:      m.HTTP.Server,
+			Source:      "shodan",
+		})
+	}
+	collection.NormalizeAssets("shodan", assets)
+	return assets, resp.Total, nil
 }
 
 // FetchSearchResultDirect 直接通过 HTTP 调用引擎搜索 API（不经过浏览器）

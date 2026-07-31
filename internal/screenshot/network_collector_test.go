@@ -268,8 +268,8 @@ func TestIsL1Supported(t *testing.T) {
 		{"Hunter", true},
 		{"quake", true},
 		{"Quake", true},
-		{"fofa", false},
-		{"shodan", false},
+		{"fofa", true},
+		{"shodan", true},
 		{"censys", false},
 		{"unknown", false},
 	}
@@ -291,5 +291,201 @@ func TestQuakeL1PatternMatchesCurrentSearchEndpoint(t *testing.T) {
 	}
 	if strings.Contains(cfg.URLPattern, "/visitor/") {
 		t.Fatalf("Quake L1 pattern still uses retired visitor endpoint: %q", cfg.URLPattern)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// FOFA L1 parser tests
+// ---------------------------------------------------------------------------
+
+func TestParseFofaNetworkResponse_ObjectFormat(t *testing.T) {
+	body := []byte(`{
+		"error": false,
+		"size": 2,
+		"results": [
+			{"ip": "203.0.113.1", "port": "443", "protocol": "https", "title": "Example Corp", "country_code": "CN", "region": "Beijing", "city": "Beijing", "org": "ChinaNet", "server": "nginx"},
+			{"ip": "198.51.100.2", "port": "80", "protocol": "http", "title": "Test Site", "country_code": "US", "host": "test.example.com"}
+		]
+	}`)
+	assets, total, err := parseFofaNetworkResponse(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("total = %d, want 2", total)
+	}
+	if len(assets) != 2 {
+		t.Fatalf("len(assets) = %d, want 2", len(assets))
+	}
+	a := assets[0]
+	if a.IP != "203.0.113.1" || a.Port != 443 || a.Protocol != "https" {
+		t.Errorf("asset[0] = %+v, want IP=203.0.113.1 Port=443 Protocol=https", a)
+	}
+	if a.Title != "Example Corp" || a.CountryCode != "CN" || a.Org != "ChinaNet" {
+		t.Errorf("asset[0] metadata = %+v", a)
+	}
+	if a.Source != "fofa" {
+		t.Errorf("asset[0].Source = %q, want fofa", a.Source)
+	}
+	b := assets[1]
+	if b.Host != "test.example.com" || b.IP != "198.51.100.2" {
+		t.Errorf("asset[1] = %+v, want Host=test.example.com IP=198.51.100.2", b)
+	}
+}
+
+func TestParseFofaNetworkResponse_ArrayFormat(t *testing.T) {
+	body := []byte(`{
+		"error": false,
+		"size": 3,
+		"results": [
+			["192.0.2.1", "8080", "http", "Dashboard", "CN", "Shanghai", "Aliyun"],
+			["192.0.2.2", "22", "ssh", "", "US", "Virginia", "AWS"]
+		]
+	}`)
+	assets, total, err := parseFofaNetworkResponse(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 3 {
+		t.Errorf("total = %d, want 3", total)
+	}
+	if len(assets) != 2 {
+		t.Fatalf("len(assets) = %d, want 2", len(assets))
+	}
+	if assets[0].IP != "192.0.2.1" || assets[0].Port != 8080 || assets[0].Title != "Dashboard" {
+		t.Errorf("asset[0] = %+v", assets[0])
+	}
+	if assets[1].CountryCode != "US" || assets[1].Org != "AWS" {
+		t.Errorf("asset[1] = %+v", assets[1])
+	}
+}
+
+func TestParseFofaNetworkResponse_Error(t *testing.T) {
+	body := []byte(`{"error": true, "errmsg": "query syntax error"}`)
+	_, _, err := parseFofaNetworkResponse(body)
+	if err == nil {
+		t.Fatal("expected error for FOFA error response")
+	}
+	if !strings.Contains(err.Error(), "query syntax error") {
+		t.Errorf("error = %q, want contains 'query syntax error'", err)
+	}
+}
+
+func TestParseFofaNetworkResponse_Empty(t *testing.T) {
+	body := []byte(`{"error": false, "size": 0, "results": []}`)
+	assets, _, err := parseFofaNetworkResponse(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(assets) != 0 {
+		t.Errorf("len(assets) = %d, want 0", len(assets))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Shodan L1 parser tests
+// ---------------------------------------------------------------------------
+
+func TestParseShodanNetworkResponse(t *testing.T) {
+	body := []byte(`{
+		"total": 1500,
+		"matches": [
+			{
+				"ip_str": "203.0.113.10",
+				"port": 443,
+				"transport": "tcp",
+				"hostnames": ["mail.example.com"],
+				"location": {"country_code": "DE", "country_name": "Germany", "city": "Frankfurt", "region_code": "HE"},
+				"http": {"title": "Mail Server", "server": "Apache/2.4", "host": "mail.example.com"},
+				"org": "Deutsche Telekom",
+				"isp": "DTAG",
+				"product": "Apache",
+				"version": "2.4"
+			},
+			{
+				"ip_str": "198.51.100.20",
+				"port": 22,
+				"transport": "tcp",
+				"hostnames": [],
+				"location": {"country_code": "US", "country_name": "United States"},
+				"http": {},
+				"org": "Amazon",
+				"isp": "AWS"
+			}
+		]
+	}`)
+	assets, total, err := parseShodanNetworkResponse(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 1500 {
+		t.Errorf("total = %d, want 1500", total)
+	}
+	if len(assets) != 2 {
+		t.Fatalf("len(assets) = %d, want 2", len(assets))
+	}
+	a := assets[0]
+	if a.IP != "203.0.113.10" || a.Port != 443 || a.Protocol != "tcp" {
+		t.Errorf("asset[0] = %+v, want IP=203.0.113.10 Port=443 Protocol=tcp", a)
+	}
+	if a.Host != "mail.example.com" || a.Title != "Mail Server" {
+		t.Errorf("asset[0] host/title = %+v", a)
+	}
+	if a.CountryCode != "DE" || a.City != "Frankfurt" || a.Org != "Deutsche Telekom" {
+		t.Errorf("asset[0] location = %+v", a)
+	}
+	if a.Source != "shodan" {
+		t.Errorf("asset[0].Source = %q, want shodan", a.Source)
+	}
+	b := assets[1]
+	if b.IP != "198.51.100.20" || b.Port != 22 {
+		t.Errorf("asset[1] = %+v", b)
+	}
+	if b.Host != "" {
+		t.Errorf("asset[1].Host = %q, want empty (no hostnames)", b.Host)
+	}
+	if b.Org != "Amazon" {
+		t.Errorf("asset[1].Org = %q, want Amazon", b.Org)
+	}
+}
+
+func TestParseShodanNetworkResponse_Error(t *testing.T) {
+	body := []byte(`{"error": "Invalid API key", "total": 0, "matches": []}`)
+	_, _, err := parseShodanNetworkResponse(body)
+	if err == nil {
+		t.Fatal("expected error for Shodan error response")
+	}
+	if !strings.Contains(err.Error(), "Invalid API key") {
+		t.Errorf("error = %q, want contains 'Invalid API key'", err)
+	}
+}
+
+func TestParseShodanNetworkResponse_Empty(t *testing.T) {
+	body := []byte(`{"total": 0, "matches": []}`)
+	assets, total, err := parseShodanNetworkResponse(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 0 || len(assets) != 0 {
+		t.Errorf("total=%d assets=%d, want 0/0", total, len(assets))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// L1 support matrix
+// ---------------------------------------------------------------------------
+
+func TestIsL1Supported_AllStableEngines(t *testing.T) {
+	engines := []string{"fofa", "hunter", "zoomeye", "quake", "shodan"}
+	for _, e := range engines {
+		if !IsL1Supported(e) {
+			t.Errorf("IsL1Supported(%q) = false, want true", e)
+		}
+	}
+	if IsL1Supported("censys") {
+		t.Error("IsL1Supported(censys) = true, want false (not yet implemented)")
+	}
+	if IsL1Supported("daydaymap") {
+		t.Error("IsL1Supported(daydaymap) = true, want false (not yet implemented)")
 	}
 }
