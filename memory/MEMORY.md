@@ -25,6 +25,11 @@
 - 七引擎（FOFA/Hunter/ZoomEye/Quake/Shodan/Censys/DayDayMap）均已有 L1 Network 解析器
   和 L3 DOM ExtractJS（2026-08-01），单元测试全部通过。Censys/DayDayMap 新增 L1 解析器、
   DOM 选择器、搜索 URL 构造、Extension 登录 Cookie 检测和设置页配置。
+- GUI 入口 (cmd/unimap-gui) 已于 2026-08-01 删除，Fyne 依赖已清除；项目入口精简为
+  unimap-web（主服务）+ unimap-cli（Agent 友好脚本工具）。
+- CLI Agent 友好化已完成（2026-08-01）：JSON 信封、语义退出码、分页、全子命令 --format json、
+  quota/config show 子命令、--fields 列选择、12 个 UNIMAP_* 环境变量、help --json 自描述。
+  详见 docs/CLI_AGENT_GUIDE.md。
 
 > 本索引后续的日期条目是历史知识，不覆盖上述当前事实。当前实施状态以
 > [`docs/REMAINING_WORK_2026-07-23.md`](../docs/REMAINING_WORK_2026-07-23.md) 和

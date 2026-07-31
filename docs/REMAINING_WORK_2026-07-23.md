@@ -198,6 +198,10 @@ Censys/DayDayMap Web-only 后端计为可用。后续若选择浏览器路线，
 
 ## 5. 本轮已纠正的记录
 
+- GUI 入口 (cmd/unimap-gui) 已删除，Fyne 依赖已清除（2026-08-01）；项目入口为 unimap-web + unimap-cli；
+- CLI 已完成 Agent 友好化改造：JSON 信封、语义退出码、分页、--format json、quota/config show/help --json；
+- CLI/GUI 不再集成 CDP/Bridge，截图通过 Web API 代理；
+
 - 不再把 Censys、DayDayMap 描述成已完成 Extension/Bridge 能力；
 - 不再把历史 Bridge 抓取测试当作 CDP 证据；
 - 将备份任务改为已提交的第 23 种任务；
