@@ -68,48 +68,115 @@ func getSelectors(engine string) *engineSelectors {
 
 const extractFofaJS = `
 (function() {
-  var rows = document.querySelectorAll('.hsxa-meta-data-item');
+  // FOFA result page (2026-08 hardened: multiple row selector fallbacks).
+  var rowSelectors = [
+    '.hsxa-meta-data-item',
+    '[class*="result-item"]',
+    '[class*="search-result"]',
+    '.el-table__row'
+  ];
+  var rows = [];
+  for (var si = 0; si < rowSelectors.length; si++) {
+    try {
+      var nodes = document.querySelectorAll(rowSelectors[si]);
+      if (nodes.length > 0) { rows = nodes; break; }
+    } catch(e) { continue; }
+  }
+
   var assets = [];
-  rows.forEach(function(row) {
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
     var asset = {};
-    // FOFA card layout: IP from .hsxa-host
+
+    // IP:Port from .hsxa-host or IP:port text pattern
     var ipEl = row.querySelector('.hsxa-host');
     if (ipEl) {
       var ipText = ipEl.textContent.trim();
       var parts = ipText.split(':');
       asset.ip = parts[0] || '';
-      asset.port = parseInt(parts[1]) || 0;
+      if (parts.length > 1) asset.port = parseInt(parts[1]) || 0;
     }
-    // Port from qbase64 links
-    var portLink = row.querySelector("a[href*='qbase64=cG9ydD0']");
-    if (portLink) {
-      var m = portLink.textContent.trim().match(/(\d+)/);
-      if (m) asset.port = parseInt(m[1]);
+    if (!asset.ip) {
+      var textNodes = row.querySelectorAll('a, span, div, td');
+      for (var tn = 0; tn < textNodes.length; tn++) {
+        var t = textNodes[tn].textContent.trim();
+        var ipMatch = t.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::(\d+))?$/);
+        if (ipMatch) {
+          asset.ip = ipMatch[1];
+          if (ipMatch[2]) asset.port = parseInt(ipMatch[2]) || 0;
+          break;
+        }
+      }
     }
+
+    // Port from qbase64 links (base64 of "port=")
+    if (!asset.port) {
+      var portLink = row.querySelector("a[href*='qbase64=cG9ydD0']");
+      if (portLink) {
+        var pm = portLink.textContent.trim().match(/(\d+)/);
+        if (pm) asset.port = parseInt(pm[1]);
+      }
+    }
+
     // Protocol from qbase64 links
     var protoLinks = row.querySelectorAll("a[href*='qbase64=']");
-    protoLinks.forEach(function(a) {
-      var text = a.textContent.trim().toLowerCase();
-      if (text === 'http' || text === 'https' || text === 'tcp') asset.protocol = text;
-    });
-    // Host, title, country, org from card fields
-    var fields = row.querySelectorAll('.hsxa-meta-data-item__field, [class*="field"]');
-    fields.forEach(function(f) {
-      var label = (f.querySelector('[class*="label"]') || {}).textContent || '';
-      var value = (f.querySelector('[class*="value"]') || f).textContent.trim();
-      if (label.includes('域名') || label.includes('host')) asset.host = value;
-      if (label.includes('标题') || label.includes('title')) asset.title = value;
-      if (label.includes('国家') || label.includes('country')) asset.country = value;
-      if (label.includes('组织') || label.includes('org')) asset.org = value;
-      if (label.includes('Server') || label.includes('server')) asset.server = value;
-    });
+    for (var pl = 0; pl < protoLinks.length; pl++) {
+      var ptext = protoLinks[pl].textContent.trim().toLowerCase();
+      if (ptext === 'http' || ptext === 'https' || ptext === 'tcp' || ptext === 'udp') {
+        asset.protocol = ptext; break;
+      }
+    }
+
+    // Host, title, country, org from label-value field pairs
+    var fields = row.querySelectorAll('.hsxa-meta-data-item__field, [class*="field"], [class*="item"]');
+    for (var fi = 0; fi < fields.length; fi++) {
+      var f = fields[fi];
+      var labelEl = f.querySelector('[class*="label"], [class*="key"], dt, th');
+      var valueEl = f.querySelector('[class*="value"], dd, td');
+      var label = labelEl ? labelEl.textContent.trim() : '';
+      var value = valueEl ? valueEl.textContent.trim() : f.textContent.trim();
+      if (!value || value === label) continue;
+      var ll = label.toLowerCase();
+      if ((ll.indexOf('域名') >= 0 || ll.indexOf('host') >= 0 || ll.indexOf('domain') >= 0) && !asset.host) asset.host = value;
+      if ((ll.indexOf('标题') >= 0 || ll.indexOf('title') >= 0) && !asset.title) asset.title = value;
+      if ((ll.indexOf('国家') >= 0 || ll.indexOf('country') >= 0) && !asset.country) asset.country = value;
+      if ((ll.indexOf('组织') >= 0 || ll.indexOf('org') >= 0 || ll.indexOf('isp') >= 0) && !asset.org) asset.org = value;
+      if ((ll.indexOf('server') >= 0 || ll.indexOf('产品') >= 0 || ll.indexOf('product') >= 0) && !asset.server) asset.server = value;
+      if ((ll.indexOf('端口') >= 0 || ll.indexOf('port') >= 0) && !asset.port) { var pp = parseInt(value); if (pp > 0) asset.port = pp; }
+    }
+
+    // Title fallback
+    if (!asset.title) {
+      var titleEl = row.querySelector('[class*="title"], .hsxa-title, a[title]');
+      if (titleEl) asset.title = (titleEl.getAttribute('title') || titleEl.textContent).trim();
+    }
+
     asset.source = 'fofa';
     if (asset.ip || asset.host) assets.push(asset);
-  });
-  var totalEl = document.querySelector('[class*="total"]');
+  }
+
+  // Total count
   var total = 0;
-  if (totalEl) { var m = totalEl.textContent.match(/(\d[\d,]*)/); if (m) total = parseInt(m[0].replace(/,/g, '')); }
-  var hasNext = !!document.querySelector('button.btn-next:not([disabled])');
+  var totalSelectors = ['.hsxa-result-total', '[class*="result"] [class*="total"]', '[class*="total"]'];
+  for (var ts = 0; ts < totalSelectors.length; ts++) {
+    var totalEl = document.querySelector(totalSelectors[ts]);
+    if (totalEl) {
+      var tm = totalEl.textContent.match(/(\d[\d,]*)/);
+      if (tm) { total = parseInt(tm[0].replace(/,/g, '')); break; }
+    }
+  }
+
+  // Pagination
+  var hasNext = false;
+  try { hasNext = !!document.querySelector('button.btn-next:not([disabled])'); } catch(e) {}
+  if (!hasNext) {
+    try { hasNext = !!document.querySelector('.el-pagination .btn-next:not([disabled])'); } catch(e) {}
+  }
+  if (!hasNext) {
+    var nextBtn = document.querySelector('[class*="next"]');
+    hasNext = !!nextBtn && !nextBtn.hasAttribute('disabled') && nextBtn.className.indexOf('disabled') < 0;
+  }
+
   return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
 })()
 `
