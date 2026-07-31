@@ -46,6 +46,7 @@ type Config struct {
 			BaseURL string `yaml:"base_url"`
 			QPS     int    `yaml:"qps"`
 			Timeout int    `yaml:"timeout"`
+			Cookies []Cookie `yaml:"cookies"`
 		} `yaml:"shodan"`
 		Censys struct {
 			Enabled   bool   `yaml:"enabled"`
@@ -54,6 +55,7 @@ type Config struct {
 			BaseURL   string `yaml:"base_url"`
 			QPS       int    `yaml:"qps"`
 			Timeout   int    `yaml:"timeout"`
+			Cookies   []Cookie `yaml:"cookies"`
 		} `yaml:"censys"`
 		Daydaymap struct {
 			Enabled bool   `yaml:"enabled"`
@@ -61,6 +63,7 @@ type Config struct {
 			BaseURL string `yaml:"base_url"`
 			QPS     int    `yaml:"qps"`
 			Timeout int    `yaml:"timeout"`
+			Cookies []Cookie `yaml:"cookies"`
 		} `yaml:"daydaymap"`
 	} `yaml:"engines"`
 
@@ -330,8 +333,11 @@ func (c *Config) Clone() *Config {
 	clone.Engines.Fofa = c.Engines.Fofa
 	clone.Engines.Fofa.Cookies = cloneCookies(c.Engines.Fofa.Cookies)
 	clone.Engines.Shodan = c.Engines.Shodan
+	clone.Engines.Shodan.Cookies = cloneCookies(c.Engines.Shodan.Cookies)
 	clone.Engines.Censys = c.Engines.Censys
+	clone.Engines.Censys.Cookies = cloneCookies(c.Engines.Censys.Cookies)
 	clone.Engines.Daydaymap = c.Engines.Daydaymap
+	clone.Engines.Daydaymap.Cookies = cloneCookies(c.Engines.Daydaymap.Cookies)
 
 	// System, Log are all primitives — safe to copy directly
 	clone.System = c.System
