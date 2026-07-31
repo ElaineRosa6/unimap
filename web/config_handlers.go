@@ -264,7 +264,7 @@ func applyEngineSections(c *config.Config, data map[string]interface{}) {
 	if c == nil {
 		return
 	}
-	engineNames := []string{"fofa", "hunter", "zoomeye", "quake", "shodan"}
+	engineNames := []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"}
 	for _, name := range engineNames {
 		raw, ok := data[name]
 		if !ok || raw == nil {
@@ -291,6 +291,10 @@ func applySingleEngineSection(c *config.Config, name string, eng map[string]inte
 		applyQuakeFields(c, eng)
 	case "shodan":
 		applyShodanFields(c, eng)
+	case "censys":
+		applyCensysFields(c, eng)
+	case "daydaymap":
+		applyDayDayMapFields(c, eng)
 	}
 }
 
@@ -383,6 +387,45 @@ func applyShodanFields(c *config.Config, eng map[string]interface{}) {
 		c.Engines.Shodan.QPS = v
 	}
 	// Shodan doesn't have timeout field
+}
+
+func applyCensysFields(c *config.Config, eng map[string]interface{}) {
+	if v, ok := boolField(eng, "enabled"); ok {
+		c.Engines.Censys.Enabled = v
+	}
+	if v, _ := stringField(eng, "api_id"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Censys.APIID = v
+	}
+	if v, _ := stringField(eng, "api_secret"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Censys.APISecret = v
+	}
+	if v, _ := stringField(eng, "base_url"); v != "" {
+		c.Engines.Censys.BaseURL = v
+	}
+	if v, _ := intField(eng, "qps"); v > 0 {
+		c.Engines.Censys.QPS = v
+	}
+	if v, _ := intField(eng, "timeout"); v > 0 {
+		c.Engines.Censys.Timeout = v
+	}
+}
+
+func applyDayDayMapFields(c *config.Config, eng map[string]interface{}) {
+	if v, ok := boolField(eng, "enabled"); ok {
+		c.Engines.Daydaymap.Enabled = v
+	}
+	if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Daydaymap.APIKey = v
+	}
+	if v, _ := stringField(eng, "base_url"); v != "" {
+		c.Engines.Daydaymap.BaseURL = v
+	}
+	if v, _ := intField(eng, "qps"); v > 0 {
+		c.Engines.Daydaymap.QPS = v
+	}
+	if v, _ := intField(eng, "timeout"); v > 0 {
+		c.Engines.Daydaymap.Timeout = v
+	}
 }
 
 // boolField, stringField, intField extract typed values from a map[string]interface{}

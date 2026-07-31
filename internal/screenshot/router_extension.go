@@ -416,6 +416,10 @@ func buildSearchEngineURL(engine, query string) string {
 		return fmt.Sprintf("https://www.zoomeye.org/searchResult?q=%s", url.QueryEscape(query))
 	case "shodan":
 		return fmt.Sprintf("https://www.shodan.io/search?query=%s", url.QueryEscape(query))
+	case "censys":
+		return fmt.Sprintf("https://search.censys.io/search?resource=hosts&sort=RELEVANCE&per_page=25&virtual_hosts=EXCLUDE&q=%s", url.QueryEscape(query))
+	case "daydaymap":
+		return fmt.Sprintf("https://www.daydaymap.com/#/search?keyword=%s", urlBase64(query))
 	default:
 		return ""
 	}

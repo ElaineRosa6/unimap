@@ -46,11 +46,13 @@ var selectorsByEngine = map[string]*engineSelectors{
 	"censys": {
 		RowSelector:    "[class*='result-card']",
 		PaginationNext: "[class*='next']",
+		ExtractJS:      extractCensysJS,
 		TotalSelector:  "[class*='total']",
 	},
 	"daydaymap": {
 		RowSelector:    "[class*='result-item']",
 		PaginationNext: ".el-pagination__next",
+		ExtractJS:      extractDayDayMapJS,
 		TotalSelector:  "[class*='total']",
 	},
 }
@@ -544,6 +546,146 @@ const extractShodanJS = `
   // Try :not() selector separately
   try { if (!hasNext && document.querySelector('.pagination .next:not(.disabled) a')) hasNext = true; } catch(e) {}
 
+  return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
+})()
+`
+
+const extractCensysJS = `
+(function() {
+  var rowSelectors = [
+    "[class*='result-card']", "[class*='search-result']",
+    "[class*='result-list'] > div", "[class*='result'] > div",
+    "table tbody tr", ".host-row", "[data-testid*='result']"
+  ];
+  var rows = [];
+  for (var si = 0; si < rowSelectors.length; si++) {
+    try {
+      var nodes = document.querySelectorAll(rowSelectors[si]);
+      if (nodes.length > 0) { rows = nodes; break; }
+    } catch(e) { continue; }
+  }
+  var assets = [];
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var asset = {};
+    var ipLink = row.querySelector("a[href*='/hosts/']");
+    if (ipLink) {
+      var href = ipLink.getAttribute('href') || '';
+      var m = href.match(/\/hosts\/([^/?#]+)/);
+      if (m) asset.ip = m[1];
+      if (!asset.title) asset.title = ipLink.textContent.trim();
+    }
+    if (!asset.ip) {
+      var ipEl = row.querySelector("[class*='ip'], [data-ip]");
+      if (ipEl) {
+        var ipMatch = ipEl.textContent.trim().match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+        if (ipMatch) asset.ip = ipMatch[1];
+      }
+    }
+    if (!asset.ip) {
+      var allText = row.querySelectorAll('a, span, div, td');
+      for (var tn = 0; tn < allText.length; tn++) {
+        var t = allText[tn].textContent.trim();
+        var ipM = t.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+        if (ipM) { asset.ip = ipM[1]; break; }
+      }
+    }
+    var portEl = row.querySelector("[class*='port'], [data-port]");
+    if (portEl) { var pm = portEl.textContent.trim().match(/(\d+)/); if (pm) asset.port = parseInt(pm[1]) || 0; }
+    var protoEl = row.querySelector("[class*='service'], [class*='protocol']");
+    if (protoEl) asset.protocol = protoEl.textContent.trim().toLowerCase();
+    var hostEl = row.querySelector("[class*='hostname'], [class*='domain']");
+    if (hostEl) asset.host = hostEl.textContent.trim();
+    var countryEl = row.querySelector("[class*='country'], [class*='location']");
+    if (countryEl) asset.country_code = countryEl.textContent.trim();
+    var orgEl = row.querySelector("[class*='org'], [class*='organization']");
+    if (orgEl) asset.org = orgEl.textContent.trim();
+    var osEl = row.querySelector("[class*='os'], [class*='operating']");
+    if (osEl) asset.os = osEl.textContent.trim();
+    asset.source = 'censys';
+    if (asset.ip) assets.push(asset);
+  }
+  var total = 0;
+  var totalSelectors = ["[class*='total']", "[class*='count']", "[data-testid*='total']"];
+  for (var t = 0; t < totalSelectors.length; t++) {
+    var totalEl = document.querySelector(totalSelectors[t]);
+    if (totalEl) { var totalMatch = totalEl.textContent.match(/([\d,]+)/); if (totalMatch) { total = parseInt(totalMatch[1].replace(/,/g, '')); break; } }
+  }
+  var hasNext = false;
+  var nextSelectors = ["[class*='next']", "button[aria-label='next']", "a[rel='next']"];
+  for (var n = 0; n < nextSelectors.length; n++) {
+    try { var nextEl = document.querySelector(nextSelectors[n]); if (nextEl && !nextEl.disabled) { hasNext = true; break; } } catch(e) { continue; }
+  }
+  return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
+})()
+`
+
+const extractDayDayMapJS = `
+(function() {
+  var rowSelectors = [
+    "[class*='result-item']", "[class*='result-card']",
+    "[class*='result-list'] > div", "[class*='result'] > div",
+    ".el-table__row", "table tbody tr", ".list_content > div"
+  ];
+  var rows = [];
+  for (var si = 0; si < rowSelectors.length; si++) {
+    try {
+      var nodes = document.querySelectorAll(rowSelectors[si]);
+      if (nodes.length > 0) { rows = nodes; break; }
+    } catch(e) { continue; }
+  }
+  var assets = [];
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var asset = {};
+    var ipLink = row.querySelector("a[href*='ip='], a[href*='/host/']");
+    if (ipLink) {
+      var ipText = ipLink.textContent.trim();
+      var ipMatch = ipText.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+      if (ipMatch) asset.ip = ipMatch[1];
+    }
+    if (!asset.ip) {
+      var ipEl = row.querySelector("[class*='ip'], [data-ip]");
+      if (ipEl) { var m = ipEl.textContent.trim().match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/); if (m) asset.ip = m[1]; }
+    }
+    if (!asset.ip) {
+      var textNodes = row.querySelectorAll('a, span, div, td');
+      for (var tn = 0; tn < textNodes.length; tn++) {
+        var t = textNodes[tn].textContent.trim();
+        var ipM = t.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::(\d+))?$/);
+        if (ipM) { asset.ip = ipM[1]; if (ipM[2]) asset.port = parseInt(ipM[2]) || 0; break; }
+      }
+    }
+    if (!asset.port) {
+      var portEl = row.querySelector("[class*='port'], [data-port]");
+      if (portEl) { var pm = portEl.textContent.trim().match(/(\d+)/); if (pm) asset.port = parseInt(pm[1]) || 0; }
+    }
+    var protoEl = row.querySelector("[class*='protocol'], [class*='service']");
+    if (protoEl) asset.protocol = protoEl.textContent.trim().toLowerCase();
+    var hostEl = row.querySelector("[class*='domain'], [class*='host'], a[href*='domain=']");
+    if (hostEl) asset.host = hostEl.textContent.trim();
+    var titleEl = row.querySelector("[class*='title'], [class*='name']");
+    if (titleEl) asset.title = titleEl.textContent.trim();
+    var countryEl = row.querySelector("[class*='country'], [class*='location']");
+    if (countryEl) asset.country_code = countryEl.textContent.trim();
+    var orgEl = row.querySelector("[class*='org'], [class*='company']");
+    if (orgEl) asset.org = orgEl.textContent.trim();
+    var serverEl = row.querySelector("[class*='server']");
+    if (serverEl) asset.server = serverEl.textContent.trim();
+    asset.source = 'daydaymap';
+    if (asset.ip) assets.push(asset);
+  }
+  var total = 0;
+  var totalSelectors = ["[class*='total']", "[class*='count']", ".el-pagination__total"];
+  for (var t = 0; t < totalSelectors.length; t++) {
+    var totalEl = document.querySelector(totalSelectors[t]);
+    if (totalEl) { var totalMatch = totalEl.textContent.match(/([\d,]+)/); if (totalMatch) { total = parseInt(totalMatch[1].replace(/,/g, '')); break; } }
+  }
+  var hasNext = false;
+  var nextSelectors = [".el-pagination__next:not([disabled])", "[class*='next']", "button.btn-next:not([disabled])"];
+  for (var n = 0; n < nextSelectors.length; n++) {
+    try { if (document.querySelector(nextSelectors[n])) { hasNext = true; break; } } catch(e) { continue; }
+  }
   return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
 })()
 `

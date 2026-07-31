@@ -64,6 +64,16 @@ var l1SearchAPIs = map[string]l1SearchAPIConfig{
 		Method:        "GET",
 		ParseResponse: parseShodanNetworkResponse,
 	},
+	"censys": {
+		URLPattern:    "/api/v2/hosts/search",
+		Method:        "GET",
+		ParseResponse: parseCensysNetworkResponse,
+	},
+	"daydaymap": {
+		URLPattern:    "/api/v1/raymap/search/all",
+		Method:        "POST",
+		ParseResponse: parseDayDayMapNetworkResponse,
+	},
 }
 
 // IsL1Supported 检查引擎是否支持 L1 Network 采集
@@ -663,6 +673,177 @@ func parseShodanNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) 
 	}
 	collection.NormalizeAssets("shodan", assets)
 	return assets, resp.Total, nil
+}
+
+// parseCensysNetworkResponse 解析 Censys 搜索 API 响应。
+// Censys Web 前端调用 /api/v2/hosts/search，响应格式：
+//
+//	{"result":{"total":N,"hits":[{"ip":"...","services":[{"port":80,"service_name":"http",...}],...}]}}
+//
+// 也兼容 v3 格式：{"result":{"total":N,"hits":[{"ip":"...","location":{...},"services":[...]}]}}
+func parseCensysNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) {
+	var resp struct {
+		Result struct {
+			Total int `json:"total"`
+			Hits  []struct {
+				IP       string `json:"ip"`
+				Location *struct {
+					CountryCode string `json:"country_code"`
+					Province    string `json:"province"`
+					City        string `json:"city"`
+				} `json:"location,omitempty"`
+				AutonomousSystem *struct {
+					ASN  interface{} `json:"asn"`
+					Name string      `json:"name"`
+				} `json:"autonomous_system,omitempty"`
+				DNS *struct {
+					Names []string `json:"names"`
+				} `json:"dns,omitempty"`
+				Services []struct {
+					Port        float64 `json:"port"`
+					ServiceName string  `json:"service_name"`
+					HTTP        *struct {
+						Response struct {
+							HTMLTitle  string  `json:"html_title"`
+							StatusCode float64 `json:"status_code"`
+							Headers    struct {
+								Server string `json:"Server"`
+							} `json:"headers"`
+						} `json:"response"`
+					} `json:"http,omitempty"`
+				} `json:"services,omitempty"`
+			} `json:"hits"`
+		} `json:"result"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, 0, fmt.Errorf("failed to parse Censys response: %w", err)
+	}
+	if resp.Error != "" {
+		return nil, 0, fmt.Errorf("Censys API error: %s", resp.Error)
+	}
+
+	var assets []model.UnifiedAsset
+	for _, hit := range resp.Result.Hits {
+		if hit.IP == "" {
+			continue
+		}
+		cc, region, city := "", "", ""
+		if hit.Location != nil {
+			cc = hit.Location.CountryCode
+			region = hit.Location.Province
+			city = hit.Location.City
+		}
+		asn, org := "", ""
+		if hit.AutonomousSystem != nil {
+			switch v := hit.AutonomousSystem.ASN.(type) {
+			case string:
+				asn = v
+			case float64:
+				asn = fmt.Sprintf("AS%d", int(v))
+			}
+			org = hit.AutonomousSystem.Name
+		}
+		host := ""
+		if hit.DNS != nil && len(hit.DNS.Names) > 0 {
+			host = hit.DNS.Names[0]
+		}
+
+		if len(hit.Services) == 0 {
+			// Host with no services — emit a single asset with host-level metadata.
+			assets = append(assets, model.UnifiedAsset{
+				IP: hit.IP, Host: host, CountryCode: cc, Region: region,
+				City: city, ASN: asn, Org: org, ISP: org, Source: "censys",
+			})
+			continue
+		}
+		for _, svc := range hit.Services {
+			asset := model.UnifiedAsset{
+				IP: hit.IP, Port: int(svc.Port), Protocol: svc.ServiceName,
+				Host: host, CountryCode: cc, Region: region, City: city,
+				ASN: asn, Org: org, ISP: org, Source: "censys",
+			}
+			if svc.HTTP != nil {
+				asset.Title = svc.HTTP.Response.HTMLTitle
+				asset.StatusCode = int(svc.HTTP.Response.StatusCode)
+				asset.Server = svc.HTTP.Response.Headers.Server
+			}
+			assets = append(assets, asset)
+		}
+	}
+	collection.NormalizeAssets("censys", assets)
+	return assets, resp.Result.Total, nil
+}
+
+// parseDayDayMapNetworkResponse 解析 DayDayMap 搜索 API 响应。
+// DayDayMap Web 前端调用 /api/v1/raymap/search/all，响应格式：
+//
+//	{"code":200,"data":{"list":[{"ip":"...","port":80,...}],"total":N},"msg":"检索成功"}
+func parseDayDayMapNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) {
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			List []struct {
+				IP         string  `json:"ip"`
+				Port       float64 `json:"port"`
+				Protocol   string  `json:"protocol"`
+				Domain     string  `json:"domain"`
+				Title      string  `json:"title"`
+				Server     string  `json:"server"`
+				Body       string  `json:"body"`
+				StatusCode float64 `json:"status_code"`
+				Country    string  `json:"country"`
+				Province   string  `json:"province"`
+				City       string  `json:"city"`
+				ASN        string  `json:"asn"`
+				Org        string  `json:"org"`
+				ISP        string  `json:"isp"`
+			} `json:"list"`
+			Total int `json:"total"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, 0, fmt.Errorf("failed to parse DayDayMap response: %w", err)
+	}
+	if resp.Code != 200 {
+		errMsg := resp.Msg
+		if errMsg == "" {
+			errMsg = "unknown error"
+		}
+		return nil, 0, fmt.Errorf("DayDayMap API error: %s", errMsg)
+	}
+
+	var assets []model.UnifiedAsset
+	for _, item := range resp.Data.List {
+		if item.IP == "" {
+			continue
+		}
+		asset := model.UnifiedAsset{
+			IP:          item.IP,
+			Port:        int(item.Port),
+			Protocol:    item.Protocol,
+			Host:        item.Domain,
+			Title:       item.Title,
+			Server:      item.Server,
+			StatusCode:  int(item.StatusCode),
+			CountryCode: item.Country,
+			Region:      item.Province,
+			City:        item.City,
+			ASN:         item.ASN,
+			Org:         item.Org,
+			ISP:         item.ISP,
+			Source:      "daydaymap",
+		}
+		if len(item.Body) > 200 {
+			asset.BodySnippet = item.Body[:200]
+		} else {
+			asset.BodySnippet = item.Body
+		}
+		assets = append(assets, asset)
+	}
+	collection.NormalizeAssets("daydaymap", assets)
+	return assets, resp.Data.Total, nil
 }
 
 // FetchSearchResultDirect 直接通过 HTTP 调用引擎搜索 API（不经过浏览器）

@@ -457,15 +457,17 @@ func liveBridgeEngine(t *testing.T) (engine, query string) {
 		engine = "fofa"
 	}
 	queries := map[string]string{
-		"fofa":    `port="443"`,
-		"hunter":  `port="443"`,
-		"zoomeye": `port="443"`,
-		"quake":   `port="443"`,
-		"shodan":  `port="443"`,
+		"fofa":      `port="443"`,
+		"hunter":    `port="443"`,
+		"zoomeye":   `port="443"`,
+		"quake":     `port="443"`,
+		"shodan":    `port="443"`,
+		"censys":    `services.port:443`,
+		"daydaymap": `ip.port=443`,
 	}
 	query, ok := queries[engine]
 	if !ok {
-		t.Fatalf("UNIMAP_LIVE_BRIDGE_ENGINE=%q is unsupported; use fofa, hunter, zoomeye, quake, or shodan", engine)
+		t.Fatalf("UNIMAP_LIVE_BRIDGE_ENGINE=%q is unsupported; use fofa, hunter, zoomeye, quake, shodan, censys, or daydaymap", engine)
 	}
 	return engine, query
 }

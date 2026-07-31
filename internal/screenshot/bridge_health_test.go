@@ -818,3 +818,34 @@ func TestBuildSearchEngineURL_Router(t *testing.T) {
 		t.Errorf("expected qbase64 param in URL: %s", got)
 	}
 }
+
+func TestBuildSearchEngineURL_Router_AllEngines(t *testing.T) {
+	tests := []struct {
+		engine   string
+		query    string
+		contains string
+	}{
+		{"fofa", "test", "fofa.info"},
+		{"hunter", "test", "hunter.qianxin.com"},
+		{"quake", "test", "quake.360.net"},
+		{"zoomeye", "test", "zoomeye.org"},
+		{"shodan", "test", "shodan.io"},
+		{"censys", "test", "search.censys.io"},
+		{"daydaymap", "test", "daydaymap.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.engine, func(t *testing.T) {
+			got := buildSearchEngineURL(tt.engine, tt.query)
+			if got == "" {
+				t.Fatalf("buildSearchEngineURL(%q) returned empty URL", tt.engine)
+			}
+			if !strings.Contains(got, tt.contains) {
+				t.Errorf("buildSearchEngineURL(%q) = %q, want contains %q", tt.engine, got, tt.contains)
+			}
+		})
+	}
+	// Unknown engine returns empty
+	if got := buildSearchEngineURL("nonexistent", "test"); got != "" {
+		t.Errorf("buildSearchEngineURL(nonexistent) = %q, want empty", got)
+	}
+}

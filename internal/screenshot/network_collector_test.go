@@ -270,7 +270,8 @@ func TestIsL1Supported(t *testing.T) {
 		{"Quake", true},
 		{"fofa", true},
 		{"shodan", true},
-		{"censys", false},
+		{"censys", true},
+		{"daydaymap", true},
 		{"unknown", false},
 	}
 
@@ -475,17 +476,192 @@ func TestParseShodanNetworkResponse_Empty(t *testing.T) {
 // L1 support matrix
 // ---------------------------------------------------------------------------
 
-func TestIsL1Supported_AllStableEngines(t *testing.T) {
-	engines := []string{"fofa", "hunter", "zoomeye", "quake", "shodan"}
+func TestIsL1Supported_AllEngines(t *testing.T) {
+	engines := []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"}
 	for _, e := range engines {
 		if !IsL1Supported(e) {
 			t.Errorf("IsL1Supported(%q) = false, want true", e)
 		}
 	}
-	if IsL1Supported("censys") {
-		t.Error("IsL1Supported(censys) = true, want false (not yet implemented)")
+	if IsL1Supported("unknown_engine") {
+		t.Error("IsL1Supported(unknown_engine) = true, want false")
 	}
-	if IsL1Supported("daydaymap") {
-		t.Error("IsL1Supported(daydaymap) = true, want false (not yet implemented)")
+}
+
+// ---------------------------------------------------------------------------
+// Censys L1 parser tests
+// ---------------------------------------------------------------------------
+
+func TestParseCensysNetworkResponse(t *testing.T) {
+	body := []byte(`{
+		"result": {
+			"total": 2,
+			"hits": [
+				{
+					"ip": "192.0.2.1",
+					"location": {"country_code": "US", "province": "California", "city": "Los Angeles"},
+					"autonomous_system": {"asn": 15169, "name": "Google LLC"},
+					"dns": {"names": ["dns.google"]},
+					"services": [
+						{"port": 443, "service_name": "HTTP", "http": {"response": {"html_title": "Google", "status_code": 200, "headers": {"Server": "gws"}}}},
+						{"port": 53, "service_name": "DNS"}
+					]
+				},
+				{
+					"ip": "198.51.100.5",
+					"services": []
+				}
+			]
+		}
+	}`)
+	assets, total, err := parseCensysNetworkResponse(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("total = %d, want 2", total)
+	}
+	// First host has 2 services, second has 0 (emits 1 host-level asset) = 3 total
+	if len(assets) != 3 {
+		t.Fatalf("len(assets) = %d, want 3", len(assets))
+	}
+	a := assets[0]
+	if a.IP != "192.0.2.1" || a.Port != 443 || a.Protocol != "HTTP" {
+		t.Errorf("asset[0] = %+v, want IP=192.0.2.1 Port=443 Protocol=HTTP", a)
+	}
+	if a.Title != "Google" || a.Server != "gws" || a.StatusCode != 200 {
+		t.Errorf("asset[0] http fields = %+v", a)
+	}
+	if a.Host != "dns.google" || a.CountryCode != "US" || a.Org != "Google LLC" {
+		t.Errorf("asset[0] meta = %+v", a)
+	}
+	if a.Source != "censys" {
+		t.Errorf("asset[0].Source = %q, want censys", a.Source)
+	}
+	b := assets[1]
+	if b.IP != "192.0.2.1" || b.Port != 53 || b.Protocol != "DNS" {
+		t.Errorf("asset[1] = %+v, want IP=192.0.2.1 Port=53 Protocol=DNS", b)
+	}
+	c := assets[2]
+	if c.IP != "198.51.100.5" || c.Port != 0 {
+		t.Errorf("asset[2] = %+v, want IP=198.51.100.5 Port=0 (host-level)", c)
+	}
+}
+
+func TestParseCensysNetworkResponse_Error(t *testing.T) {
+	body := []byte(`{"error": "unauthorized", "result": {"total": 0, "hits": []}}`)
+	_, _, err := parseCensysNetworkResponse(body)
+	if err == nil {
+		t.Fatal("expected error for Censys error response")
+	}
+	if !strings.Contains(err.Error(), "unauthorized") {
+		t.Errorf("error = %q, want contains 'unauthorized'", err)
+	}
+}
+
+func TestParseCensysNetworkResponse_Empty(t *testing.T) {
+	body := []byte(`{"result": {"total": 0, "hits": []}}`)
+	assets, total, err := parseCensysNetworkResponse(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 0 || len(assets) != 0 {
+		t.Errorf("total=%d assets=%d, want 0/0", total, len(assets))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// DayDayMap L1 parser tests
+// ---------------------------------------------------------------------------
+
+func TestParseDayDayMapNetworkResponse(t *testing.T) {
+	body := []byte(`{
+		"code": 200,
+		"msg": "\u68c0\u7d22\u6210\u529f",
+		"data": {
+			"total": 2,
+			"list": [
+				{
+					"ip": "203.0.113.50",
+					"port": 8080,
+					"protocol": "http",
+					"domain": "app.example.com",
+					"title": "Dashboard",
+					"server": "nginx/1.24",
+					"body": "<html>hello</html>",
+					"status_code": 200,
+					"country": "CN",
+					"province": "Beijing",
+					"city": "Beijing",
+					"asn": "AS4134",
+					"org": "ChinaNet",
+					"isp": "China Telecom"
+				},
+				{
+					"ip": "198.51.100.99",
+					"port": 22,
+					"protocol": "ssh",
+					"domain": "",
+					"title": "",
+					"server": "OpenSSH",
+					"status_code": 0,
+					"country": "US",
+					"province": "",
+					"city": "",
+					"asn": "AS16509",
+					"org": "Amazon",
+					"isp": "AWS"
+				}
+			]
+		}
+	}`)
+	assets, total, err := parseDayDayMapNetworkResponse(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("total = %d, want 2", total)
+	}
+	if len(assets) != 2 {
+		t.Fatalf("len(assets) = %d, want 2", len(assets))
+	}
+	a := assets[0]
+	if a.IP != "203.0.113.50" || a.Port != 8080 || a.Protocol != "http" {
+		t.Errorf("asset[0] = %+v, want IP=203.0.113.50 Port=8080 Protocol=http", a)
+	}
+	if a.Host != "app.example.com" || a.Title != "Dashboard" || a.Server != "nginx/1.24" {
+		t.Errorf("asset[0] web fields = %+v", a)
+	}
+	if a.CountryCode != "CN" || a.Region != "Beijing" || a.Org != "ChinaNet" {
+		t.Errorf("asset[0] location = %+v", a)
+	}
+	if a.Source != "daydaymap" {
+		t.Errorf("asset[0].Source = %q, want daydaymap", a.Source)
+	}
+	b := assets[1]
+	if b.IP != "198.51.100.99" || b.Port != 22 || b.Server != "OpenSSH" {
+		t.Errorf("asset[1] = %+v", b)
+	}
+}
+
+func TestParseDayDayMapNetworkResponse_Error(t *testing.T) {
+	body := []byte(`{"code": 401, "msg": "api-key invalid", "data": {"total": 0, "list": []}}`)
+	_, _, err := parseDayDayMapNetworkResponse(body)
+	if err == nil {
+		t.Fatal("expected error for DayDayMap error response")
+	}
+	if !strings.Contains(err.Error(), "api-key invalid") {
+		t.Errorf("error = %q, want contains 'api-key invalid'", err)
+	}
+}
+
+func TestParseDayDayMapNetworkResponse_Empty(t *testing.T) {
+	body := []byte(`{"code": 200, "msg": "ok", "data": {"total": 0, "list": []}}`)
+	assets, total, err := parseDayDayMapNetworkResponse(body)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 0 || len(assets) != 0 {
+		t.Errorf("total=%d assets=%d, want 0/0", total, len(assets))
 	}
 }
