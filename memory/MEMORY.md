@@ -8,17 +8,23 @@
 
 # Project Memory Index
 
-## 当前事实快照（2026-07-29）
+## 当前事实快照（2026-08-01）
 
 - [项目当前状态与后续行动 2026-07-24](project_current_state_2026-07-24.md) — 当前提交、
   巡检收口结果、浏览器层 SSRF 安全边界、七引擎事实矩阵和下一步顺序。
 - 当前稳定 Web UI 引擎为 FOFA、Hunter、ZoomEye、Quake、Shodan；历史真实结构化采集证据来自
-  Bridge/Extension，Quake/Hunter CDP 结构化采集已于 2026-07-29 通过真实验收；FOFA/ZoomEye/Shodan CDP 定级尚未执行。
-- Censys、DayDayMap 仅完成服务端/CLI API 适配与 API 实机验证，不能标记为稳定 Web UI、
-  Bridge 或 CDP 已完成。
+  Bridge/Extension，Quake/Hunter CDP 结构化采集已于 2026-07-29 通过真实验收；FOFA/ZoomEye/Shodan CDP 代码完成待真实校准。
+- Censys、DayDayMap 已完成服务端/CLI API 适配、CDP L1/L3 采集代码、Bridge Extension 选择器、
+  搜索 URL 构造和设置页配置（2026-08-01），但尚未接入稳定 Web UI 查询路径，也未完成真实账号验收。
 - 自动“发现变化 → 证据截图 → 图片通知”尚未启用。调用前 URL 校验不能覆盖浏览器跨主机重定向
   和 DNS rebinding，浏览器层 SSRF 防护已实现（2026-07-29），自动证据截图需云端验收后启用。
-- 本地 6 个提交（最新 `ba0d449`）领先 `origin/develop`，尚未推送。
+- 本地 10+ 个提交领先 `origin/develop`，尚未推送。
+- 云端安全验收 fixture 已构建（`tools/acceptance-fixture/`）：DNS rebinding 控制 API、
+  可变页面、私网 sink、Cloudflare DNS 翻转、Caddy HTTPS、Docker Compose。
+  部署到受控服务器后运行 `live_dns_e2e` 和 `live_tamper_e2e` 即可解除发布阻断。
+- 七引擎（FOFA/Hunter/ZoomEye/Quake/Shodan/Censys/DayDayMap）均已有 L1 Network 解析器
+  和 L3 DOM ExtractJS（2026-08-01），单元测试全部通过。Censys/DayDayMap 新增 L1 解析器、
+  DOM 选择器、搜索 URL 构造、Extension 登录 Cookie 检测和设置页配置。
 
 > 本索引后续的日期条目是历史知识，不覆盖上述当前事实。当前实施状态以
 > [`docs/REMAINING_WORK_2026-07-23.md`](../docs/REMAINING_WORK_2026-07-23.md) 和

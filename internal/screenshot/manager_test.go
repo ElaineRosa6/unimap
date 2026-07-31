@@ -19,6 +19,8 @@ func TestBuildSearchEngineURL(t *testing.T) {
 		{"quake", "domain:\"example.com\"", "https://quake.360.net/quake/#/searchResult?searchVal="},
 		{"zoomeye", "domain:example.com", "https://www.zoomeye.org/searchResult?q="},
 		{"shodan", "port:443", "https://www.shodan.io/search?query="},
+		{"censys", "services.port:443", "https://search.censys.io/search?resource=hosts"},
+		{"daydaymap", "port=443", "https://www.daydaymap.com/#/search?keyword="},
 		{"unknown", "test", ""},
 		{"FOFA", "test", "https://fofa.info/result?qbase64="}, // case insensitive
 	}

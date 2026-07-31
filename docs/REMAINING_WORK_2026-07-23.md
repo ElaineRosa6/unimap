@@ -8,24 +8,25 @@
 
 | 引擎 | 稳定 Web UI | API 适配 | Bridge 结构化采集实测 | CDP 结构化采集实测 |
 |---|---|---|---|---|
-| FOFA | 已接入 | 已有适配器；历史另有真实 API 证据 | 2026-07-15 通过 | 未执行（L1 解析器已就绪，待 P2 校准） |
+| FOFA | 已接入 | 已有适配器；历史另有真实 API 证据 | 2026-07-15 通过 | 代码完成（L1+L3），待真实账号校准 |
 | Hunter | 已接入 | 已有适配器 | 2026-07-15 通过 | 2026-07-29 通过（10 资产 + 截图，选择器已校准） |
-| ZoomEye | 已接入 | 已有适配器 | 2026-07-15 通过 | 未执行 |
+| ZoomEye | 已接入 | 已有适配器 | 2026-07-15 通过 | 代码完成（L1+L3），待真实账号校准 |
 | Quake | 已接入 | 已有适配器 | 2026-07-15 通过 | 2026-07-29 通过（10 资产 + 截图） |
-| Shodan | 已接入 | 已有适配器 | 2026-07-15 因登录态失效未通过 | 未执行（L1 解析器已就绪，待 P2 校准） |
-| Censys | 未接入 | 已完成，2026-06-27 API 实机验证通过 | 未完成、未测试 | 未完成、未测试 |
-| DayDayMap | 未接入 | 已完成，2026-06-27 API 实机验证通过 | 未完成、未测试 | 未完成、未测试 |
+| Shodan | 已接入 | 已有适配器 | 2026-07-15 因登录态失效未通过 | 代码完成（L1+L3），待真实账号校准 |
+| Censys | 未接入 | 已完成，2026-06-27 API 实机验证通过 | 代码完成（Extension 选择器+搜索 URL），待真实验收 | 代码完成（L1+L3），待真实账号校准 |
+| DayDayMap | 未接入 | 已完成，2026-06-27 API 实机验证通过 | 代码完成（Extension 选择器+搜索 URL），待真实验收 | 代码完成（L1+L3），待真实账号校准 |
 
 说明：
 
-- Censys、DayDayMap 的扩展/Go DOM 泛化选择器只是未接通占位；
-- Bridge 和 CDP 搜索 URL 构造目前都只接受五个稳定引擎；
-- Censys、DayDayMap 的 Go DOM 条目没有结构化 `ExtractJS`；
-- `live_bridge_e2e` 白名单只有五个稳定引擎；
+- Censys、DayDayMap 的 Extension DOM 选择器和 Go DOM `ExtractJS` 已于 2026-08-01 完成；
+- Bridge 和 CDP 搜索 URL 构造已支持全部七个引擎（2026-08-01）；
+- Censys、DayDayMap 的 L1 Network 解析器已添加（2026-08-01），单元测试通过；
+- `live_bridge_e2e` 白名单已扩展为七个引擎（2026-08-01）；
 - 2026-07-23 已修复 Censys、DayDayMap 的能力误报：缺少完整 API 凭据时不再注册 Web-only adapter；两者仍未实现 Bridge/CDP；
 - 普通网页 CDP 截图通过不等于测绘引擎 CDP 结构化采集通过。
-- 2026-08-01：五引擎均已有 L1 Network 解析器（FOFA/Shodan 新增，待 P2 真实校准）；
-  FOFA DOM 选择器已加固（4 级行选择器回退）。
+- 2026-08-01：七引擎均已有 L1 Network 解析器（Censys/DayDayMap 新增）和 L3 DOM ExtractJS；
+  FOFA DOM 选择器已加固（4 级行选择器回退）；Censys/DayDayMap 搜索 URL 构造、
+  Extension 选择器、Bridge 白名单和设置页配置均已接通。
 
 ## 2. P1：下一阶段必须完成
 

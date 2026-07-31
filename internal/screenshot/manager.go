@@ -534,6 +534,10 @@ func (m *Manager) BuildSearchEngineURL(engine, query string) string {
 		return fmt.Sprintf("https://www.zoomeye.org/searchResult?q=%s", encodedQuery)
 	case "shodan":
 		return fmt.Sprintf("https://www.shodan.io/search?query=%s", encodedQuery)
+	case "censys":
+		return fmt.Sprintf("https://search.censys.io/search?resource=hosts&sort=RELEVANCE&per_page=25&virtual_hosts=EXCLUDE&q=%s", encodedQuery)
+	case "daydaymap":
+		return fmt.Sprintf("https://www.daydaymap.com/#/search?keyword=%s", encodedB64)
 	default:
 		return ""
 	}

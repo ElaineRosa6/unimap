@@ -43,7 +43,9 @@ const LOGIN_COOKIE_NAMES = {
   hunter: ["HSESSION", "hunter_token", "sessionid", "jwt"],
   zoomeye: ["session", "jwt", "zmsession", "ctoken"],
   quake: ["session", "jwt", "token", "QSESSIONID"],
-  shodan: ["session_id", "flash", "reveal", "token"]
+  shodan: ["session_id", "flash", "reveal", "token"],
+  censys: ["session", "jwt", "token", "censys_session"],
+  daydaymap: ["session", "token", "jwt", "daydaymap_token"]
 };
 
 /**
