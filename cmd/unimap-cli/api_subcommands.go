@@ -114,20 +114,33 @@ func runAPIQuery(args []string) {
 	fs := flag.NewFlagSet("query", flag.ExitOnError)
 	query := fs.String("q", "", "UQL query string")
 	engines := fs.String("e", "", "Comma-separated engines, e.g. fofa,hunter")
-	limit := fs.Int("l", 100, "Result limit")
+	limit := fs.Int("l", 100, "Result limit / page size")
+	page := fs.Int("page", 1, "Page number")
 	apiBase := fs.String("api-base", "http://127.0.0.1:8448", "Web API base URL")
 	timeoutSec := fs.Int("timeout", 60, "HTTP timeout in seconds")
 	output := fs.String("o", "", "Output file path (csv/json/xlsx)")
+	format := fs.String("format", "table", "Output format: table or json")
 	adminToken, adminTokenFile := addAPIAuthFlags(fs)
 	_ = fs.Parse(args)
+
+	if *apiBase == "http://127.0.0.1:8448" {
+		*apiBase = envOrDefault("UNIMAP_API_BASE", *apiBase)
+	}
+
 	if err := configureAPIAuth(*adminToken, *adminTokenFile); err != nil {
-		fmt.Fprintf(os.Stderr, "API authentication configuration failed: %v\n", err)
-		os.Exit(1)
+		if isJSONFormat(*format) {
+			printJSONError("query", "AUTH_CONFIG", err.Error(), ExitAuthError)
+		}
+		progress("API authentication configuration failed: %v\n", err)
+		os.Exit(ExitAuthError)
 	}
 
 	if strings.TrimSpace(*query) == "" {
-		fmt.Fprintln(os.Stderr, "Error: -q is required")
-		os.Exit(1)
+		if isJSONFormat(*format) {
+			printJSONError("query", "USAGE_ERROR", "-q is required", ExitUsageError)
+		}
+		progress("Error: -q is required\n")
+		os.Exit(ExitUsageError)
 	}
 
 	values := neturl.Values{}
@@ -138,27 +151,49 @@ func runAPIQuery(args []string) {
 	if *limit > 0 {
 		values.Set("page_size", fmt.Sprintf("%d", *limit))
 	}
+	if *page > 0 {
+		values.Set("page", fmt.Sprintf("%d", *page))
+	}
 
 	var resp apiQueryResponse
 	if err := doFormRequest(*apiBase, "/api/v1/query", *timeoutSec, values, &resp); err != nil {
-		fmt.Fprintf(os.Stderr, "API query failed: %v\n", err)
-		os.Exit(1)
+		code, exitCode := classifyError(err)
+		if isJSONFormat(*format) {
+			printJSONError("query", code, err.Error(), exitCode)
+		}
+		progress("API query failed: %v\n", err)
+		os.Exit(exitCode)
 	}
 
-	fmt.Printf("Found %d results.\n", resp.TotalCount)
+	if isJSONFormat(*format) {
+		data := queryOutputData{
+			Query:       *query,
+			Assets:      resp.Assets,
+			Total:       resp.TotalCount,
+			Page:        *page,
+			PageSize:    *limit,
+			HasMore:     resp.TotalCount > (*page)*(*limit),
+			EngineStats: resp.EngineStats,
+			Errors:      resp.Errors,
+		}
+		printJSON("query", data, ExitOK)
+		return
+	}
+
+	progress("Found %d results.\n", resp.TotalCount)
 	for engine, count := range resp.EngineStats {
-		fmt.Printf("  %s: %d\n", engine, count)
+		progress("  %s: %d\n", engine, count)
 	}
 	for _, errMsg := range resp.Errors {
-		fmt.Printf("  Error: %s\n", errMsg)
+		progress("  Error: %s\n", errMsg)
 	}
 
 	if strings.TrimSpace(*output) != "" {
 		if err := saveResults(resp.Assets, *output); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to save results: %v\n", err)
-			os.Exit(1)
+			progress("Failed to save results: %v\n", err)
+			os.Exit(ExitQueryError)
 		}
-		fmt.Printf("Results saved to %s\n", *output)
+		progress("Results saved to %s\n", *output)
 		return
 	}
 
@@ -175,17 +210,29 @@ func runAPITamperCheck(args []string) {
 	apiBase := fs.String("api-base", "http://127.0.0.1:8448", "Web API base URL")
 	timeoutSec := fs.Int("timeout", 120, "HTTP timeout in seconds")
 	output := fs.String("o", "", "Output JSON file path")
+	format := fs.String("format", "table", "Output format: table or json")
 	adminToken, adminTokenFile := addAPIAuthFlags(fs)
 	_ = fs.Parse(args)
+
+	if *apiBase == "http://127.0.0.1:8448" {
+		*apiBase = envOrDefault("UNIMAP_API_BASE", *apiBase)
+	}
+
 	if err := configureAPIAuth(*adminToken, *adminTokenFile); err != nil {
-		fmt.Fprintf(os.Stderr, "API authentication configuration failed: %v\n", err)
-		os.Exit(1)
+		if isJSONFormat(*format) {
+			printJSONError("tamper-check", "AUTH_CONFIG", err.Error(), ExitAuthError)
+		}
+		progress("API authentication configuration failed: %v\n", err)
+		os.Exit(ExitAuthError)
 	}
 
 	urls := splitCSVText(*urlsText)
 	if len(urls) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: --urls is required")
-		os.Exit(1)
+		if isJSONFormat(*format) {
+			printJSONError("tamper-check", "USAGE_ERROR", "--urls is required", ExitUsageError)
+		}
+		progress("Error: --urls is required\n")
+		os.Exit(ExitUsageError)
 	}
 
 	type cliTamperRequest struct {
@@ -199,22 +246,31 @@ func runAPITamperCheck(args []string) {
 	}
 	var resp apiTamperResponse
 	if err := doJSONRequest(*apiBase, "/api/v1/tamper/check", *timeoutSec, payload, &resp); err != nil {
-		fmt.Fprintf(os.Stderr, "API tamper-check failed: %v\n", err)
-		os.Exit(1)
+		code, exitCode := classifyError(err)
+		if isJSONFormat(*format) {
+			printJSONError("tamper-check", code, err.Error(), exitCode)
+		}
+		progress("API tamper-check failed: %v\n", err)
+		os.Exit(exitCode)
 	}
 
-	fmt.Printf("Tamper check completed (mode=%s).\n", resp.Mode)
-	for k, v := range resp.Summary {
-		fmt.Printf("  %s: %d\n", k, v)
+	if isJSONFormat(*format) {
+		printJSON("tamper-check", resp, ExitOK)
+		return
 	}
-	fmt.Printf("  results: %d\n", len(resp.Results))
+
+	progress("Tamper check completed (mode=%s).\n", resp.Mode)
+	for k, v := range resp.Summary {
+		progress("  %s: %d\n", k, v)
+	}
+	progress("  results: %d\n", len(resp.Results))
 
 	if strings.TrimSpace(*output) != "" {
 		if err := writeJSONFile(*output, resp); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to save output: %v\n", err)
-			os.Exit(1)
+			progress("Failed to save output: %v\n", err)
+			os.Exit(ExitQueryError)
 		}
-		fmt.Printf("Output saved to %s\n", *output)
+		progress("Output saved to %s\n", *output)
 	}
 }
 
@@ -226,17 +282,29 @@ func runAPIScreenshotBatch(args []string) {
 	apiBase := fs.String("api-base", "http://127.0.0.1:8448", "Web API base URL")
 	timeoutSec := fs.Int("timeout", 300, "HTTP timeout in seconds")
 	output := fs.String("o", "", "Output JSON file path")
+	format := fs.String("format", "table", "Output format: table or json")
 	adminToken, adminTokenFile := addAPIAuthFlags(fs)
 	_ = fs.Parse(args)
+
+	if *apiBase == "http://127.0.0.1:8448" {
+		*apiBase = envOrDefault("UNIMAP_API_BASE", *apiBase)
+	}
+
 	if err := configureAPIAuth(*adminToken, *adminTokenFile); err != nil {
-		fmt.Fprintf(os.Stderr, "API authentication configuration failed: %v\n", err)
-		os.Exit(1)
+		if isJSONFormat(*format) {
+			printJSONError("screenshot-batch", "AUTH_CONFIG", err.Error(), ExitAuthError)
+		}
+		progress("API authentication configuration failed: %v\n", err)
+		os.Exit(ExitAuthError)
 	}
 
 	urls := splitCSVText(*urlsText)
 	if len(urls) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: --urls is required")
-		os.Exit(1)
+		if isJSONFormat(*format) {
+			printJSONError("screenshot-batch", "USAGE_ERROR", "--urls is required", ExitUsageError)
+		}
+		progress("Error: --urls is required\n")
+		os.Exit(ExitUsageError)
 	}
 
 	type cliScreenshotRequest struct {
@@ -253,27 +321,41 @@ func runAPIScreenshotBatch(args []string) {
 		Status string `json:"status"`
 	}
 	if err := doJSONRequest(*apiBase, "/api/v1/screenshot/batch-urls", *timeoutSec, payload, &start); err != nil {
-		fmt.Fprintf(os.Stderr, "API screenshot-batch failed: %v\n", err)
-		os.Exit(1)
+		code, exitCode := classifyError(err)
+		if isJSONFormat(*format) {
+			printJSONError("screenshot-batch", code, err.Error(), exitCode)
+		}
+		progress("API screenshot-batch failed: %v\n", err)
+		os.Exit(exitCode)
 	}
 	resp, err := waitForScreenshotBatch(*apiBase, start.JobID, *timeoutSec)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Screenshot job %s did not complete: %v\n", start.JobID, err)
-		os.Exit(1)
+		code, exitCode := classifyError(err)
+		if isJSONFormat(*format) {
+			printJSONError("screenshot-batch", code, fmt.Sprintf("screenshot job %s did not complete: %v", start.JobID, err), exitCode)
+		}
+		progress("Screenshot job %s did not complete: %v\n", start.JobID, err)
+		os.Exit(exitCode)
 	}
 	resp.BatchID = start.JobID
-	if resp.PersistenceError != "" {
-		fmt.Fprintf(os.Stderr, "Warning: screenshot results completed but persistence was degraded: %s\n", resp.PersistenceError)
+
+	if isJSONFormat(*format) {
+		printJSON("screenshot-batch", resp, ExitOK)
+		return
 	}
 
-	fmt.Printf("Screenshot batch completed: batch_id=%s total=%d success=%d failed=%d\n", resp.BatchID, resp.Total, resp.Success, resp.Failed)
+	if resp.PersistenceError != "" {
+		progress("Warning: screenshot results completed but persistence was degraded: %s\n", resp.PersistenceError)
+	}
+
+	progress("Screenshot batch completed: batch_id=%s total=%d success=%d failed=%d\n", resp.BatchID, resp.Total, resp.Success, resp.Failed)
 
 	if strings.TrimSpace(*output) != "" {
 		if err := writeJSONFile(*output, resp); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to save output: %v\n", err)
-			os.Exit(1)
+			progress("Failed to save output: %v\n", err)
+			os.Exit(ExitQueryError)
 		}
-		fmt.Printf("Output saved to %s\n", *output)
+		progress("Output saved to %s\n", *output)
 	}
 }
 
@@ -467,23 +549,38 @@ func runAPIScheduler(args []string) {
 	fs := flag.NewFlagSet("scheduler", flag.ExitOnError)
 	apiBase := fs.String("api-base", "http://127.0.0.1:8448", "Web API base URL")
 	timeoutSec := fs.Int("timeout", 30, "HTTP timeout in seconds")
+	format := fs.String("format", "table", "Output format: table or json")
 	adminToken, adminTokenFile := addAPIAuthFlags(fs)
 	_ = fs.Parse(args)
+
+	if *apiBase == "http://127.0.0.1:8448" {
+		*apiBase = envOrDefault("UNIMAP_API_BASE", *apiBase)
+	}
+
 	if err := configureAPIAuth(*adminToken, *adminTokenFile); err != nil {
-		fmt.Fprintf(os.Stderr, "API authentication configuration failed: %v\n", err)
-		os.Exit(1)
+		if isJSONFormat(*format) {
+			printJSONError("scheduler", "AUTH_CONFIG", err.Error(), ExitAuthError)
+		}
+		progress("API authentication configuration failed: %v\n", err)
+		os.Exit(ExitAuthError)
 	}
 
 	remaining := fs.Args()
 	if len(remaining) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: unimap-cli scheduler [global flags] <list|run|create|enable|disable|delete|history> [flags]")
-		return
+		if isJSONFormat(*format) {
+			printJSONError("scheduler", "USAGE_ERROR", "subcommand required: list|run|create|enable|disable|delete|history", ExitUsageError)
+		}
+		progress("Usage: unimap-cli scheduler [global flags] <list|run|create|enable|disable|delete|history> [flags]\n")
+		os.Exit(ExitUsageError)
 	}
 	subcmd := remaining[0]
 	subArgs := remaining[1:]
 	if subcmd == "" {
-		fmt.Fprintln(os.Stderr, "Usage: unimap-cli scheduler <list|run|create|enable|disable|delete|history> [flags]")
-		os.Exit(1)
+		if isJSONFormat(*format) {
+			printJSONError("scheduler", "USAGE_ERROR", "subcommand required: list|run|create|enable|disable|delete|history", ExitUsageError)
+		}
+		progress("Usage: unimap-cli scheduler <list|run|create|enable|disable|delete|history> [flags]\n")
+		os.Exit(ExitUsageError)
 	}
 
 	base := strings.TrimRight(*apiBase, "/")
@@ -491,56 +588,78 @@ func runAPIScheduler(args []string) {
 
 	switch strings.ToLower(subcmd) {
 	case "list":
-		schedulerList(base, prefix, *timeoutSec)
+		schedulerList(base, prefix, *timeoutSec, *format)
 	case "run":
-		schedulerRun(subArgs, base, prefix, *timeoutSec)
+		schedulerRun(subArgs, base, prefix, *timeoutSec, *format)
 	case "create":
-		schedulerCreate(subArgs, base, prefix, *timeoutSec)
+		schedulerCreate(subArgs, base, prefix, *timeoutSec, *format)
 	case "enable", "disable":
-		schedulerToggle(subArgs, subcmd, base, prefix, *timeoutSec)
+		schedulerToggle(subArgs, subcmd, base, prefix, *timeoutSec, *format)
 	case "delete":
-		schedulerDelete(subArgs, base, prefix, *timeoutSec)
+		schedulerDelete(subArgs, base, prefix, *timeoutSec, *format)
 	case "history":
-		schedulerHistory(subArgs, base, prefix, *timeoutSec)
+		schedulerHistory(subArgs, base, prefix, *timeoutSec, *format)
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown scheduler command: %s\n", subcmd)
-		os.Exit(1)
+		if isJSONFormat(*format) {
+			printJSONError("scheduler", "USAGE_ERROR", "unknown scheduler command: "+subcmd, ExitUsageError)
+		}
+		progress("Unknown scheduler command: %s\n", subcmd)
+		os.Exit(ExitUsageError)
 	}
 }
 
-func schedulerList(base, prefix string, timeoutSec int) {
+func schedulerList(base, prefix string, timeoutSec int, format string) {
 	var tasks []cliSchedulerTask
 	if err := doGETRequest(base, prefix+"/tasks", timeoutSec, &tasks); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		code, exitCode := classifyError(err)
+		if isJSONFormat(format) {
+			printJSONError("scheduler", code, err.Error(), exitCode)
+		}
+		progress("Error: %v\n", err)
+		os.Exit(exitCode)
 	}
-	fmt.Printf("Scheduled tasks (%d):\n", len(tasks))
+	if isJSONFormat(format) {
+		printJSON("scheduler", map[string]interface{}{"tasks": tasks, "count": len(tasks)}, ExitOK)
+		return
+	}
+	progress("Scheduled tasks (%d):\n", len(tasks))
 	for _, t := range tasks {
 		fmt.Printf("  %-8s %-30s %-20s enabled=%v  cron=%s\n",
 			t.ID, t.Name, t.Type, t.Enabled, t.CronExpr)
 	}
 }
 
-func schedulerRun(args []string, base, prefix string, timeoutSec int) {
+func schedulerRun(args []string, base, prefix string, timeoutSec int, format string) {
 	fs := flag.NewFlagSet("scheduler run", flag.ExitOnError)
 	taskID := fs.String("id", "", "Task ID")
 	_ = fs.Parse(args)
 	if *taskID == "" {
-		fmt.Fprintln(os.Stderr, "Error: -id is required for run")
-		os.Exit(1)
+		if isJSONFormat(format) {
+			printJSONError("scheduler", "USAGE_ERROR", "-id is required for run", ExitUsageError)
+		}
+		progress("Error: -id is required for run\n")
+		os.Exit(ExitUsageError)
 	}
 	payload := map[string]string{"id": *taskID}
 	var resp struct {
 		Success bool `json:"success"`
 	}
 	if err := doJSONRequest(base, prefix+"/tasks/run", timeoutSec, payload, &resp); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		code, exitCode := classifyError(err)
+		if isJSONFormat(format) {
+			printJSONError("scheduler", code, err.Error(), exitCode)
+		}
+		progress("Error: %v\n", err)
+		os.Exit(exitCode)
 	}
-	fmt.Printf("Task %s triggered successfully\n", *taskID)
+	if isJSONFormat(format) {
+		printJSON("scheduler", map[string]interface{}{"task_id": *taskID, "triggered": resp.Success}, ExitOK)
+		return
+	}
+	progress("Task %s triggered successfully\n", *taskID)
 }
 
-func schedulerCreate(args []string, base, prefix string, timeoutSec int) {
+func schedulerCreate(args []string, base, prefix string, timeoutSec int, format string) {
 	fs := flag.NewFlagSet("scheduler create", flag.ExitOnError)
 	name := fs.String("name", "", "Task name")
 	taskType := fs.String("type", "", "Task type (e.g. icp_query, query)")
@@ -550,14 +669,20 @@ func schedulerCreate(args []string, base, prefix string, timeoutSec int) {
 	_ = fs.Parse(args)
 
 	if *name == "" || *taskType == "" || *cron == "" {
-		fmt.Fprintln(os.Stderr, "Error: -name, -type, and -cron are required for create")
-		os.Exit(1)
+		if isJSONFormat(format) {
+			printJSONError("scheduler", "USAGE_ERROR", "-name, -type, and -cron are required for create", ExitUsageError)
+		}
+		progress("Error: -name, -type, and -cron are required for create\n")
+		os.Exit(ExitUsageError)
 	}
 
 	var p map[string]interface{}
 	if err := json.Unmarshal([]byte(*payloadStr), &p); err != nil {
-		fmt.Fprintf(os.Stderr, "Invalid JSON payload: %v\n", err)
-		os.Exit(1)
+		if isJSONFormat(format) {
+			printJSONError("scheduler", "USAGE_ERROR", "invalid JSON payload: "+err.Error(), ExitUsageError)
+		}
+		progress("Invalid JSON payload: %v\n", err)
+		os.Exit(ExitUsageError)
 	}
 
 	task := cliSchedulerTask{
@@ -572,19 +697,30 @@ func schedulerCreate(args []string, base, prefix string, timeoutSec int) {
 		Message string `json:"message"`
 	}
 	if err := doJSONRequest(base, prefix+"/tasks/create", timeoutSec, task, &resp); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		code, exitCode := classifyError(err)
+		if isJSONFormat(format) {
+			printJSONError("scheduler", code, err.Error(), exitCode)
+		}
+		progress("Error: %v\n", err)
+		os.Exit(exitCode)
 	}
-	fmt.Printf("Task created: id=%s name=%s type=%s\n", resp.ID, task.Name, task.Type)
+	if isJSONFormat(format) {
+		printJSON("scheduler", map[string]interface{}{"id": resp.ID, "name": task.Name, "type": task.Type, "created": true}, ExitOK)
+		return
+	}
+	progress("Task created: id=%s name=%s type=%s\n", resp.ID, task.Name, task.Type)
 }
 
-func schedulerToggle(args []string, subcmd, base, prefix string, timeoutSec int) {
+func schedulerToggle(args []string, subcmd, base, prefix string, timeoutSec int, format string) {
 	fs := flag.NewFlagSet("scheduler "+subcmd, flag.ExitOnError)
 	taskID := fs.String("id", "", "Task ID")
 	_ = fs.Parse(args)
 	if *taskID == "" {
-		fmt.Fprintln(os.Stderr, "Error: -id is required")
-		os.Exit(1)
+		if isJSONFormat(format) {
+			printJSONError("scheduler", "USAGE_ERROR", "-id is required", ExitUsageError)
+		}
+		progress("Error: -id is required\n")
+		os.Exit(ExitUsageError)
 	}
 	action := strings.ToLower(subcmd)
 	payload := map[string]string{"id": *taskID}
@@ -592,32 +728,51 @@ func schedulerToggle(args []string, subcmd, base, prefix string, timeoutSec int)
 		Success bool `json:"success"`
 	}
 	if err := doJSONRequest(base, prefix+"/tasks/"+action, timeoutSec, payload, &resp); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		code, exitCode := classifyError(err)
+		if isJSONFormat(format) {
+			printJSONError("scheduler", code, err.Error(), exitCode)
+		}
+		progress("Error: %v\n", err)
+		os.Exit(exitCode)
 	}
-	fmt.Printf("Task %s %sd\n", *taskID, action)
+	if isJSONFormat(format) {
+		printJSON("scheduler", map[string]interface{}{"task_id": *taskID, "action": action, "success": resp.Success}, ExitOK)
+		return
+	}
+	progress("Task %s %sd\n", *taskID, action)
 }
 
-func schedulerDelete(args []string, base, prefix string, timeoutSec int) {
+func schedulerDelete(args []string, base, prefix string, timeoutSec int, format string) {
 	fs := flag.NewFlagSet("scheduler delete", flag.ExitOnError)
 	taskID := fs.String("id", "", "Task ID")
 	_ = fs.Parse(args)
 	if *taskID == "" {
-		fmt.Fprintln(os.Stderr, "Error: -id is required")
-		os.Exit(1)
+		if isJSONFormat(format) {
+			printJSONError("scheduler", "USAGE_ERROR", "-id is required", ExitUsageError)
+		}
+		progress("Error: -id is required\n")
+		os.Exit(ExitUsageError)
 	}
 	payload := map[string]string{"id": *taskID}
 	var resp struct {
 		Success bool `json:"success"`
 	}
 	if err := doJSONRequest(base, prefix+"/tasks/delete", timeoutSec, payload, &resp); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		code, exitCode := classifyError(err)
+		if isJSONFormat(format) {
+			printJSONError("scheduler", code, err.Error(), exitCode)
+		}
+		progress("Error: %v\n", err)
+		os.Exit(exitCode)
 	}
-	fmt.Printf("Task %s deleted\n", *taskID)
+	if isJSONFormat(format) {
+		printJSON("scheduler", map[string]interface{}{"task_id": *taskID, "deleted": resp.Success}, ExitOK)
+		return
+	}
+	progress("Task %s deleted\n", *taskID)
 }
 
-func schedulerHistory(args []string, base, prefix string, timeoutSec int) {
+func schedulerHistory(args []string, base, prefix string, timeoutSec int, format string) {
 	fs := flag.NewFlagSet("scheduler history", flag.ExitOnError)
 	taskID := fs.String("task-id", "", "Filter by task ID")
 	limit := fs.Int("limit", 20, "Max history entries")
@@ -631,10 +786,18 @@ func schedulerHistory(args []string, base, prefix string, timeoutSec int) {
 
 	var history []cliSchedulerHistoryEntry
 	if err := doGETRequest(base, url, timeoutSec, &history); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		code, exitCode := classifyError(err)
+		if isJSONFormat(format) {
+			printJSONError("scheduler", code, err.Error(), exitCode)
+		}
+		progress("Error: %v\n", err)
+		os.Exit(exitCode)
 	}
-	fmt.Printf("Execution history (%d records):\n", len(history))
+	if isJSONFormat(format) {
+		printJSON("scheduler", map[string]interface{}{"history": history, "count": len(history)}, ExitOK)
+		return
+	}
+	progress("Execution history (%d records):\n", len(history))
 	for _, h := range history {
 		status := h.Status
 		result := h.Result
