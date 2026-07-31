@@ -30,7 +30,6 @@
 - Go 1.26.5
 - Web：`net/http`、`gorilla/websocket`、`go-resty`
 - CLI：Go 标准库 `flag`
-- GUI：Fyne v2（仅在 `-tags gui` 下构建）
 - 浏览器自动化：chromedp；解析：goquery；存储：SQLite/YAML；缓存：内存/Redis
 
 ## 快速开始
@@ -57,7 +56,6 @@ go run ./cmd/unimap-cli screenshot-batch --admin-token-file ./.secrets/unimap-ad
 GUI：
 
 ```bash
-go run -tags gui ./cmd/unimap-gui
 ```
 
 完整命令见 [快速开始](docs/QUICKSTART.md)，接口见 [API 文档](docs/API.md)，运维见 [Runbook](docs/RUNBOOK.md)。2026-07-17 的逻辑、API 与前后端交互修复状态见[问题报告](docs/CODE_LOGIC_API_UX_REVIEW_2026-07-17.md)和[修复/回滚指南](docs/REMEDIATION_GUIDE_2026-07-17.md)。
