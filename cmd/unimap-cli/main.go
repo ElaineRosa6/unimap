@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -20,6 +21,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "engines" {
+		runEnginesCommand(os.Args[2:])
+		return
+	}
 	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
 		if runAPISubcommand(os.Args[1], os.Args[2:]) {
 			return
@@ -37,7 +42,7 @@ func main() {
 	}
 	cfg, cfgManager, svc := initCLIService(flags.config)
 	if cfg != nil {
-		if applyCookiesFromFlags(cfg, flags.fofaCookie, flags.hunterCookie, flags.quakeCookie, flags.zoomeyeCookie) {
+		if applyCookiesFromFlags(cfg, flags.fofaCookie, flags.hunterCookie, flags.quakeCookie, flags.zoomeyeCookie, flags.shodanCookie, flags.censysCookie, flags.daydaymapCookie) {
 			if err := cfgManager.Save(); err != nil {
 				logger.Warnf("Failed to save cookies to %s: %v", flags.config, err)
 			}
@@ -46,21 +51,24 @@ func main() {
 	registerEngines(svc, cfg)
 	engines := selectCLIEngines(cfg, flags.engines, flags.config)
 	fmt.Printf("Querying with engines: %v\n", engines)
-	resp, err := svc.Query(context.Background(), service.QueryRequest{Query: flags.query, Engines: engines, PageSize: flags.limit, ProcessData: true})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(flags.timeout)*time.Second)
+	defer cancel()
+	resp, err := svc.Query(ctx, service.QueryRequest{Query: flags.query, Engines: engines, PageSize: flags.limit, ProcessData: true})
 	if err != nil {
 		logger.Errorf("Query failed: %v", err)
 		os.Exit(1)
 	}
-	outputCLIResults(resp, flags.output)
+	outputCLIResults(resp, flags.output, flags.format, flags.force)
 	if err := svc.Shutdown(); err != nil {
 		logger.Warnf("Error during shutdown: %v", err)
 	}
 }
 
 type cliFlags struct {
-	query, engines, output, config, fofaCookie, hunterCookie, quakeCookie, zoomeyeCookie string
-	limit                                                                                int
-	version                                                                              bool
+	query, engines, output, config, format                                                      string
+	fofaCookie, hunterCookie, quakeCookie, zoomeyeCookie, shodanCookie, censysCookie, daydaymapCookie string
+	limit, timeout                                                                              int
+	version, force                                                                              bool
 }
 
 func parseCLIFlags() cliFlags {
@@ -70,17 +78,59 @@ func parseCLIFlags() cliFlags {
 	flag.IntVar(&f.limit, "l", 100, "Result limit")
 	flag.StringVar(&f.output, "o", "", "Output file path")
 	flag.StringVar(&f.config, "c", utils.DefaultConfigPath(), "Config file path")
+	flag.StringVar(&f.format, "format", "table", "Output format: table or json")
+	flag.IntVar(&f.timeout, "timeout", 60, "Query timeout in seconds")
+	flag.BoolVar(&f.force, "force", false, "Overwrite output file if exists")
 	flag.StringVar(&f.fofaCookie, "cookie-fofa", "", "FOFA cookie header")
 	flag.StringVar(&f.hunterCookie, "cookie-hunter", "", "Hunter cookie header")
 	flag.StringVar(&f.quakeCookie, "cookie-quake", "", "Quake cookie header")
 	flag.StringVar(&f.zoomeyeCookie, "cookie-zoomeye", "", "ZoomEye cookie header")
+	flag.StringVar(&f.shodanCookie, "cookie-shodan", "", "Shodan cookie header")
+	flag.StringVar(&f.censysCookie, "cookie-censys", "", "Censys cookie header")
+	flag.StringVar(&f.daydaymapCookie, "cookie-daydaymap", "", "DayDayMap cookie header")
 	flag.BoolVar(&f.version, "version", false, "Print version")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "UniMap CLI %s\n\nUsage: %s -q '<uql>' [-e fofa,hunter] [-l 100] [-o results.csv]\n", appversion.Full(), os.Args[0])
+		fmt.Fprintf(os.Stderr, "UniMap CLI %s\n\nUsage: %s -q '<uql>' [-e fofa,hunter] [-l 100] [-o results.csv] [--format table|json] [--timeout 60] [--force]\n", appversion.Full(), os.Args[0])
+		fmt.Fprintf(os.Stderr, "\nSubcommands:\n")
+		fmt.Fprintf(os.Stderr, "  engines    List configured engines and their status\n")
+		fmt.Fprintf(os.Stderr, "  query      Query via Web API\n")
+		fmt.Fprintf(os.Stderr, "  tamper-check  Run tamper check via Web API\n")
+		fmt.Fprintf(os.Stderr, "  screenshot-batch  Batch screenshot via Web API\n")
+		fmt.Fprintf(os.Stderr, "  scheduler  Manage scheduled tasks via Web API\n\n")
+		fmt.Fprintf(os.Stderr, "Flags:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 	return f
+}
+
+func runEnginesCommand(args []string) {
+	fs := flag.NewFlagSet("engines", flag.ExitOnError)
+	configPath := fs.String("c", utils.DefaultConfigPath(), "Config file path")
+	_ = fs.Parse(args)
+	cfgManager := config.NewManager(*configPath)
+	if err := cfgManager.Load(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+	}
+	cfg := cfgManager.GetConfig()
+	type engineInfo struct {
+		Name      string
+		Enabled   bool
+		HasAPIKey bool
+	}
+	engines := []engineInfo{
+		{"fofa", cfg.Engines.Fofa.Enabled, cfg.Engines.Fofa.APIKey != ""},
+		{"hunter", cfg.Engines.Hunter.Enabled, cfg.Engines.Hunter.APIKey != ""},
+		{"zoomeye", cfg.Engines.Zoomeye.Enabled, cfg.Engines.Zoomeye.APIKey != ""},
+		{"quake", cfg.Engines.Quake.Enabled, cfg.Engines.Quake.APIKey != ""},
+		{"shodan", cfg.Engines.Shodan.Enabled, cfg.Engines.Shodan.APIKey != ""},
+		{"censys", cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID != ""},
+		{"daydaymap", cfg.Engines.Daydaymap.Enabled, cfg.Engines.Daydaymap.APIKey != ""},
+	}
+	fmt.Printf("%-12s %-10s %-10s\n", "ENGINE", "ENABLED", "API_KEY")
+	for _, e := range engines {
+		fmt.Printf("%-12s %-10v %-10v\n", e.Name, e.Enabled, e.HasAPIKey)
+	}
 }
 
 func initCLIService(configPath string) (*config.Config, *config.Manager, *service.UnifiedService) {
@@ -112,7 +162,7 @@ func selectCLIEngines(cfg *config.Config, enginesFlag, configPath string) []stri
 	return engines
 }
 
-func outputCLIResults(resp *service.QueryResponse, output string) {
+func outputCLIResults(resp *service.QueryResponse, output string, format string, force bool) {
 	fmt.Printf("Found %d results.\n", resp.TotalCount)
 	for engine, count := range resp.EngineStats {
 		fmt.Printf("  %s: %d\n", engine, count)
@@ -121,10 +171,17 @@ func outputCLIResults(resp *service.QueryResponse, output string) {
 		fmt.Printf("  Error: %s\n", errMsg)
 	}
 	if output != "" {
-		if err := saveResults(resp.Assets, output); err != nil {
+		if err := saveResults(resp.Assets, output, force); err != nil {
 			logger.Errorf("Failed to save results: %v", err)
 		} else {
 			fmt.Printf("Results saved to %s\n", output)
+		}
+	} else if format == "json" {
+		data, err := json.MarshalIndent(resp.Assets, "", "  ")
+		if err != nil {
+			logger.Errorf("Failed to marshal JSON: %v", err)
+		} else {
+			fmt.Println(string(data))
 		}
 	} else {
 		for _, asset := range resp.Assets {
@@ -133,7 +190,7 @@ func outputCLIResults(resp *service.QueryResponse, output string) {
 	}
 }
 
-func applyCookiesFromFlags(cfg *config.Config, fofa, hunter, quake, zoomeye string) bool {
+func applyCookiesFromFlags(cfg *config.Config, fofa, hunter, quake, zoomeye, shodan, censys, daydaymap string) bool {
 	changed := false
 	if strings.TrimSpace(fofa) != "" {
 		cfg.Engines.Fofa.Cookies = config.ParseCookieHeader(fofa, config.DefaultCookieDomain("fofa"))
@@ -149,6 +206,18 @@ func applyCookiesFromFlags(cfg *config.Config, fofa, hunter, quake, zoomeye stri
 	}
 	if strings.TrimSpace(zoomeye) != "" {
 		cfg.Engines.Zoomeye.Cookies = config.ParseCookieHeader(zoomeye, config.DefaultCookieDomain("zoomeye"))
+		changed = true
+	}
+	if strings.TrimSpace(shodan) != "" {
+		cfg.Engines.Shodan.Cookies = config.ParseCookieHeader(shodan, config.DefaultCookieDomain("shodan"))
+		changed = true
+	}
+	if strings.TrimSpace(censys) != "" {
+		cfg.Engines.Censys.Cookies = config.ParseCookieHeader(censys, config.DefaultCookieDomain("censys"))
+		changed = true
+	}
+	if strings.TrimSpace(daydaymap) != "" {
+		cfg.Engines.Daydaymap.Cookies = config.ParseCookieHeader(daydaymap, config.DefaultCookieDomain("daydaymap"))
 		changed = true
 	}
 	return changed
@@ -198,7 +267,7 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 		{cfg.Engines.Quake.Enabled, func() {
 			svc.RegisterAdapter(adapter.NewQuakeAdapter(cfg.Engines.Quake.BaseURL, cfg.Engines.Quake.APIKey, cfg.Engines.Quake.QPS, time.Duration(cfg.Engines.Quake.Timeout)*time.Second))
 		}},
-		{cfg.Engines.Shodan.Enabled, func() {
+		{cfg.Engines.Shodan.Enabled && cfg.Engines.Shodan.APIKey != "", func() {
 			svc.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second))
 		}},
 		{cfg.Engines.Censys.Enabled, func() {
@@ -215,27 +284,41 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 	}
 }
 
-func saveResults(assets []model.UnifiedAsset, path string) error {
+func saveResults(assets []model.UnifiedAsset, path string, force ...bool) error {
+	f := false
+	if len(force) > 0 {
+		f = force[0]
+	}
+
 	// 根据文件扩展名选择导出格式
 	lowerPath := strings.ToLower(path)
 
 	switch {
 	case strings.HasSuffix(lowerPath, ".json"):
+		if f {
+			_ = os.Remove(path)
+		}
 		exp := exporter.NewJSONExporter()
 		return exp.Export(assets, path)
 	case strings.HasSuffix(lowerPath, ".xlsx") || strings.HasSuffix(lowerPath, ".xls"):
+		if f {
+			_ = os.Remove(path)
+		}
 		exp := exporter.NewExcelExporter()
 		return exp.Export(assets, path)
 	default:
 		// CSV default
-		return saveResultsCSV(assets, path)
+		return saveResultsCSV(assets, path, f)
 	}
 }
 
 // saveResultsCSV 保存为CSV格式
-func saveResultsCSV(assets []model.UnifiedAsset, path string) error {
-	// Use O_CREATE|O_EXCL to prevent overwriting existing files
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+func saveResultsCSV(assets []model.UnifiedAsset, path string, force bool) error {
+	openFlags := os.O_CREATE | os.O_EXCL | os.O_WRONLY
+	if force {
+		openFlags = os.O_CREATE | os.O_TRUNC | os.O_WRONLY
+	}
+	f, err := os.OpenFile(path, openFlags, 0644)
 	if err != nil {
 		return fmt.Errorf("file %q already exists, refusing to overwrite: %w", path, err)
 	}

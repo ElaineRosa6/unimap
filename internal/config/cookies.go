@@ -16,6 +16,12 @@ func DefaultCookieDomain(engine string) string {
 		return ".quake.360.net"
 	case "zoomeye":
 		return ".zoomeye.org"
+	case "shodan":
+		return ".shodan.io"
+	case "censys":
+		return ".censys.io"
+	case "daydaymap":
+		return ".daydaymap.com"
 	default:
 		return ""
 	}
