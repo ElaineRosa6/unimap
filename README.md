@@ -14,7 +14,7 @@
 - 巡检历史：支持 URL、类型、模式、关键词过滤，以及受限的 `limit` / `offset` 分页；详见 [API 文档](docs/API.md)。
 - 调度、通知、分布式节点、备份、Prometheus 指标与操作历史。
 
-当前明确未完成项和优先级见 [本地剩余工作清单](docs/REMAINING_WORK_2026-07-23.md)。
+当前明确未完成项和优先级见 [本地剩余工作清单](docs/REMAINING_WORK_2026-07-23.md)；2026-08-02 起的具体实施顺序见 [后续实施清单](docs/NEXT_STEPS_20260802.md)。
 
 ## 与 UniMap v2 的关系
 
