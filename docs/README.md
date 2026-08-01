@@ -2,14 +2,15 @@
 
 ## 当前操作文档
 
-- [快速开始](QUICKSTART.md)：本地配置、Web、CLI、GUI 启动。
-- [使用指南](USAGE.md)：查询、配置、截图和 GUI。
+- [快速开始](QUICKSTART.md)：本地配置、Web 与 CLI 启动。
+- [使用指南](USAGE.md)：查询、配置、截图和 Web/CLI 操作。
 - [API](API.md)：当前 `/api/v1` HTTP 契约。
 - [运维 Runbook](RUNBOOK.md)：服务、认证、截图、Bridge、调度和节点排障。
 - [云服务器部署评估（2026-07-20）](CLOUD_DEPLOYMENT_ASSESSMENT_2026-07-20.md)：容量建议、CGO/SQLite 发布阻断、生产配置、端口、持久化与正式云机验收清单。
 - [阿里云真实环境验收（2026-07-23）](CLOUD_ACCEPTANCE_2026-07-23.md)：真实容器、headless、截图、巡检、调度、备份和持久化证据及剩余边界。
 - [云服务器常态化运行准备与协作清单（2026-07-23）](CLOUD_STEADY_STATE_PLAN_2026-07-23.md)：当前能力边界、CDP-only 架构、用户配合事项、凭据安全交付、分阶段实施与完全通过标准。
 - [当前剩余工作清单（2026-07-23）](REMAINING_WORK_2026-07-23.md)：七引擎 API/UI/Bridge/CDP 事实矩阵、浏览器层 SSRF 前置条件、优先级和完成标准。
+- [后续实施清单（2026-08-02）](NEXT_STEPS_20260802.md)：当前基线、Quake 主链路、会话闭环、云端验收、发布顺序和协作输入。
 - [安全发布收口修复计划（2026-07-29）](SECURITY_RELEASE_CLOSURE_REPAIR_PLAN_2026-07-29.md)：SSRF、截图格式、Bridge 取消、Quake 双链路、依赖漏洞和文档同步的分阶段修复与发布门槛。
 - [安全发布收口修复记录（2026-07-29）](SECURITY_RELEASE_CLOSURE_REPAIR_REPORT_2026-07-29.md)：本轮代码修复、专项验证、Quake 分链路证据和仍待外部验收的发布边界。
 - [云端安全收口验收 Runbook（2026-07-29）](CLOUD_SECURITY_ACCEPTANCE_RUNBOOK_2026-07-29.md)：DNS 动态变化、页面篡改证据截图、图片通知和重启恢复的受控 live E2E 契约。
@@ -19,7 +20,7 @@
 - [架构](ARCHITECTURE.md) 与 [业务架构](BUSINESS_AND_LOGIC_ARCHITECTURE.md)。
 - [UQL 指南](UQL_GUIDE.md) 与 [搜索引擎语法快照](SEARCH_ENGINE_SYNTAX.md)。
 - [插件架构](PLUGIN_ARCHITECTURE.md) 与 [插件开发](PLUGIN_DEVELOPMENT_GUIDE.md)。
-- [GUI 构建](GUI_BUILD.md)。
+- [GUI 构建历史](GUI_BUILD.md)：GUI 已于 2026-08-01 删除，本页仅保留历史信息。
 - [变更日志](CHANGELOG.md)：按日期记录已完成的功能、兼容性与验证结果。
 
 ## 决策与历史资料

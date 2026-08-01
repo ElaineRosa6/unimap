@@ -1,6 +1,7 @@
 # UniMap 当前剩余工作清单
 
-> 最后核对：2026-08-01。本文是当前本地待办入口；实施顺序和按旬排期见
+> 最后核对：2026-08-02。本文是当前本地待办入口；当前具体实施顺序见
+> [2026-08-02 后续实施清单](NEXT_STEPS_20260802.md)，长期按旬排期见
 > [后续实施计划](IMPLEMENTATION_PLAN_2026-07-23.md)。历史审计、计划和 E2E 报告只表达对应日期的事实。
 > 完成项必须同时满足代码、测试和所声明后端的真实验收，不能因存在选择器、接口或单元测试就标记完成。
 
@@ -51,7 +52,7 @@
 
 ### RW-02 Quake/Hunter 生产配置与真实 CDP 验收
 
-状态：**CDP 验收已通过（2026-07-29），SQLite 合并和通知待云端验证**。
+状态：**CDP 验收已通过；2026-08-02 Quake Extension 非空采集通过，完整 collect-and-capture、SQLite 和通知仍待闭环**。
 
 2026-07-29 验收结果（详见 [CDP_VERIFICATION_2026-07-29.md](CDP_VERIFICATION_2026-07-29.md)）：
 
@@ -70,13 +71,16 @@
 - Quake L1 已校准到 `/api/search/query_string/quake_service`，解析器兼容当前 `data` 数组响应，
   并于 2026-07-29 使用持久化登录态获得非空真实结果；
 - Quake Extension DOM 已修复 `data-clipboard-text` 的 IP 提取并通过真实 Chrome 固定夹具；
-  更新后的真实 Bridge/Web 会话仍待复验，不能用夹具结果代替；
+- 2026-08-02 重载 Extension 0.4.2 后，真实 Bridge 在线，Quake `port="80"` 采集 1 组、
+  10 条结构化资产且浏览器错误为 0；外层 `/api/v1/query` 仍因普通 API adapter 不可执行返回
+  HTTP 502，因此完整 Web/Router 成功语义尚未闭合；
 - SQLite 合并路径由单元测试覆盖（TestRunBrowserQueryAsync_CollectsStructuredAssets）；
 - 通知管线已由 Scheduler 后置管线覆盖，需配置真实飞书/Webhook 凭据后触发 E2E。
 
 仍待完成：
 
-- 更新并重载 Extension 后，复验 Quake 强制 Extension 与完整 Web/Router 主链路；
+- 修复“API 通道失败但 Browser 非空成功仍返回整体 502”，并补齐对应回归测试；
+- 使用当前 Quake 登录态执行真实 `collect_and_capture`，核对 PNG、SQLite 合并和 Router 响应；
 - 配置真实飞书/Webhook 通知目标后验证图片通知送达；
 - 容器重启后会话和结果恢复验证。
 
