@@ -163,7 +163,7 @@ Compose 已透传可选 `QUAKE_API_KEY`、`HUNTER_API_KEY`。Key 留空时只表
 - `CLAUDE.md` 已按用户要求保留并同步当前事实；**已完成**
 - 根目录 `tmp_speedtest.go` 已迁移为带 `manual_browser_test` 标签的
   `tools/chrome-speedtest` 手动工具；**已完成**
-- 推送 `develop` 当前领先远端的本地提交；**待用户确认远端发布时执行**
+- 推送 `develop` 当前领先远端的本地提交；**已完成（2026-08-04）**
 - 发布门禁 `go test -race ./...`、`go vet ./...`、`go build ./...`、Extension 9/9、
   headless SSRF、前端语法与 `git diff --check` 已通过。**已完成**
 - 云端安全验收 fixture 已构建（`tools/acceptance-fixture/`）：DNS rebinding 控制 API +
@@ -203,7 +203,7 @@ Compose 已透传可选 `QUAKE_API_KEY`、`HUNTER_API_KEY`。Key 留空时只表
 - 当前权威文档统一使用本文件的支持矩阵和待办编号。
 - 巡检运行时配置、受保护页面加载接口、时间筛选和真实总数已完成代码收口；变化证据截图因
   云端真实变化与图片送达尚未验收继续保留待办。
-- 本地代码基线已提交为 `f9317a3`，但截至本次核对尚未推送到 `origin/develop`。
+- 本地代码基线已提交为 `f9317a3`，2026-08-04 已推送到 `origin/develop`。
 
 ## 6. 最终验证（2026-08-02）
 
