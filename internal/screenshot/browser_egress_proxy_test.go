@@ -92,6 +92,45 @@ func TestResolveBrowserDialTargetsRevalidatesDNSOnEveryConnection(t *testing.T) 
 	}
 }
 
+func TestBrowserPinnedDialerForUpstreamRequiresLoopbackSOCKS5(t *testing.T) {
+	for _, raw := range []string{
+		"http://127.0.0.1:7897",
+		"socks5://proxy.example.test:7897",
+		"socks5://203.0.113.10:7897",
+		"socks5://127.0.0.1",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			if _, err := browserPinnedDialerForUpstream(raw); err == nil || !strings.Contains(err.Error(), "ssrf:") {
+				t.Fatalf("browserPinnedDialerForUpstream(%q) error = %v, want SSRF failure", raw, err)
+			}
+		})
+	}
+	if _, err := browserPinnedDialerForUpstream("socks5://127.0.0.1:7897"); err != nil {
+		t.Fatalf("loopback SOCKS5 upstream rejected: %v", err)
+	}
+}
+
+func TestDialValidatedBrowserTargetPassesOnlyPinnedPublicIPToUpstream(t *testing.T) {
+	var gotTarget string
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	conn, err := dialValidatedBrowserTarget(t.Context(), func(context.Context, string) ([]string, error) {
+		return []string{"93.184.216.34:443"}, nil
+	}, func(_ context.Context, _, target string) (net.Conn, error) {
+		gotTarget = target
+		return client, nil
+	}, "tcp", "rebind.example.test:443")
+	if err != nil {
+		t.Fatalf("dial validated target: %v", err)
+	}
+	defer conn.Close()
+	if gotTarget != "93.184.216.34:443" {
+		t.Fatalf("upstream target = %q, want pinned public IP", gotTarget)
+	}
+}
+
 type changingBrowserResolver struct {
 	calls  atomic.Int32
 	first  []net.IPAddr

@@ -19,8 +19,8 @@ func TestBuildSearchEngineURL(t *testing.T) {
 		{"quake", "domain:\"example.com\"", "https://quake.360.net/quake/#/searchResult?searchVal="},
 		{"zoomeye", "domain:example.com", "https://www.zoomeye.org/searchResult?q="},
 		{"shodan", "port:443", "https://www.shodan.io/search?query="},
-		{"censys", "services.port:443", "https://search.censys.io/search?resource=hosts"},
-		{"daydaymap", "port=443", "https://www.daydaymap.com/#/search?keyword="},
+		{"censys", "services.port:443", "https://platform.censys.io/search?resource=hosts"},
+		{"daydaymap", "port=443", "https://www.daydaymap.com/searchResult?keyword="},
 		{"unknown", "test", ""},
 		{"FOFA", "test", "https://fofa.info/result?qbase64="}, // case insensitive
 	}
@@ -75,6 +75,22 @@ func TestManagerCookies(t *testing.T) {
 	got = m.GetCookies("hunter")
 	if len(got) != 0 {
 		t.Errorf("expected 0 cookies for unconfigured engine, got %d", len(got))
+	}
+}
+
+func TestManagerBrowserStorageIsCopiedAndCaseInsensitive(t *testing.T) {
+	m := NewManager(Config{BaseDir: "testdata"})
+	original := BrowserStorage{Local: map[string]string{"token": "fixture"}, Session: map[string]string{"nonce": "one"}}
+	m.SetBrowserStorage("DayDayMap", original)
+	original.Local["token"] = "mutated"
+
+	got := m.GetBrowserStorage("daydaymap")
+	if got.Local["token"] != "fixture" || got.Session["nonce"] != "one" {
+		t.Fatalf("unexpected browser storage copy: %#v", got)
+	}
+	got.Local["token"] = "changed"
+	if again := m.GetBrowserStorage("DAYDAYMAP"); again.Local["token"] != "fixture" {
+		t.Fatalf("manager storage was mutated through getter: %#v", again)
 	}
 }
 
@@ -293,6 +309,9 @@ func TestManagerEngineLoginURL(t *testing.T) {
 		{"hunter", "https://hunter.qianxin.com/"},
 		{"quake", "https://quake.360.net/"},
 		{"zoomeye", "https://www.zoomeye.org/"},
+		{"shodan", "https://www.shodan.io/"},
+		{"censys", "https://platform.censys.io/"},
+		{"daydaymap", "https://www.daydaymap.com/home"},
 		{"unknown", ""},
 		{"FOFA", "https://fofa.info/"}, // case insensitive
 	}

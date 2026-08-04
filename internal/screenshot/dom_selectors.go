@@ -78,10 +78,11 @@ const extractFofaJS = `
     '.el-table__row'
   ];
   var rows = [];
+  var rowSelectorUsed = '';
   for (var si = 0; si < rowSelectors.length; si++) {
     try {
       var nodes = document.querySelectorAll(rowSelectors[si]);
-      if (nodes.length > 0) { rows = nodes; break; }
+      if (nodes.length > 0) { rows = nodes; rowSelectorUsed = rowSelectors[si]; break; }
     } catch(e) { continue; }
   }
 
@@ -179,7 +180,11 @@ const extractFofaJS = `
     hasNext = !!nextBtn && !nextBtn.hasAttribute('disabled') && nextBtn.className.indexOf('disabled') < 0;
   }
 
-  return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
+  return JSON.stringify({
+    assets: assets, total: total, hasMore: hasNext,
+    rowSelectorUsed: rowSelectorUsed, rowsFound: rows.length,
+    extractionError: rows.length === 0 ? 'no_result_rows' : (assets.length === 0 ? 'rows_contained_no_assets' : '')
+  });
 })()
 `
 
@@ -558,10 +563,11 @@ const extractCensysJS = `
     "table tbody tr", ".host-row", "[data-testid*='result']"
   ];
   var rows = [];
+  var rowSelectorUsed = '';
   for (var si = 0; si < rowSelectors.length; si++) {
     try {
       var nodes = document.querySelectorAll(rowSelectors[si]);
-      if (nodes.length > 0) { rows = nodes; break; }
+      if (nodes.length > 0) { rows = nodes; rowSelectorUsed = rowSelectors[si]; break; }
     } catch(e) { continue; }
   }
   var assets = [];
@@ -616,7 +622,11 @@ const extractCensysJS = `
   for (var n = 0; n < nextSelectors.length; n++) {
     try { var nextEl = document.querySelector(nextSelectors[n]); if (nextEl && !nextEl.disabled) { hasNext = true; break; } } catch(e) { continue; }
   }
-  return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
+  return JSON.stringify({
+    assets: assets, total: total, hasMore: hasNext,
+    rowSelectorUsed: rowSelectorUsed, rowsFound: rows.length,
+    extractionError: rows.length === 0 ? 'no_result_rows' : (assets.length === 0 ? 'rows_contained_no_assets' : '')
+  });
 })()
 `
 
@@ -628,10 +638,11 @@ const extractDayDayMapJS = `
     ".el-table__row", "table tbody tr", ".list_content > div"
   ];
   var rows = [];
+  var rowSelectorUsed = '';
   for (var si = 0; si < rowSelectors.length; si++) {
     try {
       var nodes = document.querySelectorAll(rowSelectors[si]);
-      if (nodes.length > 0) { rows = nodes; break; }
+      if (nodes.length > 0) { rows = nodes; rowSelectorUsed = rowSelectors[si]; break; }
     } catch(e) { continue; }
   }
   var assets = [];
@@ -675,6 +686,41 @@ const extractDayDayMapJS = `
     asset.source = 'daydaymap';
     if (asset.ip) assets.push(asset);
   }
+  // The current DayDayMap result grid is virtualized and its generated row
+  // classes are not stable. If row-oriented selectors miss it, collect exact
+  // IPv4 leaf nodes from the rendered grid. This fallback intentionally runs
+  // only after the structured row path produced no assets.
+  if (assets.length === 0) {
+    var seenIPs = {};
+    var candidates = document.querySelectorAll('a, span, div, td');
+    for (var ci = 0; ci < candidates.length; ci++) {
+      var candidate = candidates[ci];
+      var candidateText = candidate.textContent.trim();
+      var candidateIP = candidateText.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+      if (!candidateIP || seenIPs[candidateIP[1]]) continue;
+      seenIPs[candidateIP[1]] = true;
+
+      var container = candidate.closest('tr, [role="row"], [class*="table-row"], [class*="list-row"], [class*="result-row"]');
+      if (!container) {
+        container = candidate;
+        for (var up = 0; up < 4 && container.parentElement; up++) container = container.parentElement;
+      }
+      var containerText = container.textContent.replace(/\s+/g, ' ').trim();
+      var asset = {ip: candidateIP[1], source: 'daydaymap'};
+      var protocolMatch = containerText.match(/\b(https?|tcp|udp|ssh|smtp|ftp)\b/i);
+      if (protocolMatch) asset.protocol = protocolMatch[1].toLowerCase();
+      var explicitPort = container.querySelector("[class*='port'], [data-port]");
+      if (explicitPort) {
+        var portMatch = explicitPort.textContent.trim().match(/^(\d{1,5})$/);
+        if (portMatch) {
+          var parsedPort = parseInt(portMatch[1]);
+          if (parsedPort > 0 && parsedPort <= 65535) asset.port = parsedPort;
+        }
+      }
+      assets.push(asset);
+    }
+    if (assets.length > 0) rowSelectorUsed = 'virtual-table-ip-leaf-fallback';
+  }
   var total = 0;
   var totalSelectors = ["[class*='total']", "[class*='count']", ".el-pagination__total"];
   for (var t = 0; t < totalSelectors.length; t++) {
@@ -686,6 +732,10 @@ const extractDayDayMapJS = `
   for (var n = 0; n < nextSelectors.length; n++) {
     try { if (document.querySelector(nextSelectors[n])) { hasNext = true; break; } } catch(e) { continue; }
   }
-  return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
+  return JSON.stringify({
+    assets: assets, total: total, hasMore: hasNext,
+    rowSelectorUsed: rowSelectorUsed, rowsFound: rows.length,
+    extractionError: rows.length === 0 ? 'no_result_rows' : (assets.length === 0 ? 'rows_contained_no_assets' : '')
+  });
 })()
 `

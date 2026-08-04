@@ -159,11 +159,12 @@ func allowHeadlessFixtureOrigin(t *testing.T, mgr *Manager, rawOrigin string) {
 		return ValidateBrowserURLLive(ctx, rawURL)
 	}
 	mgr.egressProxyFactory = func(ctx context.Context) (*browserEgressProxy, error) {
+		direct := &net.Dialer{Timeout: 10 * time.Second}
 		return newBrowserEgressProxyWithDialResolver(ctx, func(resolveCtx context.Context, addr string) ([]string, error) {
 			if addr == allowed.Host {
 				return []string{addr}, nil
 			}
 			return resolveBrowserDialTargets(resolveCtx, net.DefaultResolver, addr)
-		})
+		}, direct.DialContext)
 	}
 }

@@ -25,13 +25,18 @@ func (m *Manager) newGuardedBrowserSession(parent context.Context, targetURL, pr
 	if err := m.validateBrowserURL(parent, targetURL); err != nil {
 		return nil, err
 	}
-	if m.configuredUpstreamProxy(proxy) != "" {
-		return nil, fmt.Errorf("ssrf: external browser proxy is not supported by the guarded egress path")
-	}
+	upstream := m.configuredUpstreamProxy(proxy)
 	if m.configuredRemoteDebugURL() != "" {
 		return nil, fmt.Errorf("ssrf: remote Chrome cannot prove guarded egress configuration")
 	}
 	factory := m.egressProxyFactory
+	if upstream != "" {
+		egressProxy, err := newBrowserEgressProxyWithUpstream(parent, net.DefaultResolver, upstream)
+		if err != nil {
+			return nil, err
+		}
+		return m.finishGuardedBrowserSession(parent, egressProxy)
+	}
 	if factory == nil {
 		factory = func(ctx context.Context) (*browserEgressProxy, error) {
 			return newBrowserEgressProxy(ctx, net.DefaultResolver)
@@ -41,12 +46,16 @@ func (m *Manager) newGuardedBrowserSession(parent context.Context, targetURL, pr
 	if err != nil {
 		return nil, err
 	}
+	return m.finishGuardedBrowserSession(parent, egressProxy)
+}
+
+func (m *Manager) finishGuardedBrowserSession(parent context.Context, egressProxy *browserEgressProxy) (*guardedBrowserSession, error) {
 
 	var (
 		allocCtx    context.Context
 		allocCancel context.CancelFunc
 	)
-	allocCtx, allocCancel, err = m.newAllocatorWithProxy(parent, egressProxy.URL())
+	allocCtx, allocCancel, err := m.newAllocatorWithProxy(parent, egressProxy.URL())
 	if err != nil {
 		_ = egressProxy.Close()
 		return nil, err

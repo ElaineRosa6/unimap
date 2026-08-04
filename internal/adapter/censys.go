@@ -182,26 +182,26 @@ func censysQuote(v string) string {
 // mapField 映射统一字段到Censys字段
 func (c *CensysAdapter) mapField(field string) string {
 	mapping := map[string]string{
-		"body":        "services.http.response.body",
-		"title":       "services.http.response.html_title",
-		"header":      "services.http.response.headers.raw",
-		"port":        "services.port",
-		"protocol":    "services.service_name",
-		"ip":          "ip",
-		"country":     "location.country_code",
-		"region":      "location.province",
-		"city":        "location.city",
-		"asn":         "autonomous_system.asn",
-		"org":         "autonomous_system.name",
-		"isp":         "autonomous_system.name",
-		"domain":      "dns.names",
-		"host":        "dns.names",
-		"server":      "services.http.response.headers.Server",
-		"status_code": "services.http.response.status_code",
-		"os":          "operating_system",
-		"app":         "services.software.product",
-		"cert":        "services.tls.certificates.leaf.subject",
-		"url":         "dns.names",
+		"body":        "host.services.endpoints.http.body",
+		"title":       "host.services.endpoints.http.html_title",
+		"header":      "host.services.endpoints.http.headers",
+		"port":        "host.services.port",
+		"protocol":    "host.services.protocol",
+		"ip":          "host.ip",
+		"country":     "host.location.country_code",
+		"region":      "host.location.province",
+		"city":        "host.location.city",
+		"asn":         "host.autonomous_system.asn",
+		"org":         "host.autonomous_system.name",
+		"isp":         "host.autonomous_system.name",
+		"domain":      "host.dns.names",
+		"host":        "host.dns.names",
+		"server":      "host.services.endpoints.http.headers.value",
+		"status_code": "host.services.endpoints.http.status_code",
+		"os":          "host.operating_system.product",
+		"app":         "host.services.software.product",
+		"cert":        "host.services.cert.names",
+		"url":         "host.dns.names",
 	}
 
 	if mapped, ok := mapping[field]; ok {
@@ -239,20 +239,20 @@ func (c *CensysAdapter) translateNode(node *model.UQLNode) string {
 				values := strings.Split(val, ",")
 				clauses := make([]string, 0, len(values))
 				for _, v := range values {
-					clauses = append(clauses, fmt.Sprintf("%s:%s", mappedField, censysQuote(strings.TrimSpace(v))))
+					clauses = append(clauses, fmt.Sprintf("%s=%s", mappedField, censysQuote(strings.TrimSpace(v))))
 				}
 				return "(" + strings.Join(clauses, " OR ") + ")"
 			}
 
 			if op == "!=" || op == "<>" {
 				// Censys uses NOT field:value (not -field:value)
-				return fmt.Sprintf("NOT %s:%s", mappedField, censysQuote(val))
+				return fmt.Sprintf("NOT %s=%s", mappedField, censysQuote(val))
 			}
 			// Censys 比较操作符: field:>value, field:>=value, field:<value, field:<=value
 			if op == ">" || op == ">=" || op == "<" || op == "<=" {
-				return fmt.Sprintf("%s:%s%s", mappedField, op, censysQuote(val))
+				return fmt.Sprintf("%s%s%s", mappedField, op, censysQuote(val))
 			}
-			return fmt.Sprintf("%s:%s", mappedField, censysQuote(val))
+			return fmt.Sprintf("%s=%s", mappedField, censysQuote(val))
 		}
 
 	case "logical":

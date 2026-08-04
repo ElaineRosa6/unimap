@@ -48,6 +48,8 @@ type Manager struct {
 	noSandbox          bool
 	cookies            map[string][]Cookie // 各引擎的Cookie
 	cookiesMutex       sync.RWMutex
+	storage            map[string]BrowserStorage
+	storageMutex       sync.RWMutex
 	timeout            time.Duration
 	windowWidth        int
 	windowHeight       int
@@ -65,6 +67,13 @@ type Cookie struct {
 	Path     string
 	HTTPOnly bool
 	Secure   bool
+}
+
+// BrowserStorage is transient same-origin state handed off by the loopback
+// Extension Bridge. It is never persisted or logged.
+type BrowserStorage struct {
+	Local   map[string]string
+	Session map[string]string
 }
 
 // Config 截图管理器配置
@@ -121,6 +130,7 @@ func NewManager(cfg Config) *Manager {
 		headless:       cfg.Headless,
 		noSandbox:      cfg.NoSandbox,
 		cookies:        make(map[string][]Cookie),
+		storage:        make(map[string]BrowserStorage),
 		timeout:        cfg.Timeout,
 		windowWidth:    cfg.WindowWidth,
 		windowHeight:   cfg.WindowHeight,
@@ -131,6 +141,31 @@ func NewManager(cfg Config) *Manager {
 			return newBrowserEgressProxy(ctx, net.DefaultResolver)
 		},
 	}
+}
+
+// SetBrowserStorage replaces the transient Web Storage for an engine.
+func (m *Manager) SetBrowserStorage(engine string, storage BrowserStorage) {
+	m.storageMutex.Lock()
+	defer m.storageMutex.Unlock()
+	m.storage[strings.ToLower(strings.TrimSpace(engine))] = cloneBrowserStorage(storage)
+}
+
+// GetBrowserStorage returns an isolated copy of transient Web Storage.
+func (m *Manager) GetBrowserStorage(engine string) BrowserStorage {
+	m.storageMutex.RLock()
+	defer m.storageMutex.RUnlock()
+	return cloneBrowserStorage(m.storage[strings.ToLower(strings.TrimSpace(engine))])
+}
+
+func cloneBrowserStorage(storage BrowserStorage) BrowserStorage {
+	clone := BrowserStorage{Local: make(map[string]string, len(storage.Local)), Session: make(map[string]string, len(storage.Session))}
+	for key, value := range storage.Local {
+		clone.Local[key] = value
+	}
+	for key, value := range storage.Session {
+		clone.Session[key] = value
+	}
+	return clone
 }
 
 func (m *Manager) validateBrowserURL(ctx context.Context, rawURL string) error {
@@ -225,9 +260,9 @@ func (m *Manager) CaptureScreenshotWithProxy(ctx context.Context, targetURL stri
 	// 构建ChromeDP动作列表
 	actions := []chromedp.Action{}
 
-	// 只有在非CDP模式且提供了Cookie时才设置Cookie
-	// CDP模式下浏览器已保持登录状态，无需设置Cookie
-	if len(cookies) > 0 && !m.isCDPMode() {
+	// 无论是本地还是 attached CDP，都应用显式传入的 Cookie。
+	// Bridge 凭据交接依赖这一路径，不能假设 attached 会话已登录。
+	if len(cookies) > 0 {
 		// 需要先导航到目标域名才能设置Cookie，设置后再重新加载页面
 		actions = append(actions,
 			chromedp.Navigate(targetURL),
@@ -235,9 +270,6 @@ func (m *Manager) CaptureScreenshotWithProxy(ctx context.Context, targetURL stri
 		actions = append(actions, setCookieActions(cookies, targetURL)...)
 		actions = append(actions, chromedp.Navigate(targetURL))
 	} else {
-		if m.isCDPMode() && len(cookies) > 0 {
-			logger.Infof("Using CDP mode, skipping cookie setup (browser already logged in)")
-		}
 		actions = append(actions, chromedp.Navigate(targetURL))
 	}
 
@@ -285,16 +317,13 @@ func (m *Manager) OpenSearchEngineResult(ctx context.Context, engine, query stri
 
 	cookies := m.GetCookies(engine)
 	actions := []chromedp.Action{}
-	if len(cookies) > 0 && !m.isCDPMode() {
+	if len(cookies) > 0 {
 		actions = append(actions,
 			chromedp.Navigate(searchURL),
 		)
 		actions = append(actions, setCookieActions(cookies, searchURL)...)
 		actions = append(actions, chromedp.Navigate(searchURL))
 	} else {
-		if m.isCDPMode() && len(cookies) > 0 {
-			logger.Infof("Using CDP mode, skipping cookie setup (browser already logged in)")
-		}
 		actions = append(actions, chromedp.Navigate(searchURL))
 	}
 
@@ -417,6 +446,12 @@ func (m *Manager) EngineLoginURL(engine string) string {
 		return "https://quake.360.net/"
 	case "zoomeye":
 		return "https://www.zoomeye.org/"
+	case "shodan":
+		return "https://www.shodan.io/"
+	case "censys":
+		return "https://platform.censys.io/"
+	case "daydaymap":
+		return "https://www.daydaymap.com/home"
 	default:
 		return ""
 	}
@@ -535,9 +570,9 @@ func (m *Manager) BuildSearchEngineURL(engine, query string) string {
 	case "shodan":
 		return fmt.Sprintf("https://www.shodan.io/search?query=%s", encodedQuery)
 	case "censys":
-		return fmt.Sprintf("https://search.censys.io/search?resource=hosts&sort=RELEVANCE&per_page=25&virtual_hosts=EXCLUDE&q=%s", encodedQuery)
+		return fmt.Sprintf("https://platform.censys.io/search?resource=hosts&sort=RELEVANCE&per_page=25&virtual_hosts=EXCLUDE&q=%s", encodedQuery)
 	case "daydaymap":
-		return fmt.Sprintf("https://www.daydaymap.com/#/search?keyword=%s", encodedB64)
+		return fmt.Sprintf("https://www.daydaymap.com/searchResult?keyword=%s", url.QueryEscape(query))
 	default:
 		return ""
 	}

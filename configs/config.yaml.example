@@ -64,15 +64,20 @@ query:
 # Web 截图与 CDP 配置
 screenshot:
     enabled: true
-    # cdp | extension
+    # 兼容字段；新配置优先使用 mode / priority / fallback
     engine: cdp
+    mode: auto
+    priority: cdp
+    fallback: true
     base_dir: ./screenshots
     chrome_path: ""
-    # 浏览器代理，例如: http://127.0.0.1:7890 或 socks5://127.0.0.1:7891
+    # 可选受控上游：只接受 literal-loopback SOCKS5；解析、私网拒绝与公网 IP 固定仍由 UniMap 执行
+    # 例如 socks5://127.0.0.1:7891；HTTP、主机名 loopback 和外部代理会失败关闭
     proxy_server: ""
     chrome_user_data_dir: ""
     chrome_profile_dir: "Default"
-    chrome_remote_debug_url: "http://127.0.0.1:9222"
+    # guarded browser session 不接收远程 Chrome；保持为空
+    chrome_remote_debug_url: ""
     headless: true
     # 仅容器/受限运行环境在确认需要时开启；普通主机保持 false 以保留 Chrome sandbox
     no_sandbox: false
@@ -246,7 +251,8 @@ cache:
 # 定时任务通知配置
 notifications:
     enabled: true
-    send_timeout_sec: 10
+    send_timeout_sec: 60
+    max_retries: 2
     channels:
         - id: "team-dingtalk"
           type: "dingtalk"

@@ -24,10 +24,10 @@ func TestFilterStableEngines(t *testing.T) {
 }
 
 func TestFilterStableEngines_AllStable(t *testing.T) {
-	input := []string{"fofa", "hunter", "zoomeye", "quake", "shodan"}
+	input := []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"}
 	got := filterStableEngines(input)
-	if len(got) != 5 {
-		t.Fatalf("expected 5, got %d: %v", len(got), got)
+	if len(got) != 7 {
+		t.Fatalf("expected 7, got %d: %v", len(got), got)
 	}
 }
 

@@ -355,13 +355,16 @@ func (s *Server) finalizeWSQueryStatus(queryID, query string, engines []string, 
 	if st == nil {
 		return QueryStatus{}
 	}
-	if queryErr != nil {
+	payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction)
+	if queryErr != nil && len(payload.Assets) == 0 {
 		st.Errors = append(st.Errors, fmt.Sprintf("Query failed: %v", queryErr))
 		st.Errors = appendUniqueStrings(st.Errors, browserOutcome.Errors)
 		st.Errors = appendUniqueStrings(st.Errors, browserOutcome.AutoCaptureErrors)
 		st.Status = "error"
 	} else {
-		payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction)
+		if queryErr != nil {
+			payload = buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, fmt.Sprintf("API query failed: %v", queryErr))
+		}
 		if len(payload.Assets) > 0 {
 			st.Results = payload.Assets
 		} else {
@@ -377,7 +380,11 @@ func (s *Server) finalizeWSQueryStatus(queryID, query string, engines []string, 
 		} else {
 			st.Errors = resp.Errors
 		}
-		st.Status = "completed"
+		if payload.Status == "partial" {
+			st.Status = "partial"
+		} else {
+			st.Status = "completed"
+		}
 	}
 	st.Progress = 100
 	st.EndTime = time.Now()

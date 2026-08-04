@@ -324,6 +324,32 @@ func TestBridgeService_Submit_Canceled(t *testing.T) {
 	}
 }
 
+func TestBridgeService_GetCookiesValidatesHTTPSOriginAndPreservesBareDomain(t *testing.T) {
+	client := &mockBridgeClient{awaitResult: BridgeResult{Success: true}}
+	svc := NewBridgeService(client, 1, time.Second)
+	validated := ""
+	svc.urlValidator = func(_ context.Context, rawURL string) error {
+		validated = rawURL
+		return nil
+	}
+	svc.Start(t.Context())
+	defer svc.Stop()
+
+	if _, err := svc.Submit(t.Context(), BridgeTask{
+		RequestID: "cookie-read", URL: "fofa.info", Action: "get_cookies",
+	}); err != nil {
+		t.Fatalf("get_cookies submit: %v", err)
+	}
+	if validated != "https://fofa.info" {
+		t.Fatalf("validated URL = %q", validated)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.submitCalls) != 1 || client.submitCalls[0].URL != "fofa.info" {
+		t.Fatalf("extension task did not preserve bare domain: %#v", client.submitCalls)
+	}
+}
+
 func TestBridgeService_CanceledQueuedTaskNeverStarts(t *testing.T) {
 	client := &cancelAwareBridgeClient{
 		calls:    make(chan string, 3),
@@ -830,7 +856,7 @@ func TestBuildSearchEngineURL_Router_AllEngines(t *testing.T) {
 		{"quake", "test", "quake.360.net"},
 		{"zoomeye", "test", "zoomeye.org"},
 		{"shodan", "test", "shodan.io"},
-		{"censys", "test", "search.censys.io"},
+		{"censys", "test", "platform.censys.io"},
 		{"daydaymap", "test", "daydaymap.com"},
 	}
 	for _, tt := range tests {

@@ -421,9 +421,9 @@ func (m *Manager) applyMiscDefaults(config *Config) {
 
 	// 通知
 	if config.Notifications.SendTimeoutSec == 0 {
-		config.Notifications.SendTimeoutSec = 10
+		config.Notifications.SendTimeoutSec = 60
 	}
 	if config.Notifications.MaxRetries == 0 {
-		config.Notifications.MaxRetries = 0
+		config.Notifications.MaxRetries = 2
 	}
 }

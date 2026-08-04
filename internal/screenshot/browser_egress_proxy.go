@@ -8,9 +8,12 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
+
+	xproxy "golang.org/x/net/proxy"
 )
 
 // browserEgressProxy is a loopback-only forward proxy. Unlike a Fetch-domain
@@ -24,19 +27,35 @@ type browserEgressProxy struct {
 }
 
 type browserDialTargetResolver func(context.Context, string) ([]string, error)
+type browserPinnedDialer func(context.Context, string, string) (net.Conn, error)
 
 func newBrowserEgressProxy(parent context.Context, resolver browserHostResolver) (*browserEgressProxy, error) {
-	return newBrowserEgressProxyWithDialResolver(parent, func(ctx context.Context, addr string) ([]string, error) {
-		return resolveBrowserDialTargets(ctx, resolver, addr)
-	})
+	return newBrowserEgressProxyWithUpstream(parent, resolver, "")
 }
 
-func newBrowserEgressProxyWithDialResolver(parent context.Context, resolveTargets browserDialTargetResolver) (*browserEgressProxy, error) {
+// newBrowserEgressProxyWithUpstream keeps DNS validation and address pinning
+// inside UniMap, then optionally sends the already-pinned public IP through a
+// loopback SOCKS5 proxy. The SOCKS server never receives the original host, so
+// it cannot re-resolve the name to a private address.
+func newBrowserEgressProxyWithUpstream(parent context.Context, resolver browserHostResolver, upstream string) (*browserEgressProxy, error) {
+	dial, err := browserPinnedDialerForUpstream(upstream)
+	if err != nil {
+		return nil, err
+	}
+	return newBrowserEgressProxyWithDialResolver(parent, func(ctx context.Context, addr string) ([]string, error) {
+		return resolveBrowserDialTargets(ctx, resolver, addr)
+	}, dial)
+}
+
+func newBrowserEgressProxyWithDialResolver(parent context.Context, resolveTargets browserDialTargetResolver, dial browserPinnedDialer) (*browserEgressProxy, error) {
 	if parent == nil {
 		parent = context.Background()
 	}
 	if resolveTargets == nil {
 		return nil, fmt.Errorf("ssrf: browser egress target resolver is unavailable")
+	}
+	if dial == nil {
+		return nil, fmt.Errorf("ssrf: browser egress dialer is unavailable")
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -51,7 +70,7 @@ func newBrowserEgressProxyWithDialResolver(parent context.Context, resolveTarget
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 30 * time.Second,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return dialValidatedBrowserTarget(ctx, resolveTargets, network, addr)
+			return dialValidatedBrowserTarget(ctx, resolveTargets, dial, network, addr)
 		},
 	}
 	reverseProxy := &httputil.ReverseProxy{
@@ -73,7 +92,7 @@ func newBrowserEgressProxyWithDialResolver(parent context.Context, resolveTarget
 	proxy.server = &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if req.Method == http.MethodConnect {
-				proxy.handleConnect(w, req, resolveTargets)
+				proxy.handleConnect(w, req, resolveTargets, dial)
 				return
 			}
 			reverseProxy.ServeHTTP(w, req)
@@ -122,12 +141,12 @@ func (p *browserEgressProxy) Close() error {
 	return closeErr
 }
 
-func (p *browserEgressProxy) handleConnect(w http.ResponseWriter, req *http.Request, resolveTargets browserDialTargetResolver) {
+func (p *browserEgressProxy) handleConnect(w http.ResponseWriter, req *http.Request, resolveTargets browserDialTargetResolver, dial browserPinnedDialer) {
 	target := strings.TrimSpace(req.Host)
 	if !strings.Contains(target, ":") {
 		target = net.JoinHostPort(target, "443")
 	}
-	upstream, err := dialValidatedBrowserTarget(req.Context(), resolveTargets, "tcp", target)
+	upstream, err := dialValidatedBrowserTarget(req.Context(), resolveTargets, dial, "tcp", target)
 	if err != nil {
 		http.Error(w, "browser egress connection denied", http.StatusForbidden)
 		return
@@ -162,21 +181,55 @@ func (p *browserEgressProxy) handleConnect(w http.ResponseWriter, req *http.Requ
 	<-done
 }
 
-func dialValidatedBrowserTarget(ctx context.Context, resolveTargets browserDialTargetResolver, network, addr string) (net.Conn, error) {
+func dialValidatedBrowserTarget(ctx context.Context, resolveTargets browserDialTargetResolver, dial browserPinnedDialer, network, addr string) (net.Conn, error) {
 	targets, err := resolveTargets(ctx, addr)
 	if err != nil {
 		return nil, err
 	}
-	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 	var lastErr error
 	for _, target := range targets {
-		conn, dialErr := dialer.DialContext(ctx, network, target)
+		conn, dialErr := dial(ctx, network, target)
 		if dialErr == nil {
 			return conn, nil
 		}
 		lastErr = dialErr
 	}
 	return nil, fmt.Errorf("ssrf: dial validated browser target: %w", lastErr)
+}
+
+func browserPinnedDialerForUpstream(raw string) (browserPinnedDialer, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		direct := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+		return direct.DialContext, nil
+	}
+
+	parsed, err := url.Parse(value)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "socks5") {
+		return nil, fmt.Errorf("ssrf: guarded browser upstream must use socks5://")
+	}
+	host := strings.TrimSpace(parsed.Hostname())
+	port := strings.TrimSpace(parsed.Port())
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() || port == "" {
+		return nil, fmt.Errorf("ssrf: guarded browser SOCKS5 upstream must be a loopback IP and explicit port")
+	}
+
+	var auth *xproxy.Auth
+	if parsed.User != nil {
+		password, _ := parsed.User.Password()
+		auth = &xproxy.Auth{User: parsed.User.Username(), Password: password}
+	}
+	forward := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	socksDialer, err := xproxy.SOCKS5("tcp", net.JoinHostPort(ip.String(), port), auth, forward)
+	if err != nil {
+		return nil, fmt.Errorf("ssrf: initialize guarded browser SOCKS5 upstream: %w", err)
+	}
+	contextDialer, ok := socksDialer.(xproxy.ContextDialer)
+	if !ok {
+		return nil, fmt.Errorf("ssrf: guarded browser SOCKS5 dialer lacks context support")
+	}
+	return contextDialer.DialContext, nil
 }
 
 func resolveBrowserDialTargets(ctx context.Context, resolver browserHostResolver, addr string) ([]string, error) {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 )
 
@@ -329,6 +330,56 @@ func TestHasCookies_AllEmptyNames(t *testing.T) {
 	cookies := []config.Cookie{{Name: "", Value: "abc"}}
 	if hasCookies(cookies) {
 		t.Fatal("expected false when all names are empty")
+	}
+}
+
+func TestEngineCookiesSupportsEveryBrowserEngine(t *testing.T) {
+	engines := []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"}
+	for _, engine := range engines {
+		t.Run(engine, func(t *testing.T) {
+			cfg := &config.Config{}
+			want := []config.Cookie{{Name: "session", Value: "fixture", Domain: ".example.test", Path: "/"}}
+			setEngineCookies(cfg, engine, want)
+			got := engineCookies(cfg, engine)
+			if len(got) != 1 || got[0].Name != "session" {
+				t.Fatalf("cookies for %s were not stored: %#v", engine, got)
+			}
+		})
+	}
+}
+
+func TestEngineCredentialURLUsesReachableCanonicalOrigins(t *testing.T) {
+	if got := engineCredentialURL("censys"); got != "https://platform.censys.io/" {
+		t.Fatalf("censys credential URL=%q", got)
+	}
+	if got := engineCredentialURL("daydaymap"); got != "https://www.daydaymap.com/home" {
+		t.Fatalf("daydaymap credential URL=%q", got)
+	}
+}
+
+func TestBridgeCookiesFromResultPreservesCookieAttributes(t *testing.T) {
+	result := screenshot.BridgeResult{StructuredCollectedData: &model.BridgeCollectedData{
+		Cookies: []model.BrowserCookie{{
+			Name: "session", Value: "fixture", Domain: ".fofa.info", Path: "/",
+			HTTPOnly: true, Secure: true,
+		}},
+	}}
+
+	cookies, err := bridgeCookiesFromResult("fofa", result)
+	if err != nil {
+		t.Fatalf("bridgeCookiesFromResult: %v", err)
+	}
+	if len(cookies) != 1 || !cookies[0].HTTPOnly || !cookies[0].Secure || cookies[0].Value != "fixture" {
+		t.Fatalf("cookie attributes were not preserved: %#v", cookies)
+	}
+}
+
+func TestBridgeCollectedDataKeepsBrowserStorageTyped(t *testing.T) {
+	data := model.BridgeCollectedData{Storage: &model.BrowserStorage{
+		Local: map[string]string{"token": "fixture"}, Session: map[string]string{"nonce": "one"},
+	}}
+	if data.Storage.Local["token"] != "fixture" || data.Storage.Session["nonce"] != "one" {
+		t.Fatalf("typed browser storage was lost: %#v", data.Storage)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,6 +16,14 @@ import (
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/utils"
 )
+
+// engineStorageHosts maps a browser engine to the site host whose same-origin
+// Web Storage (and cookies) the browser session must receive. Built once to
+// avoid rebuilding the map on every page load.
+var engineStorageHosts = map[string]string{
+	"fofa": "fofa.info", "hunter": "hunter.qianxin.com", "zoomeye": "zoomeye.org",
+	"quake": "quake.360.net", "shodan": "shodan.io", "censys": "censys.io", "daydaymap": "daydaymap.com",
+}
 
 // loadPageContent is a CDP-only helper used by cookie/session validation.
 func (m *Manager) loadPageContent(ctx context.Context, targetURL string, cookies []Cookie, title *string, html *string) error {
@@ -49,18 +58,13 @@ func (m *Manager) loadBrowserPage(ctx context.Context, targetURL string, cookies
 	var title, html string
 	actions := []chromedp.Action{}
 
-	// 只有在非CDP模式且提供了Cookie时才设置Cookie
-	// CDP模式下浏览器已保持登录状态，无需设置Cookie
-	if len(cookies) > 0 && !m.isCDPMode() {
-		actions = append(actions,
-			chromedp.Navigate(targetURL),
-		)
+	// Apply configured or Bridge-synchronized cookies before the first
+	// navigation in both local and attached-CDP modes. Attached Chrome may use
+	// a separate profile and must not be assumed to share the UI session.
+	if len(cookies) > 0 {
 		actions = append(actions, setCookieActions(cookies, targetURL)...)
 		actions = append(actions, chromedp.Navigate(targetURL))
 	} else {
-		if m.isCDPMode() && len(cookies) > 0 {
-			logger.Infof("Using CDP mode, skipping cookie setup (browser already logged in)")
-		}
 		actions = append(actions, chromedp.Navigate(targetURL))
 	}
 
@@ -74,7 +78,29 @@ func (m *Manager) loadBrowserPage(ctx context.Context, targetURL string, cookies
 	if err := session.Run(actions...); err != nil {
 		return title, html, err
 	}
+	if storage := m.browserStorageForURL(targetURL); len(storage.Local) > 0 || len(storage.Session) > 0 {
+		if err := applyBrowserStorage(session, storage, targetURL); err != nil {
+			return title, html, fmt.Errorf("apply browser storage: %w", err)
+		}
+		if err := session.Run(chromedp.Sleep(m.waitTime), chromedp.Title(&title), chromedp.OuterHTML("html", &html, chromedp.ByQuery)); err != nil {
+			return title, html, err
+		}
+	}
 	return title, html, nil
+}
+
+func (m *Manager) browserStorageForURL(rawURL string) BrowserStorage {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return BrowserStorage{}
+	}
+	host := strings.ToLower(parsed.Hostname())
+	for engine, candidateHost := range engineStorageHosts {
+		if host == candidateHost || strings.HasSuffix(host, "."+candidateHost) {
+			return m.GetBrowserStorage(engine)
+		}
+	}
+	return BrowserStorage{}
 }
 
 func (m *Manager) buildExecAllocatorOptions(proxyOverride string) []chromedp.ExecAllocatorOption {

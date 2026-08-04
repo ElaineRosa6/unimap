@@ -35,6 +35,8 @@ type BrowserQueryOutcome struct {
 type BrowserQueryWorkflowOptions struct {
 	Action             string
 	QueryID            string
+	AutoCaptureEnabled bool
+	PreviewURLBuilder  func(string) string
 	ScreenshotApp      *ScreenshotAppService
 	ScreenshotManager  *screenshot.Manager
 	BrowserRouter      BrowserRouter
@@ -135,6 +137,27 @@ func (s *QueryAppService) executeQuery(ctx context.Context, query string, engine
 	})
 }
 
+// withoutDeadline returns a context that propagates cancellation from parent
+// but carries no deadline, so executeQuery applies its own QueryExecutionTimeout.
+// The browser-workflow deadline must never cap the parallel API query.
+func withoutDeadline(parent context.Context) context.Context {
+	if parent == nil {
+		return context.Background()
+	}
+	if _, ok := parent.Deadline(); !ok {
+		return parent
+	}
+	child, cancel := context.WithCancelCause(context.Background())
+	go func() {
+		select {
+		case <-parent.Done():
+			cancel(parent.Err())
+		case <-child.Done():
+		}
+	}()
+	return child
+}
+
 // ExecuteQueryWithBrowserWorkflow runs the API query and Bridge collection in
 // parallel, merges both result sets, and persists exactly one history record.
 // Scheduled callers can require complete collect+capture and durable storage.
@@ -150,12 +173,15 @@ func (s *QueryAppService) ExecuteQueryWithBrowserWorkflow(
 	}
 	startedAt := time.Now()
 	browserCh := s.RunBrowserQueryAsync(
-		ctx, query, engines, true, opts.Action, opts.QueryID, true,
-		opts.ScreenshotApp, opts.ScreenshotManager, func(path string) string { return path },
+		ctx, query, engines, true, opts.Action, opts.QueryID, opts.AutoCaptureEnabled,
+		opts.ScreenshotApp, opts.ScreenshotManager, browserPreviewURLBuilder(opts.PreviewURLBuilder),
 		opts.BrowserRouter, nil,
 	)
 
-	resp, queryErr := s.executeQuery(ctx, query, engines, pageSize)
+	// The API query keeps its own QueryExecutionTimeout; the caller-supplied
+	// deadline caps the browser workflow (60/150s), not the HTTP query. Otherwise
+	// a slow engine query is cancelled mid-flight instead of returning results.
+	resp, queryErr := s.executeQuery(withoutDeadline(ctx), query, engines, pageSize)
 	var browserOutcome BrowserQueryOutcome
 	if browserCh != nil {
 		browserOutcome = <-browserCh
@@ -167,7 +193,7 @@ func (s *QueryAppService) ExecuteQueryWithBrowserWorkflow(
 		workflowErr = fmt.Errorf("browser query workflow context ended: %w", ctx.Err())
 	}
 	if queryErr != nil {
-		if workflowErr == nil && len(browserOutcome.CollectedResults) > 0 {
+		if workflowErr == nil && browserOutcomeHasAssets(browserOutcome) {
 			merged.Errors = append(merged.Errors, fmt.Sprintf("API query failed; Bridge results used: %v", queryErr))
 		} else if workflowErr == nil {
 			workflowErr = queryErr
@@ -195,6 +221,25 @@ func (s *QueryAppService) ExecuteQueryWithBrowserWorkflow(
 		return merged, browserOutcome, workflowErr
 	}
 	return merged, browserOutcome, nil
+}
+
+func browserPreviewURLBuilder(builder func(string) string) func(string) string {
+	if builder != nil {
+		return builder
+	}
+	return func(path string) string { return path }
+}
+
+// browserOutcomeHasAssets reports whether the browser channel produced usable
+// structured assets. A collection envelope without assets must not mask an API
+// failure, login wall, selector miss, or empty result page.
+func browserOutcomeHasAssets(outcome BrowserQueryOutcome) bool {
+	for _, result := range outcome.CollectedResults {
+		if len(result.Assets) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func mergeBrowserQueryResponse(resp *QueryResponse, outcome BrowserQueryOutcome) *QueryResponse {
@@ -232,14 +277,15 @@ func validateBrowserQueryWorkflow(engines []string, action string, outcome Brows
 	if len(outcome.Errors) > 0 || len(outcome.AutoCaptureErrors) > 0 {
 		return fmt.Errorf("browser workflow failed: %s", strings.Join(append(append([]string{}, outcome.Errors...), outcome.AutoCaptureErrors...), "; "))
 	}
-	collected := make(map[string]bool, len(outcome.CollectedResults))
+	collected := make(map[string]int, len(outcome.CollectedResults))
 	for _, result := range outcome.CollectedResults {
-		collected[strings.ToLower(strings.TrimSpace(result.Engine))] = true
+		key := strings.ToLower(strings.TrimSpace(result.Engine))
+		collected[key] += len(result.Assets)
 	}
 	for _, engine := range engines {
 		key := strings.ToLower(strings.TrimSpace(engine))
-		if !collected[key] {
-			return fmt.Errorf("browser workflow returned no collected result for %s", engine)
+		if collected[key] == 0 {
+			return fmt.Errorf("browser workflow returned no structured assets for %s", engine)
 		}
 		if strings.TrimSpace(outcome.AutoCapturedPaths[engine]) == "" && strings.TrimSpace(outcome.AutoCapturedPaths[key]) == "" {
 			return fmt.Errorf("browser workflow returned no screenshot for %s", engine)
