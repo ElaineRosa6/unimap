@@ -64,7 +64,7 @@ go test -tags headless_e2e -run 'TestRelaxed_|TestStrict_MD5Change|TestNormalDyn
 1. 先确认登录状态：`GET /api/v1/cookies/login-status`。
 2. 使用 API 查询时发送表单字段 `query`、可选 `engines` 与 `page_size`；不要发送旧文档中的 JSON `limit/offset/timeout` 请求体。
 3. `page_size` 最大为 500。查询状态使用 `GET /api/v1/query/status?query_id=...`。
-4. 检查目标引擎 API Key、Cookie、额度和网络连通性。当前 Web UI 展示核心五引擎；Censys/DayDayMap 只有服务端/CLI API 适配和 API 实机证据，不属于稳定 UI，也没有 Bridge/CDP 抓取通过记录。
+4. 检查目标引擎 API Key、Cookie、额度和网络连通性。Web UI 展示七引擎；无 API 凭据时使用 Web-only adapter。七引擎 Bridge 已有真实非空证据，CDP 的逐引擎限制见 2026-08-02 验收记录。
 
 ## 3. Chrome/CDP 或截图失败
 
@@ -122,7 +122,7 @@ curl --fail http://127.0.0.1:8448/health/ready
 
 Compose 通过专用的 `UNIMAP_CONTAINER_BIND_ADDRESS` 显式切换为容器内 `0.0.0.0`，并要求 `UNIMAP_BOOTSTRAP_PASSWORD`；后者只在启动配置阶段用于生成 bcrypt 哈希，不写回配置或日志。生产环境可通过 `UNIMAP_IMAGE` 指定预构建镜像，推荐使用 `仓库@sha256:摘要` 而不是可变 `latest`，并以 `pull` + `up --no-build` 部署。生产入口仅在 `unimap_config` 卷中不存在 `config.yaml` 时，从镜像内 `configs/config.prod.yaml` 初始化并设为 `0600`；应用通过 `UNIMAP_CONFIG_PATH=/app/runtime-config/config.yaml` 读取。更新镜像不会覆盖已存在的运行配置。环境变量占位符在加载时解析；设置页保存会把解析后的候选配置写入运行卷，因此 Key 轮换不能依赖修改环境变量永久覆盖已经持久化的值。若不使用 Compose，镜像基线保持 loopback，仅可通过容器内检查或自行提供安全的公开监听配置访问。
 
-生产部署还必须设置固定管理令牌和非默认管理员用户名。生产模板显式启用 Quake、Hunter，QPS 为 1；缺少 API Key 时注册的 Web-only adapter 并不代表真实查询已经可用，必须执行一次真实查询或浏览器采集验收。未配置的其他引擎默认禁用；Censys、DayDayMap 缺少完整 API 凭据时直接跳过注册，不会伪装成 Web-only。
+生产部署还必须设置固定管理令牌和非默认管理员用户名。生产模板显式启用 Quake、Hunter，QPS 为 1；缺少 API Key 时注册的 Web-only adapter 并不代表真实查询已经可用，必须执行一次真实查询或浏览器采集验收。未配置的其他引擎默认禁用；启用 Censys、DayDayMap 但缺少完整 API 凭据时注册明确的 Web-only adapter，查询必须同时设置 `browser_query=true`。
 
 当前阿里云试运行机的 SSH 隧道登录、Quake/Hunter API Key 与 Cookie 准备、秘密录入限制和验证顺序见 [云服务器常态化运行准备与协作清单的操作章节](CLOUD_STEADY_STATE_PLAN_2026-07-23.md#10-管理登录与凭据录入操作)。首次录入后必须完成保存、容器重启和恢复验证；本地代码测试不能替代该云机证据。
 
@@ -214,7 +214,7 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/scheduler/history
 
 该工作流通过当前 ScreenshotRouter 后端执行：`cdp` 模式使用 headless Chromium，`extension` 模式使用在线扩展，`auto` 模式按健康状态和 fallback 配置选择。Bridge 不是该 payload 的必需条件。为任务启用成功通知及至少一个支持图片的渠道后，按实际后端排障：
 
-不要用历史 Bridge E2E 代替 CDP 验收。当前五个稳定引擎的真实结构化采集证据来自 Bridge；CDP 必须逐引擎检查真实结果页、非空结构化资产和截图。Censys、DayDayMap 暂不允许进入该浏览器闭环验收，直至 URL 构造、采集器、登录态、UI 和 live E2E 全部接通。
+不要用 Bridge E2E 代替 CDP 验收。当前七个稳定引擎的真实结构化采集证据来自 Bridge；CDP 必须逐引擎检查真实结果页、非空结构化资产和截图。DayDayMap 已通过凭据交接与受控 SOCKS5 出口取得 10 条 CDP 资产；Censys 交接后仍命中 Cloudflare 挑战，系统会标记 `browser_challenge`，并在 `auto`/fallback 模式对该任务切换到 Extension（实测 9 条）。
 
 1. `/api/v1/screenshot/router/status` 的 `current_mode` 与预期一致且 `ready=true`；CDP 再检查 `/api/v1/cdp/status`，Extension 再检查 `/api/v1/screenshot/bridge/status` 的近期拉取或回调活动。
 2. 调度执行结果包含浏览器截图保存以及“采集结果已合并并持久化”；不能只根据 PNG 文件存在判断结构化采集成功。

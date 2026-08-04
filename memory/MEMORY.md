@@ -8,20 +8,20 @@
 
 # Project Memory Index
 
-## 当前事实快照（2026-08-01）
+## 当前事实快照（2026-08-02）
+- [urlive.py MD5 FIPS 兼容性修复 2026-08-04](project_urlive_md5_fips_2026-08-04.md) — 全目录审查：MD5 指纹加 usedforsecurity=False（含旧版回退）；unimap 其余 P0 核实为误报/已修复，详见记忆文件。
 
-- [项目当前状态与后续行动 2026-07-24](project_current_state_2026-07-24.md) — 当前提交、
-  巡检收口结果、浏览器层 SSRF 安全边界、七引擎事实矩阵和下一步顺序。
-- 当前稳定 Web UI 引擎为 FOFA、Hunter、ZoomEye、Quake、Shodan；历史真实结构化采集证据来自
-  Bridge/Extension，Quake/Hunter CDP 结构化采集已于 2026-07-29 通过真实验收；FOFA/ZoomEye/Shodan CDP 代码完成待真实校准。
-- Censys、DayDayMap 已完成服务端/CLI API 适配、CDP L1/L3 采集代码、Bridge Extension 选择器、
-  搜索 URL 构造和设置页配置（2026-08-01），但尚未接入稳定 Web UI 查询路径，也未完成真实账号验收。
+- [七引擎、云端发布与飞书闭环 2026-08-02](project_seven_engine_cloud_feishu_closeout_2026-08-02.md) — 当前七引擎、CDP/fallback、云端发布、通知与外部 fixture 状态。
+- 当前稳定 Web UI 已接入 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap；七引擎 Bridge 真实结构化采集均非空。
+- Quake/Hunter/DayDayMap 原生 CDP 已通过；Censys challenge 被结构化识别且自动 Bridge fallback 通过；FOFA/ZoomEye/Shodan 原生 CDP 待非空校准。
+- Censys、DayDayMap 的服务端/CLI API、Web-only adapter、L1/L3、Bridge、设置页、截图、调度和 SQLite 单历史闭环均已接通。
+- 云端最终 CGO/SQLite 镜像已通过健康、重启、旧镜像回滚与重新发布；飞书应用通知两次真实发送 HTTP 200，配置回滚与重应用通过。
 - 自动“发现变化 → 证据截图 → 图片通知”尚未启用。调用前 URL 校验不能覆盖浏览器跨主机重定向
   和 DNS rebinding，浏览器层 SSRF 防护已实现（2026-07-29），自动证据截图需云端验收后启用。
 - 本地 10+ 个提交领先 `origin/develop`，尚未推送。
 - 云端安全验收 fixture 已构建（`tools/acceptance-fixture/`）：DNS rebinding 控制 API、
   可变页面、私网 sink、Cloudflare DNS 翻转、Caddy HTTPS、Docker Compose。
-  部署到受控服务器后运行 `live_dns_e2e` 和 `live_tamper_e2e` 即可解除发布阻断。
+  静态 fixture 已进入 staging；取得受控域名、DNS 编辑参数和控制/目标 URL 后运行 `live_dns_e2e` 与 `live_tamper_e2e`。
 - 七引擎（FOFA/Hunter/ZoomEye/Quake/Shodan/Censys/DayDayMap）均已有 L1 Network 解析器
   和 L3 DOM ExtractJS（2026-08-01），单元测试全部通过。Censys/DayDayMap 新增 L1 解析器、
   DOM 选择器、搜索 URL 构造、Extension 登录 Cookie 检测和设置页配置。
@@ -54,7 +54,7 @@
   CDP headless。所有浏览器业务统一经过 ScreenshotRouter，不能把历史 Bridge 主力模式外推为
   云端默认模式。
 - **ScreenshotRouter 双模式自动降级**：CDP↔Extension 自动切换
-- **三层采集架构（L1/L2/L3）**：L1 Network + L3 DOM 覆盖 5 引擎；L2 Hook 设计冻结
+- **三层采集架构（L1/L2/L3）**：L1 Network + L3 DOM 覆盖 7 引擎；L2 Hook 设计冻结
 - **SPA 引擎截图统一15秒等待**：collect/screenshot/collect_and_capture 三种 action 统一等待 15 秒 + 滚动触发懒加载 + 2 秒稳定等待。不同引擎差异化等待不可靠，统一最长等待更简单（2026-06-18 从 4/6 秒统一为 15 秒）
 - **`collect_and_capture` 一次导航完成采集+截图**：避免分步调用导致页面重载丢失搜索结果
 - **CSP `unsafe-inline` 完全移除**：21 静态 style→CSS 类，28 JS inline style→CSS 类，动态颜色用 CSS 变量
@@ -88,8 +88,8 @@
 
 ## 剩余长期项
 
-> 在册引擎 7 个：核心 5（FOFA/Hunter/ZoomEye/Quake/Shodan）的稳定 Web UI 已接入，历史
-> Bridge 证据存在，但 CDP 结构化采集仍待真实定级；Censys/DayDayMap 仅 API 验证通过。
+> 在册七引擎均已接入稳定 Web UI 且 Bridge 非空实测通过。Quake/Hunter/DayDayMap 原生 CDP 通过；
+> Censys challenge 识别与自动 fallback 通过；FOFA/ZoomEye/Shodan 原生 CDP 仍待非空定级。
 > BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除。
 
 1. **L2 Hook** — 设计冻结，仅当 L1/L3 telemetry 证明收益时启动
@@ -97,7 +97,7 @@
 3. ~~**新增引擎（Censys/DayDayMap）API 查询端到端验证**~~ ✅ DayDayMap curl 200 OK + Censys v3 单 IP 200 OK（2026-06-23）
 4. ~~**ZoomEye `cleanZoomEyeTitle`**~~ ✅ 已修（commit 7e619f8），title 中的元数据前缀已清理
 5. ~~**Shodan `timestamp` 选择器为空** — 需真机调试（commit 50dc187 已修复 timestamp 字段流，待真机验证）~~ ✅ 已修复（`9debb8f`：`capture.js` `div.heading div.timestamp` 选择器 + `dom_selectors.go` 同步 + Go `LastSeen` 字段映射）
-6. ~~**Extension 版本号待升**~~ ✅ 已升至 0.4.1
+6. ~~**Extension 版本号待升**~~ ✅ 当前为 0.4.15（2026-08-02）
 7. ~~**审计项 FINDING-002~008**~~ ✅ 6 项全部闭环（2026-06-22）
 
 ### 运维项（2026-06-23 核实）
@@ -105,7 +105,7 @@
 | 项 | 核实状态 |
 |----|----------|
 | 优雅关闭 | ✅ 已实现（main.go ShutdownManager + server.go Shutdown） |
-| Extension 版本号 | ✅ 已升至 0.4.1 |
+| Extension 版本号 | ✅ 当前为 0.4.15（2026-08-02） |
 | `*.log` gitignore | ✅ 已加 |
 | `*.exe` gitignore | ✅ 已加（`.gitignore` 第 2 行，无 exe 被 git 跟踪） |
 

@@ -5,11 +5,11 @@
 ## 能力概览
 
 - UQL 统一查询、结果归并与 CSV/Excel/JSON 导出。
-- 稳定 Web UI 支持 FOFA、Hunter、ZoomEye、Quake、Shodan 五个引擎。Censys、DayDayMap 当前只完成服务端/CLI API 适配与 API 实机验证；虽然仓库内存在部分泛化选择器占位，但尚未接入稳定 UI，也未完成 Bridge/CDP 结构化抓取与真实测试。
+- 稳定 Web UI 支持 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap 七个引擎；缺少 API 凭据时使用 Web-only adapter，经统一 ScreenshotRouter 执行浏览器采集。
 - CDP 与 Chrome Extension 双截图引擎，可在 `cdp`、`extension`、`auto` 间切换。
 - Linux/容器可直接使用无 `DISPLAY` 的 Chromium headless；统一路由覆盖截图、浏览器采集、调度与巡检，并限制浏览器会话避免云主机 OOM。
-- 历史测绘引擎结构化采集 E2E 使用 Extension Bridge；Quake、Hunter 已有真实 CDP 结构化采集与截图证据，Quake L1 Network 已于 2026-07-29 重新实测通过；FOFA、ZoomEye、Shodan 仍待逐引擎定级。
-- CDP 浏览器任务采用 URL/DNS 校验、全请求 Fetch 拦截和连接级 loopback 出口代理；未证明受控出口的 Extension 任意 URL 截图、外部上游代理和远程 Chrome 会失败关闭。
+- 2026-08-02 七引擎 Extension Bridge 均取得真实非空结构化资产；DayDayMap 的 Bridge→CDP 凭据交接取得 10 条资产和截图。Censys CDP 在交接 1 个 Cookie 与 16 项 Web Storage 后被 Cloudflare 挑战拦截，`auto` 路由已实测识别挑战并回退 Bridge，取得 9 条资产和截图。
+- CDP 浏览器任务采用 URL/DNS 校验、全请求 Fetch 拦截和连接级 loopback 出口代理；可选上游只接受 literal-loopback SOCKS5，并且只向它传递经实时 DNS 复核的固定公网 IP。外部/HTTP 上游代理、远程 Chrome 和未证明受控出口的 Extension 任意 URL 截图失败关闭。
 - 网页巡检：`strict`、`relaxed`、`security`、`balanced`、`precise` 五种模式。
 - 巡检历史：支持 URL、类型、模式、关键词过滤，以及受限的 `limit` / `offset` 分页；详见 [API 文档](docs/API.md)。
 - 调度、通知、分布式节点、备份、Prometheus 指标与操作历史。

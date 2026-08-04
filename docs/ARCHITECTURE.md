@@ -24,7 +24,7 @@ web handlers ── internal/service 应用服务
 
 ## 查询与引擎
 
-稳定 Web UI 提供 FOFA、Hunter、ZoomEye、Quake、Shodan。Censys、DayDayMap 只完成服务端/CLI API 适配与 API 实机验证，不属于稳定 Web UI，也未完成 Bridge/CDP 结构化抓取。扩展和 Go DOM 表中存在的泛化选择器只是占位：Bridge/CDP 的搜索 URL 构造仍拒绝这两个引擎，Go DOM 条目也没有 `ExtractJS`。
+稳定 Web UI 提供 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap。七引擎均有 API 或 Web-only adapter、搜索 URL、L1 Network 与 L3 DOM 采集路径；2026-08-02 七引擎 Bridge 均取得真实非空结构化资产。DayDayMap 的 Bridge→CDP Web Storage 交接已取得 10 条资产；Censys CDP 交接后识别 Cloudflare 挑战并在 `auto` 模式回退 Bridge。
 
 ```go
 type EngineAdapter interface {
@@ -44,8 +44,9 @@ type EngineAdapter interface {
 - 截图、浏览器查询、调度截图与巡检共用 ScreenshotRouter；`cdp`、`extension`、`auto` 的配置模式和实际活动模式分离，仅在允许 fallback 时切换后端。
 - CDP 使用 Chrome/Chromium 新版 headless，不依赖图形会话。可执行文件按显式配置、`UNIMAP_CHROME_PATH`、平台探测顺序解析；显式路径错误会立即暴露。Windows readiness 使用无进程的 PE 静态验证，缺少 CDP provider 时不探测浏览器。浏览器 allocator 共享有界会话槽，固定 user-data-dir 时因 Chromium profile 锁自动串行。
 - Extension Bridge 的配对、任务和回调仅允许 loopback 请求，使用短期 token；可选 HMAC 签名和 nonce 防重放。
-- FOFA、Hunter、ZoomEye、Quake、Shodan 的历史结构化采集 E2E 使用 Bridge。Quake、Hunter 已有真实 CDP DOM 证据；Quake L1 Network 已按当前 endpoint/数组响应重新实测通过。FOFA、ZoomEye、Shodan 的 CDP 定级仍未执行。
-- CDP 业务入口统一通过 guarded browser session：提交前 URL/实时 DNS 校验、CDP Fetch 全资源逐跳拦截，以及在实际拨号时重新解析并固定公网 IP 的 loopback 出口代理。外部上游代理和远程 Chrome 在无法证明等价出口约束时失败关闭。
+- 七引擎的真实结构化采集 E2E 使用 Bridge。Quake、Hunter、DayDayMap 已有真实 CDP 非空结构化证据；Quake L1 Network 已按当前 endpoint/数组响应重新实测通过。FOFA、ZoomEye、Shodan 的 CDP 定级仍未执行；Censys CDP 被站点挑战阻断并已验证单任务 Extension fallback。
+- Bridge `get_browser_credentials` 只在目标引擎同源标签页读取 Cookie、localStorage 与 sessionStorage；Cookie 持久化到受保护配置，Web Storage 仅驻留内存并在 CDP 导航后注入、刷新。
+- CDP 业务入口统一通过 guarded browser session：提交前 URL/实时 DNS 校验、CDP Fetch 全资源逐跳拦截，以及在实际拨号时重新解析并固定公网 IP 的 loopback 出口代理。可选上游仅接受 literal-loopback SOCKS5，且只收到经复核的固定公网 IP；HTTP/外部上游代理和远程 Chrome 失败关闭。
 - Extension 搜索引擎任务要求回调 `final_url` 且不得离开批准主机；未提供受控出口证明时，Extension 任意 URL 与批量截图保持禁用。
 - 巡检模式为 `strict`、`relaxed`、`security`、`balanced`、`precise`。巡检与截图入口对公网目标进行 SSRF 防护。
 - `TamperAppService` 在每次检查/设基线时读取最新已提交的端口扫描、TLS 和超时配置；手动巡检、定时巡检与基线刷新复用 Screenshot Manager 的受保护页面加载接口。
