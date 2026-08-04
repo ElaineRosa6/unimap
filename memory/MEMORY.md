@@ -18,7 +18,7 @@
 - 云端最终 CGO/SQLite 镜像已通过健康、重启、旧镜像回滚与重新发布；飞书应用通知两次真实发送 HTTP 200，配置回滚与重应用通过。
 - 自动“发现变化 → 证据截图 → 图片通知”尚未启用。调用前 URL 校验不能覆盖浏览器跨主机重定向
   和 DNS rebinding，浏览器层 SSRF 防护已实现（2026-07-29），自动证据截图需云端验收后启用。
-- 本地 10+ 个提交领先 `origin/develop`，尚未推送。
+- 本地 22 个提交已于 2026-08-04 推送到 `origin/develop`，与远端同步。
 - 云端安全验收 fixture 已构建（`tools/acceptance-fixture/`）：DNS rebinding 控制 API、
   可变页面、私网 sink、Cloudflare DNS 翻转、Caddy HTTPS、Docker Compose。
   静态 fixture 已进入 staging；取得受控域名、DNS 编辑参数和控制/目标 URL 后运行 `live_dns_e2e` 与 `live_tamper_e2e`。
