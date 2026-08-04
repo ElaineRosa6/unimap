@@ -148,28 +148,28 @@
 						<h4>字段映射 &mdash; UQL &rarr; 各引擎原生语法</h4>
 						<div class="syntax-scroll">
 						<table class="syntax-table syntax-table--mapping">
-							<thead><tr><th>UQL</th><th>FOFA</th><th>Hunter</th><th>ZoomEye</th><th>Quake</th><th>Shodan</th></tr></thead>
+							<thead><tr><th>UQL</th><th>FOFA</th><th>Hunter</th><th>ZoomEye</th><th>Quake</th><th>Shodan</th><th>Censys</th><th>DayDayMap</th></tr></thead>
 							<tbody>
-								<tr><td><code>ip</code></td><td><code>ip</code></td><td><code>ip</code></td><td><code>ip</code></td><td><code>ip</code></td><td><code>ip</code></td></tr>
-								<tr><td><code>port</code></td><td><code>port</code></td><td><code>port</code></td><td><code>port</code></td><td><code>port</code></td><td><code>port</code></td></tr>
-								<tr><td><code>protocol</code></td><td><code>protocol</code></td><td><code>protocol</code></td><td><code>service</code></td><td><code>service</code></td><td><code>transport</code></td></tr>
-								<tr><td><code>title</code></td><td><code>title</code></td><td><code>web.title</code></td><td><code>title</code></td><td><code>title</code></td><td><code>http.title</code></td></tr>
-								<tr><td><code>body</code></td><td><code>body</code></td><td><code>web.body</code></td><td><code>http.body</code></td><td><code>response</code></td><td><code>http.html</code></td></tr>
-								<tr><td><code>header</code></td><td><code>header</code></td><td><code>header</code></td><td><code>http.header</code></td><td><code>&mdash;</code></td><td><code>http.headers_hash</code></td></tr>
-								<tr><td><code>server</code></td><td><code>server</code></td><td><code>header.server</code></td><td><code>http.header.server</code></td><td><code>server</code></td><td><code>http.server</code></td></tr>
-								<tr><td><code>status_code</code></td><td><code>status_code</code></td><td><code>web.status_code</code></td><td><code>&mdash;</code></td><td><code>status_code</code></td><td><code>http.status</code></td></tr>
-								<tr><td><code>country</code></td><td><code>country</code></td><td><code>ip.country</code></td><td><code>country</code></td><td><code>country</code></td><td><code>country</code></td></tr>
-								<tr><td><code>region</code></td><td><code>region</code></td><td><code>ip.province</code></td><td><code>subdivisions</code></td><td><code>province</code></td><td><code>region</code></td></tr>
-								<tr><td><code>city</code></td><td><code>city</code></td><td><code>ip.city</code></td><td><code>city</code></td><td><code>city</code></td><td><code>city</code></td></tr>
-								<tr><td><code>asn</code></td><td><code>asn</code></td><td><code>asn</code></td><td><code>asn</code></td><td><code>asn</code></td><td><code>asn</code></td></tr>
-								<tr><td><code>org</code></td><td><code>org</code></td><td><code>ip.org</code></td><td><code>org</code></td><td><code>org</code></td><td><code>org</code></td></tr>
-								<tr><td><code>isp</code></td><td><code>&mdash;</code></td><td><code>ip.isp</code></td><td><code>isp</code></td><td><code>isp</code></td><td><code>isp</code></td></tr>
-								<tr><td><code>os</code></td><td><code>os</code></td><td><code>ip.os</code></td><td><code>os</code></td><td><code>os</code></td><td><code>os</code></td></tr>
-								<tr><td><code>app</code></td><td><code>app</code></td><td><code>app.name</code></td><td><code>app</code></td><td><code>app</code></td><td><code>product</code></td></tr>
-								<tr><td><code>host</code></td><td><code>host</code></td><td><code>domain</code></td><td><code>hostname</code></td><td><code>domain</code></td><td><code>hostname</code></td></tr>
-								<tr><td><code>domain</code></td><td><code>domain</code></td><td><code>domain</code></td><td><code>domain</code></td><td><code>domain</code></td><td><code>domain</code></td></tr>
-								<tr><td><code>cert</code></td><td><code>cert</code></td><td><code>cert</code></td><td><code>&mdash;</code></td><td><code>cert</code></td><td><code>ssl</code></td></tr>
-								<tr><td><code>url</code></td><td><code>host</code></td><td><code>&mdash;</code></td><td><code>site</code></td><td><code>url</code></td><td><code>&mdash;</code></td></tr>
+								<tr><td><code>ip</code></td><td><code>ip</code></td><td><code>ip</code></td><td><code>ip</code></td><td><code>ip</code></td><td><code>ip</code></td><td><code>host.ip</code></td><td><code>ip</code></td></tr>
+								<tr><td><code>port</code></td><td><code>port</code></td><td><code>port</code></td><td><code>port</code></td><td><code>port</code></td><td><code>port</code></td><td><code>host.services.port</code></td><td><code>ip.port</code></td></tr>
+								<tr><td><code>protocol</code></td><td><code>protocol</code></td><td><code>protocol</code></td><td><code>service</code></td><td><code>service</code></td><td><code>transport</code></td><td><code>host.services.protocol</code></td><td><code>protocol.service</code></td></tr>
+								<tr><td><code>title</code></td><td><code>title</code></td><td><code>web.title</code></td><td><code>title</code></td><td><code>title</code></td><td><code>http.title</code></td><td><code>host.services.endpoints.http.html_title</code></td><td><code>web.title</code></td></tr>
+								<tr><td><code>body</code></td><td><code>body</code></td><td><code>web.body</code></td><td><code>http.body</code></td><td><code>response</code></td><td><code>http.html</code></td><td><code>host.services.endpoints.http.body</code></td><td><code>web.body</code></td></tr>
+								<tr><td><code>header</code></td><td><code>header</code></td><td><code>header</code></td><td><code>http.header</code></td><td><code>&mdash;</code></td><td><code>http.headers_hash</code></td><td><code>host.services.endpoints.http.headers</code></td><td><code>web.header</code></td></tr>
+								<tr><td><code>server</code></td><td><code>server</code></td><td><code>header.server</code></td><td><code>http.header.server</code></td><td><code>server</code></td><td><code>http.server</code></td><td><code>host.services.endpoints.http.headers.value</code></td><td><code>web.server</code></td></tr>
+								<tr><td><code>status_code</code></td><td><code>status_code</code></td><td><code>web.status_code</code></td><td><code>&mdash;</code></td><td><code>status_code</code></td><td><code>http.status</code></td><td><code>host.services.endpoints.http.status_code</code></td><td><code>web.status_code</code></td></tr>
+								<tr><td><code>country</code></td><td><code>country</code></td><td><code>ip.country</code></td><td><code>country</code></td><td><code>country</code></td><td><code>country</code></td><td><code>host.location.country_code</code></td><td><code>ip.country</code></td></tr>
+								<tr><td><code>region</code></td><td><code>region</code></td><td><code>ip.province</code></td><td><code>subdivisions</code></td><td><code>province</code></td><td><code>region</code></td><td><code>host.location.province</code></td><td><code>ip.province</code></td></tr>
+								<tr><td><code>city</code></td><td><code>city</code></td><td><code>ip.city</code></td><td><code>city</code></td><td><code>city</code></td><td><code>city</code></td><td><code>host.location.city</code></td><td><code>ip.city</code></td></tr>
+								<tr><td><code>asn</code></td><td><code>asn</code></td><td><code>asn</code></td><td><code>asn</code></td><td><code>asn</code></td><td><code>asn</code></td><td><code>host.autonomous_system.asn</code></td><td><code>asn.number</code></td></tr>
+								<tr><td><code>org</code></td><td><code>org</code></td><td><code>ip.org</code></td><td><code>org</code></td><td><code>org</code></td><td><code>org</code></td><td><code>host.autonomous_system.name</code></td><td><code>org.name</code></td></tr>
+								<tr><td><code>isp</code></td><td><code>&mdash;</code></td><td><code>ip.isp</code></td><td><code>isp</code></td><td><code>isp</code></td><td><code>isp</code></td><td><code>host.autonomous_system.name</code></td><td><code>ip.isp</code></td></tr>
+								<tr><td><code>os</code></td><td><code>os</code></td><td><code>ip.os</code></td><td><code>os</code></td><td><code>os</code></td><td><code>os</code></td><td><code>host.operating_system.product</code></td><td><code>ip.os</code></td></tr>
+								<tr><td><code>app</code></td><td><code>app</code></td><td><code>app.name</code></td><td><code>app</code></td><td><code>app</code></td><td><code>product</code></td><td><code>host.services.software.product</code></td><td><code>app.name</code></td></tr>
+								<tr><td><code>host</code></td><td><code>host</code></td><td><code>domain</code></td><td><code>hostname</code></td><td><code>domain</code></td><td><code>hostname</code></td><td><code>host.dns.names</code></td><td><code>domain</code></td></tr>
+								<tr><td><code>domain</code></td><td><code>domain</code></td><td><code>domain</code></td><td><code>domain</code></td><td><code>domain</code></td><td><code>domain</code></td><td><code>host.dns.names</code></td><td><code>domain</code></td></tr>
+								<tr><td><code>cert</code></td><td><code>cert</code></td><td><code>cert</code></td><td><code>&mdash;</code></td><td><code>cert</code></td><td><code>ssl</code></td><td><code>host.services.cert.names</code></td><td><code>cert.subject</code></td></tr>
+								<tr><td><code>url</code></td><td><code>host</code></td><td><code>&mdash;</code></td><td><code>site</code></td><td><code>url</code></td><td><code>&mdash;</code></td><td><code>host.dns.names</code></td><td><code>domain</code></td></tr>
 							</tbody>
 						</table>
 						</div>

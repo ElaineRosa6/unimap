@@ -181,6 +181,12 @@ func (m *Manager) CollectViaNetwork(ctx context.Context, engine, query, queryID 
 	if err := session.Run(chromedp.Navigate(searchURL)); err != nil {
 		return nil, fmt.Errorf("navigate failed: %w", err)
 	}
+	if err := applyBrowserStorage(session, m.GetBrowserStorage(engine), searchURL); err != nil {
+		return nil, fmt.Errorf("inject browser storage for %s: %w", engine, err)
+	}
+	if err := prepareStatefulSearchPage(session, engine, query); err != nil {
+		return nil, err
+	}
 
 	select {
 	case <-respCh:

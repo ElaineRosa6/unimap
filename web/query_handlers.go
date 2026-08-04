@@ -11,18 +11,15 @@ import (
 
 	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/config"
-	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 )
 
-// stableEngines is the browser-tested Web UI allowlist. Censys/DayDayMap
-// remain API-only: API credential validation alone is not sufficient to add
-// them here; UI, Bridge/CDP collection, session handling, and live E2E must
-// first be completed.
+// stableEngines is the browser-tested Web UI allowlist.
 var stableEngines = map[string]bool{
 	"fofa": true, "hunter": true, "zoomeye": true, "quake": true, "shodan": true,
+	"censys": true, "daydaymap": true,
 }
 
 func filterStableEngines(engines []string) []string {
@@ -72,6 +69,7 @@ func (s *Server) browserQueryProvider() screenshot.Provider {
 
 // QueryAPIPayload is the typed response for the query API.
 type QueryAPIPayload struct {
+	Status               string                     `json:"status"`
 	Query                string                     `json:"query"`
 	Engines              []string                   `json:"engines"`
 	Assets               []model.UnifiedAsset       `json:"assets"`
@@ -150,7 +148,17 @@ func buildQueryAPIPayload(query string, engines []string, resp *service.QueryRes
 		}
 	}
 
+	status := "success"
+	if len(combinedErrors) > 0 {
+		if len(assets) > 0 {
+			status = "partial"
+		} else {
+			status = "error"
+		}
+	}
+
 	return QueryAPIPayload{
+		Status:               status,
 		Query:                query,
 		Engines:              engines,
 		Assets:               assets,
@@ -210,27 +218,43 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 
 	browserQueryID := fmt.Sprintf("query_%d", time.Now().UnixNano())
 	browserAction := strings.TrimSpace(r.FormValue("browser_action"))
-	browserQueryCh := s.runBrowserQueryAsync(r.Context(), query, engines, parseBoolValue(r.FormValue("browser_query")), browserAction, browserQueryID, nil)
+	browserEnabled := parseBoolValue(r.FormValue("browser_query"))
 
-	resp, err := s.queryApp.ExecuteQuery(r.Context(), query, engines, pageSize)
+	var resp *service.QueryResponse
 	var browserOutcome browserQueryOutcome
-	if browserQueryCh != nil {
-		// 浏览器查询已并行化，但仍可能耗时较长；按 action 给超时保护，
-		// 超时则用已有结果返回，避免浏览器采集无限拖慢 API 查询响应。
-		waitTimeout := service.BrowserQueryWaitTimeoutForAction(browserAction)
-		select {
-		case browserOutcome = <-browserQueryCh:
-		case <-time.After(waitTimeout):
-			logger.Warnf("browser query timed out after %s for query %q, returning API results only", waitTimeout, query)
+	var err error
+	if browserEnabled {
+		autoCaptureEnabled := false
+		if cfg := s.currentConfig(); cfg != nil {
+			autoCaptureEnabled = cfg.Screenshot.AutoCapture.Enabled && cfg.Screenshot.AutoCapture.CaptureSearchResults
 		}
+		workflowCtx, cancel := context.WithTimeout(r.Context(), service.BrowserQueryWaitTimeoutForAction(browserAction))
+		defer cancel()
+		resp, browserOutcome, err = s.queryApp.ExecuteQueryWithBrowserWorkflow(workflowCtx, query, engines, pageSize, service.BrowserQueryWorkflowOptions{
+			Action:             browserAction,
+			QueryID:            browserQueryID,
+			AutoCaptureEnabled: autoCaptureEnabled,
+			PreviewURLBuilder:  s.screenshotPathToPreviewURL,
+			ScreenshotApp:      s.screenshotApp,
+			ScreenshotManager:  s.screenshotMgr,
+			BrowserRouter:      s.browserQueryProvider(),
+		})
+	} else {
+		resp, err = s.queryApp.ExecuteQuery(r.Context(), query, engines, pageSize)
 	}
 	if err != nil {
+		payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, fmt.Sprintf("API query failed: %v", err))
+		if payload.Status == "partial" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(payload)
+			return
+		}
 		writeAPIError(
 			w,
 			http.StatusBadGateway,
 			"query_execution_failed",
 			fmt.Sprintf("query failed: %v", err),
-			buildQueryAPIPayload(query, engines, nil, browserOutcome, browserAction, fmt.Sprintf("Query failed: %v", err)),
+			payload,
 		)
 		return
 	}

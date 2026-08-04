@@ -27,6 +27,14 @@
   <h1>Unimap Screenshot Bridge</h1>
 
   <div class="card">
+    <label for="apiBaseURL">Loopback API Base URL</label>
+    <p class="hint">
+      The local UniMap listener used for pairing and task polling. Only loopback HTTP URLs are accepted.
+    </p>
+    <input type="text" id="apiBaseURL" placeholder="http://127.0.0.1:8448" autocomplete="off">
+  </div>
+
+  <div class="card">
     <label for="adminToken">Admin Token (Fallback)</label>
     <p class="hint">
       Optional. Used as a fallback credential when pairing fails (e.g. after server restart with a non-empty pair_code).
@@ -35,7 +43,7 @@
     </p>
     <input type="password" id="adminToken" placeholder="Enter admin token..." autocomplete="off">
     <div class="row">
-      <button class="btn-primary" id="saveBtn">Save</button>
+      <button class="btn-primary" id="saveBtn">Save Settings</button>
       <button class="btn-danger" id="clearBtn">Clear</button>
     </div>
     <div class="status" id="status"></div>

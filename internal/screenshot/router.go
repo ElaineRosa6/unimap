@@ -467,7 +467,15 @@ func (r *ScreenshotRouter) CollectAndCaptureSearchEngineResult(ctx context.Conte
 		return nil, "", err
 	}
 	if _, ok := provider.(*ExtensionProvider); !ok && r.mgr != nil {
-		return r.mgr.CollectAndCaptureSearchEngineResult(ctx, engine, query, queryID)
+		collected, path, collectErr := r.mgr.CollectAndCaptureSearchEngineResult(ctx, engine, query, queryID)
+		if collectErr == nil && collectionNeedsExtensionFallback(collected) && r.extBridge != nil && (r.configuredMode() == ModeAuto || r.cfg.Fallback) {
+			fallbackResults, fallbackPath, fallbackErr := NewExtensionProvider(r.extBridge, r.mgr).CollectAndCaptureSearchEngineResult(ctx, engine, query, queryID)
+			if fallbackErr == nil {
+				return fallbackResults, fallbackPath, nil
+			}
+			return collected, path, fmt.Errorf("CDP encountered a browser challenge and extension fallback failed: %w", fallbackErr)
+		}
+		return collected, path, collectErr
 	}
 	// Extension 模式：使用 collect_and_capture action 在一次导航中完成
 	extProvider, ok := provider.(*ExtensionProvider)
@@ -481,6 +489,15 @@ func (r *ScreenshotRouter) CollectAndCaptureSearchEngineResult(ctx context.Conte
 		return collected, path, captureErr
 	}
 	return extProvider.CollectAndCaptureSearchEngineResult(ctx, engine, query, queryID)
+}
+
+func collectionNeedsExtensionFallback(results []collection.CollectResult) bool {
+	for _, result := range results {
+		if result.BrowserChallenge || result.LoginRequired || result.IsLoginWall {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveProvider returns the best available Provider based on current health and fallback config.

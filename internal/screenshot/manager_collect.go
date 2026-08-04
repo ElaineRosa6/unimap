@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,8 +66,14 @@ func (m *Manager) collectViaDOM(ctx context.Context, engine, query, queryID stri
 	if err := session.Run(chromedp.Navigate(searchURL)); err != nil {
 		return nil, fmt.Errorf("navigate to search URL failed: %w", err)
 	}
+	if err := applyBrowserStorage(session, m.GetBrowserStorage(engine), searchURL); err != nil {
+		return nil, fmt.Errorf("inject browser storage for %s: %w", engine, err)
+	}
 	if err := session.Run(chromedp.WaitReady("body", chromedp.ByQuery)); err != nil {
 		logger.Warnf("wait for body failed on %s: %v", engine, err)
+	}
+	if err := prepareStatefulSearchPage(session, engine, query); err != nil {
+		return nil, err
 	}
 	if err := session.Run(chromedp.Sleep(3 * time.Second)); err != nil {
 		return nil, err
@@ -223,8 +230,23 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 	if waitErr := session.Run(chromedp.WaitReady("body", chromedp.ByQuery)); waitErr != nil {
 		logger.Warnf("wait for body failed on %s: %v", engine, waitErr)
 	}
+	if storageErr := applyBrowserStorage(session, m.GetBrowserStorage(engine), searchURL); storageErr != nil {
+		return nil, "", fmt.Errorf("inject browser storage for %s: %w", engine, storageErr)
+	}
+	if prepareErr := prepareStatefulSearchPage(session, engine, query); prepareErr != nil {
+		return nil, "", prepareErr
+	}
 	if sleepErr := session.Run(chromedp.Sleep(3 * time.Second)); sleepErr != nil {
 		return nil, "", sleepErr
+	}
+	if strings.EqualFold(strings.TrimSpace(engine), "daydaymap") {
+		const rowsReady = `(() => {
+			const selectors = ["[class*='result-item']", "[class*='result-card']", "[class*='result-list'] > div", "[class*='result'] > div", ".el-table__row", "table tbody tr", ".list_content > div"];
+			return selectors.some((selector) => document.querySelectorAll(selector).length > 0);
+		})()`
+		if waitRowsErr := session.Run(chromedp.Poll(rowsReady, nil, chromedp.WithPollingInterval(500*time.Millisecond), chromedp.WithPollingTimeout(40*time.Second))); waitRowsErr != nil {
+			logger.Warnf("DayDayMap result rows did not become ready before extraction: %v", waitRowsErr)
+		}
 	}
 
 	// 采集数据
@@ -239,16 +261,28 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 	if titleErr := session.Run(chromedp.Title(&title)); titleErr != nil {
 		logger.Warnf("failed to get page title: %v", titleErr)
 	}
+	bodyText := ""
+	if bodyErr := session.Run(chromedp.Text("body", &bodyText, chromedp.ByQuery)); bodyErr != nil {
+		logger.Warnf("failed to read page body for challenge detection: %v", bodyErr)
+	}
 
 	collectResult := collection.CollectResult{
 		Engine: engine, Query: query, RawURL: searchURL,
 		Title: title, Timestamp: time.Now().Unix(),
 	}
+	if detectBrowserChallenge(title, bodyText) {
+		collectResult.BrowserChallenge = true
+		collectResult.ExtractionError = "browser_challenge"
+	}
 	l1Succeeded := false
 	if l1Ch != nil {
+		l1Wait := 2 * time.Second
+		if strings.EqualFold(strings.TrimSpace(engine), "daydaymap") {
+			l1Wait = 10 * time.Second
+		}
 		select {
 		case <-l1Ch:
-		case <-time.After(2 * time.Second):
+		case <-time.After(l1Wait):
 		case <-ctx.Done():
 		}
 		if l1Result != nil && len(l1Result.Assets) > 0 {
@@ -258,9 +292,12 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 	}
 	if !l1Succeeded && extracted != "" {
 		var jsResult struct {
-			Assets  []map[string]interface{} `json:"assets"`
-			Total   int                      `json:"total"`
-			HasMore bool                     `json:"hasMore"`
+			Assets          []map[string]interface{} `json:"assets"`
+			Total           int                      `json:"total"`
+			HasMore         bool                     `json:"hasMore"`
+			RowSelectorUsed string                   `json:"rowSelectorUsed"`
+			RowsFound       int                      `json:"rowsFound"`
+			ExtractionError string                   `json:"extractionError"`
 		}
 		if unmarshalErr := json.Unmarshal([]byte(extracted), &jsResult); unmarshalErr != nil {
 			logger.Warnf("failed to parse extracted JSON: %v", unmarshalErr)
@@ -268,6 +305,13 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 			collectResult.Assets = collection.ParseExtractedAssets(jsResult.Assets, engine)
 			collectResult.Total = jsResult.Total
 			collectResult.HasMore = jsResult.HasMore
+			collectResult.ExtractionMethod = "dom"
+			collectResult.RowSelectorUsed = jsResult.RowSelectorUsed
+			collectResult.RowsFound = jsResult.RowsFound
+			collectResult.ExtractionError = jsResult.ExtractionError
+			if collectResult.BrowserChallenge {
+				collectResult.ExtractionError = "browser_challenge"
+			}
 		}
 	}
 
@@ -291,6 +335,96 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 	}
 
 	return []collection.CollectResult{collectResult}, screenshotPath, nil
+}
+
+func prepareStatefulSearchPage(session *guardedBrowserSession, engine, query string) error {
+	if session == nil || !strings.EqualFold(strings.TrimSpace(engine), "daydaymap") {
+		return nil
+	}
+	var currentURL string
+	if err := session.Run(chromedp.Location(&currentURL)); err == nil {
+		if parsed, parseErr := url.Parse(currentURL); parseErr == nil && strings.Contains(parsed.Path, "/searchResult") && parsed.Query().Get("keyword") != "" {
+			return nil
+		}
+	}
+	encodedQuery, err := json.Marshal(query)
+	if err != nil {
+		return fmt.Errorf("marshal DayDayMap browser query: %w", err)
+	}
+	script := fmt.Sprintf(`(() => {
+		const nativeQuery = %s;
+		const inputs = Array.from(document.querySelectorAll('input'));
+		const input = inputs.find((element) => {
+			const placeholder = (element.getAttribute('placeholder') || '').toLowerCase();
+			return placeholder.includes('search') || placeholder.includes('检索') || placeholder.includes('关键词');
+		}) || inputs.find((element) => element.type === 'text');
+		if (!input) return 'search_input_missing';
+		const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+		if (descriptor && descriptor.set) descriptor.set.call(input, nativeQuery); else input.value = nativeQuery;
+		input.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'insertText', data: nativeQuery}));
+		input.dispatchEvent(new Event('change', {bubbles: true}));
+		return 'ok';
+	})()`, string(encodedQuery))
+	var result string
+	if err := session.Run(chromedp.Evaluate(script, &result)); err != nil {
+		return fmt.Errorf("prepare DayDayMap search: %w", err)
+	}
+	if result != "ok" {
+		return fmt.Errorf("prepare DayDayMap search: %s", result)
+	}
+	triggerScript := `(() => {
+		const input = Array.from(document.querySelectorAll('input')).find((element) => ((element.getAttribute('placeholder') || '').toLowerCase()).includes('search'));
+		const button = document.querySelector('.search-btn');
+		if (button) button.click();
+		else if (input && input.closest('form') && input.closest('form').requestSubmit) input.closest('form').requestSubmit();
+		else if (input) input.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', bubbles: true}));
+		else return 'search_trigger_missing';
+		return 'ok';
+	})()`
+	var triggerResult string
+	if err := session.Run(chromedp.Sleep(600*time.Millisecond), chromedp.Evaluate(triggerScript, &triggerResult)); err != nil {
+		return fmt.Errorf("trigger DayDayMap search: %w", err)
+	}
+	if triggerResult != "ok" {
+		return fmt.Errorf("trigger DayDayMap search: %s", triggerResult)
+	}
+	routeScript := `(() => {
+		if (!location.pathname.includes('/searchResult')) {
+			history.pushState({}, '', '/searchResult');
+			window.dispatchEvent(new PopStateEvent('popstate'));
+		}
+		return location.pathname;
+	})()`
+	if err := session.Run(chromedp.Sleep(300*time.Millisecond), chromedp.Evaluate(routeScript, nil)); err != nil {
+		return fmt.Errorf("route DayDayMap search: %w", err)
+	}
+	if err := session.Run(chromedp.Poll(`location.pathname.includes('/searchResult')`, nil, chromedp.WithPollingTimeout(15*time.Second))); err != nil {
+		return fmt.Errorf("wait for DayDayMap search results: %w", err)
+	}
+	return nil
+}
+
+func applyBrowserStorage(session *guardedBrowserSession, storage BrowserStorage, targetURL string) error {
+	if session == nil || (len(storage.Local) == 0 && len(storage.Session) == 0) {
+		return nil
+	}
+	payload, err := json.Marshal(map[string]map[string]string{"local": storage.Local, "session": storage.Session})
+	if err != nil {
+		return fmt.Errorf("marshal browser storage: %w", err)
+	}
+	script := fmt.Sprintf(`((state) => {
+		for (const [key, value] of Object.entries(state.local || {})) localStorage.setItem(key, value);
+		for (const [key, value] of Object.entries(state.session || {})) sessionStorage.setItem(key, value);
+		return true;
+	})(%s)`, payload)
+	var applied bool
+	if err := session.Run(chromedp.Evaluate(script, &applied)); err != nil {
+		return err
+	}
+	if !applied {
+		return fmt.Errorf("browser rejected storage state")
+	}
+	return session.Run(chromedp.Navigate(targetURL), chromedp.WaitReady("body", chromedp.ByQuery))
 }
 
 // GetScreenshotDirectory 获取截图根目录

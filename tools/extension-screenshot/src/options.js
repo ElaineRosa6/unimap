@@ -1,4 +1,8 @@
+import { normalizeLoopbackAPIBaseURL } from "./bridge_url.js";
+import { loadAPIBaseURL, saveAPIBaseURL } from "./storage.js";
+
 const adminTokenInput = document.getElementById("adminToken");
+const apiBaseURLInput = document.getElementById("apiBaseURL");
 const saveBtn = document.getElementById("saveBtn");
 const clearBtn = document.getElementById("clearBtn");
 const statusEl = document.getElementById("status");
@@ -10,6 +14,10 @@ async function loadCurrentToken() {
   }
 }
 
+async function loadCurrentAPIBaseURL() {
+  apiBaseURLInput.value = await loadAPIBaseURL();
+}
+
 function showStatus(message, isError) {
   statusEl.textContent = message;
   statusEl.className = isError ? "status error" : "status success";
@@ -18,12 +26,19 @@ function showStatus(message, isError) {
 
 saveBtn.addEventListener("click", async () => {
   const token = adminTokenInput.value.trim();
-  if (!token) {
-    showStatus("Please enter a token.", true);
+  let apiBaseURL;
+  try {
+    apiBaseURL = normalizeLoopbackAPIBaseURL(apiBaseURLInput.value);
+  } catch (error) {
+    showStatus(String(error.message || error), true);
     return;
   }
-  await chrome.storage.local.set({ adminToken: token });
-  showStatus("Admin token saved.", false);
+  await saveAPIBaseURL(apiBaseURL);
+  if (token) {
+    await chrome.storage.local.set({ adminToken: token });
+  }
+  apiBaseURLInput.value = apiBaseURL;
+  showStatus(token ? "Bridge URL and admin token saved." : "Bridge URL saved.", false);
 });
 
 clearBtn.addEventListener("click", async () => {
@@ -33,3 +48,4 @@ clearBtn.addEventListener("click", async () => {
 });
 
 loadCurrentToken();
+loadCurrentAPIBaseURL();

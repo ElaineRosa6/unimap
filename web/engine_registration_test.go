@@ -7,7 +7,7 @@ import (
 	"github.com/unimap/project/internal/config"
 )
 
-func TestConfigReloadKeepsAPIOnlyEnginesOutOfWebOnlyMode(t *testing.T) {
+func TestConfigReloadKeepsAllBrowserEnginesInWebOnlyMode(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Engines.Hunter.Enabled = true
 	cfg.Engines.Censys.Enabled = true
@@ -20,11 +20,11 @@ func TestConfigReloadKeepsAPIOnlyEnginesOutOfWebOnlyMode(t *testing.T) {
 	if _, ok := orchestrator.GetAdapter("hunter"); !ok {
 		t.Fatal("Hunter without API credentials should remain available in Web-only mode after config reload")
 	}
-	if _, ok := orchestrator.GetAdapter("censys"); ok {
-		t.Fatal("Censys without complete API credentials must not be registered as Web-only after config reload")
+	if _, ok := orchestrator.GetAdapter("censys"); !ok {
+		t.Fatal("Censys without API credentials should remain available in Web-only mode after config reload")
 	}
-	if _, ok := orchestrator.GetAdapter("daydaymap"); ok {
-		t.Fatal("DayDayMap without API credentials must not be registered as Web-only after config reload")
+	if _, ok := orchestrator.GetAdapter("daydaymap"); !ok {
+		t.Fatal("DayDayMap without API credentials should remain available in Web-only mode after config reload")
 	}
 }
 

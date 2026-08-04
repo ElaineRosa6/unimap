@@ -206,6 +206,33 @@ func TestBuildQueryAPIPayloadIncludesPersistenceStatus(t *testing.T) {
 	}
 }
 
+func TestBuildQueryAPIPayloadMarksBrowserFallbackPartial(t *testing.T) {
+	payload := buildQueryAPIPayload(
+		`port="443"`,
+		[]string{"quake"},
+		nil,
+		browserQueryOutcome{
+			Enabled: true,
+			CollectedResults: []collection.CollectResult{{
+				Engine: "quake",
+				Assets: []model.UnifiedAsset{{IP: "192.0.2.1", Source: "quake"}},
+			}},
+		},
+		"collect_and_capture",
+		"API query failed: adapter unavailable",
+	)
+
+	if payload.Status != "partial" {
+		t.Fatalf("status = %q, want partial", payload.Status)
+	}
+	if len(payload.Assets) != 1 {
+		t.Fatalf("expected browser asset in response, got %#v", payload.Assets)
+	}
+	if len(payload.Errors) == 0 || !strings.Contains(payload.Errors[0], "API query failed") {
+		t.Fatalf("expected API diagnostic to be preserved, got %#v", payload.Errors)
+	}
+}
+
 func TestValidateQueryInput_TooLong(t *testing.T) {
 	longQuery := ""
 	for i := 0; i < 1001; i++ {

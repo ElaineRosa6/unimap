@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 func newBridgeTestServer(signatureRequired bool) *Server {
@@ -247,6 +248,35 @@ func TestBridgeTaskNextAcceptsAdminToken(t *testing.T) {
 	s.handleScreenshotBridgeTaskNext(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for admin token task pull, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestBridgeTaskNextIncludesStatefulQuery(t *testing.T) {
+	s := withAdminToken(newBridgeTestServer(true), "admin-secret")
+	want := `ip.port="443"`
+	if err := s.bridge.Mock.SubmitTask(t.Context(), screenshot.BridgeTask{
+		RequestID: "stateful-query", URL: "https://daydaymap.com/home", Query: want, Action: "collect",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/bridge/tasks/next", nil)
+	setLoopbackBridgeRequest(req)
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	w := httptest.NewRecorder()
+	s.handleScreenshotBridgeTaskNext(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("task pull status=%d body=%s", w.Code, w.Body.String())
+	}
+	var envelope struct {
+		Task struct {
+			Query string `json:"query"`
+		} `json:"task"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Task.Query != want {
+		t.Fatalf("query=%q want=%q", envelope.Task.Query, want)
 	}
 }
 

@@ -317,17 +317,11 @@ func initScreenshotManager(cfg *config.Config) *screenshot.Manager {
 
 // loadEngineCookies loads per-engine cookies from config into the screenshot manager.
 func loadEngineCookies(mgr *screenshot.Manager, cfg *config.Config) {
-	if cfg.Engines.Fofa.Enabled && len(cfg.Engines.Fofa.Cookies) > 0 {
-		mgr.SetCookies("fofa", convertConfigCookies(cfg.Engines.Fofa.Cookies))
-	}
-	if cfg.Engines.Hunter.Enabled && len(cfg.Engines.Hunter.Cookies) > 0 {
-		mgr.SetCookies("hunter", convertConfigCookies(cfg.Engines.Hunter.Cookies))
-	}
-	if cfg.Engines.Quake.Enabled && len(cfg.Engines.Quake.Cookies) > 0 {
-		mgr.SetCookies("quake", convertConfigCookies(cfg.Engines.Quake.Cookies))
-	}
-	if cfg.Engines.Zoomeye.Enabled && len(cfg.Engines.Zoomeye.Cookies) > 0 {
-		mgr.SetCookies("zoomeye", convertConfigCookies(cfg.Engines.Zoomeye.Cookies))
+	for _, engine := range browserEngines() {
+		cookies := engineCookies(cfg, engine)
+		if len(cookies) > 0 {
+			mgr.SetCookies(engine, convertConfigCookies(cookies))
+		}
 	}
 }
 
@@ -613,6 +607,7 @@ func initNotifySystem(cfg *config.Config, cfgManager *config.Manager,
 			return &notify.NotifyGlobalCfg{
 				Enabled:        c.Notifications.Enabled,
 				SendTimeoutSec: c.Notifications.SendTimeoutSec,
+				MaxRetries:     c.Notifications.MaxRetries,
 			}
 		})
 		reloadNotifyChannelConfigs(reg, cfg)
@@ -757,7 +752,7 @@ func initScreenshotRouter(srv *Server, cfg *config.Config, screenshotProvider sc
 	router.Start(shutdownCtx)
 	srv.screenshotRouter = router
 
-	logger.Infof("Screenshot router initialized: mode=auto, priority=%s, fallback=%v", priority, fallback)
+	logger.Infof("Screenshot router initialized: mode=%s, priority=%s, fallback=%v", mode, priority, fallback)
 }
 
 // initExtensionBridge sets up the extension-only bridge mode.

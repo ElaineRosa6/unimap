@@ -138,7 +138,11 @@ func (s *BridgeService) Submit(ctx context.Context, task BridgeTask) (BridgeResu
 	}
 	// Extension cannot enforce redirects itself, but its submission boundary
 	// still fails closed on live DNS before a task can enter the queue.
-	if err := validator(workerCtx, task.URL); err != nil {
+	validationURL := task.URL
+	if strings.EqualFold(strings.TrimSpace(task.Action), "get_cookies") && !strings.Contains(validationURL, "://") {
+		validationURL = "https://" + strings.TrimSpace(validationURL)
+	}
+	if err := validator(workerCtx, validationURL); err != nil {
 		return BridgeResult{}, fmt.Errorf("%w: %v", ErrBridgeSubmitFailed, err)
 	}
 
@@ -326,7 +330,7 @@ func (s *BridgeService) executeOnce(ctx context.Context, task BridgeTask) (Bridg
 
 func bridgeActionNavigates(action string) bool {
 	switch strings.ToLower(strings.TrimSpace(action)) {
-	case "", "screenshot", "open", "collect", "collect_and_capture":
+	case "", "screenshot", "open", "collect", "collect_and_capture", "get_browser_credentials":
 		return true
 	default:
 		return false
@@ -353,8 +357,10 @@ func (s *BridgeService) validateFinalURL(ctx context.Context, requestedURL, fina
 	if err != nil {
 		return fmt.Errorf("ssrf: parse final extension URL: %w", err)
 	}
-	if browserOrigin(requested) == "" || browserOrigin(requested) != browserOrigin(final) {
-		return fmt.Errorf("ssrf: extension navigation left the approved origin")
+	requestedOrigin := browserOrigin(requested)
+	finalOrigin := browserOrigin(final)
+	if requestedOrigin == "" || requestedOrigin != finalOrigin {
+		return fmt.Errorf("ssrf: extension navigation left the approved origin (%s -> %s)", requestedOrigin, finalOrigin)
 	}
 	return nil
 }

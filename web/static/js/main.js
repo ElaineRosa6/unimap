@@ -3052,7 +3052,7 @@ function getEngineLink(source, ip) {
 		case 'quake': return `https://quake.360.net/quake/#/searchResult?searchVal=${encodeURIComponent(query)}`;
 		case 'zoomeye': return `https://www.zoomeye.org/searchResult?q=${encodeURIComponent('ip:"' + ip + '"')}`;
 		case 'shodan': return `https://www.shodan.io/search?query=${encodeURIComponent('ip:"' + ip + '"')}`;
-		case 'censys': return `https://search.censys.io/search?resource=hosts&q=${encodeURIComponent('ip:' + ip)}`;
+		case 'censys': return `https://platform.censys.io/search?resource=hosts&q=${encodeURIComponent('ip:' + ip)}`;
 		case 'daydaymap': return `https://www.daydaymap.com/search?q=${encodeURIComponent('ip:"' + ip + '"')}`;
 		default: return '#';
 	}

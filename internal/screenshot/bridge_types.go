@@ -19,12 +19,13 @@ var (
 type BridgeTask struct {
 	RequestID      string        `json:"request_id"`
 	URL            string        `json:"url"`
+	Query          string        `json:"query,omitempty"`
 	BatchID        string        `json:"batch_id,omitempty"`
 	ViewportWidth  int           `json:"viewport_width,omitempty"`
 	ViewportHeight int           `json:"viewport_height,omitempty"`
 	WaitStrategy   string        `json:"wait_strategy,omitempty"`
 	Timeout        time.Duration `json:"timeout"`
-	Action         string        `json:"action,omitempty"` // "screenshot" (default), "open", "collect", "collect_and_capture"
+	Action         string        `json:"action,omitempty"` // "screenshot" (default), "open", "collect", "collect_and_capture", "get_browser_credentials"
 }
 
 // BridgeResult is the normalized extension execution result.

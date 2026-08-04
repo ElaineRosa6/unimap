@@ -125,6 +125,7 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 		resp, browserOutcome, err = r.querySvc.ExecuteQueryWithBrowserWorkflow(ctx, query, engines, pageSize, service.BrowserQueryWorkflowOptions{
 			Action:             action,
 			QueryID:            queryID,
+			AutoCaptureEnabled: true,
 			ScreenshotApp:      r.screenshotSvc,
 			ScreenshotManager:  r.mgr,
 			BrowserRouter:      r.browserRouter,
@@ -626,7 +627,7 @@ func (r *CookieVerifyRunner) Execute(ctx context.Context, payload *model.TaskPay
 	engines := extractStrings(payload, "engines", []string{})
 	if len(engines) == 0 {
 		// Default: check all supported engines
-		engines = []string{"fofa", "hunter", "quake", "zoomeye"}
+		engines = []string{"fofa", "hunter", "quake", "zoomeye", "shodan", "censys", "daydaymap"}
 	}
 
 	var b strings.Builder
@@ -674,7 +675,7 @@ func (r *LoginStatusCheckRunner) Execute(ctx context.Context, payload *model.Tas
 
 	engines := extractStrings(payload, "engines", []string{})
 	if len(engines) == 0 {
-		engines = []string{"fofa", "hunter", "quake", "zoomeye"}
+		engines = []string{"fofa", "hunter", "quake", "zoomeye", "shodan", "censys", "daydaymap"}
 	}
 	testQuery := extractString(payload, "test_query", "test")
 

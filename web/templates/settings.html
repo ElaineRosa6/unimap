@@ -414,7 +414,7 @@
 			<div id="panel-cookies" class="ctrl-panel">
 				<div class="ctrl-hdr">
 					<h2>Cookie 管理</h2>
-					<p>各搜索引擎用于截图/采集的会话 Cookie。仅在 Headless 模式下生效。</p>
+					<p>各搜索引擎用于 CDP 截图/采集的会话 Cookie；Extension Bridge 可将同源 Cookie 与 Web Storage 临时交接给 CDP。</p>
 				</div>
 
 				<div class="cfg-group">
@@ -423,6 +423,9 @@
 					<div class="cfg-row"><span class="cfg-key">Hunter</span><div class="cfg-val"><input type="text" id="ck-hunter" placeholder="session=xxx; token=yyy" value="{{.cookieHunter}}"></div></div>
 					<div class="cfg-row"><span class="cfg-key">ZoomEye</span><div class="cfg-val"><input type="text" id="ck-zoomeye" placeholder="session=xxx; token=yyy" value="{{.cookieZoomeye}}"></div></div>
 					<div class="cfg-row"><span class="cfg-key">Quake</span><div class="cfg-val"><input type="text" id="ck-quake" placeholder="session=xxx; token=yyy" value="{{.cookieQuake}}"></div></div>
+					<div class="cfg-row"><span class="cfg-key">Shodan</span><div class="cfg-val"><input type="text" id="ck-shodan" placeholder="session=xxx; token=yyy" value="{{.cookieShodan}}"></div></div>
+					<div class="cfg-row"><span class="cfg-key">Censys</span><div class="cfg-val"><input type="text" id="ck-censys" placeholder="session=xxx; token=yyy" value="{{.cookieCensys}}"></div></div>
+					<div class="cfg-row"><span class="cfg-key">DayDayMap</span><div class="cfg-val"><input type="text" id="ck-daydaymap" placeholder="session=xxx; token=yyy" value="{{.cookieDayDayMap}}"></div></div>
 				</div>
 
 				<div class="cfg-group">
@@ -433,6 +436,9 @@
 							<option value="hunter">Hunter</option>
 							<option value="zoomeye">ZoomEye</option>
 							<option value="quake">Quake</option>
+							<option value="shodan">Shodan</option>
+							<option value="censys">Censys</option>
+							<option value="daydaymap">DayDayMap</option>
 						</select>
 					</div></div>
 					<div class="cfg-row"><span class="cfg-key">JSON</span><div class="cfg-val">
@@ -450,6 +456,9 @@
 					<div class="cfg-row"><span class="cfg-key">Hunter</span><div class="cfg-val"><span id="ck-status-hunter" class="hint">检测中…</span></div></div>
 					<div class="cfg-row"><span class="cfg-key">ZoomEye</span><div class="cfg-val"><span id="ck-status-zoomeye" class="hint">检测中…</span></div></div>
 					<div class="cfg-row"><span class="cfg-key">Quake</span><div class="cfg-val"><span id="ck-status-quake" class="hint">检测中…</span></div></div>
+					<div class="cfg-row"><span class="cfg-key">Shodan</span><div class="cfg-val"><span id="ck-status-shodan" class="hint">检测中…</span></div></div>
+					<div class="cfg-row"><span class="cfg-key">Censys</span><div class="cfg-val"><span id="ck-status-censys" class="hint">检测中…</span></div></div>
+					<div class="cfg-row"><span class="cfg-key">DayDayMap</span><div class="cfg-val"><span id="ck-status-daydaymap" class="hint">检测中…</span></div></div>
 				</div>
 
 				<div class="cfg-actions">
@@ -704,7 +713,7 @@
 		};
 
 	window.saveAllEngines = async function() {
-		var engines = ['fofa', 'hunter', 'zoomeye', 'quake', 'shodan'];
+		var engines = ['fofa', 'hunter', 'zoomeye', 'quake', 'shodan', 'censys', 'daydaymap'];
 		var data = {};
 		engines.forEach(function(eng) {
 			var engData = {
@@ -839,7 +848,10 @@
 	}
 
 	// --- Cookie panel ---
-	var ckIds = { fofa: 'ck-fofa', hunter: 'ck-hunter', zoomeye: 'ck-zoomeye', quake: 'ck-quake' };
+	var ckIds = {
+		fofa: 'ck-fofa', hunter: 'ck-hunter', zoomeye: 'ck-zoomeye', quake: 'ck-quake',
+		shodan: 'ck-shodan', censys: 'ck-censys', daydaymap: 'ck-daydaymap'
+	};
 
 	async function saveCookiesPanel() {
 		var form = new URLSearchParams();
@@ -861,13 +873,22 @@
 
 	async function verifyCookiesPanel() {
 		try {
+			var form = new URLSearchParams();
+			form.append('query', 'port="80"');
+			form.append('engines', Object.keys(ckIds).join(','));
 			var resp = await fetch('/api/v1/cookies/verify', {
 				method: 'POST',
-				headers: { 'Authorization': 'Bearer ' + tok() }
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + tok() },
+				body: form.toString()
 			});
 			var data = await resp.json();
-			showResult('cookies-result', data.success ? 'ok' : 'fail',
-				data.success ? '验证完成' : (extractErrorMsg(data)));
+			if (!resp.ok || !data.results) {
+				showResult('cookies-result', 'fail', extractErrorMsg(data));
+				return;
+			}
+			var results = Object.keys(data.results);
+			var passed = results.filter(function(eng) { return data.results[eng] && data.results[eng].ok; }).length;
+			showResult('cookies-result', passed > 0 ? 'ok' : 'fail', '验证完成：' + passed + '/' + results.length + ' 个引擎会话可用');
 		} catch (e) { showResult('cookies-result', 'fail', '验证失败: ' + e.message); }
 	}
 

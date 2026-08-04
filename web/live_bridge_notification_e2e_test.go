@@ -21,7 +21,9 @@ import (
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/history"
 	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/notify"
 	"github.com/unimap/project/internal/scheduler"
+	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 )
 
@@ -56,10 +58,14 @@ func TestLiveBridgeSearchScreenshotNotification(t *testing.T) {
 
 	channelID := enabledFeishuAppChannelID(t, cfg)
 	engine, query := liveBridgeEngine(t)
+	if nativeQuery := strings.TrimSpace(os.Getenv("UNIMAP_LIVE_BRIDGE_NATIVE_QUERY")); nativeQuery != "" {
+		query = nativeQuery
+	}
 	port := liveBridgePort(t)
 	cfg.Web.BindAddress = "127.0.0.1"
 	cfg.Web.Port = port
 	cfg.Screenshot.BaseDir = filepath.Join(stateDir, "screenshots")
+	cfg.Screenshot.Timeout = 60
 	cfg.History.DatabasePath = filepath.Join(stateDir, "history.db")
 	cfg.ICP.DatabasePath = filepath.Join(stateDir, "icp_results.db")
 
@@ -153,9 +159,186 @@ func TestLiveBridgeSearchScreenshotNotification(t *testing.T) {
 		t.Logf("LIVE_BRIDGE_E2E screenshot_artifact=%s", artifactPath)
 	}
 
-	waitForLiveNotificationMetric(t, srv, beforeNotify, 20*time.Second)
+	waitForLiveNotificationMetric(t, srv, beforeNotify, 60*time.Second)
 	sum := sha256.Sum256(image)
 	t.Logf("LIVE_BRIDGE_E2E success engine=%s bridge_callback=true screenshot_bytes=%d screenshot_sha256_prefix=%x notification_type=feishu_app notification_success=true", engine, len(image), sum[:6])
+}
+
+// TestLiveBridgeStructuredCollection isolates the real Extension DOM/network
+// collection path from API credentials, screenshots, persistence, and
+// notifications. It is the first diagnostic to run when a closed-loop test
+// reports an empty browser result.
+func TestLiveBridgeStructuredCollection(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("APPDATA", stateDir)
+	t.Setenv("LOCALAPPDATA", stateDir)
+	webRoot, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("resolve web root: %v", err)
+	}
+	t.Setenv("UNIMAP_WEB_ROOT", webRoot)
+
+	cfgManager := config.NewManager(liveBridgeConfigPath(t))
+	if err := cfgManager.Load(); err != nil {
+		t.Fatalf("load live configuration: %v", err)
+	}
+	cfg := cfgManager.GetConfig().Clone()
+	configureLiveBridgeExtension(cfg)
+	cfg.Screenshot.AutoCapture.Enabled = false
+	cfg.Screenshot.AutoCapture.CaptureSearchResults = false
+	engine, query := liveBridgeEngine(t)
+	cfg.Web.BindAddress = "127.0.0.1"
+	cfg.Web.Port = liveBridgePort(t)
+	cfg.Screenshot.BaseDir = filepath.Join(stateDir, "screenshots")
+	cfg.History.DatabasePath = filepath.Join(stateDir, "history.db")
+
+	app := service.NewUnifiedServiceWithConfig(cfg)
+	srv, err := NewServer(cfg.Web.Port, app, app.GetOrchestrator(), cfg, cfgManager)
+	if err != nil {
+		t.Fatalf("create loopback Bridge server: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+		_ = app.Shutdown()
+	})
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+	}()
+	waitForLiveBridge(t, srv, serverErr, 30*time.Second)
+
+	outcome := <-srv.runBrowserQueryAsync(t.Context(), query, []string{engine}, true, "collect", "live-structured", nil)
+	if len(outcome.Errors) > 0 {
+		t.Fatalf("Bridge structured collection errors: %s", strings.Join(outcome.Errors, "; "))
+	}
+	if len(outcome.CollectedResults) != 1 {
+		t.Fatalf("Bridge collected result envelopes=%d, want one", len(outcome.CollectedResults))
+	}
+	result := outcome.CollectedResults[0]
+	if len(result.Assets) == 0 {
+		t.Fatalf("Bridge returned zero assets: method=%s selector=%q rows=%d extraction_error=%q login_wall=%t",
+			result.ExtractionMethod, result.RowSelectorUsed, result.RowsFound, result.ExtractionError, result.IsLoginWall)
+	}
+	t.Logf("LIVE_BRIDGE_STRUCTURED success engine=%s assets=%d total=%d method=%s rows=%d", engine, len(result.Assets), result.Total, result.ExtractionMethod, result.RowsFound)
+}
+
+// TestLiveBridgeCookieHandoffToCDP proves the fallback requested by the
+// browser workflow: read the authenticated UI profile through the loopback
+// Extension Bridge, hand cookies and origin storage to CDP without logging
+// values, then collect and capture.
+func TestLiveBridgeCookieHandoffToCDP(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("APPDATA", stateDir)
+	t.Setenv("LOCALAPPDATA", stateDir)
+	webRoot, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("resolve web root: %v", err)
+	}
+	t.Setenv("UNIMAP_WEB_ROOT", webRoot)
+
+	cfgManager := config.NewManager(liveBridgeConfigPath(t))
+	if err := cfgManager.Load(); err != nil {
+		t.Fatalf("load live configuration: %v", err)
+	}
+	cfg := cfgManager.GetConfig().Clone()
+	configureLiveBridgeExtension(cfg)
+	cfg.Screenshot.ChromeRemoteDebugURL = strings.TrimSpace(os.Getenv("UNIMAP_LIVE_CDP_URL"))
+	cfg.Screenshot.ChromeUserDataDir = filepath.Join(stateDir, "cdp-profile")
+	cfg.Screenshot.Timeout = 60
+	if proxy := strings.TrimSpace(os.Getenv("UNIMAP_LIVE_CDP_SOCKS5_PROXY")); proxy != "" {
+		cfg.Screenshot.ProxyServer = proxy
+	}
+	headless := !strings.EqualFold(strings.TrimSpace(os.Getenv("UNIMAP_LIVE_CDP_HEADFUL")), "true")
+	cfg.Screenshot.Headless = &headless
+	cfg.Screenshot.BaseDir = filepath.Join(stateDir, "screenshots")
+	cfg.History.DatabasePath = filepath.Join(stateDir, "history.db")
+	cfg.Web.BindAddress = "127.0.0.1"
+	cfg.Web.Port = liveBridgePort(t)
+	engine, _ := liveBridgeEngine(t)
+
+	app := service.NewUnifiedServiceWithConfig(cfg)
+	srv, err := NewServer(cfg.Web.Port, app, app.GetOrchestrator(), cfg, cfgManager)
+	if err != nil {
+		t.Fatalf("create Bridge/CDP handoff server: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+		_ = app.Shutdown()
+	})
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+	}()
+	waitForLiveBridge(t, srv, serverErr, 30*time.Second)
+	if srv.screenshotMgr == nil {
+		t.Fatal("CDP manager is unavailable")
+	}
+
+	handoffCtx, handoffCancel := context.WithTimeout(t.Context(), 30*time.Second)
+	cookieCount, err := srv.syncExtensionCookiesToCDP(handoffCtx, engine)
+	handoffCancel()
+	if err != nil {
+		t.Fatalf("Bridge-to-CDP cookie handoff: %v", err)
+	}
+	storage := srv.screenshotMgr.GetBrowserStorage(engine)
+	credentialCount := cookieCount + len(storage.Local) + len(storage.Session)
+	if credentialCount == 0 {
+		t.Fatal("Bridge-to-CDP handoff returned no cookies or origin storage")
+	}
+
+	query := liveNativeBrowserQuery(engine)
+	collectCtx, collectCancel := context.WithTimeout(t.Context(), 90*time.Second)
+	results, imagePath, err := srv.screenshotMgr.CollectAndCaptureSearchEngineResult(collectCtx, engine, query, "live-cookie-handoff")
+	collectCancel()
+	if err != nil {
+		t.Fatalf("CDP collect_and_capture after cookie handoff: %v", err)
+	}
+	if image, readErr := os.ReadFile(imagePath); readErr == nil {
+		if artifact := preserveLiveScreenshot(t, engine+"-cdp", image); artifact != "" {
+			t.Logf("LIVE_BRIDGE_CDP_SCREENSHOT artifact=%s", artifact)
+		}
+	}
+	image, err := os.ReadFile(imagePath)
+	if err != nil || len(image) < 8 || string(image[:8]) != "\x89PNG\r\n\x1a\n" {
+		t.Fatalf("CDP screenshot after cookie handoff is not a PNG: bytes=%d err=%v", len(image), err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("CDP returned an unexpected result envelope after credential handoff: %#v", results)
+	}
+	if results[0].BrowserChallenge {
+		t.Logf("LIVE_BRIDGE_CDP_HANDOFF challenge_detected engine=%s cookies=%d storage_entries=%d extraction_error=%s png_bytes=%d", engine, cookieCount, credentialCount-cookieCount, results[0].ExtractionError, len(image))
+		if srv.screenshotRouter == nil {
+			t.Fatal("screenshot router is unavailable for browser-challenge fallback")
+		}
+		srv.screenshotRouter.SetMode(screenshot.ModeAuto)
+		fallbackCtx, fallbackCancel := context.WithTimeout(t.Context(), 120*time.Second)
+		fallbackResults, fallbackImagePath, fallbackErr := srv.screenshotRouter.CollectAndCaptureSearchEngineResult(fallbackCtx, engine, query, "live-cookie-handoff-fallback")
+		fallbackCancel()
+		if fallbackErr != nil {
+			t.Fatalf("automatic Extension fallback after CDP browser challenge: %v", fallbackErr)
+		}
+		if len(fallbackResults) != 1 || len(fallbackResults[0].Assets) == 0 {
+			t.Fatalf("automatic Extension fallback returned no assets: %#v", fallbackResults)
+		}
+		fallbackImage, readFallbackErr := os.ReadFile(fallbackImagePath)
+		if readFallbackErr != nil || len(fallbackImage) < 8 || string(fallbackImage[:8]) != "\x89PNG\r\n\x1a\n" {
+			t.Fatalf("automatic Extension fallback screenshot is not a PNG: bytes=%d err=%v", len(fallbackImage), readFallbackErr)
+		}
+		t.Logf("LIVE_BRIDGE_CDP_FALLBACK success engine=%s assets=%d png_bytes=%d", engine, len(fallbackResults[0].Assets), len(fallbackImage))
+		return
+	}
+	if len(results[0].Assets) == 0 {
+		t.Fatalf("CDP returned no assets after credential handoff: %#v", results)
+	}
+	t.Logf("LIVE_BRIDGE_CDP_HANDOFF success engine=%s cookies=%d storage_entries=%d assets=%d png_bytes=%d", engine, cookieCount, credentialCount-cookieCount, len(results[0].Assets), len(image))
 }
 
 // TestLiveBridgeScheduledQueryClosedLoop verifies the complete scheduled path:
@@ -222,6 +405,12 @@ func TestLiveBridgeScheduledQueryClosedLoop(t *testing.T) {
 		}
 	}()
 	waitForLiveBridge(t, srv, serverErr, 30*time.Second)
+	channel := srv.notifyRegistry.Get(channelID)
+	recorder := &recordingNotifyChannel{delegate: channel, results: make(chan error, 1)}
+	srv.notifyRegistry.Remove(channelID)
+	if err := srv.notifyRegistry.Register(recorder); err != nil {
+		t.Fatalf("instrument Feishu app channel: %v", err)
+	}
 
 	beforeNotify := liveNotifyMetric(t, srv, "feishu_app", "success")
 	runAt := time.Now().Add(time.Hour)
@@ -277,8 +466,34 @@ func TestLiveBridgeScheduledQueryClosedLoop(t *testing.T) {
 		t.Fatalf("scheduled notification body has no persisted asset detail:\n%s", record.Result)
 	}
 
-	waitForLiveNotificationMetric(t, srv, beforeNotify, 20*time.Second)
+	select {
+	case notifyErr := <-recorder.results:
+		if notifyErr != nil {
+			t.Fatalf("Feishu app notification failed: %v", notifyErr)
+		}
+	case <-time.After(70 * time.Second):
+		t.Fatal("timed out waiting for Feishu app notification result")
+	}
+	waitForLiveNotificationMetric(t, srv, beforeNotify, 5*time.Second)
 	t.Logf("LIVE_BRIDGE_CLOSED_LOOP success engine=%s persisted_results=%d notification_details=true screenshot_bytes=%d notification_success=true", engine, len(results), len(image))
+}
+
+type recordingNotifyChannel struct {
+	delegate notify.NotifyChannel
+	results  chan error
+}
+
+func (c *recordingNotifyChannel) ID() string      { return c.delegate.ID() }
+func (c *recordingNotifyChannel) Type() string    { return c.delegate.Type() }
+func (c *recordingNotifyChannel) IsEnabled() bool { return c.delegate.IsEnabled() }
+func (c *recordingNotifyChannel) Close() error    { return nil }
+func (c *recordingNotifyChannel) Send(ctx context.Context, message notify.TaskNotification) error {
+	err := c.delegate.Send(ctx, message)
+	select {
+	case c.results <- err:
+	default:
+	}
+	return err
 }
 
 // TestLiveAPIScheduledQueryNotificationDetails verifies that the non-Bridge
@@ -424,6 +639,19 @@ func liveBridgePort(t *testing.T) int {
 	return port
 }
 
+func liveNativeBrowserQuery(engine string) string {
+	queries := map[string]string{
+		"fofa":      `port="443"`,
+		"hunter":    `port="443"`,
+		"zoomeye":   `port:443`,
+		"quake":     `port:443`,
+		"shodan":    `port:443`,
+		"censys":    `host.services.port=443`,
+		"daydaymap": `ip.port="443"`,
+	}
+	return queries[engine]
+}
+
 // configureLiveBridgeExtension keeps the live test independent from production
 // pairing credentials while still exercising the real Extension-only path.
 // The unpacked extension uses "dev-pair" for automatic local test pairing.
@@ -462,8 +690,8 @@ func liveBridgeEngine(t *testing.T) (engine, query string) {
 		"zoomeye":   `port="443"`,
 		"quake":     `port="443"`,
 		"shodan":    `port="443"`,
-		"censys":    `services.port:443`,
-		"daydaymap": `ip.port=443`,
+		"censys":    `port="443"`,
+		"daydaymap": `port="443"`,
 	}
 	query, ok := queries[engine]
 	if !ok {
@@ -616,5 +844,6 @@ func waitForLiveNotificationMetric(t *testing.T, srv *Server, before float64, ti
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	t.Fatal("Feishu app notification did not report successful delivery")
+	t.Fatalf("Feishu app notification did not report successful delivery (success=%.0f failure=%.0f)",
+		liveNotifyMetric(t, srv, "feishu_app", "success"), liveNotifyMetric(t, srv, "feishu_app", "failed"))
 }

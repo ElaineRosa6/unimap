@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -33,6 +34,17 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 	logger.Infof("[scheduler] notify: preparing to send to %d channels for task %s (status=%s)", len(channelIDs), task.ID, record.Status)
 	msg := s.buildNotificationMessage(task, record)
 	timeout := s.notifyTimeout
+	maxRetries := 0
+	if s.notifyCfgProvider != nil {
+		if globalCfg := s.notifyCfgProvider(); globalCfg != nil {
+			if globalCfg.SendTimeoutSec > 0 {
+				timeout = time.Duration(globalCfg.SendTimeoutSec) * time.Second
+			}
+			if globalCfg.MaxRetries > 0 {
+				maxRetries = globalCfg.MaxRetries
+			}
+		}
+	}
 	if timeout == 0 {
 		timeout = 10 * time.Second
 	}
@@ -42,7 +54,7 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 			s.sendInlineWebhookNotification(task.Notifications.WebhookURL, msg, timeout)
 			continue
 		}
-		s.sendRegistryChannelNotification(chID, msg, timeout)
+		s.sendRegistryChannelNotification(chID, msg, timeout, maxRetries)
 	}
 }
 
@@ -122,7 +134,7 @@ func (s *Scheduler) sendInlineWebhookNotification(webhookURL string, msg notify.
 	}(webhookURL)
 }
 
-func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.TaskNotification, timeout time.Duration) {
+func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.TaskNotification, timeout time.Duration, maxRetries int) {
 	if s.notifyRegistry == nil {
 		logger.Warnf("[scheduler] notify: registry is nil, skipping channel %s", chID)
 		return
@@ -152,10 +164,8 @@ func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.Task
 				logger.Errorf("scheduler panic in notify channel %s: %v", ch.ID(), r)
 			}
 		}()
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-		logger.Infof("[scheduler] notify: sending to channel %s (%s), timeout=%v", ch.ID(), ch.Type(), timeout)
-		if err := ch.Send(ctx, msg); err != nil {
+		logger.Infof("[scheduler] notify: sending to channel %s (%s), timeout=%v retries=%d", ch.ID(), ch.Type(), timeout, maxRetries)
+		if err := sendNotifyChannelWithRetry(ch, msg, timeout, maxRetries); err != nil {
 			logger.Errorf("[scheduler] notify %s (%s) failed: %v", ch.ID(), ch.Type(), err)
 			metrics.IncSchedulerNotifyFail(ch.Type())
 		} else {
@@ -163,6 +173,32 @@ func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.Task
 			metrics.IncSchedulerNotifySuccess(ch.Type())
 		}
 	}(ch)
+}
+
+func sendNotifyChannelWithRetry(ch notify.NotifyChannel, msg notify.TaskNotification, timeout time.Duration, maxRetries int) error {
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		lastErr = ch.Send(ctx, msg)
+		cancel()
+		if lastErr == nil {
+			return nil
+		}
+		// A timeout means the message may already have been delivered but the
+		// response was slow; retrying would duplicate it. Only clearly transient
+		// errors are worth a retry.
+		if errors.Is(lastErr, context.DeadlineExceeded) {
+			break
+		}
+		if attempt == maxRetries {
+			break
+		}
+		time.Sleep(time.Duration(attempt+1) * time.Second)
+	}
+	return lastErr
 }
 
 // extractImagePaths extracts screenshot file paths from task result text.

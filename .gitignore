@@ -136,3 +136,9 @@ web/hash_store/check_records.db
 
 # CDP login/verification tools (local only)
 tools/cdp-login/
+
+# Runtime artifacts (large / regenerated — not for version control)
+web/screenshots/
+__pycache__/
+*.pyc
+artifacts/

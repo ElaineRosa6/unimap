@@ -393,6 +393,7 @@ func (s *Server) handleScreenshotBridgeTaskNext(w http.ResponseWriter, r *http.R
 			"request_id":      task.RequestID,
 			"batch_id":        task.BatchID,
 			"url":             task.URL,
+			"query":           task.Query,
 			"wait_strategy":   task.WaitStrategy,
 			"timeout_ms":      timeoutMS,
 			"viewport_width":  task.ViewportWidth,
