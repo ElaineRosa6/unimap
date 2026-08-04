@@ -9,6 +9,7 @@
 # Project Memory Index
 
 ## 当前事实快照（2026-08-02）
+- [工作与提交记录文档 2026-08-04](project_worklog_doc_2026-08-04.md) — docs/WORK_LOG_2026-07-15_to_2026-08-04.md 及同名 Word 版已生成（纯黑白样式），均未提交。
 - [urlive.py MD5 FIPS 兼容性修复 2026-08-04](project_urlive_md5_fips_2026-08-04.md) — 全目录审查：MD5 指纹加 usedforsecurity=False（含旧版回退）；unimap 其余 P0 核实为误报/已修复，详见记忆文件。
 
 - [七引擎、云端发布与飞书闭环 2026-08-02](project_seven_engine_cloud_feishu_closeout_2026-08-02.md) — 当前七引擎、CDP/fallback、云端发布、通知与外部 fixture 状态。
