@@ -1,21 +1,19 @@
 # UniMap — 多引擎资产查询与网页巡检工具
 
-> 最后按当前工作区核对：2026-07-29。主开发分支为 `develop`，Go 版本以 `go.mod` 的 1.26.5 为准。
+> 最后按当前工作区核对：2026-08-02。主开发分支为 `develop`，Go 版本以 `go.mod` 的 1.26.5 为准。
 
 ## 项目现状
 
-UniMap 提供 Web、CLI 和可选 GUI 三种入口，覆盖资产查询、浏览器采集、网页截图、网页巡检、
+UniMap 提供 Web 和 CLI 入口，覆盖资产查询、浏览器采集、网页截图、网页巡检、
 调度、通知、分布式节点、备份和 Prometheus 指标。
 
-稳定 Web UI 当前使用 FOFA、Hunter、ZoomEye、Quake、Shodan。
-
-Censys、DayDayMap 已完成服务端/CLI API 适配和 API 实机验证，但尚未接入稳定 Web UI，
-也没有完成 Bridge/CDP 结构化采集与真实测试。
+稳定 Web UI 当前使用 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap。七引擎
+Bridge 真实结构化采集均非空；DayDayMap 原生 CDP 通过，Censys challenge 识别与 Bridge
+fallback 通过，FOFA、ZoomEye、Shodan 原生 CDP 仍待非空定级。
 
 普通公网网页的云端 CDP headless 截图已经通过。Quake、Hunter 已完成真实 CDP 登录、
 结构化采集和结果页截图；Quake L1 Network 已于 2026-07-29 按当前接口重新实测通过。
-Quake 真实 Extension 调度闭环和飞书图片通知已通过；FOFA、ZoomEye、Shodan 的 CDP 定级及
-受控页面变化后的自动证据图片通知仍待验收。
+Quake 真实 Extension 调度闭环和云端飞书通知已通过；受控页面变化后的自动证据图片通知仍待验收。
 
 ## 技术与入口
 
@@ -24,7 +22,6 @@ Quake 真实 Extension 调度闭环和飞书图片通知已通过；FOFA、ZoomE
 | 语言 | Go 1.26.5 |
 | Web | `net/http`、`gorilla/websocket`、`go-resty` |
 | CLI | Go 标准库 `flag`，不是 Cobra |
-| GUI | Fyne v2，必须使用 `-tags gui` |
 | 浏览器 | chromedp + Chrome Extension Bridge |
 | 截图模式 | `auto`、`cdp`、`extension` |
 | 调度 | robfig/cron/v3，23 种已提交任务类型 |
@@ -35,7 +32,6 @@ Quake 真实 Extension 调度闭环和飞书图片通知已通过；FOFA、ZoomE
 
 ```text
 cmd/unimap-cli/       CLI
-cmd/unimap-gui/       GUI（gui build tag）
 cmd/unimap-web/       Web 服务（默认 :8448）
 internal/adapter/     引擎适配器与编排
 internal/service/     应用服务
@@ -55,13 +51,11 @@ cp configs/config.yaml.example configs/config.yaml
 
 go run ./cmd/unimap-web
 go run ./cmd/unimap-cli --help
-go run -tags gui ./cmd/unimap-gui
 
 go fmt ./...
 go test -race ./...
 go vet ./...
 go build ./...
-go build -tags gui ./cmd/unimap-gui
 ```
 
 默认测试不得启动 Chrome。真实浏览器测试必须显式使用对应 E2E build tag。
@@ -143,7 +137,7 @@ go build -tags gui ./cmd/unimap-gui
 - 本文件已按用户要求保留并同步；**已完成**
 - 根目录 Chrome 测速入口已迁移到带显式 build tag 的工具目录；**已完成**
 - 修正文档中的过期云端状态；**已完成**
-- 重新执行全量 race、vet、build、GUI build 和前端检查；**已完成**
+- 重新执行全量 race、vet、build、Extension 和前端检查；**已完成**
 - 推送 `develop` 当前领先远端的本地提交；**待执行**
 
 ### P1：网页巡检收尾
@@ -159,9 +153,9 @@ go build -tags gui ./cmd/unimap-gui
 ### P1：浏览器与引擎验收
 
 - Quake、Hunter 真实 CDP 查询、采集、截图、入库、通知和重启恢复；
-- FOFA、ZoomEye、Shodan 的 CDP 能力定级；
+- FOFA、ZoomEye、Shodan 的原生 CDP 非空定级；
 - Cookie/Profile 登录探针、失败熔断、告警和恢复；
-- Censys、DayDayMap 稳定 Web UI、Bridge/CDP 和 live E2E。
+- Censys challenge 页面策略允许时复验原生 CDP；现有自动 Bridge fallback 已通过。
 
 ### P2/P3：产品与生产化
 

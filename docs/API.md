@@ -45,14 +45,14 @@
 | `browser_query` | 可选布尔值，是否同时走浏览器采集 |
 | `browser_action` | 可选浏览器动作 |
 
-响应为 `QueryAPIPayload`，核心字段是 `query`、`engines`、`assets`、`totalCount`、`engineStats`、`errors`、`persistence`，并可能附带浏览器采集状态。缓存使用版本化 key 并保存 `engineStats`/`errors` 元数据，因此首次响应与缓存命中的统计语义一致。`persistence.status` 为 `persisted`、`failed` 或 `disabled`。`GET /query` 是页面跳转入口，不是等价的 JSON 查询接口。
+响应为 `QueryAPIPayload`，核心字段是 `status`、`query`、`engines`、`assets`、`totalCount`、`engineStats`、`errors`、`persistence`，并可能附带浏览器采集状态。`status` 为 `success`、`partial` 或 `error`：普通 API 失败但浏览器返回非空结构化资产时返回 HTTP 200 + `partial`；两路均失败才返回整体错误。浏览器采集结果可含 `browser_challenge=true` 与 `extraction_error=browser_challenge`；`auto` 或启用 fallback 时会对该单次任务切换到 Extension。缓存使用版本化 key 并保存 `engineStats`/`errors` 元数据，因此首次响应与缓存命中的统计语义一致。`persistence.status` 为 `persisted`、`failed` 或 `disabled`。一次 HTTP/调度工作流只写一条合并历史。`GET /query` 是页面跳转入口，不是等价的 JSON 查询接口。
 
 引擎能力边界：
 
-- FOFA、Hunter、ZoomEye、Quake、Shodan 属于稳定 Web UI；历史真实结构化采集 E2E 使用 Bridge；
-- CDP 对上述五个引擎存在采集与截图代码路径，但尚未完成真实账号逐引擎验证；
-- Censys、DayDayMap 当前为服务端/CLI API-only；API 适配与 API 实机验证已完成，但未接入稳定 Web UI，Bridge/CDP 搜索抓取也未完成；
-- `browser_query=true` 只表示请求浏览器工作流，不能据此推断所选引擎已经通过对应后端验收。
+- FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap 均属于稳定 Web UI；缺少 API 凭据时注册 Web-only adapter；
+- 2026-08-02 七引擎 Bridge 真实结构化采集均非空；Quake、Hunter 的 CDP 结构化采集已通过；
+- DayDayMap 已完成 Bridge 凭据到 CDP 的同源 Web Storage 交接，并通过受控 loopback SOCKS5 出口取得 10 条结构化资产；Censys CDP 已确认交接 1 个 Cookie 与 16 项 Web Storage，但命中 Cloudflare 挑战，自动回退 Bridge 后取得 9 条资产；
+- `browser_query=true` 只表示请求浏览器工作流；具体后端证据和限制以日期化验收记录为准。
 
 ## Cookie 与 CDP
 
@@ -101,8 +101,8 @@ Bridge 路由仅以 `/api/v1` 提供。配对、任务拉取、回调和令牌�
 | GET | `/api/v1/screenshot/bridge/status` | 同上 |
 | POST | `/api/v1/screenshot/bridge/pair` | loopback JSON：`client_id`、`pair_code`；返回短期 bridge token |
 | POST | `/api/v1/screenshot/bridge/token/rotate` | loopback，JSON 可含 `revoke_old` |
-| GET | `/api/v1/screenshot/bridge/tasks/next` | loopback 拉取下一个任务 |
-| POST | `/api/v1/screenshot/bridge/mock/result` | loopback 回调任务结果；配置要求时还需签名头 |
+| GET | `/api/v1/screenshot/bridge/tasks/next` | loopback 拉取下一个任务；任务包含 `query`，凭据交接动作是 `get_browser_credentials` |
+| POST | `/api/v1/screenshot/bridge/mock/result` | loopback 回调任务结果；`collected_data` 可含类型化 `cookies`、`storage.local`、`storage.session` 与 `final_url`；配置要求时还需签名头 |
 
 ## URL 导入与巡检
 

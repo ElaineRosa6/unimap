@@ -1,6 +1,6 @@
 # Screenshot Extension Ops Runbook
 
-> 最后按代码核对：2026-07-29。适用于 `tools/extension-screenshot` manifest 0.4.2。
+> 最后按代码核对：2026-08-02。适用于 `tools/extension-screenshot` manifest 0.4.15。
 
 ## 运行边界
 
@@ -66,7 +66,7 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8448/api/v1/screenshot/brid
 
 ## 受支持的采集目标
 
-当前扩展源码含 FOFA、Hunter、ZoomEye、Quake、Shodan 以及 Censys、DayDayMap 的页面识别/泛化选择器，但服务端 Bridge 搜索 URL 只支持前五个，live E2E 白名单也只有前五个。Censys、DayDayMap 的选择器属于未接通、未验证的占位，不能据此承诺 Bridge 抓取可用；两者当前只有 API 适配与 API 实机验证通过。
+Extension 0.4.15 与服务端 Bridge 支持 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap。2026-08-02 七引擎均取得真实非空结构化资产；Censys 为 9 条，DayDayMap 为 1 条（首次页面抖动后重试通过）。任务 DTO 必须携带 `query`，DayDayMap 使用 `/searchResult?keyword=...`。
 
 ## 常用验证
 
@@ -91,6 +91,12 @@ GET /api/v1/screenshot/batch/progress?job_id=<job_id>
 ```
 
 服务会拒绝私有、回环或内部目标；这是 SSRF 防护，不能通过重试或切换扩展绕过。
+
+### Bridge 到 CDP 的凭据交接
+
+CDP 登录态缺失时，服务向同源 Extension 标签页提交 `get_browser_credentials`：扩展回传类型化 Cookie、`localStorage`、`sessionStorage` 与最终 URL。服务只持久化 Cookie；Web Storage 仅保存在进程内，CDP 导航到同源页面后注入并刷新。整个动作继续受 loopback Bridge、引擎域名白名单、最终 URL 同源校验和浏览器 SSRF fail-closed 约束。
+
+扩展选项允许修改 Loopback API Base URL，但只接受 `http://127.0.0.1|localhost|[::1]:显式端口`，拒绝凭据、查询和片段。扩展源码更新后在 `chrome://extensions` 对 **UniMap Screenshot Bridge** 执行一次重新加载，并确认版本为 0.4.15，再运行 live E2E。
 
 ## Bridge 查询、截图与通知联调
 

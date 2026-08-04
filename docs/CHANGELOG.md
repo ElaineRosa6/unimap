@@ -4,6 +4,16 @@
 
 ---
 
+## [2026-08-02] 七引擎、云端发布与通知收口
+
+- 稳定 Web UI 扩展至 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap；七引擎 Bridge 真实结构化采集均非空。
+- API/Browser 查询完成 `success`、`partial`、`error` 语义和单次 SQLite 合并持久化；Browser 非空不再被 API 失败覆盖。
+- Bridge 凭据交接支持类型化 Cookie 与同源 Web Storage；DayDayMap 原生 CDP 通过，Censys challenge 被识别并自动回退 Bridge。
+- guarded browser egress 限定 literal-loopback SOCKS5 和固定公网 IP:port；Extension 升至 0.4.15。
+- 最终 CGO/SQLite 云端镜像通过健康、readiness、重启、旧镜像回滚、再次发布和配置哈希验证；飞书应用通知连续两次返回 HTTP 200，通知配置回滚与重应用通过。
+- Extension 9/9、`go test -race ./...`、`go vet ./...`、`go build ./...`、前端语法和 `git diff --check` 全部通过。
+- 自动巡检证据截图继续默认关闭，待受控域名、DNS 编辑参数及 fixture 控制/目标 URL 到位后完成最终 live E2E。
+
 ## [2026-07-24] 巡检运行时、历史筛选与证据截图安全边界
 
 - 将根目录临时 Chrome 测速入口迁移到 `tools/chrome-speedtest`，使用
