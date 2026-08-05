@@ -204,7 +204,9 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 			pageSize = size
 		}
 	}
-	const maxPageSize = 500
+	// maxPageSize 放开到 3000：DayDayMap API key 单页上限为 2500（更大页返回"积分不足"），
+	// 全局上限需覆盖该能力，避免前端/API 无法一次拉取引擎允许的整页。
+	const maxPageSize = 3000
 	if pageSize > maxPageSize {
 		pageSize = maxPageSize
 	}
