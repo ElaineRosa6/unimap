@@ -188,7 +188,10 @@ func (r *URLImportRunner) Execute(ctx context.Context, payload *model.TaskPayloa
 		return "", fmt.Errorf("import directory not configured")
 	}
 
-	filePattern := extractString(payload, "file_pattern", "*.txt")
+	filePattern, err := sanitizeImportPattern(extractString(payload, "file_pattern", "*.txt"))
+	if err != nil {
+		return "", fmt.Errorf("invalid file_pattern: %w", err)
+	}
 	maxLines := extractInt(payload, "max_lines", 10000)
 
 	matches, err := filepath.Glob(filepath.Join(r.importDir, filePattern))
@@ -256,6 +259,30 @@ func readURLsFromFile(filePath string, maxLines int) ([]string, error) {
 		count++
 	}
 	return urls, scanner.Err()
+}
+
+// sanitizeImportPattern 校验任务 file_pattern（FINDING-001/004 路径穿越修复）。
+// file_pattern 来自任务 payload，未校验时 `..` 可借 filepath.Glob 逃逸 importDir 越界。
+// 仅允许 importDir 内的相对 glob：拒绝空值、绝对路径、以 / 或 \ 开头的根相对路径，
+// 以及含 `..` 段的路径（filepath.Clean 不会消除前导 `..`，逐段检查覆盖所有逃逸形态）。
+func sanitizeImportPattern(pattern string) (string, error) {
+	if strings.TrimSpace(pattern) == "" {
+		return "", fmt.Errorf("file_pattern must not be empty")
+	}
+	if filepath.IsAbs(pattern) {
+		return "", fmt.Errorf("file_pattern must be relative: %q", pattern)
+	}
+	// Windows 上 filepath.IsAbs 不识别 `/` 或 `\` 开头的根相对路径，单独拒绝。
+	if strings.HasPrefix(pattern, "/") || strings.HasPrefix(pattern, "\\") {
+		return "", fmt.Errorf("file_pattern must be relative: %q", pattern)
+	}
+	cleaned := filepath.Clean(pattern)
+	for _, seg := range strings.Split(cleaned, string(filepath.Separator)) {
+		if seg == ".." {
+			return "", fmt.Errorf("file_pattern must not contain '..': %q", pattern)
+		}
+	}
+	return cleaned, nil
 }
 
 // --- PluginHealthRunner (ST-17) ---
@@ -841,7 +868,10 @@ func (r *ICPImportRunner) Execute(ctx context.Context, payload *model.TaskPayloa
 		return "", fmt.Errorf("import directory not configured")
 	}
 
-	filePattern := extractString(payload, "file_pattern", "*.csv")
+	filePattern, err := sanitizeImportPattern(extractString(payload, "file_pattern", "*.csv"))
+	if err != nil {
+		return "", fmt.Errorf("invalid file_pattern: %w", err)
+	}
 	queryType := extractString(payload, "type", "web")
 	maxRows := extractInt(payload, "max_rows", icpImportMaxRows)
 	if maxRows > icpImportMaxRows {

@@ -39,7 +39,9 @@ func schedulerErrorStatus(err error) int {
 }
 
 func (s *Server) requireBackupTaskAdmin(w http.ResponseWriter, r *http.Request, taskType scheduler.TaskType) bool {
-	if taskType != scheduler.TaskBackup || !s.isAuthEnabled() {
+	// 读取本机文件的任务（backup / url_import / icp_import）要求 admin：认证可选时
+	// （OptionalAPIKey 无 key 也放行），限制文件导入类任务只能由管理员创建（FINDING-001/004 纵深防御）。
+	if (taskType != scheduler.TaskBackup && taskType != scheduler.TaskURLImport && taskType != scheduler.TaskICPImport) || !s.isAuthEnabled() {
 		return true
 	}
 	if ok, msg := s.requireAdmin(r); !ok {
