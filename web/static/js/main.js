@@ -1387,6 +1387,13 @@ function handleQueryComplete(message) {
 	currentQueryID = null;
 }
 
+// 读取查询页每页条数输入，非法/缺失时回退默认 50
+function getQueryPageSize() {
+	const el = document.getElementById('query-page-size');
+	const v = parseInt(el && el.value, 10);
+	return (v && v > 0) ? v : 50;
+}
+
 // 执行异步查询（WebSocket版本）
 function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, browserQuery, browserAction) {
 	// 创建结果页面
@@ -1435,7 +1442,7 @@ function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, 
 		query: query,
 		engines: engines,
 		api_engines: browserQuery ? apiEngines : engines,
-		page_size: 50,
+		page_size: getQueryPageSize(),
 		browser_query: !!browserQuery,
 		browser_action: browserAction || '',
 	}));
@@ -1487,7 +1494,7 @@ function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, b
 		body: new URLSearchParams({
 			'query': query,
 			'engines': engines.join(','),
-			'page_size': '50',
+			'page_size': String(getQueryPageSize()),
 			'browser_query': browserQuery ? 'true' : 'false',
 			'browser_action': browserAction || '',
 		}),
@@ -2149,7 +2156,10 @@ function checkEngineStatus() {
 			let anyHasKey = false;
 			Object.entries(data.engines).forEach(([name, eng]) => {
 				const el = document.getElementById(`apikey-${name}`);
-				const hasKey = !!(eng.api_key && eng.api_key !== '****');
+				// Censys 用 api_secret 判断，其余引擎用 api_key
+				const hasKey = eng.api_key
+					? !!(eng.api_key && eng.api_key !== '****')
+					: !!(eng.api_secret && eng.api_secret !== '****');
 				const enabled = eng.enabled !== false;
 				engineStatusMap[name] = { hasKey, enabled };
 				if (hasKey) anyHasKey = true;

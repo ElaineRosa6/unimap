@@ -63,6 +63,21 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 			"api_key":  maskAPIKey(cfg.Engines.Shodan.APIKey),
 			"qps":      cfg.Engines.Shodan.QPS,
 		},
+		"censys": {
+			"enabled":    cfg.Engines.Censys.Enabled,
+			"base_url":   cfg.Engines.Censys.BaseURL,
+			"api_id":     cfg.Engines.Censys.APIID,
+			"api_secret": maskAPIKey(cfg.Engines.Censys.APISecret),
+			"qps":        cfg.Engines.Censys.QPS,
+			"timeout":    cfg.Engines.Censys.Timeout,
+		},
+		"daydaymap": {
+			"enabled":  cfg.Engines.Daydaymap.Enabled,
+			"base_url": cfg.Engines.Daydaymap.BaseURL,
+			"api_key":  maskAPIKey(cfg.Engines.Daydaymap.APIKey),
+			"qps":      cfg.Engines.Daydaymap.QPS,
+			"timeout":  cfg.Engines.Daydaymap.Timeout,
+		},
 	}
 
 	icp := map[string]interface{}{
