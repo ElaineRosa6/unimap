@@ -114,17 +114,19 @@ func (m *Manager) collectViaDOM(ctx context.Context, engine, query, queryID stri
 	return []collection.CollectResult{result}, nil
 }
 
-func collectViaNetworkOnContext(browserCtx context.Context, engine, query string) (*collection.CollectResult, chan struct{}) {
+func collectViaNetworkOnContext(browserCtx context.Context, engine, query string) chan collection.CollectResult {
 	engineKey := strings.ToLower(engine)
 	apiConfig, ok := l1SearchAPIs[engineKey]
 	if !ok {
-		return nil, nil
+		return nil
 	}
 
 	var mu sync.Mutex
 	captured := &networkResponse{}
-	result := &collection.CollectResult{}
-	respCh := make(chan struct{}, 1)
+	// FINDING-003 修复：仅通过 channel 传值，不共享 *result 指针。
+	// goroutine 本地构造值后 send，调用方 receive 得到 happens-before；
+	// 函数不返回可变指针，杜绝调用方在超时窗口内无同步读取 goroutine 的写入。
+	resultCh := make(chan collection.CollectResult, 1)
 
 	chromedp.ListenTarget(browserCtx, func(ev interface{}) {
 		switch e := ev.(type) {
@@ -172,20 +174,21 @@ func collectViaNetworkOnContext(browserCtx context.Context, engine, query string
 						logger.Warnf("L1: failed to parse response: %v", err)
 						return
 					}
-					*result = collection.CollectResult{
+					res := collection.CollectResult{
 						Engine: engine, Query: query, RawURL: resp.URL,
 						Title: fmt.Sprintf("L1 Network: %s", engine), Timestamp: time.Now().Unix(),
 						Assets: assets, Total: total, HasMore: len(assets) < total,
 					}
+					// 非阻塞传值；调用方可能已超时（channel 缓冲 1，不会阻塞本 goroutine）。
 					select {
-					case respCh <- struct{}{}:
+					case resultCh <- res:
 					default:
 					}
 				}()
 			}
 		}
 	})
-	return result, respCh
+	return resultCh
 }
 
 // CollectAndCaptureSearchEngineResult 在单次导航中同时完成数据采集和截图。
@@ -216,7 +219,10 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 		}
 	}
 
-	l1Result, l1Ch := collectViaNetworkOnContext(browserCtx, engine, query)
+	// l1Result 仅由 channel receive 分支赋值，超时/ctx.Done 分支保持 nil，
+	// 避免读取 goroutine 仍在写入的数据（FINDING-003 修复）。
+	l1Ch := collectViaNetworkOnContext(browserCtx, engine, query)
+	var l1Result *collection.CollectResult
 	if l1Ch != nil {
 		if enableErr := session.Run(network.Enable()); enableErr != nil {
 			logger.Warnf("enable network failed on %s: %v", engine, enableErr)
@@ -281,7 +287,8 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 			l1Wait = 10 * time.Second
 		}
 		select {
-		case <-l1Ch:
+		case res := <-l1Ch:
+			l1Result = &res
 		case <-time.After(l1Wait):
 		case <-ctx.Done():
 		}

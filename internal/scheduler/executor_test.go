@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/unimap/project/internal/model"
@@ -250,6 +252,78 @@ func TestReadURLsFromFile(t *testing.T) {
 			t.Logf("Expected error for non-existent file: %v", err)
 		}
 	})
+}
+
+// sanitizeImportPattern 测试（FINDING-001/004 路径穿越修复回归）
+func TestSanitizeImportPattern(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		wantOK  bool
+	}{
+		{"empty", "", false},
+		{"whitespace", "   ", false},
+		{"simple glob", "*.txt", true},
+		{"subdir glob", "queries/*.txt", true},
+		{"dot only", ".", true},
+		{"star only", "*", true},
+		{"double star", "**/*.csv", true},
+		{"dotdot escape", "../../../../etc/*", false},
+		{"dotdot mid", "queries/../../*.txt", false},
+		{"dotdot prefix clean", "a/../../etc/*", false},
+		{"root relative posix", "/etc/*", false},
+		{"root relative backslash", `\etc\*`, false},
+		{"absolute posix", "/etc/secret.txt", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := sanitizeImportPattern(tt.pattern)
+			if tt.wantOK {
+				if err != nil {
+					t.Fatalf("expected OK, got error: %v", err)
+				}
+				if filepath.IsAbs(got) || containsDotDotSeg(got) {
+					t.Errorf("sanitized %q -> %q still escapes", tt.pattern, got)
+				}
+			} else if err == nil {
+				t.Errorf("expected error for %q, got %q", tt.pattern, got)
+			}
+		})
+	}
+}
+
+// containsDotDotSeg 检查规范化路径是否仍含 `..` 段
+func containsDotDotSeg(p string) bool {
+	for _, seg := range strings.Split(p, string(filepath.Separator)) {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+// URLImportRunner 对逃逸 file_pattern 必须报错而非枚举（FINDING-001 回归）
+func TestURLImportRunnerRejectsEscapingPattern(t *testing.T) {
+	importDir := t.TempDir()
+	r := NewURLImportRunner(importDir)
+	_, err := r.Execute(context.TODO(), &model.TaskPayload{Extra: map[string]any{
+		"file_pattern": "../../../../etc/*",
+	}})
+	if err == nil {
+		t.Fatal("expected error for escaping file_pattern, got nil")
+	}
+}
+
+// ICPImportRunner 对逃逸 file_pattern 必须报错而非枚举（FINDING-004 回归）
+func TestICPImportRunnerRejectsEscapingPattern(t *testing.T) {
+	importDir := t.TempDir()
+	r := NewICPImportRunner(importDir, nil)
+	_, err := r.Execute(context.TODO(), &model.TaskPayload{Extra: map[string]any{
+		"file_pattern": "../../../../etc/*",
+	}})
+	if err == nil {
+		t.Fatal("expected error for escaping file_pattern, got nil")
+	}
 }
 
 // QueryRunner 类型测试

@@ -104,13 +104,16 @@ func (s *Scheduler) buildNotificationMessage(task *ScheduledTask, record Executi
 }
 
 func (s *Scheduler) sendInlineWebhookNotification(webhookURL string, msg notify.TaskNotification, timeout time.Duration) {
-	s.mu.RLock()
-	stopping := s.stopped || s.stopping
-	s.mu.RUnlock()
-	if stopping {
+	// FINDING-002 修复：stopping 检查与 notifyWg.Add(1) 必须在同一把锁内原子完成，
+	// 否则与 Stop() 的设标志 + notifyWg.Wait() 并发时构成 Go 禁止的
+	// "Add called concurrently with Wait"，可触发运行时 panic。
+	s.mu.Lock()
+	if s.stopped || s.stopping {
+		s.mu.Unlock()
 		return
 	}
 	s.notifyWg.Add(1)
+	s.mu.Unlock()
 	go func(url string) {
 		defer func() {
 			s.notifyWg.Done()
@@ -149,14 +152,15 @@ func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.Task
 		return
 	}
 
-	s.mu.RLock()
-	stopping := s.stopped || s.stopping
-	s.mu.RUnlock()
-	if stopping {
+	// FINDING-002 修复：与 sendInlineWebhookNotification 相同，stopping 检查与 Add(1) 原子化。
+	s.mu.Lock()
+	if s.stopped || s.stopping {
+		s.mu.Unlock()
 		logger.Warnf("[scheduler] notify: scheduler stopping, skipping channel %s", chID)
 		return
 	}
 	s.notifyWg.Add(1)
+	s.mu.Unlock()
 	go func(ch notify.NotifyChannel) {
 		defer func() {
 			s.notifyWg.Done()
