@@ -200,7 +200,7 @@ func TestParseEnginesParam_Empty(t *testing.T) {
 
 func TestBuildQueryAPIPayloadIncludesPersistenceStatus(t *testing.T) {
 	resp := &service.QueryResponse{Persistence: service.PersistenceStatus{Status: "failed", Warning: "history unavailable"}}
-	payload := buildQueryAPIPayload("test", []string{"fofa"}, resp, browserQueryOutcome{}, "")
+	payload := buildQueryAPIPayload("test", []string{"fofa"}, resp, browserQueryOutcome{}, "", false)
 	if payload.Persistence.Status != "failed" || payload.Persistence.Warning == "" {
 		t.Fatalf("persistence status was not propagated: %#v", payload.Persistence)
 	}
@@ -219,6 +219,7 @@ func TestBuildQueryAPIPayloadMarksBrowserFallbackPartial(t *testing.T) {
 			}},
 		},
 		"collect_and_capture",
+		false,
 		"API query failed: adapter unavailable",
 	)
 
@@ -235,12 +236,12 @@ func TestBuildQueryAPIPayloadMarksBrowserFallbackPartial(t *testing.T) {
 
 func TestValidateQueryInput_TooLong(t *testing.T) {
 	longQuery := ""
-	for i := 0; i < 1001; i++ {
+	for i := 0; i < 20001; i++ {
 		longQuery += "a"
 	}
 	err := validateQueryInput(longQuery)
 	if err == nil {
-		t.Fatal("expected error for query > 1000 chars")
+		t.Fatal("expected error for query > 20000 chars")
 	}
 }
 
@@ -271,6 +272,7 @@ func TestBuildQueryAPIPayload(t *testing.T) {
 			}},
 		},
 		"capture",
+		false,
 	)
 
 	if payload.Query != "test" {
@@ -302,6 +304,7 @@ func TestBuildQueryAPIPayload_CleansHunterBrowserCollectedData(t *testing.T) {
 			}},
 		},
 		"collect",
+		false,
 	)
 
 	collected := payload.BrowserCollectedData
@@ -329,6 +332,7 @@ func TestBuildQueryAPIPayload_CombinesErrors(t *testing.T) {
 			Errors: []string{"browser error"},
 		},
 		"",
+		false,
 		"explicit error",
 	)
 
@@ -359,7 +363,7 @@ func TestBuildQueryAPIPayload_MergesCollectedAssets(t *testing.T) {
 		},
 	}
 
-	payload := buildQueryAPIPayload("test", []string{"fofa", "hunter", "quake"}, resp, browserOutcome, "collect")
+	payload := buildQueryAPIPayload("test", []string{"fofa", "hunter", "quake"}, resp, browserOutcome, "collect", false)
 
 	assets := payload.Assets
 	if len(assets) != 4 {
@@ -399,6 +403,7 @@ func TestBuildQueryAPIPayload_MergesBrowserCollectedAssets(t *testing.T) {
 			}},
 		},
 		"collect",
+		false,
 	)
 
 	assets := payload.Assets
@@ -411,6 +416,39 @@ func TestBuildQueryAPIPayload_MergesBrowserCollectedAssets(t *testing.T) {
 	engineStats := payload.EngineStats
 	if engineStats["fofa"] != 1 {
 		t.Fatalf("expected fofa browser stat 1, got %#v", engineStats)
+	}
+}
+
+func TestBuildQueryAPIPayload_DoesNotDoubleCountMergedBrowserAssets(t *testing.T) {
+	// HTTP API 走 ExecuteQueryWithBrowserWorkflow，resp.Assets 已由 service 层 merge
+	// 浏览器资产；此时必须跳过本函数内的追加逻辑，避免重复计数。
+	resp := &service.QueryResponse{
+		Assets: []model.UnifiedAsset{
+			{URL: "https://api.example.test", Source: "api"},
+			{URL: "https://browser.example.test", Source: "browser"},
+		},
+		TotalCount:  2,
+		EngineStats: map[string]int{"fofa": 2},
+	}
+	browserOutcome := browserQueryOutcome{
+		Enabled: true,
+		CollectedResults: []collection.CollectResult{{
+			Engine: "fofa",
+			Assets: []model.UnifiedAsset{{URL: "https://browser.example.test", Source: "browser"}},
+			Total:  1,
+		}},
+	}
+
+	payload := buildQueryAPIPayload("test", []string{"fofa"}, resp, browserOutcome, "collect", true)
+
+	if len(payload.Assets) != 2 {
+		t.Fatalf("expected 2 assets (browser already in resp), got %d", len(payload.Assets))
+	}
+	if payload.TotalCount != 2 {
+		t.Fatalf("expected totalCount 2, got %v", payload.TotalCount)
+	}
+	if stats := payload.EngineStats; stats["fofa"] != 2 {
+		t.Fatalf("expected fofa stat 2 (api+browser merged), got %#v", stats)
 	}
 }
 

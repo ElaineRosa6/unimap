@@ -336,7 +336,7 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 	if queryErr != nil {
 		errMsg = fmt.Sprintf("Query failed: %v", queryErr)
 	}
-	resultsPayload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, errMsg)
+	resultsPayload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, false, errMsg)
 	if errMsg != "" {
 		resultsPayload.Error = errMsg
 	}
@@ -355,7 +355,7 @@ func (s *Server) finalizeWSQueryStatus(queryID, query string, engines []string, 
 	if st == nil {
 		return QueryStatus{}
 	}
-	payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction)
+	payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, false)
 	if queryErr != nil && len(payload.Assets) == 0 {
 		st.Errors = append(st.Errors, fmt.Sprintf("Query failed: %v", queryErr))
 		st.Errors = appendUniqueStrings(st.Errors, browserOutcome.Errors)
@@ -363,7 +363,7 @@ func (s *Server) finalizeWSQueryStatus(queryID, query string, engines []string, 
 		st.Status = "error"
 	} else {
 		if queryErr != nil {
-			payload = buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, fmt.Sprintf("API query failed: %v", queryErr))
+			payload = buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, false, fmt.Sprintf("API query failed: %v", queryErr))
 		}
 		if len(payload.Assets) > 0 {
 			st.Results = payload.Assets
