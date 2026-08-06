@@ -106,6 +106,7 @@ data/
 
 # Scheduled-task query statements (local rebuild reference — not for VCS)
 docs/CLOUD_SCHEDULER_TASKS_*.json
+docs/SCHEDULED_TASKS_*.md
 
 # Tamper test/runtime data
 internal/tamper/data/
