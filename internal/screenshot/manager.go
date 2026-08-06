@@ -57,6 +57,7 @@ type Manager struct {
 	sessionSlots       chan struct{}
 	urlValidator       browserURLValidator
 	egressProxyFactory func(context.Context) (*browserEgressProxy, error)
+	allowRemoteDebug   bool
 }
 
 // Cookie Cookie信息
@@ -140,6 +141,17 @@ func NewManager(cfg Config) *Manager {
 		egressProxyFactory: func(ctx context.Context) (*browserEgressProxy, error) {
 			return newBrowserEgressProxy(ctx, net.DefaultResolver)
 		},
+	}
+}
+
+// SetAllowRemoteDebug authorizes browser sessions to attach to the configured
+// remote Chrome debugger even though its egress path cannot be verified by the
+// loopback egress proxy. The CDP-level SSRF interceptor still validates every
+// request; only the egress-proxy guarantee is relaxed. Intended for explicit,
+// trusted local diagnostics only — never enabled by default.
+func (m *Manager) SetAllowRemoteDebug(allowed bool) {
+	if m != nil {
+		m.allowRemoteDebug = allowed
 	}
 }
 

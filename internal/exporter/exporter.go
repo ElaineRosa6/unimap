@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
@@ -104,4 +105,112 @@ func (e *ExcelExporter) Export(assets []model.UnifiedAsset, filepath string) err
 	}
 
 	return nil
+}
+
+// ExportFull 导出为全量字段 Excel：覆盖 UnifiedAsset 的全部标准字段，并将
+// Headers 与各资产 Extra 扩展字段展开为独立列（Extra 键并集，前缀 extra. 防撞名）。
+// 标准 Export 仅写 15 个基础列，本方法保留全部引擎字段，供字段不丢失回放使用。
+func (e *ExcelExporter) ExportFull(assets []model.UnifiedAsset, filepath string) error {
+	f := excelize.NewFile()
+	defer func() {
+		if err := f.Close(); err != nil {
+			logger.Warnf("Failed to close Excel file: %v", err)
+		}
+	}()
+
+	sheetName := "Assets"
+	index, err := f.NewSheet(sheetName)
+	if err != nil {
+		return fmt.Errorf("failed to create sheet: %w", err)
+	}
+
+	setCell := func(cell string, value interface{}) {
+		_ = f.SetCellValue(sheetName, cell, value)
+	}
+
+	extraKeys := collectExtraKeys(assets)
+	headers := fullExportHeaders(extraKeys)
+	for i, header := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		setCell(cell, header)
+	}
+
+	for i, asset := range assets {
+		row := i + 2 // 第1行是表头
+		values := fullExportRow(asset, extraKeys)
+		for j, value := range values {
+			cell, _ := excelize.CoordinatesToCellName(j+1, row)
+			setCell(cell, value)
+		}
+	}
+
+	f.SetActiveSheet(index)
+	if err := f.SaveAs(filepath); err != nil {
+		return fmt.Errorf("failed to save Excel file: %w", err)
+	}
+	return nil
+}
+
+// collectExtraKeys 返回所有资产 Extra 键的排序并集。
+func collectExtraKeys(assets []model.UnifiedAsset) []string {
+	set := make(map[string]struct{})
+	for i := range assets {
+		for k := range assets[i].Extra {
+			set[k] = struct{}{}
+		}
+	}
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func fullExportHeaders(extraKeys []string) []string {
+	headers := []string{
+		"IP", "Port", "Protocol", "Host", "URL", "Title", "BodySnippet",
+		"Server", "StatusCode", "CountryCode", "Region", "City", "ASN",
+		"Org", "ISP", "LastSeen", "Source", "Headers",
+	}
+	for _, k := range extraKeys {
+		headers = append(headers, "extra."+k)
+	}
+	return headers
+}
+
+func fullExportRow(asset model.UnifiedAsset, extraKeys []string) []interface{} {
+	headersJSON := "{}"
+	if len(asset.Headers) > 0 {
+		if b, err := json.Marshal(asset.Headers); err == nil {
+			headersJSON = string(b)
+		}
+	}
+	values := []interface{}{
+		asset.IP, asset.Port, asset.Protocol, asset.Host, asset.URL,
+		asset.Title, asset.BodySnippet, asset.Server, asset.StatusCode,
+		asset.CountryCode, asset.Region, asset.City, asset.ASN,
+		asset.Org, asset.ISP, asset.LastSeen, asset.Source, headersJSON,
+	}
+	for _, k := range extraKeys {
+		values = append(values, extraCellValue(asset.Extra[k]))
+	}
+	return values
+}
+
+// extraCellValue 将 Extra 值转换为 Excel 单元格可写值：标量直接写，嵌套结构
+// （map/slice）序列化为紧凑 JSON，nil 写空串。
+func extraCellValue(v interface{}) interface{} {
+	if v == nil {
+		return ""
+	}
+	switch v.(type) {
+	case string, bool, int, int32, int64, float32, float64, json.Number:
+		return v
+	default:
+		if b, err := json.Marshal(v); err == nil {
+			return string(b)
+		}
+		return fmt.Sprintf("%v", v)
+	}
 }
