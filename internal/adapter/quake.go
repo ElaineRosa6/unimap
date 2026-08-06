@@ -32,6 +32,23 @@ type QuakeItem struct {
 	URL      string         `json:"url"`
 	Service  *QuakeService  `json:"service,omitempty"`
 	Location *QuakeLocation `json:"location,omitempty"`
+	// Extra preserves any top-level keys Quake returns that this struct does
+	// not declare (e.g. time, asn, org, isp), so they are not silently dropped.
+	Extra map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON captures unknown top-level keys into Extra instead of
+// dropping them, while decoding declared fields as usual.
+func (q *QuakeItem) UnmarshalJSON(data []byte) error {
+	type alias QuakeItem
+	var aux alias
+	extra, err := rawUnknown(data, &aux)
+	if err != nil {
+		return err
+	}
+	*q = QuakeItem(aux)
+	q.Extra = extra
+	return nil
 }
 
 // QuakeService holds the nested service info in a Quake result.
@@ -39,6 +56,21 @@ type QuakeService struct {
 	Name       string     `json:"name"`
 	HTTP       *QuakeHTTP `json:"http,omitempty"`
 	StatusCode float64    `json:"status_code"`
+	// Extra preserves undeclared service-level keys (e.g. banner, product).
+	Extra map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON captures unknown keys into Extra instead of dropping them.
+func (s *QuakeService) UnmarshalJSON(data []byte) error {
+	type alias QuakeService
+	var aux alias
+	extra, err := rawUnknown(data, &aux)
+	if err != nil {
+		return err
+	}
+	*s = QuakeService(aux)
+	s.Extra = extra
+	return nil
 }
 
 // QuakeHTTP holds the HTTP response info inside a Quake service.
@@ -46,6 +78,21 @@ type QuakeHTTP struct {
 	Title      string  `json:"title"`
 	Server     string  `json:"server"`
 	StatusCode float64 `json:"status_code"`
+	// Extra preserves undeclared http-level keys (e.g. favicon_hash, version).
+	Extra map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON captures unknown keys into Extra instead of dropping them.
+func (h *QuakeHTTP) UnmarshalJSON(data []byte) error {
+	type alias QuakeHTTP
+	var aux alias
+	extra, err := rawUnknown(data, &aux)
+	if err != nil {
+		return err
+	}
+	*h = QuakeHTTP(aux)
+	h.Extra = extra
+	return nil
 }
 
 // QuakeLocation holds geographic location info from a Quake result.
@@ -53,6 +100,21 @@ type QuakeLocation struct {
 	CountryCode string `json:"country_code"`
 	CityCN      string `json:"city_cn"`
 	ProvinceCN  string `json:"province_cn"`
+	// Extra preserves undeclared location-level keys.
+	Extra map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON captures unknown keys into Extra instead of dropping them.
+func (l *QuakeLocation) UnmarshalJSON(data []byte) error {
+	type alias QuakeLocation
+	var aux alias
+	extra, err := rawUnknown(data, &aux)
+	if err != nil {
+		return err
+	}
+	*l = QuakeLocation(aux)
+	l.Extra = extra
+	return nil
 }
 
 // quakeSearchRequest is the JSON body for POST /v3/search/quake_service.
@@ -370,6 +432,20 @@ func normalizeQuakeItem(qi *QuakeItem, source string) *model.UnifiedAsset {
 		asset.City = qi.Location.CityCN
 		asset.Region = qi.Location.ProvinceCN
 	}
+	// Merge nested unknown keys (captured by each nested type's Extra) so no
+	// engine field is dropped during persistence.
+	if qi.Service != nil {
+		mergeAssetExtra(asset, qi.Service.Extra)
+		if qi.Service.HTTP != nil {
+			mergeAssetExtra(asset, qi.Service.HTTP.Extra)
+		}
+	}
+	if qi.Location != nil {
+		mergeAssetExtra(asset, qi.Location.Extra)
+	}
+	// Capture unknown top-level fields (e.g. time) and promote any timestamp
+	// key to LastSeen.
+	applyExtras(asset, qi.Extra)
 
 	if asset.IP != "" || asset.Host != "" {
 		return asset

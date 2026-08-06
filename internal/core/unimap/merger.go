@@ -98,6 +98,7 @@ func (m *ResultMerger) copyAsset(dest *model.UnifiedAsset, src model.UnifiedAsse
 	dest.Org = src.Org
 	dest.ISP = src.ISP
 	dest.Source = src.Source
+	dest.LastSeen = src.LastSeen
 
 	// 复制Headers
 	if src.Headers != nil {
@@ -242,6 +243,9 @@ func (m *ResultMerger) updateAssetFields(existing *model.UnifiedAsset, new model
 	}
 	if override || existing.ISP == "" {
 		existing.ISP = new.ISP
+	}
+	if override || existing.LastSeen == "" {
+		existing.LastSeen = new.LastSeen
 	}
 
 	// 合并Headers

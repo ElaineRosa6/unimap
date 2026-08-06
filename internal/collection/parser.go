@@ -72,6 +72,13 @@ func ParseStructuredCollectedDataFromItems(items []model.CollectedDataItem, engi
 		if asset.Title == "" && item.Product != "" {
 			asset.Title = item.Product
 		}
+		// Preserve any engine-specific keys the extension reported.
+		if len(item.Extra) > 0 {
+			asset.Extra = make(map[string]interface{}, len(item.Extra))
+			for k, v := range item.Extra {
+				asset.Extra[k] = v
+			}
+		}
 		// Post-process: extract port from host or IP if missing
 		if asset.Port == 0 {
 			asset.Port, asset.Host = extractPortFromHost(asset.Host)
@@ -179,8 +186,8 @@ func ExtractExtraFields(item map[string]interface{}) map[string]interface{} {
 		"protocol": true, "host": true, "body_snippet": true,
 		"banner": true, "server": true, "status_code": true,
 		"country_code": true, "region": true, "city": true,
-		"asn": true, "org": true, "isp": true, "os": true,
-		"country": true, "product": true, "source": true,
+		"asn": true, "org": true, "isp": true,
+		"country": true, "source": true,
 		"timestamp": true, "last_seen": true,
 	}
 	extra := make(map[string]interface{})
@@ -282,6 +289,9 @@ func ParseExtractedAssets(raw []map[string]interface{}, engine string) []model.U
 		if v, ok := row["title"].(string); ok {
 			a.Title = v
 		}
+		if v, ok := row["product"].(string); ok && a.Title == "" {
+			a.Title = v
+		}
 		if v, ok := row["server"].(string); ok {
 			a.Server = v
 		}
@@ -319,6 +329,8 @@ func ParseExtractedAssets(raw []map[string]interface{}, engine string) []model.U
 		if v, ok := row["source"].(string); ok {
 			a.Source = v
 		}
+		// Preserve any engine-specific keys the extraction script reported.
+		a.Extra = ExtractExtraFields(row)
 		// Post-process: extract port from host or IP if port is missing
 		if a.Port == 0 {
 			a.Port, a.Host = extractPortFromHost(a.Host)

@@ -4,6 +4,17 @@
 
 ---
 
+## [2026-08-06] 七引擎字段不丢失修复与真实 API 复验
+
+- 修复引擎字段丢失：各适配器结构体新增 `Extra` 捕获（`rawUnknown` + 自定义 `UnmarshalJSON`），未声明顶层键不再被 Go JSON 静默丢弃；`promoteLastSeen` 从 `lastupdatetime`/`time`/`updated_at`/`time_stamp` 等键统一提升资产 `last_seen`。覆盖 fofa/hunter/quake/zoomeye/daydaymap/censys/shodan。
+- FOFA 特判：补齐 `lastupdatetime` 等 10 字段；`fofaFieldSets` 增至 4 档，新增「无 icon_hash 的 23 字段」降级档，规避真实代理 icon_hash 权限 820001 导致的字段丢失。
+- 浏览器 DOM 路径同步：采集解析保留扩展字段 `Extra`，`os`/`product` 纳入扩展字段，`product→title` 兜底；Hunter 扩展 JS 补 ICP/App/tags/last_seen 列。
+- 合并与对象池保留/重置 `LastSeen`，多引擎合并不再丢时间戳。
+- 新增 `real_verify` build tag 真实 API 复验测试（`go test -tags real_verify -run TestRealVerify -v ./internal/adapter/`）：fofa/quake/daydaymap 实测 `last_seen` 真实非空，extra 保留 26–32 个引擎字段；hunter 当日限流、zoomeye 积分不足、censys 缺 `api_secret` 待复验。
+- 全量 `go test -race ./...`、`go vet ./...`、`go build ./...` 通过。
+
+---
+
 ## [2026-08-02] 七引擎、云端发布与通知收口
 
 - 稳定 Web UI 扩展至 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap；七引擎 Bridge 真实结构化采集均非空。

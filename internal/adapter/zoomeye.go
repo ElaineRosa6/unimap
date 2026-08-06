@@ -59,6 +59,23 @@ type ZoomEyeItem struct {
 	// Nested objects — variable structure, kept as map for flexibility
 	PortInfo map[string]interface{} `json:"portinfo"`
 	GeoInfo  map[string]interface{} `json:"geoinfo"`
+	// Extra preserves any top-level keys ZoomEye returns that this struct does
+	// not declare (e.g. timestamp), so they are not silently dropped.
+	Extra map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON captures unknown top-level keys into Extra instead of
+// dropping them, while decoding declared fields as usual.
+func (z *ZoomEyeItem) UnmarshalJSON(data []byte) error {
+	type alias ZoomEyeItem
+	var aux alias
+	extra, err := rawUnknown(data, &aux)
+	if err != nil {
+		return err
+	}
+	*z = ZoomEyeItem(aux)
+	z.Extra = extra
+	return nil
 }
 
 // ZoomEyeSearchResponse is the ZoomEye v2 search API response.
@@ -333,6 +350,16 @@ func normalizeZoomEyeItem(it *ZoomEyeItem, source string) *model.UnifiedAsset {
 	parseZoomEyeGeo(it, asset)
 	parseZoomEyeNetwork(it, asset)
 	parseZoomEyeExtra(it, asset)
+	// Preserve raw nested objects so their extra keys survive persistence.
+	if it.PortInfo != nil {
+		mergeAssetExtra(asset, map[string]interface{}{"portinfo": it.PortInfo})
+	}
+	if it.GeoInfo != nil {
+		mergeAssetExtra(asset, map[string]interface{}{"geoinfo": it.GeoInfo})
+	}
+	// Capture unknown top-level fields (e.g. timestamp) and promote any
+	// timestamp key to LastSeen.
+	applyExtras(asset, it.Extra)
 
 	return asset
 }
@@ -496,7 +523,8 @@ func parseZoomEyeNetwork(it *ZoomEyeItem, asset *model.UnifiedAsset) {
 	} else if it.ISP != "" {
 		asset.ISP = it.ISP
 	}
-	// Timestamp from Extension DOM extraction (last_seen) or API response (timestamp/icon-time)
+	// LastSeen: explicit last_seen (when present) is mapped here; the API's
+	// "timestamp" key is captured into it.Extra and promoted by applyExtras.
 	if it.LastSeen != "" {
 		asset.LastSeen = it.LastSeen
 	}
