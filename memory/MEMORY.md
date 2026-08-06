@@ -13,6 +13,7 @@
 - [urlive.py MD5 FIPS 兼容性修复 2026-08-04](project_urlive_md5_fips_2026-08-04.md) — 全目录审查：MD5 指纹加 usedforsecurity=False（含旧版回退）；unimap 其余 P0 核实为误报/已修复，详见记忆文件。
 - [工作日志入库与推送 2026-08-05](project_worklog_push_2026-08-05.md) — WORK_LOG 入库（d6cce6d）+ develop 推送同步
 - [安全审计 4 项修复 2026-08-06](project_security_audit_fix_2026-08-06.md) — ✅ 路径穿越×2（sanitizeImportPattern + url_import/icp_import admin 门槛）+ WaitGroup TOCTOU + 截图数据竞争（channel 传值）全部闭环（13cef0a）
+- [定时查询→企业微信闭环 2026-08-06](project_local_wecom_closure_2026-08-06.md) — ✅ WFP 拦截重启消解；WeCom 40058 截断修复（8142549）；9 定时任务（fofa×1+hunter×8，cron 15 10 * * *）实测 FOFA 100 条 / Hunter 3 条推送成功
 
 - [七引擎、云端发布与飞书闭环 2026-08-02](project_seven_engine_cloud_feishu_closeout_2026-08-02.md) — 当前七引擎、CDP/fallback、云端发布、通知与外部 fixture 状态。
 - 当前稳定 Web UI 已接入 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap；七引擎 Bridge 真实结构化采集均非空。
