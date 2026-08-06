@@ -736,10 +736,10 @@ func newMockFeishuServer(t *testing.T) (serverURL string, tokenCalls, uploadCall
 	mux.HandleFunc("/open-apis/auth/v3/tenant_access_token/internal", func(w http.ResponseWriter, r *http.Request) {
 		tokenCnt++
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code":               0,
-			"msg":                "ok",
+			"code":                0,
+			"msg":                 "ok",
 			"tenant_access_token": "test-token-xxx",
-			"expire":             7200,
+			"expire":              7200,
 		})
 	})
 
@@ -878,13 +878,13 @@ func TestFeishuAppChannel_Send_WithImages(t *testing.T) {
 	}
 
 	n := TaskNotification{
-		TaskID:    "t1",
-		TaskName:  "screenshot task",
-		TaskType:  "batch_screenshot",
-		Status:    "success",
-		Result:    "截图完成",
-		Duration:  5000,
-		Timestamp: time.Now(),
+		TaskID:     "t1",
+		TaskName:   "screenshot task",
+		TaskType:   "batch_screenshot",
+		Status:     "success",
+		Result:     "截图完成",
+		Duration:   5000,
+		Timestamp:  time.Now(),
 		ImagePaths: []string{img1, img2},
 	}
 	err := ch2.Send(context.Background(), n)

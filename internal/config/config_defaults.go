@@ -313,13 +313,13 @@ func (m *Manager) applyCacheDefaults(config *Config) {
 	}
 
 	engineDefaults := map[string]EngineCacheConfig{
-		"quake":      {Enabled: true, TTL: 3600, MaxSize: 500},
-		"zoomeye":    {Enabled: true, TTL: 1800, MaxSize: 500},
-		"hunter":     {Enabled: true, TTL: 3600, MaxSize: 500},
-		"fofa":       {Enabled: true, TTL: 1800, MaxSize: 500},
-		"shodan":     {Enabled: true, TTL: 7200, MaxSize: 500},
-		"censys":     {Enabled: true, TTL: 7200, MaxSize: 500},
-		"daydaymap":  {Enabled: true, TTL: 3600, MaxSize: 500},
+		"quake":     {Enabled: true, TTL: 3600, MaxSize: 500},
+		"zoomeye":   {Enabled: true, TTL: 1800, MaxSize: 500},
+		"hunter":    {Enabled: true, TTL: 3600, MaxSize: 500},
+		"fofa":      {Enabled: true, TTL: 1800, MaxSize: 500},
+		"shodan":    {Enabled: true, TTL: 7200, MaxSize: 500},
+		"censys":    {Enabled: true, TTL: 7200, MaxSize: 500},
+		"daydaymap": {Enabled: true, TTL: 3600, MaxSize: 500},
 	}
 
 	for engine, defaultCfg := range engineDefaults {

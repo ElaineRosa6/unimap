@@ -612,7 +612,8 @@ func normalizeInlineScript(content string) string {
 // computeNormalizedHTTPFingerprint 计算规范化 HTTP 指纹
 //
 // 这不是 urlive.py 的原始响应 MD5。这是规范化版本：
-//   MD5(状态行 + 排序规范化头 + 空行 + SimpleMD5Hash)
+//
+//	MD5(状态行 + 排序规范化头 + 空行 + SimpleMD5Hash)
 //
 // 移除 Date/Age/Expires 等易变头，确保同一页面两次请求的指纹一致。
 func computeNormalizedHTTPFingerprint(statusLine string, headers map[string]string, bodyHash string) string {

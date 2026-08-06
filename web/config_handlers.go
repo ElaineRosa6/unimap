@@ -438,15 +438,22 @@ func isMaskedSecret(s string) bool {
 	return true
 }
 
-
 // applyNotificationsSection applies notification config from the settings page.
 func applyNotificationsSection(c *config.Config, data map[string]interface{}) {
-	if c == nil { return }
-	if v, ok := boolField(data, "enabled"); ok { c.Notifications.Enabled = v }
+	if c == nil {
+		return
+	}
+	if v, ok := boolField(data, "enabled"); ok {
+		c.Notifications.Enabled = v
+	}
 	fa, ok := data["feishu_app"]
-	if !ok { return }
+	if !ok {
+		return
+	}
 	fam, ok := fa.(map[string]interface{})
-	if !ok { return }
+	if !ok {
+		return
+	}
 	if c.Notifications.FeishuApp == nil {
 		c.Notifications.FeishuApp = new(struct {
 			AppID     string `yaml:"app_id"`
@@ -454,7 +461,13 @@ func applyNotificationsSection(c *config.Config, data map[string]interface{}) {
 			ChatID    string `yaml:"chat_id"`
 		})
 	}
-	if v, ok := stringField(fam, "app_id"); ok && v != "" { c.Notifications.FeishuApp.AppID = v }
-	if v, ok := stringField(fam, "app_secret"); ok && v != "" && v != "********" { c.Notifications.FeishuApp.AppSecret = v }
-	if v, ok := stringField(fam, "chat_id"); ok && v != "" { c.Notifications.FeishuApp.ChatID = v }
+	if v, ok := stringField(fam, "app_id"); ok && v != "" {
+		c.Notifications.FeishuApp.AppID = v
+	}
+	if v, ok := stringField(fam, "app_secret"); ok && v != "" && v != "********" {
+		c.Notifications.FeishuApp.AppSecret = v
+	}
+	if v, ok := stringField(fam, "chat_id"); ok && v != "" {
+		c.Notifications.FeishuApp.ChatID = v
+	}
 }

@@ -122,11 +122,11 @@ func TestDetector_PortScanEnabled_RunsOnCheck(t *testing.T) {
 	defer ts.Close()
 
 	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
-		PerformanceMode:  PerformanceModeFast,
-		PortScanEnabled:  true,
-		PortScanList:     []int{extraPort}, // 只扫这个额外端口
-		PortScanTimeout:  500 * time.Millisecond,
+		DetectionMode:   DetectionModeRelaxed,
+		PerformanceMode: PerformanceModeFast,
+		PortScanEnabled: true,
+		PortScanList:    []int{extraPort}, // 只扫这个额外端口
+		PortScanTimeout: 500 * time.Millisecond,
 	})
 
 	ctx := context.Background()

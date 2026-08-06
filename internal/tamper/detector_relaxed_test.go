@@ -49,7 +49,7 @@ func TestRelaxed_TimeBasedDynamicContent_NoFalsePositive(t *testing.T) {
 	defer ts.Close()
 
 	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
+		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeFast, // HTTP 模式避免 chromedp DOM 渲染差异
 	})
 
@@ -100,7 +100,7 @@ func TestRelaxed_VersionedJSFiles_NoFalsePositive(t *testing.T) {
 	defer ts.Close()
 
 	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
+		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
 
@@ -143,7 +143,7 @@ func TestRelaxed_SSRHydrationData_NoFalsePositive(t *testing.T) {
 	defer ts.Close()
 
 	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
+		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
 
@@ -201,7 +201,7 @@ func TestRelaxed_InjectedMaliciousIframe_DetectsTamper(t *testing.T) {
 	defer ts.Close()
 
 	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
+		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
 
@@ -243,7 +243,7 @@ func TestRelaxed_SignificantMainContentChange_DetectsTamper(t *testing.T) {
 	defer ts.Close()
 
 	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
+		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
 
@@ -281,7 +281,7 @@ func TestRelaxed_CompletelyUnchangedPage_ReturnsNormal(t *testing.T) {
 	defer ts.Close()
 
 	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
+		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeFast,
 	})
 
@@ -361,7 +361,7 @@ func TestNormalDynamic_DoesNotSetTampered(t *testing.T) {
 	defer ts.Close()
 
 	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
+		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
 

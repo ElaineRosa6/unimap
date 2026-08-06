@@ -63,11 +63,11 @@ type ZoomEyeItem struct {
 
 // ZoomEyeSearchResponse is the ZoomEye v2 search API response.
 type ZoomEyeSearchResponse struct {
-	Code    int    `json:"code"`
-	Error   string `json:"error"`
-	Message string `json:"message"`
-	Total   int    `json:"total"`
-	Query   string `json:"query"`
+	Code    int               `json:"code"`
+	Error   string            `json:"error"`
+	Message string            `json:"message"`
+	Total   int               `json:"total"`
+	Query   string            `json:"query"`
 	Data    []json.RawMessage `json:"data"`
 }
 

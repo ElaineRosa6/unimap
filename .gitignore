@@ -15,6 +15,16 @@ output/
 configs/config.yaml
 .env
 
+# Live monitoring target queries (target intel — local/server only, never commit)
+tools/cloud-config-gen/ynmobile_targets.json
+# Server-side ops scripts that embed target queries, server task UUIDs, or
+# container paths — deployed via scp, kept out of the public repo
+tools/cloud-config-gen/update_tasks_v2.py
+tools/cloud-config-gen/update_quake_weekly.py
+tools/cloud-config-gen/hunter_history.py
+tools/cloud-config-gen/list_hunter_tasks.py
+tools/cloud-config-gen/get_hunter_quota.py
+
 # Logs
 *.log
 logs/
@@ -25,6 +35,7 @@ vendor/
 # Test coverage
 *.out
 coverage.html
+coverage_web.dat
 
 # OS/IDE
 .DS_Store
@@ -58,6 +69,8 @@ web_cover
 
 # Credentials
 cookies.txt
+cookie.txt
+unimap_session_cookie.txt
 # Audit output (may contain generated secrets, e.g. first-admin password)
 .audit-results/
 
@@ -84,8 +97,13 @@ hash_store/**
 screenshots/**
 !screenshots/
 !screenshots/.gitkeep
-hash_store/records/**/*.json
-!hash_store/records/.gitkeep
+internal/tamper/hash_store/**/*.json
+!internal/tamper/hash_store/.gitkeep
+internal/tamper/hash_store/records/**/*.json
+!internal/tamper/hash_store/records/.gitkeep
+
+# Python scripts
+urlive.py
 
 # Claude memory
 memory/
@@ -96,14 +114,23 @@ memory/
 # Runtime data
 data/
 
+# Scheduled-task query statements (local rebuild reference — not for VCS)
+docs/CLOUD_SCHEDULER_TASKS_*.json
+docs/SCHEDULED_TASKS_*.md
+
+# Tamper test/runtime data
+internal/tamper/data/
+
 # Backup test files
 internal/backup/backups/*.tar.gz
+web/backups/
 
 # Node.js
 node_modules/
 package-lock.json
 
 # Project internal audit, logs, and development reports (Local Only)
+/reports/
 /docs_archive/
 /docs/test_reports/
 /docs/API_KEYS.md
@@ -116,3 +143,16 @@ package-lock.json
 /docs/OPTIMIZATION_REMEDIATION_PLAN_*.md
 /docs/PLAN_*.md
 /docs/REVIEW_NOTIFY_FOFA_*.md
+web/hash_store/check_records.db
+
+# Go build cache
+.gocache/
+
+# CDP login/verification tools (local only)
+tools/cdp-login/
+
+# Runtime artifacts (large / regenerated — not for version control)
+web/screenshots/
+__pycache__/
+*.pyc
+artifacts/

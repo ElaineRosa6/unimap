@@ -17,6 +17,10 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
 		return
 	}
+	if s.config == nil {
+		writeAPIError(w, http.StatusBadRequest, "no_config", "server config not initialized", nil)
+		return
+	}
 
 	// 从配置读取备份目录
 	backupDir := "./backups"

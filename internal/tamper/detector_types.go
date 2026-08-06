@@ -87,18 +87,18 @@ func randomUA() string {
 
 // volatileHTTPHeaders HTTP 响应头中每次请求可能变化、不应纳入指纹的字段
 var volatileHTTPHeaders = map[string]struct{}{
-	"Date":          {},
-	"Age":           {},
-	"Expires":       {},
-	"Set-Cookie":    {},
-	"X-Request-Id":  {},
-	"X-Trace-Id":    {},
-	"X-Runtime":     {},
+	"Date":              {},
+	"Age":               {},
+	"Expires":           {},
+	"Set-Cookie":        {},
+	"X-Request-Id":      {},
+	"X-Trace-Id":        {},
+	"X-Runtime":         {},
 	"X-RateLimit-Reset": {},
-	"Cf-Cache-Status": {},
-	"X-Cache":       {},
-	"X-Served-By":   {},
-	"X-Timer":       {},
+	"Cf-Cache-Status":   {},
+	"X-Cache":           {},
+	"X-Served-By":       {},
+	"X-Timer":           {},
 }
 
 var compatibilityOptionalSegments = map[string]struct{}{
@@ -151,11 +151,11 @@ var (
 		"phishing", "fake", "login", "admin",
 	}
 
-	hiddenIframePattern    = regexp.MustCompile(`(?i)<iframe[^>]*style\s*=\s*["'][^"']*(display\s*:\s*none|visibility\s*:\s*hidden|width\s*:\s*0|height\s*:\s*0)[^"']*["']`)
-	dangerousEventPattern  = regexp.MustCompile(`(?i)on(?:error|load|mouseover|click|keyup|keydown|submit)\s*=\s*["'][^"']*(?:eval\(|document\.write\(|Function\(|atob\(|btoa\(|unescape\(|decodeURIComponent\(|String\.fromCharCode\(|crypto|miner|coin-hive|coinhive|cryptonight)[^"']*["']`)
-	maliciousKeywordRes    = compileWordBoundaryRegexes(maliciousScriptKeywords)
-	domainKeywordRes       = compileWordBoundaryRegexes(suspiciousDomainKeywords)
-	pathKeywordRes         = compileWordBoundaryRegexes(suspiciousPathKeywords)
+	hiddenIframePattern   = regexp.MustCompile(`(?i)<iframe[^>]*style\s*=\s*["'][^"']*(display\s*:\s*none|visibility\s*:\s*hidden|width\s*:\s*0|height\s*:\s*0)[^"']*["']`)
+	dangerousEventPattern = regexp.MustCompile(`(?i)on(?:error|load|mouseover|click|keyup|keydown|submit)\s*=\s*["'][^"']*(?:eval\(|document\.write\(|Function\(|atob\(|btoa\(|unescape\(|decodeURIComponent\(|String\.fromCharCode\(|crypto|miner|coin-hive|coinhive|cryptonight)[^"']*["']`)
+	maliciousKeywordRes   = compileWordBoundaryRegexes(maliciousScriptKeywords)
+	domainKeywordRes      = compileWordBoundaryRegexes(suspiciousDomainKeywords)
+	pathKeywordRes        = compileWordBoundaryRegexes(suspiciousPathKeywords)
 )
 
 // compiledKeyword pairs a human-readable keyword with its regex.
@@ -229,21 +229,21 @@ type SegmentHash struct {
 
 // PageHashResult holds the full hash computation result for a page.
 type PageHashResult struct {
-	URL           string                          `json:"url"`
-	Title         string                          `json:"title"`
-	FullHash      string                          `json:"full_hash"`
-	SimpleMD5Hash string                          `json:"simple_md5_hash"`
-	SegmentHashes []SegmentHash                   `json:"segment_hashes"`
-	Timestamp     int64                           `json:"timestamp"`
-	HTMLLength    int                             `json:"html_length"`
-	Status        string                          `json:"status"`
-	RawHTML       string                          `json:"-"`
-	HTTPHeaders              map[string]string               `json:"http_headers,omitempty"`
-	Fingerprints             []fingerprint.FingerprintResult `json:"fingerprints,omitempty"`
-	NormalizedHTTPFingerprint string                         `json:"normalized_http_fingerprint,omitempty"`
-	FinalURL                  string                         `json:"final_url,omitempty"`    // 最终落地 URL（跟随重定向后）
-	RedirectURLs              []string                       `json:"redirect_urls,omitempty"` // 重定向链
-	OpenPorts                 []int                          `json:"open_ports,omitempty"`    // 主机开放端口
+	URL                       string                          `json:"url"`
+	Title                     string                          `json:"title"`
+	FullHash                  string                          `json:"full_hash"`
+	SimpleMD5Hash             string                          `json:"simple_md5_hash"`
+	SegmentHashes             []SegmentHash                   `json:"segment_hashes"`
+	Timestamp                 int64                           `json:"timestamp"`
+	HTMLLength                int                             `json:"html_length"`
+	Status                    string                          `json:"status"`
+	RawHTML                   string                          `json:"-"`
+	HTTPHeaders               map[string]string               `json:"http_headers,omitempty"`
+	Fingerprints              []fingerprint.FingerprintResult `json:"fingerprints,omitempty"`
+	NormalizedHTTPFingerprint string                          `json:"normalized_http_fingerprint,omitempty"`
+	FinalURL                  string                          `json:"final_url,omitempty"`     // 最终落地 URL（跟随重定向后）
+	RedirectURLs              []string                        `json:"redirect_urls,omitempty"` // 重定向链
+	OpenPorts                 []int                           `json:"open_ports,omitempty"`    // 主机开放端口
 }
 
 // FingerprintChange 记录指纹变化（新增/消失）
@@ -273,7 +273,7 @@ type TamperCheckResult struct {
 	SuspiciousFlags    []string            `json:"suspicious_flags,omitempty"`
 	FingerprintChanges []FingerprintChange `json:"fingerprint_changes,omitempty"`
 	PortChanges        []PortChange        `json:"port_changes,omitempty"`
-	Timestamp        int64           `json:"timestamp"`
+	Timestamp          int64               `json:"timestamp"`
 }
 
 // SegmentChange describes a single segment-level change.
@@ -298,11 +298,11 @@ type cacheEntry struct {
 
 // Detector is the main tamper-detection engine.
 type Detector struct {
-	storage         *HashStorage
-	allocCtx        context.Context
-	allocCancel     context.CancelFunc
-	detectionMode   string
-	performanceMode string
+	storage            *HashStorage
+	allocCtx           context.Context
+	allocCancel        context.CancelFunc
+	detectionMode      string
+	performanceMode    string
 	alertManager       *alerting.Manager
 	fpEngine           *fingerprint.Engine
 	insecureSkipVerify bool
@@ -310,20 +310,20 @@ type Detector struct {
 	portScanList       []int
 	portScanTimeout    time.Duration
 	cache              map[string]*cacheEntry
-	cacheMu         sync.RWMutex
-	mu              sync.Mutex
+	cacheMu            sync.RWMutex
+	mu                 sync.Mutex
 }
 
 // DetectorConfig holds configuration for creating a new Detector.
 type DetectorConfig struct {
-	BaseDir             string
-	DetectionMode       string
-	PerformanceMode     string
-	AlertManager        *alerting.Manager
-	InsecureSkipVerify  bool  // 跳过 SSL 证书验证（内网/自签证书场景）
-	PortScanEnabled     bool  // 巡检时附带端口扫描
-	PortScanList        []int // 扫描端口列表（为空时使用默认 Top 20）
-	PortScanTimeout     time.Duration // 单端口超时（默认 800ms）
+	BaseDir            string
+	DetectionMode      string
+	PerformanceMode    string
+	AlertManager       *alerting.Manager
+	InsecureSkipVerify bool          // 跳过 SSL 证书验证（内网/自签证书场景）
+	PortScanEnabled    bool          // 巡检时附带端口扫描
+	PortScanList       []int         // 扫描端口列表（为空时使用默认 Top 20）
+	PortScanTimeout    time.Duration // 单端口超时（默认 800ms）
 }
 
 // CheckRecord represents a single tamper check record persisted to disk.
