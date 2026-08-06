@@ -104,6 +104,9 @@ memory/
 # Runtime data
 data/
 
+# Scheduled-task query statements (local rebuild reference — not for VCS)
+docs/CLOUD_SCHEDULER_TASKS_*.json
+
 # Tamper test/runtime data
 internal/tamper/data/
 

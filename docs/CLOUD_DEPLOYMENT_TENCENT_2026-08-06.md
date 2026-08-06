@@ -65,8 +65,8 @@ curl --fail http://127.0.0.1:8448/health/ready
 
 ## 4. 重建 10 个定时任务（每日 10:15）
 
-任务参数见可复现清单 [CLOUD_SCHEDULER_TASKS_2026-08-06.json](CLOUD_SCHEDULER_TASKS_2026-08-06.json)（10 个 create-ready payload，无密钥，与本机
-`data/scheduler_tasks.json` 一致；已脱敏、可提交）。概要：
+任务参数见本地清单 [CLOUD_SCHEDULER_TASKS_2026-08-06.json](CLOUD_SCHEDULER_TASKS_2026-08-06.json)（10 个 create-ready payload，无密钥，与本机
+`data/scheduler_tasks.json` 一致；该清单含各任务查询语句，已 gitignore 不入库，仅本地或受控传输使用）。概要：
 
 | 任务 | 引擎 | 说明 | page_size | detail_limit |
 |---|---|---|---|---|
