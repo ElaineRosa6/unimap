@@ -629,6 +629,7 @@ func TestDayDayMapItem_FlexNumberStringFields(t *testing.T) {
 		{"numeric", `{"ip":"1.2.3.4","port":80,"status_code":200}`, 80, 200},
 		{"string", `{"ip":"1.2.3.4","port":"80","status_code":"200"}`, 80, 200},
 		{"empty string port", `{"ip":"1.2.3.4","port":"","status_code":"404"}`, 0, 404},
+		{"masked port", `{"ip":"1.2.3.4","port":"4****","status_code":"200"}`, 0, 200},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
