@@ -37,6 +37,7 @@ func (s *Server) handleNotificationChannels(w http.ResponseWriter, r *http.Reque
 			AppID:          ch.AppID,
 			ChatID:         ch.ChatID,
 			AllowPrivateIP: ch.AllowPrivateIP,
+			WeComMsgType:   ch.WeComMsgType,
 		}
 	}
 
@@ -73,16 +74,19 @@ func (s *Server) reloadNotifyChannels() {
 	var chanCfgs []notify.ChannelConfig
 	for _, cc := range cfg.Notifications.Channels {
 		chanCfgs = append(chanCfgs, notify.ChannelConfig{
-			ID:             cc.ID,
-			Type:           cc.Type,
-			Enabled:        cc.Enabled,
-			WebhookURL:     cc.WebhookURL,
-			Secret:         cc.Secret,
-			AppID:          cc.AppID,
-			AppSecret:      cc.AppSecret,
-			ChatID:         cc.ChatID,
-			Headers:        cc.Headers,
-			AllowPrivateIP: cc.AllowPrivateIP,
+			ID:                       cc.ID,
+			Type:                     cc.Type,
+			Enabled:                  cc.Enabled,
+			WebhookURL:               cc.WebhookURL,
+			Secret:                   cc.Secret,
+			AppID:                    cc.AppID,
+			AppSecret:                cc.AppSecret,
+			ChatID:                   cc.ChatID,
+			Headers:                  cc.Headers,
+			AllowPrivateIP:           cc.AllowPrivateIP,
+			WeComMsgType:             cc.WeComMsgType,
+			WeComMentionedList:       cc.WeComMentionedList,
+			WeComMentionedMobileList: cc.WeComMentionedMobileList,
 		})
 	}
 
@@ -195,17 +199,20 @@ func (s *Server) reloadBrowserFallbackConfig(cfg *config.Config) {
 
 // notifyChannelSaveRequest is the JSON body for handleNotifyChannelSave.
 type notifyChannelSaveRequest struct {
-	ID               string            `json:"id"`
-	Type             string            `json:"type"`
-	Enabled          bool              `json:"enabled"`
-	WebhookURL       string            `json:"webhook_url"`
-	Secret           string            `json:"secret"`
-	AppID            string            `json:"app_id"`
-	AppSecret        string            `json:"app_secret"`
-	ChatID           string            `json:"chat_id"`
-	Headers          map[string]string `json:"headers"`
-	AllowPrivateIP   bool              `json:"allow_private_ip"`
-	PreserveExisting bool              `json:"preserve_existing"`
+	ID                       string            `json:"id"`
+	Type                     string            `json:"type"`
+	Enabled                  bool              `json:"enabled"`
+	WebhookURL               string            `json:"webhook_url"`
+	Secret                   string            `json:"secret"`
+	AppID                    string            `json:"app_id"`
+	AppSecret                string            `json:"app_secret"`
+	ChatID                   string            `json:"chat_id"`
+	Headers                  map[string]string `json:"headers"`
+	AllowPrivateIP           bool              `json:"allow_private_ip"`
+	WeComMsgType             string            `json:"wecom_msgtype"`
+	WeComMentionedList       []string          `json:"wecom_mentioned_list"`
+	WeComMentionedMobileList []string          `json:"wecom_mentioned_mobile_list"`
+	PreserveExisting         bool              `json:"preserve_existing"`
 }
 
 type notifyChannelInputError struct {
@@ -269,6 +276,12 @@ func parseNotifyChannelSaveRequest(w http.ResponseWriter, r *http.Request) (noti
 			"unsupported channel type", map[string]string{"type": req.Type})
 		return req, false
 	}
+	if req.Type == "wecom" && !notify.ValidWeComMsgType(req.WeComMsgType) {
+		writeAPIError(w, http.StatusBadRequest, "invalid_wecom_msgtype",
+			"unsupported wecom message type (want markdown, markdown_v2, text, image, file)",
+			map[string]string{"wecom_msgtype": req.WeComMsgType})
+		return req, false
+	}
 	if !req.PreserveExisting && !validateNotifyChannelRequiredFields(w, req) {
 		return req, false
 	}
@@ -294,6 +307,15 @@ func mergeExistingNotifyChannel(req *notifyChannelSaveRequest, existing config.N
 	if req.Headers == nil {
 		req.Headers = existing.Headers
 	}
+	if req.WeComMsgType == "" {
+		req.WeComMsgType = existing.WeComMsgType
+	}
+	if req.WeComMentionedList == nil {
+		req.WeComMentionedList = existing.WeComMentionedList
+	}
+	if req.WeComMentionedMobileList == nil {
+		req.WeComMentionedMobileList = existing.WeComMentionedMobileList
+	}
 }
 
 // upsertNotifyChannel inserts or updates a channel in a candidate config.
@@ -313,6 +335,9 @@ func upsertNotifyChannel(cfg *config.Config, req notifyChannelSaveRequest) {
 				WebhookURL: req.WebhookURL, Secret: secret,
 				AppID: req.AppID, AppSecret: appSecret, ChatID: req.ChatID,
 				Headers: req.Headers, AllowPrivateIP: req.AllowPrivateIP,
+				WeComMsgType:             req.WeComMsgType,
+				WeComMentionedList:       req.WeComMentionedList,
+				WeComMentionedMobileList: req.WeComMentionedMobileList,
 			}
 			return
 		}
@@ -323,6 +348,9 @@ func upsertNotifyChannel(cfg *config.Config, req notifyChannelSaveRequest) {
 			WebhookURL: req.WebhookURL, Secret: req.Secret,
 			AppID: req.AppID, AppSecret: req.AppSecret, ChatID: req.ChatID,
 			Headers: req.Headers, AllowPrivateIP: req.AllowPrivateIP,
+			WeComMsgType:             req.WeComMsgType,
+			WeComMentionedList:       req.WeComMentionedList,
+			WeComMentionedMobileList: req.WeComMentionedMobileList,
 		})
 }
 
@@ -473,15 +501,18 @@ func (s *Server) handleNotifyChannelDelete(w http.ResponseWriter, r *http.Reques
 
 // notifyChannelTestRequest is the JSON body for handleNotifyChannelTest.
 type notifyChannelTestRequest struct {
-	ID             string            `json:"id"`
-	Type           string            `json:"type"`
-	WebhookURL     string            `json:"webhook_url"`
-	Secret         string            `json:"secret"`
-	AppID          string            `json:"app_id"`
-	AppSecret      string            `json:"app_secret"`
-	ChatID         string            `json:"chat_id"`
-	Headers        map[string]string `json:"headers"`
-	AllowPrivateIP bool              `json:"allow_private_ip"`
+	ID                       string            `json:"id"`
+	Type                     string            `json:"type"`
+	WebhookURL               string            `json:"webhook_url"`
+	Secret                   string            `json:"secret"`
+	AppID                    string            `json:"app_id"`
+	AppSecret                string            `json:"app_secret"`
+	ChatID                   string            `json:"chat_id"`
+	Headers                  map[string]string `json:"headers"`
+	AllowPrivateIP           bool              `json:"allow_private_ip"`
+	WeComMsgType             string            `json:"wecom_msgtype"`
+	WeComMentionedList       []string          `json:"wecom_mentioned_list"`
+	WeComMentionedMobileList []string          `json:"wecom_mentioned_mobile_list"`
 }
 
 // resolveNotifyChannelTestRequest decodes the test request and fills missing fields from saved config.
@@ -546,6 +577,15 @@ func (s *Server) fillTestRequestFromChannel(req *notifyChannelTestRequest, ch co
 	}
 	req.AllowPrivateIP = ch.AllowPrivateIP
 	req.Headers = ch.Headers
+	if req.WeComMsgType == "" {
+		req.WeComMsgType = ch.WeComMsgType
+	}
+	if req.WeComMentionedList == nil {
+		req.WeComMentionedList = ch.WeComMentionedList
+	}
+	if req.WeComMentionedMobileList == nil {
+		req.WeComMentionedMobileList = ch.WeComMentionedMobileList
+	}
 }
 
 // sendTestNotification builds a temporary channel and sends a test message.
@@ -556,6 +596,9 @@ func sendTestNotification(r *http.Request, req notifyChannelTestRequest) error {
 		WebhookURL: req.WebhookURL, Secret: req.Secret,
 		AppID: req.AppID, AppSecret: req.AppSecret, ChatID: req.ChatID,
 		Headers: req.Headers, AllowPrivateIP: req.AllowPrivateIP,
+		WeComMsgType:             req.WeComMsgType,
+		WeComMentionedList:       req.WeComMentionedList,
+		WeComMentionedMobileList: req.WeComMentionedMobileList,
 	}
 
 	ch, err := notify.NewChannelFromConfig(chCfg)

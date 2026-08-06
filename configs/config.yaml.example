@@ -268,6 +268,12 @@ notifications:
           type: "wecom"
           enabled: true
           webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+          # 消息类型：markdown（默认）、markdown_v2（支持表格）、text、image、file。
+          # markdown_v2 可正确渲染定时查询的紧凑表格，推荐定时推送使用。
+          wecom_msgtype: "markdown_v2"
+          # 以下仅在 type=text 时生效（@ 指定成员 / 手机号；"@all" 表示全体）。
+          # wecom_mentioned_list: ["zhangsan", "@all"]
+          # wecom_mentioned_mobile_list: ["13800000000"]
         - id: "slack-generic"
           type: "webhook"
           enabled: false

@@ -3,6 +3,8 @@ package notify
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
@@ -275,24 +277,86 @@ func (c *FeishuChannel) sendFeishuRequest(ctx context.Context, body FeishuCardBo
 
 // WeComChannel 企业微信群机器人
 type WeComChannel struct {
-	id      string
-	url     string
-	enabled bool
-	client  *http.Client
+	id                  string
+	url                 string
+	enabled             bool
+	client              *http.Client
+	msgType             string
+	mentionedList       []string
+	mentionedMobileList []string
+}
+
+// WeComOptions configures a WeCom webhook channel beyond its URL.
+type WeComOptions struct {
+	// MsgType selects the webhook message type. Supported values: "markdown"
+	// (default), "markdown_v2", "text", "image", "file" — see the group-bot
+	// Webhook API doc §4. Empty means "markdown".
+	MsgType string
+	// MentionedList / MentionedMobileList only apply to text messages (doc
+	// §4.1): userids / mobile numbers to @. "@all" mentions everyone.
+	MentionedList       []string
+	MentionedMobileList []string
+}
+
+// WeCom webhook message types.
+const (
+	WeComMsgTypeMarkdown   = "markdown"
+	WeComMsgTypeMarkdownV2 = "markdown_v2"
+	WeComMsgTypeText       = "text"
+	WeComMsgTypeImage      = "image"
+	WeComMsgTypeFile       = "file"
+)
+
+var validWeComMsgTypes = map[string]bool{
+	WeComMsgTypeMarkdown:   true,
+	WeComMsgTypeMarkdownV2: true,
+	WeComMsgTypeText:       true,
+	WeComMsgTypeImage:      true,
+	WeComMsgTypeFile:       true,
 }
 
 func NewWeComChannel(id, rawURL string, enabled bool, allowPrivate bool) (*WeComChannel, error) {
-	opts := urlguard.CheckOptions{AllowPrivate: allowPrivate}
-	if _, err := urlguard.Check(rawURL, opts); err != nil {
+	return NewWeComChannelWithOptions(id, rawURL, enabled, allowPrivate, WeComOptions{})
+}
+
+// NewWeComChannelWithOptions creates a WeCom webhook channel. The msgType is
+// validated up front so a mistyped config value fails at load time instead of
+// silently degrading every send.
+func NewWeComChannelWithOptions(id, rawURL string, enabled bool, allowPrivate bool, opts WeComOptions) (*WeComChannel, error) {
+	checkOpts := urlguard.CheckOptions{AllowPrivate: allowPrivate}
+	if _, err := urlguard.Check(rawURL, checkOpts); err != nil {
 		return nil, fmt.Errorf("urlguard blocked wecom URL: %w", err)
 	}
-	client := urlguard.SafeHTTPClient(opts, 30*time.Second)
+	msgType := normalizeWeComMsgType(opts.MsgType)
+	if !validWeComMsgTypes[msgType] {
+		return nil, fmt.Errorf("wecom channel %q: unsupported message type %q (want one of markdown, markdown_v2, text, image, file)", id, opts.MsgType)
+	}
+	client := urlguard.SafeHTTPClient(checkOpts, 30*time.Second)
 	return &WeComChannel{
-		id:      id,
-		url:     rawURL,
-		enabled: enabled,
-		client:  client,
+		id:                  id,
+		url:                 rawURL,
+		enabled:             enabled,
+		client:              client,
+		msgType:             msgType,
+		mentionedList:       append([]string(nil), opts.MentionedList...),
+		mentionedMobileList: append([]string(nil), opts.MentionedMobileList...),
 	}, nil
+}
+
+// normalizeWeComMsgType lower-cases and trims a configured message type,
+// treating the empty value as the default "markdown".
+func normalizeWeComMsgType(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return WeComMsgTypeMarkdown
+	}
+	return s
+}
+
+// ValidWeComMsgType reports whether s names a supported WeCom message type.
+// The empty value is valid and means "markdown".
+func ValidWeComMsgType(s string) bool {
+	return validWeComMsgTypes[normalizeWeComMsgType(s)]
 }
 
 func (c *WeComChannel) ID() string      { return c.id }
@@ -300,9 +364,18 @@ func (c *WeComChannel) Type() string    { return "wecom" }
 func (c *WeComChannel) IsEnabled() bool { return c.enabled }
 func (c *WeComChannel) Close() error    { return nil }
 
-// wecomMarkdownMaxBytes is the WeCom webhook markdown content limit
-// (errcode 40058: "markdown.content exceed max length 4096").
-const wecomMarkdownMaxBytes = 4096
+// WeCom webhook content limits from the API doc §4/§5.
+const (
+	// wecomMarkdownMaxBytes is the markdown / markdown_v2 content limit
+	// (errcode 40058: "markdown.content exceed max length 4096").
+	wecomMarkdownMaxBytes = 4096
+	// wecomTextMaxBytes is the text content limit (doc §4.1).
+	wecomTextMaxBytes = 2048
+	// wecomImageMaxBytes is the image limit, measured before base64 (doc §4.4).
+	wecomImageMaxBytes = 2 << 20
+	// wecomFileMaxBytes is the file upload limit (doc §5).
+	wecomFileMaxBytes = 20 << 20
+)
 
 // truncateUTF8 truncates s to at most maxBytes bytes without splitting a
 // multi-byte UTF-8 rune, so CJK content is never corrupted mid-character.
@@ -321,25 +394,188 @@ func (c *WeComChannel) Send(ctx context.Context, n TaskNotification) error {
 	if !c.enabled {
 		return nil
 	}
-
-	title := fmt.Sprintf("[UniMap] 定时任务 [%s] %s", n.TaskName, statusLabel(n.Status))
-	markdown := fmt.Sprintf(
-		"**%s**\n> 类型: %s\n> 耗时: %.1fs\n> 结果: %s",
-		title, n.TaskType, n.Duration/1000.0, n.Result,
-	)
-	if n.Error != "" {
-		markdown += fmt.Sprintf("\n> 错误: %s", n.Error)
+	switch c.msgType {
+	case WeComMsgTypeText:
+		return c.sendText(ctx, n)
+	case WeComMsgTypeImage:
+		return c.sendImage(ctx, n)
+	case WeComMsgTypeFile:
+		return c.sendFile(ctx, n)
+	case WeComMsgTypeMarkdownV2:
+		// markdown_v2 renders pipe tables, lists and code blocks that classic
+		// markdown does not (doc §4.3), so the compact query table stays a table.
+		return c.sendMarkdown(ctx, n, WeComMsgTypeMarkdownV2)
+	default:
+		return c.sendMarkdown(ctx, n, WeComMsgTypeMarkdown)
 	}
-	// WeCom rejects markdown content over its byte limit; truncate the tail
-	// (the newest result items) rather than failing the whole push.
-	markdown = truncateUTF8(markdown, wecomMarkdownMaxBytes)
+}
 
-	body := WeComMarkdownBody{
-		MsgType:  "markdown",
+func (c *WeComChannel) sendMarkdown(ctx context.Context, n TaskNotification, msgType string) error {
+	markdown := truncateUTF8(buildWeComMarkdown(n), wecomMarkdownMaxBytes)
+	return c.postWeCom(ctx, WeComMarkdownBody{
+		MsgType:  msgType,
 		Markdown: WeComMarkdown{Content: markdown},
+	})
+}
+
+func (c *WeComChannel) sendText(ctx context.Context, n TaskNotification) error {
+	content := truncateUTF8(buildWeComText(n), wecomTextMaxBytes)
+	return c.postWeCom(ctx, WeComTextBody{
+		MsgType: WeComMsgTypeText,
+		Text: WeComText{
+			Content:             content,
+			MentionedList:       c.mentionedList,
+			MentionedMobileList: c.mentionedMobileList,
+		},
+	})
+}
+
+// sendImage sends the first suitable screenshot as an image message (doc
+// §4.4). If no suitable image is attached the notification falls back to
+// markdown so the text content is still delivered.
+func (c *WeComChannel) sendImage(ctx context.Context, n TaskNotification) error {
+	imagePath := firstSuitablePath(n.ImagePaths, wecomImageMaxBytes, isSupportedImage)
+	if imagePath == "" {
+		return c.sendMarkdown(ctx, n, WeComMsgTypeMarkdown)
+	}
+	imageData, err := os.ReadFile(imagePath)
+	if err != nil {
+		return fmt.Errorf("read wecom image %s: %w", imagePath, err)
+	}
+	sum := md5.Sum(imageData)
+	body := WeComImageBody{
+		MsgType: WeComMsgTypeImage,
+		Image: WeComImage{
+			Base64: base64.StdEncoding.EncodeToString(imageData),
+			MD5:    fmt.Sprintf("%x", sum),
+		},
+	}
+	return c.postWeCom(ctx, body)
+}
+
+// sendFile uploads the first suitable screenshot to the media endpoint and
+// sends it as a file message (doc §4.6 + §5), which allows sizes up to 20MB —
+// beyond the 2MB image-message cap. Falls back to markdown when nothing is
+// attached.
+func (c *WeComChannel) sendFile(ctx context.Context, n TaskNotification) error {
+	filePath := firstSuitablePath(n.ImagePaths, wecomFileMaxBytes, nil)
+	if filePath == "" {
+		return c.sendMarkdown(ctx, n, WeComMsgTypeMarkdown)
+	}
+	mediaID, err := c.uploadMedia(ctx, filePath)
+	if err != nil {
+		return err
+	}
+	return c.postWeCom(ctx, WeComFileBody{
+		MsgType: WeComMsgTypeFile,
+		File:    WeComFile{MediaID: mediaID},
+	})
+}
+
+// firstSuitablePath returns the first path that exists, is not a directory,
+// is at most maxBytes bytes, and matches the optional accept filter.
+func firstSuitablePath(paths []string, maxBytes int64, accept func(string) bool) string {
+	for _, p := range paths {
+		if accept != nil && !accept(p) {
+			continue
+		}
+		info, err := os.Stat(p)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		if maxBytes > 0 && info.Size() > maxBytes {
+			continue
+		}
+		return p
+	}
+	return ""
+}
+
+func isSupportedImage(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png", ".jpg", ".jpeg":
+		return true
+	default:
+		return false
+	}
+}
+
+// uploadMedia uploads a file to the upload_media endpoint and returns its
+// media_id (doc §5). The media_id is valid for 3 days and only usable by the
+// same webhook key.
+func (c *WeComChannel) uploadMedia(ctx context.Context, filePath string) (string, error) {
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("read wecom file %s: %w", filePath, err)
+	}
+	if len(fileData) > wecomFileMaxBytes {
+		return "", fmt.Errorf("wecom file %s exceeds %d byte limit", filePath, wecomFileMaxBytes)
 	}
 
-	data, _ := json.Marshal(body)
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("media", filepath.Base(filePath))
+	if err != nil {
+		return "", fmt.Errorf("create wecom upload form: %w", err)
+	}
+	if _, err := part.Write(fileData); err != nil {
+		return "", fmt.Errorf("write wecom upload form: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("close wecom upload form: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", wecomUploadURL(c.url), &buf)
+	if err != nil {
+		return "", fmt.Errorf("create wecom upload request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("wecom upload: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("wecom upload returned status %d", resp.StatusCode)
+	}
+
+	var result wecomMediaUploadResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode wecom upload response: %w", err)
+	}
+	if result.Errcode != 0 {
+		return "", wecomAPIError(result.Errcode, result.Errmsg)
+	}
+	if result.MediaID == "" {
+		return "", fmt.Errorf("wecom upload response missing media_id")
+	}
+	return result.MediaID, nil
+}
+
+// wecomUploadURL derives the upload_media endpoint from the send webhook URL,
+// preserving the key credential and forcing type=file.
+func wecomUploadURL(sendURL string) string {
+	u, err := url.Parse(sendURL)
+	if err != nil {
+		return sendURL
+	}
+	if strings.HasSuffix(u.Path, "/webhook/send") {
+		u.Path = strings.TrimSuffix(u.Path, "/webhook/send") + "/webhook/upload_media"
+	}
+	q := u.Query()
+	q.Set("type", "file")
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// postWeCom POSTs a JSON body to the webhook and verifies the response,
+// decoding the errcode/errmsg envelope WeCom returns with HTTP 200 (doc §7.1).
+func (c *WeComChannel) postWeCom(ctx context.Context, body interface{}) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal wecom body: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewBuffer(data))
 	if err != nil {
 		return fmt.Errorf("create wecom request: %w", err)
@@ -356,17 +592,84 @@ func (c *WeComChannel) Send(ctx context.Context, n TaskNotification) error {
 		return fmt.Errorf("wecom returned status %d", resp.StatusCode)
 	}
 
-	// WeCom returns HTTP 200 with errcode on failure.
 	var wcResp struct {
 		Errcode int    `json:"errcode"`
 		Errmsg  string `json:"errmsg"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&wcResp); err == nil {
-		if wcResp.Errcode != 0 {
-			return fmt.Errorf("wecom api error: errcode=%d errmsg=%s", wcResp.Errcode, wcResp.Errmsg)
-		}
+	if err := json.NewDecoder(resp.Body).Decode(&wcResp); err == nil && wcResp.Errcode != 0 {
+		return wecomAPIError(wcResp.Errcode, wcResp.Errmsg)
 	}
 	return nil
+}
+
+// wecomAPIError builds an error for a non-zero errcode, appending an
+// actionable hint for documented codes (doc §7.2).
+func wecomAPIError(errcode int, errmsg string) error {
+	if hint := wecomErrorHint(errcode); hint != "" {
+		return fmt.Errorf("wecom api error: errcode=%d errmsg=%s（%s）", errcode, errmsg, hint)
+	}
+	return fmt.Errorf("wecom api error: errcode=%d errmsg=%s", errcode, errmsg)
+}
+
+// wecomErrorHints maps documented webhook error codes to remediation hints.
+// Codes without an entry fall through to the raw errmsg.
+var wecomErrorHints = map[int]string{
+	-1:    "系统繁忙，稍后重试（重试不超过 3 次）",
+	40001: "不合法的 key，检查 Webhook 地址中的 key",
+	40003: "无效的 UserID，检查 mentioned_list",
+	40004: "不合法的媒体文件类型",
+	40006: "不合法的文件大小",
+	40007: "不合法的 media_id（已过期或不属于当前机器人）",
+	40008: "不合法的 msgtype",
+	40013: "不合法的 CorpID",
+	40033: "不合法的请求字符（不能包含 \\uxxxx 转义）",
+	40035: "不合法的参数",
+	40058: "消息内容超过最大长度（markdown 4096 / text 2048 字节）",
+	40063: "参数为空，检查必填参数",
+	41006: "缺少 media_id 参数",
+	42001: "access_token 已过期",
+	44001: "多媒体文件为空",
+	44004: "文本消息 content 参数为空",
+	45001: "多媒体文件大小超过限制",
+	45002: "消息内容大小超过限制",
+	45007: "语音播放时间超过 60 秒",
+	45008: "图文消息文章数量超过 8 条",
+	45009: "超过 20 条/分钟频率限制，请合并消息或稍后重试",
+	45033: "接口并发调用超过限制，请降低并发",
+	45034: "url 必须有 http:// 或 https:// 协议头",
+	46004: "指定的用户不存在",
+	48002: "API 接口无权限调用",
+	93000: "Webhook key 无效，请核对地址（泄露后需删除机器人重建）",
+}
+
+func wecomErrorHint(errcode int) string {
+	return wecomErrorHints[errcode]
+}
+
+func buildWeComMarkdown(n TaskNotification) string {
+	title := fmt.Sprintf("[UniMap] 定时任务 [%s] %s", n.TaskName, statusLabel(n.Status))
+	markdown := fmt.Sprintf(
+		"**%s**\n> 类型: %s\n> 耗时: %.1fs\n> 结果: %s",
+		title, n.TaskType, n.Duration/1000.0, n.Result,
+	)
+	if n.Error != "" {
+		markdown += fmt.Sprintf("\n> 错误: %s", n.Error)
+	}
+	return markdown
+}
+
+// buildWeComText renders the same notification without markdown markers, so a
+// text message does not display raw ** / > characters (doc §4.1).
+func buildWeComText(n TaskNotification) string {
+	title := fmt.Sprintf("[UniMap] 定时任务 [%s] %s", n.TaskName, statusLabel(n.Status))
+	text := fmt.Sprintf(
+		"%s\n类型: %s\n耗时: %.1fs\n结果: %s",
+		title, n.TaskType, n.Duration/1000.0, n.Result,
+	)
+	if n.Error != "" {
+		text += fmt.Sprintf("\n错误: %s", n.Error)
+	}
+	return text
 }
 
 func statusLabel(status string) string {

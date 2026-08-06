@@ -680,3 +680,105 @@ func TestSendTestNotification_WebhookUnreachable(t *testing.T) {
 		t.Fatal("expected error for unreachable webhook")
 	}
 }
+
+func TestParseNotifyChannelSaveRequest_WeCom_InvalidMsgType(t *testing.T) {
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{
+		"id": "ch1", "type": "wecom",
+		"webhook_url":   "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=x",
+		"wecom_msgtype": "news", // API supports news but we don't implement it
+	})
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/channels", bytes.NewReader(body))
+	_, ok := parseNotifyChannelSaveRequest(rec, r)
+	if ok {
+		t.Fatal("expected false for unsupported wecom msgtype")
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_wecom_msgtype") {
+		t.Errorf("expected invalid_wecom_msgtype error code, got body: %s", rec.Body.String())
+	}
+}
+
+func TestParseNotifyChannelSaveRequest_WeCom_OK(t *testing.T) {
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":                          "ch1",
+		"type":                        "wecom",
+		"webhook_url":                 "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=x",
+		"wecom_msgtype":               "markdown_v2",
+		"wecom_mentioned_list":        []string{"zhangsan", "@all"},
+		"wecom_mentioned_mobile_list": []string{"13800000000"},
+	})
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/channels", bytes.NewReader(body))
+	req, ok := parseNotifyChannelSaveRequest(rec, r)
+	if !ok {
+		t.Fatal("expected true for valid wecom channel")
+	}
+	if req.WeComMsgType != "markdown_v2" {
+		t.Fatalf("expected wecom_msgtype markdown_v2, got %q", req.WeComMsgType)
+	}
+	if len(req.WeComMentionedList) != 2 || req.WeComMentionedList[1] != "@all" {
+		t.Fatalf("unexpected mentioned_list: %v", req.WeComMentionedList)
+	}
+	if len(req.WeComMentionedMobileList) != 1 || req.WeComMentionedMobileList[0] != "13800000000" {
+		t.Fatalf("unexpected mentioned_mobile_list: %v", req.WeComMentionedMobileList)
+	}
+}
+
+func TestUpsertNotifyChannel_WeComFields(t *testing.T) {
+	s := &Server{config: &config.Config{}}
+	req := notifyChannelSaveRequest{
+		ID:                       "ch1",
+		Type:                     "wecom",
+		Enabled:                  true,
+		WebhookURL:               "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=x",
+		WeComMsgType:             "markdown_v2",
+		WeComMentionedList:       []string{"zhangsan"},
+		WeComMentionedMobileList: []string{"13800000000"},
+	}
+	upsertNotifyChannel(s.config, req)
+	if len(s.config.Notifications.Channels) != 1 {
+		t.Fatalf("expected 1 channel, got %d", len(s.config.Notifications.Channels))
+	}
+	ch := s.config.Notifications.Channels[0]
+	if ch.WeComMsgType != "markdown_v2" {
+		t.Fatalf("expected wecom_msgtype markdown_v2, got %q", ch.WeComMsgType)
+	}
+	if len(ch.WeComMentionedList) != 1 || ch.WeComMentionedList[0] != "zhangsan" {
+		t.Fatalf("unexpected mentioned_list: %v", ch.WeComMentionedList)
+	}
+	if len(ch.WeComMentionedMobileList) != 1 || ch.WeComMentionedMobileList[0] != "13800000000" {
+		t.Fatalf("unexpected mentioned_mobile_list: %v", ch.WeComMentionedMobileList)
+	}
+}
+
+// TestMergeExistingNotifyChannel_WeCom_PreservesOmitted verifies the edit path
+// keeps saved wecom fields when the request omits them (empty msgtype / nil
+// mention slices), and does not clobber a newly supplied msgtype.
+func TestMergeExistingNotifyChannel_WeCom_PreservesOmitted(t *testing.T) {
+	existing := config.NotificationChannelCfg{
+		ID: "ch1", Type: "wecom", WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=x",
+		WeComMsgType: "text", WeComMentionedList: []string{"zhangsan"}, WeComMentionedMobileList: []string{"13800000000"},
+	}
+
+	req := notifyChannelSaveRequest{ID: "ch1", Type: "wecom", WebhookURL: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=y"}
+	mergeExistingNotifyChannel(&req, existing)
+	if req.WeComMsgType != "text" {
+		t.Fatalf("expected preserved msgtype text, got %q", req.WeComMsgType)
+	}
+	if len(req.WeComMentionedList) != 1 || req.WeComMentionedList[0] != "zhangsan" {
+		t.Fatalf("expected preserved mentioned_list, got %v", req.WeComMentionedList)
+	}
+	if len(req.WeComMentionedMobileList) != 1 || req.WeComMentionedMobileList[0] != "13800000000" {
+		t.Fatalf("expected preserved mentioned_mobile_list, got %v", req.WeComMentionedMobileList)
+	}
+
+	// A newly supplied msgtype wins over the existing one.
+	req = notifyChannelSaveRequest{ID: "ch1", Type: "wecom", WeComMsgType: "markdown_v2"}
+	mergeExistingNotifyChannel(&req, existing)
+	if req.WeComMsgType != "markdown_v2" {
+		t.Fatalf("expected new msgtype markdown_v2, got %q", req.WeComMsgType)
+	}
+}

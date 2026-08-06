@@ -41,28 +41,28 @@ type Config struct {
 			AllowPrivateAPI bool     `yaml:"allow_private_api"` // 高级配置，仅限内网自建镜像
 		} `yaml:"fofa"`
 		Shodan struct {
-			Enabled bool   `yaml:"enabled"`
-			APIKey  string `yaml:"api_key"`
-			BaseURL string `yaml:"base_url"`
-			QPS     int    `yaml:"qps"`
-			Timeout int    `yaml:"timeout"`
+			Enabled bool     `yaml:"enabled"`
+			APIKey  string   `yaml:"api_key"`
+			BaseURL string   `yaml:"base_url"`
+			QPS     int      `yaml:"qps"`
+			Timeout int      `yaml:"timeout"`
 			Cookies []Cookie `yaml:"cookies"`
 		} `yaml:"shodan"`
 		Censys struct {
-			Enabled   bool   `yaml:"enabled"`
-			APIID     string `yaml:"api_id"`
-			APISecret string `yaml:"api_secret"`
-			BaseURL   string `yaml:"base_url"`
-			QPS       int    `yaml:"qps"`
-			Timeout   int    `yaml:"timeout"`
+			Enabled   bool     `yaml:"enabled"`
+			APIID     string   `yaml:"api_id"`
+			APISecret string   `yaml:"api_secret"`
+			BaseURL   string   `yaml:"base_url"`
+			QPS       int      `yaml:"qps"`
+			Timeout   int      `yaml:"timeout"`
 			Cookies   []Cookie `yaml:"cookies"`
 		} `yaml:"censys"`
 		Daydaymap struct {
-			Enabled bool   `yaml:"enabled"`
-			APIKey  string `yaml:"api_key"`
-			BaseURL string `yaml:"base_url"`
-			QPS     int    `yaml:"qps"`
-			Timeout int    `yaml:"timeout"`
+			Enabled bool     `yaml:"enabled"`
+			APIKey  string   `yaml:"api_key"`
+			BaseURL string   `yaml:"base_url"`
+			QPS     int      `yaml:"qps"`
+			Timeout int      `yaml:"timeout"`
 			Cookies []Cookie `yaml:"cookies"`
 		} `yaml:"daydaymap"`
 	} `yaml:"engines"`
@@ -286,16 +286,19 @@ type Config struct {
 
 // NotificationChannelCfg 全局通知渠道配置
 type NotificationChannelCfg struct {
-	ID             string            `yaml:"id"`
-	Type           string            `yaml:"type"`
-	Enabled        bool              `yaml:"enabled"`
-	WebhookURL     string            `yaml:"webhook_url"`
-	Secret         string            `yaml:"secret"`
-	AppID          string            `yaml:"app_id,omitempty"`
-	AppSecret      string            `yaml:"app_secret,omitempty"`
-	ChatID         string            `yaml:"chat_id,omitempty"`
-	Headers        map[string]string `yaml:"headers"`
-	AllowPrivateIP bool              `yaml:"allow_private_ip"`
+	ID                       string            `yaml:"id"`
+	Type                     string            `yaml:"type"`
+	Enabled                  bool              `yaml:"enabled"`
+	WebhookURL               string            `yaml:"webhook_url"`
+	Secret                   string            `yaml:"secret"`
+	AppID                    string            `yaml:"app_id,omitempty"`
+	AppSecret                string            `yaml:"app_secret,omitempty"`
+	ChatID                   string            `yaml:"chat_id,omitempty"`
+	Headers                  map[string]string `yaml:"headers"`
+	AllowPrivateIP           bool              `yaml:"allow_private_ip"`
+	WeComMsgType             string            `yaml:"wecom_msgtype,omitempty"`
+	WeComMentionedList       []string          `yaml:"wecom_mentioned_list,omitempty"`
+	WeComMentionedMobileList []string          `yaml:"wecom_mentioned_mobile_list,omitempty"`
 }
 
 // EngineCacheConfig 引擎级别的缓存配置
@@ -456,6 +459,8 @@ func cloneNotificationChannelConfigs(src []NotificationChannelCfg) []Notificatio
 	copy(out, src)
 	for i := range out {
 		out[i].Headers = cloneStringMap(src[i].Headers)
+		out[i].WeComMentionedList = append([]string(nil), src[i].WeComMentionedList...)
+		out[i].WeComMentionedMobileList = append([]string(nil), src[i].WeComMentionedMobileList...)
 	}
 	return out
 }

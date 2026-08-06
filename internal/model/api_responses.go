@@ -41,6 +41,7 @@ type NotificationChannelInfo struct {
 	AppID          string `json:"app_id,omitempty"`
 	ChatID         string `json:"chat_id,omitempty"`
 	AllowPrivateIP bool   `json:"allow_private_ip"`
+	WeComMsgType   string `json:"wecom_msgtype,omitempty"`
 }
 
 // NodeInfo represents a distributed node in API responses.
