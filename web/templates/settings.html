@@ -576,6 +576,18 @@
 						<div class="cfg-row nch-app-row hidden-init"><span class="cfg-key">App ID</span><div class="cfg-val"><input type="text" id="nch-app-id" placeholder="cli_xxxxxxxx"><div class="hint">飞书应用 App ID</div></div></div>
 						<div class="cfg-row nch-app-row hidden-init"><span class="cfg-key">App Secret</span><div class="cfg-val"><input type="password" id="nch-app-secret" placeholder="输入 App Secret" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">加密存储，编辑时留空保留原值</div></div></div>
 						<div class="cfg-row nch-app-row hidden-init"><span class="cfg-key">Chat ID</span><div class="cfg-val"><input type="text" id="nch-chat-id" placeholder="oc_xxxxxxxx"><div class="hint">飞书群聊 Chat ID</div></div></div>
+					<div class="cfg-row nch-wecom-row hidden-init"><span class="cfg-key">wecom_msgtype</span><div class="cfg-val">
+						<select id="nch-wecom-msgtype">
+							<option value="markdown">markdown（默认）</option>
+							<option value="markdown_v2">markdown_v2</option>
+							<option value="text">text（纯文本，支持 @提及）</option>
+							<option value="image">image（图片，无媒体时回退 markdown）</option>
+							<option value="file">file（文件，无媒体时回退 markdown）</option>
+						</select>
+						<div class="hint">企业微信消息类型；仅 text 支持 @提及</div>
+					</div></div>
+					<div class="cfg-row nch-wecom-row hidden-init"><span class="cfg-key">wecom_mentioned_list</span><div class="cfg-val"><input type="text" id="nch-wecom-mentioned-list" placeholder="如 zhangsan, @all"><div class="hint">@提及 用户 ID，逗号分隔；仅 text 类型生效</div></div></div>
+					<div class="cfg-row nch-wecom-row hidden-init"><span class="cfg-key">wecom_mentioned_mobile_list</span><div class="cfg-val"><input type="text" id="nch-wecom-mentioned-mobile" placeholder="如 13800000000, @all"><div class="hint">@提及 手机号，逗号分隔；仅 text 类型生效</div></div></div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="nch-enabled" checked><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此渠道</span></label></div></div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">allow_private_ip</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="nch-private-ip"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">允许内网地址（测试用）</span></label></div></div>
 					<div class="cfg-actions">
@@ -1086,12 +1098,21 @@
 			var ch = notifyChannels[i];
 			var color = typeBadge[ch.type] || '#666';
 			var typeName = typeNames[ch.type] || escHtml(ch.type || '未知');
+			var wecomSummary = '';
+			if (ch.type === 'wecom' && (ch.wecom_msgtype || (ch.wecom_mentioned_list && ch.wecom_mentioned_list.length) || (ch.wecom_mentioned_mobile_list && ch.wecom_mentioned_mobile_list.length))) {
+				var bits = [];
+				if (ch.wecom_msgtype) bits.push('msgtype: ' + escHtml(ch.wecom_msgtype));
+				if (ch.wecom_mentioned_list && ch.wecom_mentioned_list.length) bits.push('@ ' + escHtml(ch.wecom_mentioned_list.join(', ')));
+				if (ch.wecom_mentioned_mobile_list && ch.wecom_mentioned_mobile_list.length) bits.push('@手机 ' + escHtml(ch.wecom_mentioned_mobile_list.join(', ')));
+				wecomSummary = '<div class="nch-summary hint">' + bits.join(' · ') + '</div>';
+			}
 			html += '<div class="cfg-row nch-row">' +
 				'<div class="nch-flex">' +
 				'<span class="nch-badge" data-badge-color="' + color + '">' + typeName + '</span>' +
 				'<span class="nch-id">' + escHtml(ch.id) + '</span>' +
 				(ch.enabled ? '<span class="dot on ml-4"></span>' : '<span class="dot off ml-4"></span>') +
 				'</div>' +
+				wecomSummary +
 				'<div class="nch-actions">' +
 				'<button class="cfg-btn cfg-btn-test nch-edit-btn nch-btn" data-ch-id="' + escAttr(ch.id) + '">编辑</button>' +
 				'<button class="cfg-btn cfg-btn-test nch-test-btn nch-btn" data-ch-id="' + escAttr(ch.id) + '">测试</button>' +
@@ -1107,12 +1128,15 @@
 	function updateNotifyFormVisibility() {
 		var type = document.getElementById('nch-type').value;
 		var isApp = type === 'feishu_app';
+		var isWecom = type === 'wecom';
 		var webhookRows = document.querySelectorAll('.nch-webhook-row');
 		var appRows = document.querySelectorAll('.nch-app-row');
+		var wecomRows = document.querySelectorAll('.nch-wecom-row');
 		webhookRows.forEach(function(row) { row.style.display = isApp ? 'none' : 'block'; });
 		// nch-app-row has class "hidden-init" (display:none); clearing inline display
 		// would let the class win, so use 'block' to actually show the rows.
 		appRows.forEach(function(row) { row.style.display = isApp ? 'block' : 'none'; });
+		wecomRows.forEach(function(row) { row.style.display = isWecom ? 'block' : 'none'; });
 	}
 
 	function showNotifyForm(isEdit) {
@@ -1134,6 +1158,9 @@
 				document.getElementById('nch-app-id').value = ch.app_id || '';
 				document.getElementById('nch-app-secret').value = '';
 				document.getElementById('nch-chat-id').value = ch.chat_id || '';
+				document.getElementById('nch-wecom-msgtype').value = ch.wecom_msgtype || 'markdown';
+				document.getElementById('nch-wecom-mentioned-list').value = (ch.wecom_mentioned_list || []).join(', ');
+				document.getElementById('nch-wecom-mentioned-mobile').value = (ch.wecom_mentioned_mobile_list || []).join(', ');
 				document.getElementById('nch-enabled').checked = ch.enabled;
 				document.getElementById('nch-private-ip').checked = !!ch.allow_private_ip;
 			}
@@ -1148,6 +1175,9 @@
 			document.getElementById('nch-app-id').value = '';
 			document.getElementById('nch-app-secret').value = '';
 			document.getElementById('nch-chat-id').value = '';
+			document.getElementById('nch-wecom-msgtype').value = 'markdown';
+			document.getElementById('nch-wecom-mentioned-list').value = '';
+			document.getElementById('nch-wecom-mentioned-mobile').value = '';
 			document.getElementById('nch-enabled').checked = true;
 			document.getElementById('nch-private-ip').checked = false;
 			document.getElementById('btn-nch-test').style.display = 'none';
@@ -1181,6 +1211,9 @@
 		var appId = document.getElementById('nch-app-id').value.trim();
 		var appSecret = document.getElementById('nch-app-secret').value;
 		var chatId = document.getElementById('nch-chat-id').value.trim();
+		var wecomMsgType = document.getElementById('nch-wecom-msgtype').value;
+		var wecomMentions = splitList(document.getElementById('nch-wecom-mentioned-list').value);
+		var wecomMobile = splitList(document.getElementById('nch-wecom-mentioned-mobile').value);
 
 		if (!id) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '请输入渠道 ID'); return; }
 		if (type === 'feishu_app') {
@@ -1193,6 +1226,11 @@
 			body.app_id = appId;
 			body.app_secret = appSecret;
 			body.chat_id = chatId;
+		}
+		if (type === 'wecom') {
+			body.wecom_msgtype = wecomMsgType;
+			body.wecom_mentioned_list = wecomMentions;
+			body.wecom_mentioned_mobile_list = wecomMobile;
 		}
 
 		try {
@@ -1262,6 +1300,13 @@
 				body.app_secret = document.getElementById('nch-app-secret').value || ch.app_secret || '';
 				body.chat_id = document.getElementById('nch-chat-id').value.trim() || ch.chat_id || '';
 			}
+			if (ch.type === 'wecom' || document.getElementById('nch-type').value === 'wecom') {
+				body.wecom_msgtype = document.getElementById('nch-wecom-msgtype').value || ch.wecom_msgtype || '';
+				var testMentions = splitList(document.getElementById('nch-wecom-mentioned-list').value);
+				var testMobile = splitList(document.getElementById('nch-wecom-mentioned-mobile').value);
+				body.wecom_mentioned_list = testMentions.length ? testMentions : null;
+				body.wecom_mentioned_mobile_list = testMobile.length ? testMobile : null;
+			}
 			var resp = await fetch('/api/v1/notifications/channels/test', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
@@ -1274,6 +1319,11 @@
 				showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', extractErrorMsg(data));
 			}
 		} catch (e) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '测试失败: ' + e.message); }
+	}
+
+	// splitList parses a comma-separated list of mentions (ASCII or full-width comma).
+	function splitList(raw) {
+		return (raw || '').split(/[,，]/).map(function(s) { return s.trim(); }).filter(Boolean);
 	}
 
 	// extractErrorMsg pulls the human-readable message from a backend error response.
