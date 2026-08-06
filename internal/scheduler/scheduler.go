@@ -590,6 +590,14 @@ func (s *Scheduler) ListTasks() []*ScheduledTask {
 				cp.Payload = &newPayload
 			}
 		}
+		// Prefer the live cron next-run time over the persisted value, which is
+		// stale until the first execution after a restart (the persisted time is
+		// only refreshed in finalizeTaskExecution).
+		if t.Enabled && t.ScheduleType == "cron" {
+			if next := s.getNextRunTime(t.ID); !next.IsZero() {
+				cp.NextRunAt = &next
+			}
+		}
 		result = append(result, &cp)
 	}
 	return result
@@ -604,6 +612,12 @@ func (s *Scheduler) GetTask(id string) (*ScheduledTask, error) {
 		return nil, fmt.Errorf("%w: task %s", ErrTaskNotFound, id)
 	}
 	cp := *task
+	// Prefer the live cron next-run time over the persisted value (see ListTasks).
+	if task.Enabled && task.ScheduleType == "cron" {
+		if next := s.getNextRunTime(id); !next.IsZero() {
+			cp.NextRunAt = &next
+		}
+	}
 	return &cp, nil
 }
 
