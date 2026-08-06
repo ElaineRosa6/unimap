@@ -119,9 +119,9 @@ func (m *Manager) SaveConfig(candidate *Config) error {
 
 	// 确保目录存在
 	dir := filepath.Dir(m.path)
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory: %w", err)
+	if _, stErr := os.Stat(dir); os.IsNotExist(stErr) {
+		if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
+			return fmt.Errorf("failed to create directory: %w", mkdirErr)
 		}
 	}
 

@@ -82,9 +82,9 @@ func TestBatchJobPersistsAfterDatabaseReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open first database: %v", err)
 	}
-	if err := firstDB.InitSchema(); err != nil {
+	if initErr := firstDB.InitSchema(); initErr != nil {
 		_ = firstDB.Close()
-		t.Fatalf("initialize first database: %v", err)
+		t.Fatalf("initialize first database: %v", initErr)
 	}
 	firstRepo := NewRepository(firstDB.DB())
 	job := &BatchJobRecord{
@@ -98,12 +98,12 @@ func TestBatchJobPersistsAfterDatabaseReopen(t *testing.T) {
 		}},
 		StartedAt: time.Now(),
 	}
-	if err := firstRepo.SaveJob(job); err != nil {
+	if saveErr := firstRepo.SaveJob(job); saveErr != nil {
 		_ = firstDB.Close()
-		t.Fatalf("save batch job: %v", err)
+		t.Fatalf("save batch job: %v", saveErr)
 	}
-	if err := firstDB.Close(); err != nil {
-		t.Fatalf("close first database: %v", err)
+	if closeErr := firstDB.Close(); closeErr != nil {
+		t.Fatalf("close first database: %v", closeErr)
 	}
 
 	secondDB, err := NewDatabase(dbPath)
@@ -111,8 +111,8 @@ func TestBatchJobPersistsAfterDatabaseReopen(t *testing.T) {
 		t.Fatalf("reopen database: %v", err)
 	}
 	defer secondDB.Close()
-	if err := secondDB.InitSchema(); err != nil {
-		t.Fatalf("initialize reopened database: %v", err)
+	if initErr := secondDB.InitSchema(); initErr != nil {
+		t.Fatalf("initialize reopened database: %v", initErr)
 	}
 	persisted, err := NewRepository(secondDB.DB()).GetJob(job.ID)
 	if err != nil {

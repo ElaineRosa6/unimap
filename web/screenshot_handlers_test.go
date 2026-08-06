@@ -667,8 +667,8 @@ func TestBatchJobStoreCreateRollsBackOnPersistenceFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.InitSchema(); err != nil {
-		t.Fatal(err)
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatal(initErr)
 	}
 	repo := batchdb.NewRepository(db.DB())
 	if err := db.Close(); err != nil {
@@ -690,8 +690,8 @@ func TestBatchJobStoreCreateRejectsPersistedDuplicateOutsideMemory(t *testing.T)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	if err := db.InitSchema(); err != nil {
-		t.Fatal(err)
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatal(initErr)
 	}
 	repo := batchdb.NewRepository(db.DB())
 	original := &batchdb.BatchJobRecord{
@@ -702,14 +702,15 @@ func TestBatchJobStoreCreateRejectsPersistedDuplicateOutsideMemory(t *testing.T)
 		Success:   1,
 		StartedAt: time.Now().Add(-time.Hour),
 	}
-	if err := repo.SaveJob(original); err != nil {
-		t.Fatal(err)
+	if saveErr := repo.SaveJob(original); saveErr != nil {
+		t.Fatal(saveErr)
 	}
 
 	store := newBatchJobStore()
 	store.repo = repo // Deliberately do not load the persisted record into the map.
-	if _, created, err := store.create(original.ID, 99); err != nil || created {
-		t.Fatalf("create persisted duplicate = created %v, err %v; want conflict", created, err)
+	_, created, createErr := store.create(original.ID, 99)
+	if createErr != nil || created {
+		t.Fatalf("create persisted duplicate = created %v, err %v; want conflict", created, createErr)
 	}
 	got, err := repo.GetJob(original.ID)
 	if err != nil {

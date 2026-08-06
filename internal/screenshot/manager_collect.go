@@ -58,8 +58,8 @@ func (m *Manager) collectViaDOM(ctx context.Context, engine, query, queryID stri
 	defer session.Close()
 
 	if cookies := m.GetCookies(engine); len(cookies) > 0 {
-		if err := session.Run(setCookieActions(cookies, searchURL)...); err != nil {
-			logger.Warnf("inject cookies failed for %s: %v", engine, err)
+		if runErr := session.Run(setCookieActions(cookies, searchURL)...); runErr != nil {
+			logger.Warnf("inject cookies failed for %s: %v", engine, runErr)
 		}
 	}
 
@@ -214,8 +214,8 @@ func (m *Manager) CollectAndCaptureSearchEngineResult(ctx context.Context, engin
 	browserCtx := session.Context()
 
 	if cookies := m.GetCookies(engine); len(cookies) > 0 {
-		if err := session.Run(setCookieActions(cookies, searchURL)...); err != nil {
-			logger.Warnf("inject cookies failed for %s: %v", engine, err)
+		if runErr := session.Run(setCookieActions(cookies, searchURL)...); runErr != nil {
+			logger.Warnf("inject cookies failed for %s: %v", engine, runErr)
 		}
 	}
 

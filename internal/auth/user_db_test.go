@@ -108,8 +108,8 @@ func TestUserDB_InitSchemaMigratesLegacyUsersTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create legacy schema: %v", err)
 	}
-	if err := udb.InitSchema(); err != nil {
-		t.Fatalf("migrate legacy schema: %v", err)
+	if migErr := udb.InitSchema(); migErr != nil {
+		t.Fatalf("migrate legacy schema: %v", migErr)
 	}
 
 	repo := NewUserRepository(udb.DB())
@@ -132,17 +132,17 @@ func TestUserPersistsAfterDatabaseReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open first database: %v", err)
 	}
-	if err := firstDB.InitSchema(); err != nil {
+	if initErr := firstDB.InitSchema(); initErr != nil {
 		_ = firstDB.Close()
-		t.Fatalf("initialize first database: %v", err)
+		t.Fatalf("initialize first database: %v", initErr)
 	}
 	created, err := NewUserRepository(firstDB.DB()).Create("persistence-user", "non-production-hash", "operator")
 	if err != nil {
 		_ = firstDB.Close()
 		t.Fatalf("create user: %v", err)
 	}
-	if err := firstDB.Close(); err != nil {
-		t.Fatalf("close first database: %v", err)
+	if closeErr := firstDB.Close(); closeErr != nil {
+		t.Fatalf("close first database: %v", closeErr)
 	}
 
 	secondDB, err := NewUserDB(dbPath)
@@ -150,8 +150,8 @@ func TestUserPersistsAfterDatabaseReopen(t *testing.T) {
 		t.Fatalf("reopen database: %v", err)
 	}
 	defer secondDB.Close()
-	if err := secondDB.InitSchema(); err != nil {
-		t.Fatalf("initialize reopened database: %v", err)
+	if initErr := secondDB.InitSchema(); initErr != nil {
+		t.Fatalf("initialize reopened database: %v", initErr)
 	}
 	persisted, err := NewUserRepository(secondDB.DB()).GetByID(created.ID)
 	if err != nil {

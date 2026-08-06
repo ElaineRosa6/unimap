@@ -207,7 +207,9 @@ func TestWithoutDeadlineReusesDeadlineFreeContext(t *testing.T) {
 	if got := withoutDeadline(plain); got != plain {
 		t.Fatal("withoutDeadline must reuse a context that already has no deadline")
 	}
-	if got := withoutDeadline(nil); got == nil {
+	var nilCtx context.Context
+	//nolint:staticcheck // withoutDeadline documents nil handling; verify it returns Background for nil.
+	if got := withoutDeadline(nilCtx); got == nil {
 		t.Fatal("withoutDeadline(nil) must return a non-nil context")
 	}
 }

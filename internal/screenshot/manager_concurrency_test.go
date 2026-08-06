@@ -17,8 +17,8 @@ func TestBrowserSessionLimitBlocksAndHonorsContext(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if _, err := mgr.acquireBrowserSlot(ctx); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("second acquire error = %v, want deadline exceeded", err)
+	if _, acquireErr := mgr.acquireBrowserSlot(ctx); !errors.Is(acquireErr, context.DeadlineExceeded) {
+		t.Fatalf("second acquire error = %v, want deadline exceeded", acquireErr)
 	}
 
 	release()

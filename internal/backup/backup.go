@@ -96,23 +96,23 @@ func Backup(cfg BackupConfig) (*BackupResult, error) {
 		}
 	}
 
-	if err := tw.Close(); err != nil {
-		return nil, fmt.Errorf("finalize tar archive: %w", err)
+	if closeErr := tw.Close(); closeErr != nil {
+		return nil, fmt.Errorf("finalize tar archive: %w", closeErr)
 	}
-	if err := gw.Close(); err != nil {
-		return nil, fmt.Errorf("finalize gzip archive: %w", err)
+	if closeErr := gw.Close(); closeErr != nil {
+		return nil, fmt.Errorf("finalize gzip archive: %w", closeErr)
 	}
-	if err := tmpFile.Sync(); err != nil {
-		return nil, fmt.Errorf("sync backup archive: %w", err)
+	if syncErr := tmpFile.Sync(); syncErr != nil {
+		return nil, fmt.Errorf("sync backup archive: %w", syncErr)
 	}
-	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("close backup archive: %w", err)
+	if closeErr := tmpFile.Close(); closeErr != nil {
+		return nil, fmt.Errorf("close backup archive: %w", closeErr)
 	}
 	uniqueSuffix := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(tmpPath), fmt.Sprintf(".%s_backup_%s_", cfg.Prefix, timestamp)), ".tmp")
 	filename := fmt.Sprintf("%s_backup_%s_%s.tar.gz", cfg.Prefix, timestamp, uniqueSuffix)
 	outputPath := filepath.Join(cfg.OutputDir, filename)
-	if err := os.Rename(tmpPath, outputPath); err != nil {
-		return nil, fmt.Errorf("publish backup archive: %w", err)
+	if publishErr := os.Rename(tmpPath, outputPath); publishErr != nil {
+		return nil, fmt.Errorf("publish backup archive: %w", publishErr)
 	}
 	tmpPath = ""
 

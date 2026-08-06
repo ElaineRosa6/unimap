@@ -67,8 +67,8 @@ func TestPushStateLifecycle(t *testing.T) {
 	}
 
 	// Record then load.
-	if err := repo.RecordPushedAssets("task-a", []string{"1.1.1.1:80", "2.2.2.2:443"}); err != nil {
-		t.Fatalf("record pushed assets: %v", err)
+	if recErr := repo.RecordPushedAssets("task-a", []string{"1.1.1.1:80", "2.2.2.2:443"}); recErr != nil {
+		t.Fatalf("record pushed assets: %v", recErr)
 	}
 	pushed, err = repo.LoadPushedAssetKeys("task-a")
 	if err != nil {
@@ -84,8 +84,8 @@ func TestPushStateLifecycle(t *testing.T) {
 	}
 
 	// Re-recording an existing key is idempotent (no duplicate row, no error).
-	if err := repo.RecordPushedAssets("task-a", []string{"1.1.1.1:80", "3.3.3.3:443"}); err != nil {
-		t.Fatalf("re-record pushed assets: %v", err)
+	if recErr := repo.RecordPushedAssets("task-a", []string{"1.1.1.1:80", "3.3.3.3:443"}); recErr != nil {
+		t.Fatalf("re-record pushed assets: %v", recErr)
 	}
 	pushed, err = repo.LoadPushedAssetKeys("task-a")
 	if err != nil {
@@ -116,9 +116,9 @@ func TestHistoryAndResultsPersistAfterDatabaseReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open first database: %v", err)
 	}
-	if err := firstDB.InitSchema(); err != nil {
+	if initErr := firstDB.InitSchema(); initErr != nil {
 		_ = firstDB.Close()
-		t.Fatalf("initialize first database: %v", err)
+		t.Fatalf("initialize first database: %v", initErr)
 	}
 	firstRepo := NewRepository(firstDB.DB())
 	id, err := firstRepo.CreateHistoryWithResults(&OperationHistory{
@@ -131,8 +131,8 @@ func TestHistoryAndResultsPersistAfterDatabaseReopen(t *testing.T) {
 		_ = firstDB.Close()
 		t.Fatalf("save history and results: %v", err)
 	}
-	if err := firstDB.Close(); err != nil {
-		t.Fatalf("close first database: %v", err)
+	if closeErr := firstDB.Close(); closeErr != nil {
+		t.Fatalf("close first database: %v", closeErr)
 	}
 
 	secondDB, err := NewDatabase(dbPath)
@@ -140,8 +140,8 @@ func TestHistoryAndResultsPersistAfterDatabaseReopen(t *testing.T) {
 		t.Fatalf("reopen database: %v", err)
 	}
 	defer secondDB.Close()
-	if err := secondDB.InitSchema(); err != nil {
-		t.Fatalf("initialize reopened database: %v", err)
+	if initErr := secondDB.InitSchema(); initErr != nil {
+		t.Fatalf("initialize reopened database: %v", initErr)
 	}
 	secondRepo := NewRepository(secondDB.DB())
 	history, err := secondRepo.GetHistory(id)

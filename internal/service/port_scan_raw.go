@@ -85,7 +85,11 @@ func sourceIPv4For(destination net.IP, port int) (net.IP, error) {
 		return nil, err
 	}
 	defer conn.Close()
-	return conn.LocalAddr().(*net.UDPAddr).IP.To4(), nil
+	udpAddr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return nil, fmt.Errorf("unexpected local address type: %T", conn.LocalAddr())
+	}
+	return udpAddr.IP.To4(), nil
 }
 
 func randomRawSourcePort() uint16 {
