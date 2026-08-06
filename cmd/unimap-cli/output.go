@@ -95,14 +95,14 @@ func classifyError(err error) (string, int) {
 
 // queryOutputData is the JSON data payload for query results.
 type queryOutputData struct {
-	Query      string               `json:"query"`
-	Assets     []model.UnifiedAsset `json:"assets"`
-	Total      int                  `json:"total"`
-	Page       int                  `json:"page"`
-	PageSize   int                  `json:"page_size"`
-	HasMore    bool                 `json:"has_more"`
-	EngineStats map[string]int      `json:"engine_stats"`
-	Errors     []string             `json:"errors,omitempty"`
+	Query       string               `json:"query"`
+	Assets      []model.UnifiedAsset `json:"assets"`
+	Total       int                  `json:"total"`
+	Page        int                  `json:"page"`
+	PageSize    int                  `json:"page_size"`
+	HasMore     bool                 `json:"has_more"`
+	EngineStats map[string]int       `json:"engine_stats"`
+	Errors      []string             `json:"errors,omitempty"`
 }
 
 // engineInfoEntry is one engine in the engines subcommand output.

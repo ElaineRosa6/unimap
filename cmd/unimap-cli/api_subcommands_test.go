@@ -216,4 +216,3 @@ func TestDoFormRequestSuccessAndFailure(t *testing.T) {
 		t.Fatalf("expected status in error, got: %v", err)
 	}
 }
-
