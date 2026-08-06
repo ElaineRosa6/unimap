@@ -65,16 +65,16 @@ func TestICPResultRepository_GetRunsByKeywordMatchesSubstring(t *testing.T) {
 
 	repo := NewICPResultRepository(db.db)
 	for _, run := range []*ICPQueryRun{
-		{TaskID: "task-web", QueryKeyword: "[REDACTED]", QueryType: "web", StartedAt: time.Now()},
-		{TaskID: "task-app", QueryKeyword: "[REDACTED]", QueryType: "app", StartedAt: time.Now()},
-		{TaskID: "task-other", QueryKeyword: "中国联通", QueryType: "web", StartedAt: time.Now()},
+		{TaskID: "task-web", QueryKeyword: "example.com", QueryType: "web", StartedAt: time.Now()},
+		{TaskID: "task-app", QueryKeyword: "example.com", QueryType: "app", StartedAt: time.Now()},
+		{TaskID: "task-other", QueryKeyword: "acme.org", QueryType: "web", StartedAt: time.Now()},
 	} {
 		if _, err := repo.SaveRun(run); err != nil {
 			t.Fatalf("SaveRun(%q) failed: %v", run.TaskID, err)
 		}
 	}
 
-	runs, err := repo.GetRunsByKeyword("云南", "web", 20)
+	runs, err := repo.GetRunsByKeyword("example", "web", 20)
 	if err != nil {
 		t.Fatalf("GetRunsByKeyword failed: %v", err)
 	}
