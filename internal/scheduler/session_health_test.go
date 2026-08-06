@@ -16,9 +16,6 @@ func TestSessionHealthTracker_SuccessResetsCircuit(t *testing.T) {
 	if h.Circuit != CircuitOpen {
 		t.Fatalf("expected open circuit, got %s", h.Circuit)
 	}
-	if !tracker.AllowBrowserTask("fofa") == true {
-		// AllowBrowserTask should return false when open
-	}
 	if tracker.AllowBrowserTask("fofa") {
 		t.Fatal("browser task should be blocked when circuit is open")
 	}

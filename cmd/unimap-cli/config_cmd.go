@@ -59,17 +59,18 @@ func runConfigShow(args []string) {
 		BaseURL string `json:"base_url,omitempty"`
 	}
 
+	engines := map[string]engineConfig{
+		"fofa":      {cfg.Engines.Fofa.Enabled, mask(cfg.Engines.Fofa.APIKey), cfg.Engines.Fofa.APIBaseURL},
+		"hunter":    {cfg.Engines.Hunter.Enabled, mask(cfg.Engines.Hunter.APIKey), cfg.Engines.Hunter.BaseURL},
+		"zoomeye":   {cfg.Engines.Zoomeye.Enabled, mask(cfg.Engines.Zoomeye.APIKey), cfg.Engines.Zoomeye.BaseURL},
+		"quake":     {cfg.Engines.Quake.Enabled, mask(cfg.Engines.Quake.APIKey), cfg.Engines.Quake.BaseURL},
+		"shodan":    {cfg.Engines.Shodan.Enabled, mask(cfg.Engines.Shodan.APIKey), cfg.Engines.Shodan.BaseURL},
+		"censys":    {cfg.Engines.Censys.Enabled, mask(cfg.Engines.Censys.APIID), cfg.Engines.Censys.BaseURL},
+		"daydaymap": {cfg.Engines.Daydaymap.Enabled, mask(cfg.Engines.Daydaymap.APIKey), cfg.Engines.Daydaymap.BaseURL},
+	}
 	data := map[string]interface{}{
 		"config_path": *configPath,
-		"engines": map[string]engineConfig{
-			"fofa":      {cfg.Engines.Fofa.Enabled, mask(cfg.Engines.Fofa.APIKey), cfg.Engines.Fofa.APIBaseURL},
-			"hunter":    {cfg.Engines.Hunter.Enabled, mask(cfg.Engines.Hunter.APIKey), cfg.Engines.Hunter.BaseURL},
-			"zoomeye":   {cfg.Engines.Zoomeye.Enabled, mask(cfg.Engines.Zoomeye.APIKey), cfg.Engines.Zoomeye.BaseURL},
-			"quake":     {cfg.Engines.Quake.Enabled, mask(cfg.Engines.Quake.APIKey), cfg.Engines.Quake.BaseURL},
-			"shodan":    {cfg.Engines.Shodan.Enabled, mask(cfg.Engines.Shodan.APIKey), cfg.Engines.Shodan.BaseURL},
-			"censys":    {cfg.Engines.Censys.Enabled, mask(cfg.Engines.Censys.APIID), cfg.Engines.Censys.BaseURL},
-			"daydaymap": {cfg.Engines.Daydaymap.Enabled, mask(cfg.Engines.Daydaymap.APIKey), cfg.Engines.Daydaymap.BaseURL},
-		},
+		"engines":     engines,
 		"screenshot": map[string]interface{}{
 			"mode":     cfg.Screenshot.Mode,
 			"base_dir": cfg.Screenshot.BaseDir,
@@ -86,7 +87,6 @@ func runConfigShow(args []string) {
 	// Table output
 	fmt.Printf("Config: %s\n\n", *configPath)
 	fmt.Printf("%-12s %-10s %-20s %s\n", "ENGINE", "ENABLED", "API_KEY", "BASE_URL")
-	engines := data["engines"].(map[string]engineConfig)
 	for _, name := range []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"} {
 		e := engines[name]
 		key := e.APIKey

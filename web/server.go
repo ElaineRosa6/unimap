@@ -758,17 +758,6 @@ func initScreenshotRouter(srv *Server, cfg *config.Config, screenshotProvider sc
 	logger.Infof("Screenshot router initialized: mode=%s, priority=%s, fallback=%v", mode, priority, fallback)
 }
 
-// initExtensionBridge sets up the extension-only bridge mode.
-func initExtensionBridge(srv *Server, cfg *config.Config,
-	screenshotApp *service.ScreenshotAppService, shutdownCtx context.Context) {
-
-	mockClient := newBridgeMockClient()
-	bridgeSvc := screenshot.NewBridgeService(mockClient, cfg.Screenshot.Extension.MaxConcurrency, time.Duration(cfg.Screenshot.Extension.TaskTimeoutSeconds)*time.Second)
-	bridgeSvc.Start(shutdownCtx)
-	srv.bridge.setService(mockClient, bridgeSvc)
-	screenshotApp.SetBridgeService(bridgeSvc)
-}
-
 // setExtensionHealthSignals injects extension health signal callbacks into the router.
 func setExtensionHealthSignals(router *screenshot.ScreenshotRouter, bridge *BridgeState) {
 	const recentActivityCutoff = 5 * time.Minute

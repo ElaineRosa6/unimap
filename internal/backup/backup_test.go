@@ -40,17 +40,17 @@ func TestBackupSameSecondCreatesDistinctCompleteArchives(t *testing.T) {
 			t.Fatalf("backup is not a complete gzip stream: %v", err)
 		}
 		tr := tar.NewReader(gz)
-		if _, err := tr.Next(); err != nil {
-			t.Fatalf("backup has no readable tar entry: %v", err)
+		if _, nextErr := tr.Next(); nextErr != nil {
+			t.Fatalf("backup has no readable tar entry: %v", nextErr)
 		}
-		if _, err := io.ReadAll(tr); err != nil {
-			t.Fatal(err)
+		if _, readErr := io.ReadAll(tr); readErr != nil {
+			t.Fatal(readErr)
 		}
-		if err := gz.Close(); err != nil {
-			t.Fatal(err)
+		if closeErr := gz.Close(); closeErr != nil {
+			t.Fatal(closeErr)
 		}
-		if err := f.Close(); err != nil {
-			t.Fatal(err)
+		if closeErr := f.Close(); closeErr != nil {
+			t.Fatal(closeErr)
 		}
 		info, err := os.Stat(result.Path)
 		if err != nil || info.Size() != result.Size {

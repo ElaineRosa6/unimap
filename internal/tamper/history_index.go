@@ -126,8 +126,8 @@ func (s *HashStorage) listIndexedCheckRecordPage(query CheckRecordQuery) (CheckR
 	where, args := checkRecordWhere(query, true)
 
 	var total int
-	if err := db.QueryRow("SELECT COUNT(*) FROM check_records"+where, args...).Scan(&total); err != nil {
-		return CheckRecordPage{}, fmt.Errorf("count indexed check records: %w", err)
+	if countErr := db.QueryRow("SELECT COUNT(*) FROM check_records"+where, args...).Scan(&total); countErr != nil {
+		return CheckRecordPage{}, fmt.Errorf("count indexed check records: %w", countErr)
 	}
 	urls, err := listIndexedCheckRecordURLs(db, query, total)
 	if err != nil {

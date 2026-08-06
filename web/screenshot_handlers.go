@@ -338,7 +338,7 @@ func (s *Server) handleScreenshotFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := os.Stat(absFullPath); err != nil {
+	if _, statErr := os.Stat(absFullPath); statErr != nil {
 		http.NotFound(w, r)
 		return
 	}

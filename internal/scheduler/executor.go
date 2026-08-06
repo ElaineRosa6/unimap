@@ -151,12 +151,13 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 	// always delivered, but never recorded.
 	var onlyNewTaskID string
 	var onlyNewKeys []string
+	var pushed map[string]struct{}
 	if payload.OnlyNew {
 		onlyNewTaskID = taskNameFromContext(ctx)
 		if onlyNewTaskID == "" {
 			return "", fmt.Errorf("only_new query task requires a task name")
 		}
-		pushed, err := r.querySvc.LoadPushedAssetKeys(onlyNewTaskID)
+		pushed, err = r.querySvc.LoadPushedAssetKeys(onlyNewTaskID)
 		if err != nil {
 			return "", fmt.Errorf("load pushed asset keys for %s: %w", onlyNewTaskID, err)
 		}
@@ -376,16 +377,6 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return "未知资产"
-}
-
-func joinNonEmpty(separator string, values ...string) string {
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			result = append(result, value)
-		}
-	}
-	return strings.Join(result, separator)
 }
 
 func notificationField(value string) string {
@@ -1070,8 +1061,8 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 		return "", fmt.Errorf("invalid port specification: %w", err)
 	}
 	probeMethodNames := extractStrings(payload, "probe_methods", nil)
-	if err := service.ValidatePortScanMethods(probeMethodNames); err != nil {
-		return "", fmt.Errorf("invalid port probe methods: %w", err)
+	if vErr := service.ValidatePortScanMethods(probeMethodNames); vErr != nil {
+		return "", fmt.Errorf("invalid port probe methods: %w", vErr)
 	}
 	probeMethods := make([]service.PortScanMethod, len(probeMethodNames))
 	for i := range probeMethodNames {

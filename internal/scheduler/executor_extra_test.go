@@ -310,8 +310,8 @@ func TestQueryRunner_Execute_ExcelExport(t *testing.T) {
 	if !strings.HasSuffix(strings.ToLower(xlsxPath), ".xlsx") {
 		t.Fatalf("exported path is not an xlsx: %s", xlsxPath)
 	}
-	if _, err := os.Stat(xlsxPath); err != nil {
-		t.Fatalf("exported workbook not written at %s: %v", xlsxPath, err)
+	if _, statErr := os.Stat(xlsxPath); statErr != nil {
+		t.Fatalf("exported workbook not written at %s: %v", xlsxPath, statErr)
 	}
 
 	// An xlsx is a zip container; validate it opens as one.
@@ -338,12 +338,12 @@ func TestQueryRunner_Execute_ExcelExport_NoAssetsProducesNoFile(t *testing.T) {
 			t.Fatalf("open history database: %v", err)
 		}
 		defer db.Close()
-		if err := db.InitSchema(); err != nil {
-			t.Fatalf("init history schema: %v", err)
+		if initErr := db.InitSchema(); initErr != nil {
+			t.Fatalf("init history schema: %v", initErr)
 		}
 		repo := history.NewRepository(db.DB())
-		if err := repo.RecordPushedAssets("excel_none", []string{"192.0.2.10:443"}); err != nil {
-			t.Fatalf("record pushed assets: %v", err)
+		if recErr := repo.RecordPushedAssets("excel_none", []string{"192.0.2.10:443"}); recErr != nil {
+			t.Fatalf("record pushed assets: %v", recErr)
 		}
 		qapp := service.NewQueryAppService(svc, svc.GetOrchestrator())
 		qapp.SetHistoryRepository(repo)
@@ -381,8 +381,8 @@ func TestQueryRunner_Execute_BridgeCollectCapturePersistsCombinedResults(t *test
 		t.Fatalf("open history database: %v", err)
 	}
 	defer db.Close()
-	if err := db.InitSchema(); err != nil {
-		t.Fatalf("init history schema: %v", err)
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatalf("init history schema: %v", initErr)
 	}
 	repo := history.NewRepository(db.DB())
 
@@ -392,8 +392,8 @@ func TestQueryRunner_Execute_BridgeCollectCapturePersistsCombinedResults(t *test
 	queryApp.SetHistoryRepository(repo)
 
 	screenshotPath := filepath.Join(t.TempDir(), "fofa.png")
-	if err := os.WriteFile(screenshotPath, []byte("png"), 0o600); err != nil {
-		t.Fatalf("write screenshot fixture: %v", err)
+	if writeErr := os.WriteFile(screenshotPath, []byte("png"), 0o600); writeErr != nil {
+		t.Fatalf("write screenshot fixture: %v", writeErr)
 	}
 	router := &combinedSchedulerBrowserRouter{path: screenshotPath}
 	screenshotApp := service.NewScreenshotAppService(t.TempDir())
@@ -443,8 +443,8 @@ func TestQueryRunner_Execute_BridgeCollectCapturePersistsCombinedResults(t *test
 		QueryID     string            `json:"browser_query_id"`
 		Screenshots map[string]string `json:"browser_screenshots"`
 	}
-	if err := json.Unmarshal([]byte(histories[0].Summary), &summary); err != nil {
-		t.Fatalf("decode query history summary: %v", err)
+	if unmarshalErr := json.Unmarshal([]byte(histories[0].Summary), &summary); unmarshalErr != nil {
+		t.Fatalf("decode query history summary: %v", unmarshalErr)
 	}
 	if summary.QueryID != "scheduled-query-1" || summary.Screenshots["fofa"] != screenshotPath {
 		t.Fatalf("query history summary lacks Bridge correlation metadata: %#v", summary)
@@ -464,8 +464,8 @@ func TestQueryRunner_Execute_BridgeWorkflowFailsWhenScreenshotIsMissing(t *testi
 		t.Fatalf("open history database: %v", err)
 	}
 	defer db.Close()
-	if err := db.InitSchema(); err != nil {
-		t.Fatalf("init history schema: %v", err)
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatalf("init history schema: %v", initErr)
 	}
 	repo := history.NewRepository(db.DB())
 
@@ -560,8 +560,8 @@ func TestTamperCheckRunner_Execute_MissingURLs(t *testing.T) {
 
 func TestTamperCheckRunner_CaptureEvidenceOnlyForTamperedResults(t *testing.T) {
 	evidencePath := filepath.Join(t.TempDir(), "tamper-evidence.png")
-	if err := os.WriteFile(evidencePath, []byte("\x89PNG\r\n\x1a\n"), 0o600); err != nil {
-		t.Fatalf("write evidence fixture: %v", err)
+	if writeErr := os.WriteFile(evidencePath, []byte("\x89PNG\r\n\x1a\n"), 0o600); writeErr != nil {
+		t.Fatalf("write evidence fixture: %v", writeErr)
 	}
 	capturer := &fakeTamperEvidenceCapturer{path: evidencePath}
 	r := NewTamperCheckRunnerWithEvidence(
@@ -641,8 +641,8 @@ func TestTamperCheckRunner_ExecuteAttachesEvidencePath(t *testing.T) {
 	page.Store("<html><body><main>mutated evidence content omega omega omega</main><section>new block</section></body></html>")
 
 	evidencePath := filepath.Join(t.TempDir(), "tamper-evidence.png")
-	if err := os.WriteFile(evidencePath, []byte("\x89PNG\r\n\x1a\n"), 0o600); err != nil {
-		t.Fatalf("write evidence fixture: %v", err)
+	if writeErr := os.WriteFile(evidencePath, []byte("\x89PNG\r\n\x1a\n"), 0o600); writeErr != nil {
+		t.Fatalf("write evidence fixture: %v", writeErr)
 	}
 	capturer := &fakeTamperEvidenceCapturer{path: evidencePath}
 	r := NewTamperCheckRunnerWithEvidence(
@@ -1501,8 +1501,8 @@ func TestQueryRunner_Execute_OnlyNewDeduplicatesAcrossRuns(t *testing.T) {
 		t.Fatalf("open history database: %v", err)
 	}
 	defer db.Close()
-	if err := db.InitSchema(); err != nil {
-		t.Fatalf("init history schema: %v", err)
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatalf("init history schema: %v", initErr)
 	}
 	repo := history.NewRepository(db.DB())
 
@@ -1575,8 +1575,8 @@ func TestQueryRunner_Execute_OnlyNewIsIsolatedByTaskName(t *testing.T) {
 		t.Fatalf("open history database: %v", err)
 	}
 	defer db.Close()
-	if err := db.InitSchema(); err != nil {
-		t.Fatalf("init history schema: %v", err)
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatalf("init history schema: %v", initErr)
 	}
 	repo := history.NewRepository(db.DB())
 
@@ -1593,8 +1593,8 @@ func TestQueryRunner_Execute_OnlyNewIsIsolatedByTaskName(t *testing.T) {
 
 	// Push under task A.
 	ctxA := context.WithValue(context.Background(), ctxKeyTaskName{}, "task_a")
-	if _, err := runner.Execute(ctxA, payload); err != nil {
-		t.Fatalf("task_a first run: %v", err)
+	if _, runErr := runner.Execute(ctxA, payload); runErr != nil {
+		t.Fatalf("task_a first run: %v", runErr)
 	}
 	// task_a second run: nothing new.
 	result, err := runner.Execute(ctxA, payload)
@@ -1622,8 +1622,8 @@ func TestQueryRunner_Execute_OnlyNewKeepsIPLessAssets(t *testing.T) {
 		t.Fatalf("open history database: %v", err)
 	}
 	defer db.Close()
-	if err := db.InitSchema(); err != nil {
-		t.Fatalf("init history schema: %v", err)
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatalf("init history schema: %v", initErr)
 	}
 	repo := history.NewRepository(db.DB())
 

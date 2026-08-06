@@ -518,11 +518,11 @@ func (c *WeComChannel) uploadMedia(ctx context.Context, filePath string) (string
 	if err != nil {
 		return "", fmt.Errorf("create wecom upload form: %w", err)
 	}
-	if _, err := part.Write(fileData); err != nil {
-		return "", fmt.Errorf("write wecom upload form: %w", err)
+	if _, wErr := part.Write(fileData); wErr != nil {
+		return "", fmt.Errorf("write wecom upload form: %w", wErr)
 	}
-	if err := writer.Close(); err != nil {
-		return "", fmt.Errorf("close wecom upload form: %w", err)
+	if cErr := writer.Close(); cErr != nil {
+		return "", fmt.Errorf("close wecom upload form: %w", cErr)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", wecomUploadURL(c.url), &buf)

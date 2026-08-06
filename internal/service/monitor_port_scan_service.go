@@ -668,11 +668,6 @@ func detectCDNByHTTPHeaders(ctx context.Context, targetURL string, pool *proxypo
 	return isLikelyCDNString(strings.ToLower(strings.TrimSpace(resp.Header.Get("Server"))))
 }
 
-func scanHostPorts(ctx context.Context, ips []string, ports []int) (map[string][]int, error) {
-	result, _, err := scanHostPortsConcurrent(ctx, ips, ports, 64, 1200*time.Millisecond, nil)
-	return result, err
-}
-
 type tcpPortDialFunc func(context.Context, string, int, time.Duration) bool
 
 type tcpPortJob struct {

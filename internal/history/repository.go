@@ -96,16 +96,16 @@ func (r *Repository) ListHistory(opType string, limit, offset int) ([]OperationH
 	var rows *sql.Rows
 	var err error
 	if opType != "" {
-		if err := r.db.QueryRow("SELECT COUNT(*) FROM operation_history WHERE operation_type = ?", opType).Scan(&total); err != nil {
-			return nil, 0, fmt.Errorf("failed to count operation_history: %w", err)
+		if qErr := r.db.QueryRow("SELECT COUNT(*) FROM operation_history WHERE operation_type = ?", opType).Scan(&total); qErr != nil {
+			return nil, 0, fmt.Errorf("failed to count operation_history: %w", qErr)
 		}
 		rows, err = r.db.Query(
 			"SELECT id, operation_type, input, status, total_count, summary, duration_ms, created_at FROM operation_history WHERE operation_type = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
 			opType, limit, offset,
 		)
 	} else {
-		if err := r.db.QueryRow("SELECT COUNT(*) FROM operation_history").Scan(&total); err != nil {
-			return nil, 0, fmt.Errorf("failed to count operation_history: %w", err)
+		if qErr := r.db.QueryRow("SELECT COUNT(*) FROM operation_history").Scan(&total); qErr != nil {
+			return nil, 0, fmt.Errorf("failed to count operation_history: %w", qErr)
 		}
 		rows, err = r.db.Query(
 			"SELECT id, operation_type, input, status, total_count, summary, duration_ms, created_at FROM operation_history ORDER BY created_at DESC LIMIT ? OFFSET ?",
