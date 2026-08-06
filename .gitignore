@@ -15,6 +15,9 @@ output/
 configs/config.yaml
 .env
 
+# Live monitoring target queries (target intel — local/server only, never commit)
+tools/cloud-config-gen/ynmobile_targets.json
+
 # Logs
 *.log
 logs/

@@ -238,7 +238,7 @@ SSRF、通知和重启验收。
 #### icp_query
 ```json
 {
-  "queries": ["[REDACTED]"],
+  "queries": ["example.com"],
   "type": "web",
   "page": 1,
   "page_size": 40
