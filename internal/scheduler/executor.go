@@ -30,7 +30,10 @@ import (
 const (
 	defaultQueryNotificationDetailLimit = 50
 	maxQueryNotificationDetailLimit     = 100
-	maxQueryNotificationDetailBytes     = 20 * 1024
+	// maxQueryNotificationDetailBytes bounds the asset detail body so the whole
+	// notification fits under the WeCom markdown limit (4096 bytes after the
+	// channel header) while leaving room for the "另有 N 条已持久化" trailer.
+	maxQueryNotificationDetailBytes = 3800
 )
 
 var notificationWhitespace = regexp.MustCompile(`\s+`)
@@ -140,13 +143,16 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "UQL 查询完成\n\n")
-	fmt.Fprintf(&b, "📋 查询: %s\n", query)
-	fmt.Fprintf(&b, "📋 引擎: %s\n", strings.Join(engines, ","))
-	fmt.Fprintf(&b, "📋 页大小: %d\n", pageSize)
-	fmt.Fprintf(&b, "📊 共返回 %d 条资产\n\n", resp.TotalCount)
-	for eng, count := range resp.EngineStats {
-		fmt.Fprintf(&b, "✅ %s: %d 条\n", eng, count)
+	// Compact header: engine + total. The raw UQL is intentionally not replayed
+	// here — the scheduled task name already identifies the query, and dumping a
+	// 40-clause query made the push unusable while crowding asset rows out of
+	// the notification byte budget.
+	fmt.Fprintf(&b, "**查询完成｜引擎: %s ｜返回 %d 条**\n", strings.Join(engines, "+"), resp.TotalCount)
+	if len(resp.EngineStats) > 1 {
+		for eng, count := range resp.EngineStats {
+			fmt.Fprintf(&b, "✅ %s: %d 条  ", eng, count)
+		}
+		fmt.Fprintf(&b, "\n")
 	}
 	for _, e := range resp.Errors {
 		fmt.Fprintf(&b, "❌ %s\n", e)
@@ -181,49 +187,71 @@ func queryNotificationDetailLimit(payload *model.TaskPayload) int {
 	return limit
 }
 
+// queryNotificationTableHeader opens the markdown pipe-table for asset rows.
+// DingTalk/Feishu and the WeCom client render pipe tables; cells never contain
+// '|' because queryAssetRow escapes them.
+const queryNotificationTableHeader = "\n| 资产 | 标题 | 状态 |\n| --- | --- | --- |\n"
+
 func appendQueryAssetDetails(b *strings.Builder, assets []model.UnifiedAsset, limit int) {
 	if len(assets) == 0 {
 		return
 	}
-	var details strings.Builder
+	// Reserve room for the trailer line so "另有 N 条已持久化" survives the byte
+	// budget instead of being silently dropped by the truncation.
+	const trailerReserve = 96
+	b.WriteString(queryNotificationTableHeader)
 	shown := 0
 	for shown < min(len(assets), limit) {
-		var entry strings.Builder
-		appendQueryAssetDetail(&entry, assets[shown])
-		if details.Len() > 0 && details.Len()+entry.Len() > maxQueryNotificationDetailBytes {
+		row := queryAssetRow(assets[shown])
+		if b.Len()+len(row) > maxQueryNotificationDetailBytes-trailerReserve {
 			break
 		}
-		details.WriteString(entry.String())
+		b.WriteString(row)
 		shown++
 	}
-	fmt.Fprintf(b, "\n📋 查询结果明细（显示 %d/%d）:\n", shown, len(assets))
-	b.WriteString(details.String())
 	if remaining := len(assets) - shown; remaining > 0 {
-		fmt.Fprintf(b, "  … 另有 %d 条结果已持久化，通知中未展开。\n", remaining)
+		fmt.Fprintf(b, "… 另有 %d 条结果已持久化，通知中未展开。\n", remaining)
 	}
 }
 
-func appendQueryAssetDetail(b *strings.Builder, asset model.UnifiedAsset) {
-	target := firstNonEmpty(asset.URL, asset.Host, asset.IP)
-	fmt.Fprintf(b, "  • %s\n", notificationField(target))
-	if endpoint := assetEndpoint(asset); endpoint != "" && endpoint != target {
-		fmt.Fprintf(b, "    IP/端口: %s\n", notificationField(endpoint))
+// queryAssetRow renders one asset as a compact single table row. Columns are
+// 资产 (host:port), 标题, 状态 — the fields that matter most for triage while
+// keeping each row small enough to show far more assets than the old verbose
+// multi-line bullet format.
+func queryAssetRow(asset model.UnifiedAsset) string {
+	target := assetEndpoint(asset)
+	if target == "" {
+		target = firstNonEmpty(asset.Host, asset.IP, asset.URL, "未知")
 	}
-	if protocolStatus := assetProtocolStatus(asset); protocolStatus != "" {
-		fmt.Fprintf(b, "    协议/状态: %s\n", notificationField(protocolStatus))
-	}
-	appendNotificationField(b, "标题", asset.Title)
-	appendNotificationField(b, "Server", asset.Server)
-	appendNotificationField(b, "位置", joinNonEmpty(" / ", asset.CountryCode, asset.Region, asset.City))
-	appendNotificationField(b, "组织", joinNonEmpty(" / ", asset.Org, asset.ISP, asset.ASN))
-	appendNotificationField(b, "来源", asset.Source)
-	appendNotificationField(b, "最近发现", asset.LastSeen)
+	return fmt.Sprintf("| %s | %s | %s |\n",
+		tableCell(target, 22),
+		tableCell(notificationField(asset.Title), 22),
+		tableCell(assetProtocolStatus(asset), 16),
+	)
 }
 
-func appendNotificationField(b *strings.Builder, label, value string) {
-	if value = notificationField(value); value != "" {
-		fmt.Fprintf(b, "    %s: %s\n", label, value)
+// tableCell sanitizes a value for a markdown table cell: escapes pipes and
+// newlines (which would break the row layout) and truncates to maxRunes.
+func tableCell(v string, maxRunes int) string {
+	v = strings.ReplaceAll(v, "|", "｜")
+	v = strings.ReplaceAll(v, "\n", " ")
+	return truncateRunes(v, maxRunes)
+}
+
+// truncateRunes truncates s to at most maxRunes runes (CJK-safe) and appends
+// an ellipsis when text was cut.
+func truncateRunes(s string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
 	}
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	if maxRunes == 1 {
+		return string(runes[:1])
+	}
+	return string(runes[:maxRunes-1]) + "…"
 }
 
 func assetEndpoint(asset model.UnifiedAsset) string {

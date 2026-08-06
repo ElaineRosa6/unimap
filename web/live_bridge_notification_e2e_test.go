@@ -459,7 +459,7 @@ func TestLiveBridgeScheduledQueryClosedLoop(t *testing.T) {
 	if err != nil || len(results) == 0 {
 		t.Fatalf("persisted query results=%d err=%v", len(results), err)
 	}
-	if !strings.Contains(record.Result, "📋 查询结果明细") {
+	if !strings.Contains(record.Result, "| 资产 | 标题 | 状态 |") {
 		t.Fatalf("scheduled notification body has no query detail section:\n%s", record.Result)
 	}
 	if !recordContainsPersistedAsset(t, record.Result, results) {
@@ -589,7 +589,7 @@ func TestLiveAPIScheduledQueryNotificationDetails(t *testing.T) {
 	if err != nil || len(results) == 0 {
 		t.Fatalf("persisted API query results=%d err=%v", len(results), err)
 	}
-	if !strings.Contains(record.Result, "📋 查询结果明细") || !recordContainsPersistedAsset(t, record.Result, results) {
+	if !strings.Contains(record.Result, "| 资产 | 标题 | 状态 |") || !recordContainsPersistedAsset(t, record.Result, results) {
 		t.Fatalf("API query notification body has no persisted asset details:\n%s", record.Result)
 	}
 	waitForLiveNotificationMetric(t, srv, beforeNotify, 20*time.Second)

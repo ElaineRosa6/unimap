@@ -219,8 +219,8 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/scheduler/history
 1. `/api/v1/screenshot/router/status` 的 `current_mode` 与预期一致且 `ready=true`；CDP 再检查 `/api/v1/cdp/status`，Extension 再检查 `/api/v1/screenshot/bridge/status` 的近期拉取或回调活动。
 2. 调度执行结果包含浏览器截图保存以及“采集结果已合并并持久化”；不能只根据 PNG 文件存在判断结构化采集成功。
 3. `/api/v1/history?type=query` 只有一条对应查询历史，并能读取结果明细。
-4. `/api/v1/scheduler/history` 中该次执行为 `success`，且 `result` 含“查询结果明细”和至少一条已持久化资产；不能只核对总数。
-5. 通知接收端确认文字明细与图片均送达。`notification_detail_limit` 默认 50、最大 100，正文另有约 20 KiB 的渠道安全上限；超过部分仍持久化并在通知中提示。通知投递仍是任务完成后的异步阶段，投递失败会记录日志和指标，不会回滚已经持久化的查询结果。
+4. `/api/v1/scheduler/history` 中该次执行为 `success`，且 `result` 含“| 资产 | 标题 | 状态 |”表格头和至少一条已持久化资产；不能只核对总数。
+5. 通知接收端确认文字明细与图片均送达。`notification_detail_limit` 默认 50、最大 100；查询明细按 3800 字节预算生成紧凑表格（企业微信 markdown 正文上限 4096），超过部分仍持久化并在通知中提示。通知投递仍是任务完成后的异步阶段，投递失败会记录日志和指标，不会回滚已经持久化的查询结果。
 
 云服务器常态化运行的输入、Cookie/Profile 约束和完全通过门槛见 [云服务器常态化运行准备与协作清单](CLOUD_STEADY_STATE_PLAN_2026-07-23.md)。
 

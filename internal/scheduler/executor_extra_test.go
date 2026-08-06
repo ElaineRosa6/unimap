@@ -179,7 +179,7 @@ func TestQueryRunner_Execute_APIQueryIncludesAssetDetailsForNotification(t *test
 	if err != nil {
 		t.Fatalf("execute API query: %v", err)
 	}
-	for _, want := range []string{"📋 查询结果明细", "https://api.example.test", "192.0.2.10:443"} {
+	for _, want := range []string{"| 资产 | 标题 | 状态 |", "192.0.2.10:443"} {
 		if !strings.Contains(result, want) {
 			t.Fatalf("query notification result lacks %q:\n%s", want, result)
 		}
@@ -203,8 +203,8 @@ func TestQueryRunner_Execute_QueryNotificationDetailLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute API query: %v", err)
 	}
-	firstShown := strings.Contains(result, "https://first.example.test")
-	secondShown := strings.Contains(result, "https://second.example.test")
+	firstShown := strings.Contains(result, "192.0.2.10:443")
+	secondShown := strings.Contains(result, "192.0.2.11:8443")
 	if firstShown == secondShown {
 		t.Fatalf("query notification detail limit not applied:\n%s", result)
 	}
@@ -313,7 +313,7 @@ func TestQueryRunner_Execute_BridgeCollectCapturePersistsCombinedResults(t *test
 	if got := extractImagePaths(result); len(got) != 1 || got[0] != screenshotPath {
 		t.Fatalf("notification image paths = %#v, want %q", got, screenshotPath)
 	}
-	for _, want := range []string{"https://api.example.test", "https://bridge.example.test"} {
+	for _, want := range []string{"192.0.2.10:443", "198.51.100.20:8443"} {
 		if !strings.Contains(result, want) {
 			t.Fatalf("Bridge query notification result lacks %q:\n%s", want, result)
 		}
@@ -322,7 +322,7 @@ func TestQueryRunner_Execute_BridgeCollectCapturePersistsCombinedResults(t *test
 		&ScheduledTask{ID: "scheduled-query-1", Name: "closed loop", Type: TaskQuery},
 		ExecutionRecord{Status: "success", Result: result},
 	)
-	if !strings.Contains(notification.Result, "https://bridge.example.test") {
+	if !strings.Contains(notification.Result, "198.51.100.20:8443") {
 		t.Fatalf("notification payload lost Bridge asset details: %#v", notification)
 	}
 	if len(notification.ImagePaths) != 1 || notification.ImagePaths[0] != screenshotPath {
@@ -1218,7 +1218,7 @@ func TestExtractImagePaths_EmptyResult(t *testing.T) {
 }
 
 func TestExtractImagePaths_NoImages(t *testing.T) {
-	result := "UQL 查询完成\n\n📋 查询: test\n📊 共返回 10 条资产"
+	result := "**查询完成｜引擎: test ｜返回 10 条**"
 	paths := extractImagePaths(result)
 	if len(paths) != 0 {
 		t.Errorf("expected 0 paths, got %d: %v", len(paths), paths)
