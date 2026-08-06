@@ -37,11 +37,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 			"timeout":      cfg.Engines.Fofa.Timeout,
 		},
 		"hunter": {
-			"enabled":  cfg.Engines.Hunter.Enabled,
-			"base_url": cfg.Engines.Hunter.BaseURL,
-			"api_key":  maskAPIKey(cfg.Engines.Hunter.APIKey),
-			"qps":      cfg.Engines.Hunter.QPS,
-			"timeout":  cfg.Engines.Hunter.Timeout,
+			"enabled":        cfg.Engines.Hunter.Enabled,
+			"base_url":       cfg.Engines.Hunter.BaseURL,
+			"api_key":        maskAPIKey(cfg.Engines.Hunter.APIKey),
+			"backup_api_key": maskAPIKey(cfg.Engines.Hunter.BackupAPIKey),
+			"qps":            cfg.Engines.Hunter.QPS,
+			"timeout":        cfg.Engines.Hunter.Timeout,
 		},
 		"zoomeye": {
 			"enabled":  cfg.Engines.Zoomeye.Enabled,
@@ -340,6 +341,9 @@ func applyHunterFields(c *config.Config, eng map[string]interface{}) {
 	}
 	if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
 		c.Engines.Hunter.APIKey = v
+	}
+	if v, _ := stringField(eng, "backup_api_key"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Hunter.BackupAPIKey = v
 	}
 	if v, _ := stringField(eng, "base_url"); v != "" {
 		c.Engines.Hunter.BaseURL = v

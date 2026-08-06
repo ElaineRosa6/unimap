@@ -14,6 +14,7 @@ engines:
     hunter:
         enabled: true
         api_key: "${HUNTER_API_KEY}"
+        backup_api_key: "${HUNTER_BACKUP_API_KEY}"   # 备用 key：主 key 限流/鉴权/欠费失败时自动切换
         base_url: https://hunter.qianxin.com
         qps: 5
         timeout: 30

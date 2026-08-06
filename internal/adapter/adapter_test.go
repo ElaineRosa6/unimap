@@ -489,7 +489,7 @@ func TestFofaAdapter_GetQuota(t *testing.T) {
 // ===== Hunter Adapter: Translate =====
 
 func TestHunterAdapter_Translate(t *testing.T) {
-	a := NewHunterAdapter("https://hunter.qianxin.com", "key", 3, 30*time.Second)
+	a := NewHunterAdapter("https://hunter.qianxin.com", "key", "", 3, 30*time.Second)
 
 	tests := []struct {
 		name    string
@@ -661,14 +661,14 @@ func TestHunterAdapter_Translate(t *testing.T) {
 }
 
 func TestHunterAdapter_Name(t *testing.T) {
-	a := NewHunterAdapter("https://hunter.qianxin.com", "key", 3, 30*time.Second)
+	a := NewHunterAdapter("https://hunter.qianxin.com", "key", "", 3, 30*time.Second)
 	if got := a.Name(); got != "hunter" {
 		t.Errorf("Name() = %q, want %q", got, "hunter")
 	}
 }
 
 func TestHunterAdapter_IsWebOnly(t *testing.T) {
-	a := NewHunterAdapter("https://hunter.qianxin.com", "key", 3, 30*time.Second)
+	a := NewHunterAdapter("https://hunter.qianxin.com", "key", "", 3, 30*time.Second)
 	if a.IsWebOnly() {
 		t.Error("expected IsWebOnly() = false")
 	}
@@ -677,7 +677,7 @@ func TestHunterAdapter_IsWebOnly(t *testing.T) {
 // ===== Hunter Adapter: Normalize =====
 
 func TestHunterAdapter_Normalize(t *testing.T) {
-	a := NewHunterAdapter("https://hunter.qianxin.com", "key", 3, 30*time.Second)
+	a := NewHunterAdapter("https://hunter.qianxin.com", "key", "", 3, 30*time.Second)
 
 	t.Run("empty result", func(t *testing.T) {
 		results, err := a.Normalize(&model.EngineResult{RawData: []interface{}{}})
@@ -732,7 +732,7 @@ func TestHunterAdapter_Normalize(t *testing.T) {
 
 func TestHunterAdapter_Search(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewHunterAdapter("https://hunter.qianxin.com", "", 3, 30*time.Second)
+		a := NewHunterAdapter("https://hunter.qianxin.com", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -749,7 +749,7 @@ func TestHunterAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewHunterAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewHunterAdapter(server.URL, "key", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "port=80", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -768,7 +768,7 @@ func TestHunterAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewHunterAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewHunterAdapter(server.URL, "key", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -783,7 +783,7 @@ func TestHunterAdapter_Search(t *testing.T) {
 
 func TestHunterAdapter_GetQuota(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewHunterAdapter("https://hunter.qianxin.com", "", 3, 30*time.Second)
+		a := NewHunterAdapter("https://hunter.qianxin.com", "", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error for empty API key")
@@ -796,7 +796,7 @@ func TestHunterAdapter_GetQuota(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewHunterAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewHunterAdapter(server.URL, "key", "", 3, 30*time.Second)
 		quota, err := a.GetQuota()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
