@@ -26,7 +26,11 @@ func (m *Manager) newGuardedBrowserSession(parent context.Context, targetURL, pr
 		return nil, err
 	}
 	upstream := m.configuredUpstreamProxy(proxy)
-	if m.configuredRemoteDebugURL() != "" {
+	// Remote Chrome cannot prove guarded egress through the loopback egress
+	// proxy. An explicit SetAllowRemoteDebug opt-in relaxes that guarantee for
+	// trusted local diagnostics; the CDP-level SSRF interceptor below still
+	// validates every request against the browser URL policy.
+	if m.configuredRemoteDebugURL() != "" && !m.allowRemoteDebug {
 		return nil, fmt.Errorf("ssrf: remote Chrome cannot prove guarded egress configuration")
 	}
 	factory := m.egressProxyFactory

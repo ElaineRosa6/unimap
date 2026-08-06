@@ -211,3 +211,75 @@ func TestExcelExporter_Export(t *testing.T) {
 		assert.Empty(t, got)
 	})
 }
+
+// TestExcelExporter_ExportFull 验证全量字段导出：LastSeen/Headers 与 Extra 扩展字段
+// 展开为独立列，嵌套值写为紧凑 JSON，标量保留原值。
+func TestExcelExporter_ExportFull(t *testing.T) {
+	assets := []model.UnifiedAsset{
+		{
+			IP: "192.168.1.1", Port: 443, Protocol: "https", Host: "example.com",
+			Title: "Example", Server: "nginx", StatusCode: 200,
+			CountryCode: "CN", Region: "云南", City: "昆明",
+			ASN: "AS4134", Org: "[REDACTED]", ISP: "CHINANET",
+			LastSeen: "2026-08-06 10:00:00", Source: "fofa",
+			Headers: map[string]string{"server": "nginx", "content-type": "text/html"},
+			Extra: map[string]interface{}{
+				"os":       "linux",
+				"banner":   "HTTP/1.1 200 OK",
+				"count":    float64(3),
+				"tags":     []interface{}{"http", "nginx"},
+				"nested":   map[string]interface{}{"cn": "example.com"},
+				"products": "nginx",
+			},
+		},
+		{
+			IP: "192.168.1.2", Port: 80, Protocol: "http",
+			Extra: map[string]interface{}{"os": "windows"},
+		},
+	}
+
+	path := filepath.Join(t.TempDir(), "full.xlsx")
+	require.NoError(t, NewExcelExporter().ExportFull(assets, path))
+
+	f, err := excelize.OpenFile(path)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	assert.Contains(t, f.GetSheetList(), "Assets")
+
+	// 表头必须包含全量字段与 extra 展开列（并集、前缀 extra.、字典序）
+	headers := []string{
+		"IP", "Port", "Protocol", "Host", "URL", "Title", "BodySnippet",
+		"Server", "StatusCode", "CountryCode", "Region", "City", "ASN",
+		"Org", "ISP", "LastSeen", "Source", "Headers",
+		"extra.banner", "extra.count", "extra.nested", "extra.os",
+		"extra.products", "extra.tags",
+	}
+	for i, want := range headers {
+		cell, cellErr := excelize.CoordinatesToCellName(i+1, 1)
+		require.NoError(t, cellErr)
+		got, getErr := f.GetCellValue("Assets", cell)
+		require.NoError(t, getErr)
+		assert.Equal(t, want, got, "全量表头第 %d 列应为 %s", i+1, want)
+	}
+
+	// 行 2：LastSeen 与 Headers/extra 列
+	assertCell := func(row int, col string, want string) {
+		got, getErr := f.GetCellValue("Assets", fmt.Sprintf("%s%d", col, row))
+		require.NoError(t, getErr)
+		assert.Equal(t, want, got, "%s%d", col, row)
+	}
+	assertCell(2, "A", "192.168.1.1")
+	assertCell(2, "P", "2026-08-06 10:00:00")                           // LastSeen
+	assertCell(2, "R", `{"content-type":"text/html","server":"nginx"}`) // Headers JSON
+	assertCell(2, "S", "HTTP/1.1 200 OK")                               // extra.banner
+	assertCell(2, "T", "3")                                             // extra.count
+	assertCell(2, "U", `{"cn":"example.com"}`)                          // extra.nested JSON
+	assertCell(2, "V", "linux")                                         // extra.os
+	assertCell(2, "W", "nginx")                                         // extra.products
+	assertCell(2, "X", `["http","nginx"]`)                              // extra.tags JSON
+
+	// 行 3：缺字段的资产 extra 空列写空串
+	assertCell(3, "P", "")
+	assertCell(3, "V", "windows")
+}
