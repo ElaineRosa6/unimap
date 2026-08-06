@@ -93,5 +93,7 @@ curl --fail http://127.0.0.1:8448/health/ready
 
 ## 6. 当前阻塞
 
-- 需要用户提供腾讯云服务器访问（IP/SSH），才能执行实际部署（条件④）。
-- 部署前还需用户授权推送 develop 到 `origin/develop`（当前领先 8 个提交），云端克隆需要最新代码。
+- develop 已推送至 `origin/develop`（2026-08-06，`3307464`，含增量推送 `only_new`），云端克隆条件已满足。
+- 仍需用户提供腾讯云服务器访问（IP/SSH），才能执行实际部署。
+- 任务清单 `CLOUD_SCHEDULER_TASKS_2026-08-06.json` 已 gitignore 不入库（含查询语句，仅本地重建参考）。
+- 云端重建如需增量推送，在任务 payload 加 `"only_new": true`（语义见 docs/API.md「增量推送（只推新增）」）。
