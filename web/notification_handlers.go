@@ -31,13 +31,15 @@ func (s *Server) handleNotificationChannels(w http.ResponseWriter, r *http.Reque
 	infos := make([]model.NotificationChannelInfo, len(channels))
 	for i, ch := range channels {
 		infos[i] = model.NotificationChannelInfo{
-			ID:             ch.ID,
-			Type:           ch.Type,
-			Enabled:        ch.Enabled,
-			AppID:          ch.AppID,
-			ChatID:         ch.ChatID,
-			AllowPrivateIP: ch.AllowPrivateIP,
-			WeComMsgType:   ch.WeComMsgType,
+			ID:                       ch.ID,
+			Type:                     ch.Type,
+			Enabled:                  ch.Enabled,
+			AppID:                    ch.AppID,
+			ChatID:                   ch.ChatID,
+			AllowPrivateIP:           ch.AllowPrivateIP,
+			WeComMsgType:             ch.WeComMsgType,
+			WeComMentionedList:       ch.WeComMentionedList,
+			WeComMentionedMobileList: ch.WeComMentionedMobileList,
 		}
 	}
 
