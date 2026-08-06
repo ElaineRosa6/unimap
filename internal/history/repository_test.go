@@ -54,6 +54,62 @@ func TestCreateAndListHistory(t *testing.T) {
 	}
 }
 
+func TestPushStateLifecycle(t *testing.T) {
+	repo := setupTestDB(t)
+
+	// Never pushed -> empty, non-nil set.
+	pushed, err := repo.LoadPushedAssetKeys("task-a")
+	if err != nil {
+		t.Fatalf("load empty pushed set: %v", err)
+	}
+	if pushed == nil || len(pushed) != 0 {
+		t.Fatalf("expected empty non-nil pushed set, got %v", pushed)
+	}
+
+	// Record then load.
+	if err := repo.RecordPushedAssets("task-a", []string{"1.1.1.1:80", "2.2.2.2:443"}); err != nil {
+		t.Fatalf("record pushed assets: %v", err)
+	}
+	pushed, err = repo.LoadPushedAssetKeys("task-a")
+	if err != nil {
+		t.Fatalf("load pushed set: %v", err)
+	}
+	if len(pushed) != 2 {
+		t.Fatalf("expected 2 pushed keys, got %v", pushed)
+	}
+	for _, key := range []string{"1.1.1.1:80", "2.2.2.2:443"} {
+		if _, ok := pushed[key]; !ok {
+			t.Fatalf("missing pushed key %q in %v", key, pushed)
+		}
+	}
+
+	// Re-recording an existing key is idempotent (no duplicate row, no error).
+	if err := repo.RecordPushedAssets("task-a", []string{"1.1.1.1:80", "3.3.3.3:443"}); err != nil {
+		t.Fatalf("re-record pushed assets: %v", err)
+	}
+	pushed, err = repo.LoadPushedAssetKeys("task-a")
+	if err != nil {
+		t.Fatalf("load after upsert: %v", err)
+	}
+	if len(pushed) != 3 {
+		t.Fatalf("expected 3 distinct pushed keys after upsert, got %v", pushed)
+	}
+
+	// Per-task isolation.
+	pushedB, err := repo.LoadPushedAssetKeys("task-b")
+	if err != nil {
+		t.Fatalf("load pushed set for task-b: %v", err)
+	}
+	if len(pushedB) != 0 {
+		t.Fatalf("task-b must be isolated from task-a, got %v", pushedB)
+	}
+
+	// Empty key list is a no-op.
+	if err := repo.RecordPushedAssets("task-a", nil); err != nil {
+		t.Fatalf("record empty keys: %v", err)
+	}
+}
+
 func TestHistoryAndResultsPersistAfterDatabaseReopen(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "history.db")
 	firstDB, err := NewDatabase(dbPath)

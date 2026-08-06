@@ -73,6 +73,25 @@ func (s *QueryAppService) SetHistoryRepository(repo *history.Repository) {
 	s.historyRepo = repo
 }
 
+// LoadPushedAssetKeys returns the set of asset fingerprints already pushed for
+// a task. Without a history repository (no persistence configured) it returns
+// an empty set, so incremental filtering degrades to "everything is new".
+func (s *QueryAppService) LoadPushedAssetKeys(taskID string) (map[string]struct{}, error) {
+	if s.historyRepo == nil {
+		return map[string]struct{}{}, nil
+	}
+	return s.historyRepo.LoadPushedAssetKeys(taskID)
+}
+
+// RecordPushedAssets records asset fingerprints as pushed for a task. Without a
+// history repository the call is a no-op.
+func (s *QueryAppService) RecordPushedAssets(taskID string, keys []string) error {
+	if s.historyRepo == nil {
+		return nil
+	}
+	return s.historyRepo.RecordPushedAssets(taskID, keys)
+}
+
 func BrowserQueryWaitTimeoutForAction(action string) time.Duration {
 	if strings.EqualFold(strings.TrimSpace(action), "collect_and_capture") {
 		return BrowserCollectAndCaptureWaitTimeout

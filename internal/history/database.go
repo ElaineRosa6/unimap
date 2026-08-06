@@ -63,10 +63,27 @@ func (d *Database) InitSchema() error {
 		return fmt.Errorf("failed to create operation_results table: %w", err)
 	}
 
+	// notify_push_state records which asset keys have already been pushed for
+	// each scheduled task, so incremental ("only new") pushes can deduplicate.
+	// task_id is the stable task name (survives re-creation), asset_key is the
+	// ip[:port] fingerprint.
+	if _, err := d.db.Exec(`
+		CREATE TABLE IF NOT EXISTS notify_push_state (
+			task_id TEXT NOT NULL,
+			asset_key TEXT NOT NULL,
+			first_pushed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_pushed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (task_id, asset_key)
+		)
+	`); err != nil {
+		return fmt.Errorf("failed to create notify_push_state table: %w", err)
+	}
+
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_op_history_type ON operation_history(operation_type)`,
 		`CREATE INDEX IF NOT EXISTS idx_op_history_created ON operation_history(created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_op_results_history ON operation_results(history_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_push_state_task ON notify_push_state(task_id)`,
 	}
 	for _, idx := range indexes {
 		if _, err := d.db.Exec(idx); err != nil {

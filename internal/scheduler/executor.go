@@ -142,12 +142,53 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 		return "", fmt.Errorf("query execution failed: %w", err)
 	}
 
+	// Incremental push: drop assets already pushed for this task, keeping only
+	// the new fingerprints. The task name scopes the dedup set (see
+	// taskNameFromContext); a re-created task with the same name keeps its
+	// pushed history. Assets without an IP key cannot be deduplicated and are
+	// always delivered, but never recorded.
+	var onlyNewTaskID string
+	var onlyNewKeys []string
+	if payload.OnlyNew {
+		onlyNewTaskID = taskNameFromContext(ctx)
+		if onlyNewTaskID == "" {
+			return "", fmt.Errorf("only_new query task requires a task name")
+		}
+		pushed, err := r.querySvc.LoadPushedAssetKeys(onlyNewTaskID)
+		if err != nil {
+			return "", fmt.Errorf("load pushed asset keys for %s: %w", onlyNewTaskID, err)
+		}
+		fresh := make([]model.UnifiedAsset, 0, len(resp.Assets))
+		freshKeys := make([]string, 0, len(resp.Assets))
+		for _, asset := range resp.Assets {
+			key := asset.Key()
+			if key == "" {
+				fresh = append(fresh, asset)
+				continue
+			}
+			if _, seen := pushed[key]; seen {
+				continue
+			}
+			fresh = append(fresh, asset)
+			freshKeys = append(freshKeys, key)
+		}
+		resp.Assets = fresh
+		resp.TotalCount = len(fresh)
+		onlyNewKeys = freshKeys
+	}
+
 	var b strings.Builder
 	// Compact header: engine + total. The raw UQL is intentionally not replayed
 	// here — the scheduled task name already identifies the query, and dumping a
 	// 40-clause query made the push unusable while crowding asset rows out of
 	// the notification byte budget.
-	fmt.Fprintf(&b, "**查询完成｜引擎: %s ｜返回 %d 条**\n", strings.Join(engines, "+"), resp.TotalCount)
+	if payload.OnlyNew && resp.TotalCount > 0 {
+		fmt.Fprintf(&b, "**查询完成｜引擎: %s ｜新增 %d 条（去重后）**\n", strings.Join(engines, "+"), resp.TotalCount)
+	} else if payload.OnlyNew {
+		fmt.Fprintf(&b, "**查询完成｜引擎: %s ｜无新增资产（已全部推送过）**\n", strings.Join(engines, "+"))
+	} else {
+		fmt.Fprintf(&b, "**查询完成｜引擎: %s ｜返回 %d 条**\n", strings.Join(engines, "+"), resp.TotalCount)
+	}
 	if len(resp.EngineStats) > 1 {
 		for eng, count := range resp.EngineStats {
 			fmt.Fprintf(&b, "✅ %s: %d 条  ", eng, count)
@@ -172,6 +213,11 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 			fmt.Fprintf(&b, "✅ %s Bridge 截图保存: %s\n", engine, path)
 		}
 		fmt.Fprintf(&b, "✅ Bridge 采集结果已合并并持久化\n")
+	}
+	if payload.OnlyNew && len(onlyNewKeys) > 0 {
+		if err := r.querySvc.RecordPushedAssets(onlyNewTaskID, onlyNewKeys); err != nil {
+			return "", fmt.Errorf("record pushed asset keys for %s: %w", onlyNewTaskID, err)
+		}
 	}
 	return sanitizeUTF8(b.String()), nil
 }
@@ -255,13 +301,7 @@ func truncateRunes(s string, maxRunes int) string {
 }
 
 func assetEndpoint(asset model.UnifiedAsset) string {
-	if asset.IP == "" {
-		return ""
-	}
-	if asset.Port > 0 {
-		return fmt.Sprintf("%s:%d", asset.IP, asset.Port)
-	}
-	return asset.IP
+	return asset.Key()
 }
 
 func assetProtocolStatus(asset model.UnifiedAsset) string {

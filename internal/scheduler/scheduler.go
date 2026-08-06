@@ -866,7 +866,7 @@ func (s *Scheduler) executeTaskWithRetry(task *ScheduledTask, handler TaskHandle
 			metrics.IncSchedulerTaskRetry(taskType)
 			time.Sleep(time.Duration(attempt*2) * time.Second)
 		}
-		result, err := s.runTaskHandler(handler, task.Payload, timeoutSec)
+		result, err := s.runTaskHandler(handler, task, timeoutSec)
 		elapsed := time.Since(now)
 		record.FinishedAt = time.Now().Format(time.RFC3339)
 		record.DurationMs = elapsed.Milliseconds()
@@ -888,10 +888,28 @@ func (s *Scheduler) executeTaskWithRetry(task *ScheduledTask, handler TaskHandle
 	return record
 }
 
+// ctxKeyTaskName is the context key carrying the executing task's stable name.
+// Incremental-push runners (QueryRunner) read it to scope their dedup state to
+// the task, so re-creating a task with the same name keeps its pushed set.
+type ctxKeyTaskName struct{}
+
+// taskNameFromContext extracts the executing task's name injected by
+// runTaskHandler. It is empty for direct (non-scheduled) executions.
+func taskNameFromContext(ctx context.Context) string {
+	name, _ := ctx.Value(ctxKeyTaskName{}).(string)
+	return name
+}
+
 // runTaskHandler 执行单次任务 handler（带 panic 恢复和超时）
-func (s *Scheduler) runTaskHandler(handler TaskHandler, payload *model.TaskPayload, timeoutSec int) (string, error) {
+func (s *Scheduler) runTaskHandler(handler TaskHandler, task *ScheduledTask, timeoutSec int) (string, error) {
 	ctx, cancel := context.WithTimeout(s.ctx, time.Duration(timeoutSec)*time.Second)
 	defer cancel()
+	// Scope incremental push state to the task name (stable across re-creation).
+	name := task.Name
+	if name == "" {
+		name = task.ID
+	}
+	ctx = context.WithValue(ctx, ctxKeyTaskName{}, name)
 	var result string
 	var err error
 	func() {
@@ -900,7 +918,7 @@ func (s *Scheduler) runTaskHandler(handler TaskHandler, payload *model.TaskPaylo
 				err = fmt.Errorf("panic in runner: %v", r)
 			}
 		}()
-		result, err = handler.Execute(ctx, payload)
+		result, err = handler.Execute(ctx, task.Payload)
 	}()
 	return result, err
 }

@@ -184,3 +184,55 @@ func (r *Repository) ClearHistory(opType string) error {
 	_, err := r.db.Exec("DELETE FROM operation_history")
 	return err
 }
+
+// LoadPushedAssetKeys returns the set of asset keys already pushed for a task.
+// An empty result set (never-pushed task) yields an empty, non-nil map so
+// callers can check membership without a nil-map guard.
+func (r *Repository) LoadPushedAssetKeys(taskID string) (map[string]struct{}, error) {
+	rows, err := r.db.Query("SELECT asset_key FROM notify_push_state WHERE task_id = ?", taskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query notify_push_state: %w", err)
+	}
+	defer rows.Close()
+
+	keys := make(map[string]struct{})
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, fmt.Errorf("failed to scan notify_push_state: %w", err)
+		}
+		keys[key] = struct{}{}
+	}
+	return keys, rows.Err()
+}
+
+// RecordPushedAssets records newly pushed asset keys for a task. The operation
+// is idempotent: an existing (task_id, asset_key) row refreshes last_pushed_at
+// instead of erroring, so re-runs after a partial failure never double count.
+func (r *Repository) RecordPushedAssets(taskID string, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin push-state transaction: %w", err)
+	}
+	stmt, err := tx.Prepare(`
+		INSERT INTO notify_push_state (task_id, asset_key)
+		VALUES (?, ?)
+		ON CONFLICT(task_id, asset_key)
+		DO UPDATE SET last_pushed_at = CURRENT_TIMESTAMP
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("failed to prepare push-state statement: %w", err)
+	}
+	defer stmt.Close()
+	for _, key := range keys {
+		if _, err := stmt.Exec(taskID, key); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("failed to insert notify_push_state: %w", err)
+		}
+	}
+	return tx.Commit()
+}

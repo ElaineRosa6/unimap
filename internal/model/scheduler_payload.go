@@ -25,6 +25,13 @@ type TaskPayload struct {
 	BrowserAction string `json:"browser_action,omitempty"`
 	QueryID       string `json:"query_id,omitempty"`
 
+	// OnlyNew filters the notification assets to those not yet pushed for this
+	// task. Previously pushed fingerprints are tracked per task in the SQLite
+	// notify_push_state table (see internal/history). When set, the task name is
+	// the deduplication key, so re-creating the task with the same name keeps
+	// the already-pushed set.
+	OnlyNew bool `json:"only_new,omitempty"`
+
 	// ICP-specific
 	Queries     []string `json:"queries,omitempty"`
 	Type        string   `json:"type,omitempty"`
