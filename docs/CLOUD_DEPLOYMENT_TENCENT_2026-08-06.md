@@ -65,18 +65,22 @@ curl --fail http://127.0.0.1:8448/health/ready
 
 ## 4. 重建 10 个定时任务（每日 10:15）
 
-任务参数（与当前 data/scheduler_tasks.json 一致，`UpdateTask`/`create` 需全量 payload）：
+任务参数见可复现清单 [CLOUD_SCHEDULER_TASKS_2026-08-06.json](CLOUD_SCHEDULER_TASKS_2026-08-06.json)（10 个 create-ready payload，无密钥，与本机
+`data/scheduler_tasks.json` 一致；已脱敏、可提交）。概要：
 
 | 任务 | 引擎 | 说明 | page_size | detail_limit |
 |---|---|---|---|---|
-| fofa 大查询 | fofa | `查询语句.txt` fofa 段合并 | 100 | 100 |
+| fofa_ynmobile_daily | fofa | `查询语句.txt` fofa 段合并 | 100 | 100 |
 | quake_ynmobile_daily | quake | 13 个 favicon MD5 合并 OR | 100 | 100 |
-| hunter×8 分片 | hunter | 8 个分片查询 | 100 | 100 |
+| hunter_ynmobile_01..08 | hunter | 8 个分片查询 | 50 | 100 |
 
 - cron：`15 10 * * *`
 - 通知渠道：`dijia_01`（企业微信 webhook）
 - `screenshot_enabled: false`（不截图）
-- 用 `GET /api/v1/scheduler/tasks` + `POST /api/v1/scheduler/tasks/run` 逐任务验收一次，再等每日 cron。
+
+云端重建（登录后，需先创建 `dijia_01` 渠道，`POST /api/v1/notifications/channels`）逐条喂入
+`POST /api/v1/scheduler/tasks/create`，或迁移本机 `data/scheduler_tasks.json`（gitignored，含服务端运行时字段）。
+用 `GET /api/v1/scheduler/tasks` + `POST /api/v1/scheduler/tasks/run` 逐任务验收一次，再等每日 cron。
 
 ## 5. 云端验收清单（复用评估文档 12 项）
 
@@ -89,4 +93,5 @@ curl --fail http://127.0.0.1:8448/health/ready
 
 ## 6. 当前阻塞
 
-- 需要用户提供腾讯云服务器访问（IP/SSH），才能执行条件④的实际部署。
+- 需要用户提供腾讯云服务器访问（IP/SSH），才能执行实际部署（条件④）。
+- 部署前还需用户授权推送 develop 到 `origin/develop`（当前领先 8 个提交），云端克隆需要最新代码。
