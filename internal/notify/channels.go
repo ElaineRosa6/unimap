@@ -23,16 +23,19 @@ type NotifyChannel interface {
 
 // ChannelConfig 渠道配置
 type ChannelConfig struct {
-	ID             string            `yaml:"id" json:"id"`
-	Type           string            `yaml:"type" json:"type"`
-	Enabled        bool              `yaml:"enabled" json:"enabled"`
-	WebhookURL     string            `yaml:"webhook_url" json:"webhook_url"`
-	Secret         string            `yaml:"secret" json:"secret"`
-	AppID          string            `yaml:"app_id,omitempty" json:"app_id"`
-	AppSecret      string            `yaml:"app_secret,omitempty" json:"app_secret"`
-	ChatID         string            `yaml:"chat_id,omitempty" json:"chat_id"`
-	Headers        map[string]string `yaml:"headers" json:"headers"`
-	AllowPrivateIP bool              `yaml:"allow_private_ip" json:"allow_private_ip"`
+	ID                       string            `yaml:"id" json:"id"`
+	Type                     string            `yaml:"type" json:"type"`
+	Enabled                  bool              `yaml:"enabled" json:"enabled"`
+	WebhookURL               string            `yaml:"webhook_url" json:"webhook_url"`
+	Secret                   string            `yaml:"secret" json:"secret"`
+	AppID                    string            `yaml:"app_id,omitempty" json:"app_id"`
+	AppSecret                string            `yaml:"app_secret,omitempty" json:"app_secret"`
+	ChatID                   string            `yaml:"chat_id,omitempty" json:"chat_id"`
+	Headers                  map[string]string `yaml:"headers" json:"headers"`
+	AllowPrivateIP           bool              `yaml:"allow_private_ip" json:"allow_private_ip"`
+	WeComMsgType             string            `yaml:"wecom_msgtype,omitempty" json:"wecom_msgtype,omitempty"`
+	WeComMentionedList       []string          `yaml:"wecom_mentioned_list,omitempty" json:"wecom_mentioned_list,omitempty"`
+	WeComMentionedMobileList []string          `yaml:"wecom_mentioned_mobile_list,omitempty" json:"wecom_mentioned_mobile_list,omitempty"`
 }
 
 // NewChannelFromConfig 根据配置创建渠道实例
@@ -52,7 +55,11 @@ func NewChannelFromConfig(cfg ChannelConfig) (NotifyChannel, error) {
 		}
 		return NewFeishuAppChannel(cfg.AppID, cfg.AppSecret, cfg.ChatID, cfg.Enabled), nil
 	case "wecom":
-		return NewWeComChannel(cfg.ID, cfg.WebhookURL, cfg.Enabled, cfg.AllowPrivateIP)
+		return NewWeComChannelWithOptions(cfg.ID, cfg.WebhookURL, cfg.Enabled, cfg.AllowPrivateIP, WeComOptions{
+			MsgType:             cfg.WeComMsgType,
+			MentionedList:       cfg.WeComMentionedList,
+			MentionedMobileList: cfg.WeComMentionedMobileList,
+		})
 	default:
 		return nil, fmt.Errorf("unknown notify channel type: %s", cfg.Type)
 	}
