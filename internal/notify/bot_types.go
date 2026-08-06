@@ -16,7 +16,7 @@ type DingTalkMarkdown struct {
 
 // --- WeCom ---
 
-// WeComMarkdownBody is the JSON body for WeCom markdown messages.
+// WeComMarkdownBody is the JSON body for WeCom markdown / markdown_v2 messages.
 type WeComMarkdownBody struct {
 	MsgType  string        `json:"msgtype"`
 	Markdown WeComMarkdown `json:"markdown"`
@@ -25,6 +25,52 @@ type WeComMarkdownBody struct {
 // WeComMarkdown holds the markdown content.
 type WeComMarkdown struct {
 	Content string `json:"content"`
+}
+
+// WeComTextBody is the JSON body for WeCom text messages (doc §4.1).
+type WeComTextBody struct {
+	MsgType string    `json:"msgtype"`
+	Text    WeComText `json:"text"`
+}
+
+// WeComText holds a plain-text message with optional @ mentions.
+// MentionedList and MentionedMobileList may each contain "@all" to mention
+// everyone in the group.
+type WeComText struct {
+	Content             string   `json:"content"`
+	MentionedList       []string `json:"mentioned_list,omitempty"`
+	MentionedMobileList []string `json:"mentioned_mobile_list,omitempty"`
+}
+
+// WeComImageBody is the JSON body for WeCom image messages (doc §4.4).
+type WeComImageBody struct {
+	MsgType string     `json:"msgtype"`
+	Image   WeComImage `json:"image"`
+}
+
+// WeComImage holds a base64-encoded image plus its raw (pre-base64) MD5.
+type WeComImage struct {
+	Base64 string `json:"base64"`
+	MD5    string `json:"md5"`
+}
+
+// WeComFileBody is the JSON body for WeCom file messages (doc §4.6).
+type WeComFileBody struct {
+	MsgType string    `json:"msgtype"`
+	File    WeComFile `json:"file"`
+}
+
+// WeComFile holds a media_id obtained from the upload_media endpoint.
+type WeComFile struct {
+	MediaID string `json:"media_id"`
+}
+
+// wecomMediaUploadResponse is the response of the upload_media endpoint (§5).
+type wecomMediaUploadResponse struct {
+	Errcode int    `json:"errcode"`
+	Errmsg  string `json:"errmsg"`
+	Type    string `json:"type"`
+	MediaID string `json:"media_id"`
 }
 
 // --- Feishu ---
