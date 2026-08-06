@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,23 +21,57 @@ const (
 	DayDayMapDefaultQPS = 3
 )
 
+// FlexNumber 兼容 DayDayMap 返回的字符串或数字形式的数值字段
+// （如 port 可能返回 80 或 "80"），避免类型不匹配导致整条响应解析失败。
+type FlexNumber int
+
+// UnmarshalJSON 接受 JSON 数字或字符串两种形式。
+func (n *FlexNumber) UnmarshalJSON(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if s == "" || s == "null" {
+		return nil
+	}
+	if len(s) > 0 && s[0] == '"' {
+		var str string
+		if err := json.Unmarshal(b, &str); err != nil {
+			return err
+		}
+		str = strings.TrimSpace(str)
+		if str == "" {
+			return nil
+		}
+		i, err := strconv.Atoi(str)
+		if err != nil {
+			return fmt.Errorf("parse numeric string %q: %w", str, err)
+		}
+		*n = FlexNumber(i)
+		return nil
+	}
+	var f float64
+	if err := json.Unmarshal(b, &f); err != nil {
+		return err
+	}
+	*n = FlexNumber(f)
+	return nil
+}
+
 // DayDayMapItem is a single result item from the DayDayMap API.
 // API returns list items as JSON objects with snake_case keys.
 type DayDayMapItem struct {
-	IP         string  `json:"ip"`
-	Port       float64 `json:"port"`
-	Protocol   string  `json:"protocol"`
-	Domain     string  `json:"domain"`
-	Title      string  `json:"title"`
-	Server     string  `json:"server"`
-	Body       string  `json:"body"`
-	StatusCode float64 `json:"status_code"`
-	Country    string  `json:"country"`
-	Province   string  `json:"province"`
-	City       string  `json:"city"`
-	ASN        string  `json:"asn"`
-	Org        string  `json:"org"`
-	ISP        string  `json:"isp"`
+	IP         string     `json:"ip"`
+	Port       FlexNumber `json:"port"`
+	Protocol   string     `json:"protocol"`
+	Domain     string     `json:"domain"`
+	Title      string     `json:"title"`
+	Server     string     `json:"server"`
+	Body       string     `json:"body"`
+	StatusCode FlexNumber `json:"status_code"`
+	Country    string     `json:"country"`
+	Province   string     `json:"province"`
+	City       string     `json:"city"`
+	ASN        string     `json:"asn"`
+	Org        string     `json:"org"`
+	ISP        string     `json:"isp"`
 	// Extra preserves any top-level keys the API returns that this struct does
 	// not declare, so they are not silently dropped.
 	Extra map[string]interface{} `json:"-"`
