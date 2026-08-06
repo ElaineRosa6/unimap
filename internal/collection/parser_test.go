@@ -141,6 +141,39 @@ func TestExtractExtraFields(t *testing.T) {
 			t.Errorf("expected nil, got %v", extra)
 		}
 	})
+
+	t.Run("product os land in extra, banner stays known", func(t *testing.T) {
+		item := map[string]interface{}{
+			"ip":      "1.2.3.4",
+			"product": "nginx",
+			"os":      "Linux",
+			"banner":  "HTTP/1.1 200 OK",
+			"icp":     "浙ICP备12345678号",
+			"tags":    "web,admin",
+		}
+		extra := ExtractExtraFields(item)
+		if extra == nil {
+			t.Fatal("expected non-nil extra")
+		}
+		if extra["product"] != "nginx" {
+			t.Errorf("Extra[product] = %v, want nginx", extra["product"])
+		}
+		if extra["os"] != "Linux" {
+			t.Errorf("Extra[os] = %v, want Linux", extra["os"])
+		}
+		if extra["icp"] != "浙ICP备12345678号" {
+			t.Errorf("Extra[icp] = %v", extra["icp"])
+		}
+		if extra["tags"] != "web,admin" {
+			t.Errorf("Extra[tags] = %v", extra["tags"])
+		}
+		if _, ok := extra["banner"]; ok {
+			t.Error("banner is a known field mapped to BodySnippet and must not appear in Extra")
+		}
+		if _, ok := extra["ip"]; ok {
+			t.Error("ip should not be in Extra")
+		}
+	})
 }
 
 func TestParseAssetItem(t *testing.T) {
@@ -557,6 +590,25 @@ func TestParseStructuredCollectedDataFromItems(t *testing.T) {
 			t.Errorf("Source = %q, want shodan", assets[0].Source)
 		}
 	})
+
+	t.Run("extra preserved from collected item", func(t *testing.T) {
+		items := []model.CollectedDataItem{
+			{IP: "1.2.3.4", Port: 80, Extra: map[string]any{"icp": "浙ICP备12345678号", "tags": "web"}},
+		}
+		assets, _, _ := ParseStructuredCollectedDataFromItems(items, "hunter", false)
+		if len(assets) != 1 {
+			t.Fatalf("expected 1 asset, got %d", len(assets))
+		}
+		if assets[0].Extra == nil {
+			t.Fatal("expected non-nil Extra")
+		}
+		if assets[0].Extra["icp"] != "浙ICP备12345678号" {
+			t.Errorf("Extra[icp] = %v", assets[0].Extra["icp"])
+		}
+		if assets[0].Extra["tags"] != "web" {
+			t.Errorf("Extra[tags] = %v", assets[0].Extra["tags"])
+		}
+	})
 }
 
 func TestNormalizeAssets_Hunter(t *testing.T) {
@@ -722,6 +774,60 @@ func TestParseExtractedAssets(t *testing.T) {
 		assets := ParseExtractedAssets(raw, "test")
 		if assets[0].BodySnippet != "HTTP/1.1 200 OK" {
 			t.Errorf("BodySnippet = %q, want HTTP/1.1 200 OK", assets[0].BodySnippet)
+		}
+	})
+
+	t.Run("hunter dom columns preserved in extra", func(t *testing.T) {
+		raw := []map[string]interface{}{
+			{
+				"ip":        "1.2.3.4",
+				"port":      float64(80),
+				"product":   "nginx, phpMyAdmin",
+				"icp":       "浙ICP备12345678号",
+				"tags":      "web,admin",
+				"last_seen": "2026-08-06 09:00:00",
+			},
+		}
+		assets := ParseExtractedAssets(raw, "hunter")
+		if len(assets) != 1 {
+			t.Fatalf("expected 1 asset, got %d", len(assets))
+		}
+		a := assets[0]
+		// product falls back to title when title is empty (Hunter DOM path)
+		if a.Title != "nginx, phpMyAdmin" {
+			t.Errorf("Title = %q, want product fallback", a.Title)
+		}
+		if a.LastSeen != "2026-08-06 09:00:00" {
+			t.Errorf("LastSeen = %q", a.LastSeen)
+		}
+		if a.Extra == nil {
+			t.Fatal("expected non-nil Extra")
+		}
+		if a.Extra["product"] != "nginx, phpMyAdmin" {
+			t.Errorf("Extra[product] = %v", a.Extra["product"])
+		}
+		if a.Extra["icp"] != "浙ICP备12345678号" {
+			t.Errorf("Extra[icp] = %v", a.Extra["icp"])
+		}
+		if a.Extra["tags"] != "web,admin" {
+			t.Errorf("Extra[tags] = %v", a.Extra["tags"])
+		}
+	})
+
+	t.Run("unknown fields preserved in extra", func(t *testing.T) {
+		raw := []map[string]interface{}{
+			{
+				"ip":     "1.2.3.4",
+				"port":   float64(80),
+				"custom": "val",
+			},
+		}
+		assets := ParseExtractedAssets(raw, "test")
+		if len(assets) != 1 {
+			t.Fatalf("expected 1 asset, got %d", len(assets))
+		}
+		if assets[0].Extra == nil || assets[0].Extra["custom"] != "val" {
+			t.Errorf("Extra = %v, want custom preserved", assets[0].Extra)
 		}
 	})
 }

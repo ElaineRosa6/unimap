@@ -58,6 +58,7 @@ func (p *AssetPool) resetAsset(asset *model.UnifiedAsset) {
 	asset.Org = ""
 	asset.ISP = ""
 	asset.Source = ""
+	asset.LastSeen = ""
 
 	// 清空映射
 	for k := range asset.Headers {

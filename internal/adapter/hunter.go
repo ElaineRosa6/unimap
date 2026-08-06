@@ -48,6 +48,23 @@ type HunterItem struct {
 	// Legacy nested fields for fallback
 	Web      map[string]interface{} `json:"web"`
 	Location map[string]interface{} `json:"location"`
+	// Extra preserves any top-level keys Hunter returns that this struct does
+	// not declare (e.g. updated_at), so they are not silently dropped.
+	Extra map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON captures unknown top-level keys into Extra instead of
+// dropping them, while decoding declared fields as usual.
+func (m *HunterItem) UnmarshalJSON(data []byte) error {
+	type alias HunterItem
+	var aux alias
+	extra, err := rawUnknown(data, &aux)
+	if err != nil {
+		return err
+	}
+	*m = HunterItem(aux)
+	m.Extra = extra
+	return nil
 }
 
 // NewHunterAdapter 创建Hunter适配器
@@ -313,6 +330,17 @@ func normalizeHunterMatch(m *HunterItem) *model.UnifiedAsset {
 	if asset.IP == "" {
 		parseHunterLegacyFields(m, asset)
 	}
+	// Preserve raw nested structures (legacy web/location objects) so any keys
+	// not extracted above still survive persistence.
+	if m.Web != nil {
+		mergeAssetExtra(asset, map[string]interface{}{"web": m.Web})
+	}
+	if m.Location != nil {
+		mergeAssetExtra(asset, map[string]interface{}{"location": m.Location})
+	}
+	// Capture unknown top-level fields (e.g. updated_at) and promote any
+	// timestamp key to LastSeen.
+	applyExtras(asset, m.Extra)
 
 	ensureHunterURL(asset)
 	if asset.IP != "" || asset.Host != "" {

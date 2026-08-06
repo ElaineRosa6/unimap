@@ -42,6 +42,19 @@ type FofaItem struct {
 	Org        string  `json:"org"`
 	ISP        string  `json:"isp"`
 	StatusCode float64 `json:"status_code"`
+	// Additional fields requested via the extended field set.
+	Host           string `json:"host"`
+	OS             string `json:"os"`
+	Banner         string `json:"banner"`
+	BaseProtocol   string `json:"baseprotocol"`
+	Cert           string `json:"cert"`
+	IconHash       string `json:"icon_hash"`
+	Lastupdatetime string `json:"lastupdatetime"`
+	ProtocolZh     string `json:"protocol_zh"`
+	CName          string `json:"cname"`
+	Uptime         string `json:"uptime"`
+	// Extra preserves any requested columns this struct does not declare.
+	Extra map[string]interface{} `json:"-"`
 }
 
 // FofaAdapter FOFA引擎适配器
@@ -150,7 +163,8 @@ func safeRowField(row []interface{}, idx int) interface{} {
 }
 
 // fofaRowToItem maps a Fofa API row ([]interface{}) to a FofaItem struct
-// using the provided field name order.
+// using the provided field name order. Unknown column names are captured into
+// Extra so no requested field is dropped.
 func fofaRowToItem(row []interface{}, fieldNames []string) *FofaItem {
 	item := &FofaItem{}
 	for j, name := range fieldNames {
@@ -161,51 +175,77 @@ func fofaRowToItem(row []interface{}, fieldNames []string) *FofaItem {
 		if v == nil {
 			continue
 		}
+		setStr := func(target *string) {
+			if s, ok := v.(string); ok {
+				*target = s
+			}
+		}
+		setNum := func(target *float64) {
+			switch v := v.(type) {
+			case float64:
+				*target = v
+			case string:
+				if n, err := strconv.ParseFloat(v, 64); err == nil {
+					*target = n
+				}
+			}
+		}
 		switch name {
 		case "ip":
-			item.IP, _ = v.(string)
+			setStr(&item.IP)
 		case "port":
-			switch v := v.(type) {
-			case float64:
-				item.Port = v
-			case string:
-				if n, err := strconv.ParseFloat(v, 64); err == nil {
-					item.Port = n
-				}
-			}
+			setNum(&item.Port)
 		case "protocol":
-			item.Protocol, _ = v.(string)
+			setStr(&item.Protocol)
 		case "domain":
-			item.Domain, _ = v.(string)
+			setStr(&item.Domain)
 		case "title":
-			item.Title, _ = v.(string)
+			setStr(&item.Title)
 		case "server":
-			item.Server, _ = v.(string)
+			setStr(&item.Server)
 		case "header":
-			item.Header, _ = v.(string)
+			setStr(&item.Header)
 		case "body":
-			item.Body, _ = v.(string)
+			setStr(&item.Body)
 		case "country":
-			item.Country, _ = v.(string)
+			setStr(&item.Country)
 		case "region":
-			item.Region, _ = v.(string)
+			setStr(&item.Region)
 		case "city":
-			item.City, _ = v.(string)
+			setStr(&item.City)
 		case "asn":
-			item.ASN, _ = v.(string)
+			setStr(&item.ASN)
 		case "org":
-			item.Org, _ = v.(string)
+			setStr(&item.Org)
 		case "isp":
-			item.ISP, _ = v.(string)
+			setStr(&item.ISP)
 		case "status_code":
-			switch v := v.(type) {
-			case float64:
-				item.StatusCode = v
-			case string:
-				if n, err := strconv.ParseFloat(v, 64); err == nil {
-					item.StatusCode = n
-				}
+			setNum(&item.StatusCode)
+		case "host":
+			setStr(&item.Host)
+		case "os":
+			setStr(&item.OS)
+		case "banner":
+			setStr(&item.Banner)
+		case "baseprotocol":
+			setStr(&item.BaseProtocol)
+		case "cert":
+			setStr(&item.Cert)
+		case "icon_hash":
+			setStr(&item.IconHash)
+		case "lastupdatetime":
+			setStr(&item.Lastupdatetime)
+		case "protocol_zh":
+			setStr(&item.ProtocolZh)
+		case "cname":
+			setStr(&item.CName)
+		case "uptime":
+			setStr(&item.Uptime)
+		default:
+			if item.Extra == nil {
+				item.Extra = make(map[string]interface{})
 			}
+			item.Extra[name] = v
 		}
 	}
 	return item
@@ -297,37 +337,28 @@ func fofaSearchRetryConfig() utils.RetryConfig {
 	}
 }
 
-// executeFofaSearch 执行单次 FOFA API 调用（含字段权限降级）
-func (f *FofaAdapter) executeFofaSearch(query string, page, pageSize int, result **model.EngineResult) error {
-	encodedQuery := base64.StdEncoding.EncodeToString([]byte(query))
-	url := fmt.Sprintf("%s/api/v1/search/all", f.baseURL)
-	allFields := "ip,port,protocol,domain,title,server,header,country,region,city,asn,org,isp,status_code"
-	activeFields := allFields
-
-	resp, err := f.searchWithFields(url, encodedQuery, page, pageSize, allFields)
-	if err == nil && resp.StatusCode() == 200 {
-		if degraded := f.degradeFieldsOnPermissionError(resp.Body()); degraded != "" {
-			activeFields = degraded
-			resp, err = f.searchWithFields(url, encodedQuery, page, pageSize, activeFields)
-		}
-	}
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode() != 200 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
-	}
-	return parseFofaSearchResponse(resp.Body(), activeFields, page, pageSize, f.Name(), result)
+// fofaFieldSets 候选字段集，按权限从全到简排列。FOFA 按请求返回字段，
+// 权限不足（错误码 820001/没有权限）时整条请求失败，依次降级到更少的字段。
+var fofaFieldSets = []string{
+	// 全量字段（含常用时间/识别字段）
+	"ip,port,protocol,domain,title,server,header,host,os,banner,baseprotocol,cert,icon_hash,lastupdatetime,protocol_zh,cname,uptime,status_code,country,region,city,asn,org,isp",
+	// 无 icon_hash 的全量字段：icon_hash 需额外权限（820001），此档降级后仍保留
+	// lastupdatetime 与全部识别字段（2026-08-06 真实 API 实测可返回）。
+	"ip,port,protocol,domain,title,server,header,host,os,banner,baseprotocol,cert,lastupdatetime,protocol_zh,cname,uptime,status_code,country,region,city,asn,org,isp",
+	// 实测可用的 14 字段集合
+	"ip,port,protocol,domain,title,server,header,country,region,city,asn,org,isp,status_code",
+	// 权限不足时的基础字段
+	"ip,port,protocol,domain,title,server,country",
 }
 
-// degradeFieldsOnPermissionError 检查是否为字段权限错误，返回降级字段或空串
-func (f *FofaAdapter) degradeFieldsOnPermissionError(body []byte) string {
+// isFofaPermissionError 判断响应是否为字段权限不足错误。
+func isFofaPermissionError(body []byte) bool {
 	var errCheck struct {
 		Err    interface{} `json:"error"`
 		ErrMsg string      `json:"errmsg"`
 	}
 	if json.Unmarshal(body, &errCheck) != nil {
-		return ""
+		return false
 	}
 	errMsg := errCheck.ErrMsg
 	if errMsg == "" {
@@ -335,11 +366,32 @@ func (f *FofaAdapter) degradeFieldsOnPermissionError(body []byte) string {
 			errMsg = s
 		}
 	}
-	if strings.Contains(errMsg, "没有权限") || strings.Contains(errMsg, "820001") {
-		logger.Warnf("fofa: 字段权限不足，降级到基础字段重试: %s", errMsg)
-		return "ip,port,protocol,domain,title,server,country"
+	return strings.Contains(errMsg, "没有权限") || strings.Contains(errMsg, "820001")
+}
+
+// executeFofaSearch 执行单次 FOFA API 调用（含字段权限多级降级）
+func (f *FofaAdapter) executeFofaSearch(query string, page, pageSize int, result **model.EngineResult) error {
+	encodedQuery := base64.StdEncoding.EncodeToString([]byte(query))
+	url := fmt.Sprintf("%s/api/v1/search/all", f.baseURL)
+
+	var resp *resty.Response
+	var err error
+	activeFields := fofaFieldSets[len(fofaFieldSets)-1]
+	for i, fields := range fofaFieldSets {
+		resp, err = f.searchWithFields(url, encodedQuery, page, pageSize, fields)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode() != 200 {
+			return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
+		}
+		if !isFofaPermissionError(resp.Body()) || i == len(fofaFieldSets)-1 {
+			activeFields = fields
+			break
+		}
+		logger.Warnf("fofa: 字段权限不足，降级到更少字段重试: %s", fields)
 	}
-	return ""
+	return parseFofaSearchResponse(resp.Body(), activeFields, page, pageSize, f.Name(), result)
 }
 
 // parseFofaSearchResponse 解析 FOFA 搜索响应
@@ -436,6 +488,50 @@ func normalizeFofaItem(item *FofaItem) *model.UnifiedAsset {
 	} else {
 		asset.BodySnippet = snippet
 	}
+
+	// Last seen: FOFA returns lastupdatetime (e.g. "2026-08-06 09:00:00").
+	if item.Lastupdatetime != "" {
+		asset.LastSeen = item.Lastupdatetime
+	}
+
+	// Fields without a dedicated unified slot are preserved under Extra.
+	extra := map[string]interface{}{}
+	if item.OS != "" {
+		extra["os"] = item.OS
+	}
+	if item.BaseProtocol != "" {
+		extra["baseprotocol"] = item.BaseProtocol
+	}
+	if item.Cert != "" {
+		extra["cert"] = item.Cert
+	}
+	if item.IconHash != "" {
+		extra["icon_hash"] = item.IconHash
+	}
+	if item.ProtocolZh != "" {
+		extra["protocol_zh"] = item.ProtocolZh
+	}
+	if item.CName != "" {
+		extra["cname"] = item.CName
+	}
+	if item.Uptime != "" {
+		extra["uptime"] = item.Uptime
+	}
+	if item.Host != "" {
+		extra["host"] = item.Host
+	}
+	// Full body/header text kept so truncation of the snippet loses nothing.
+	if item.Body != "" {
+		extra["body"] = item.Body
+	}
+	if item.Header != "" {
+		extra["header"] = item.Header
+	}
+	if item.Banner != "" {
+		extra["banner"] = item.Banner
+	}
+	mergeAssetExtra(asset, extra)
+	applyExtras(asset, item.Extra)
 
 	if asset.IP != "" && asset.Port > 0 {
 		buildFofaURL(asset)

@@ -29,27 +29,56 @@ type ShodanSearchResponse struct {
 	Error   string        `json:"error,omitempty"`
 }
 
+// ShodanLocation holds the geographic info Shodan nests under "location".
+type ShodanLocation struct {
+	CountryCode string `json:"country_code"`
+	CountryName string `json:"country_name"`
+	RegionCode  string `json:"region_code"`
+	City        string `json:"city"`
+}
+
 // ShodanMatch is a single Shodan result from the Host Search API.
 type ShodanMatch struct {
-	IP        string            `json:"ip_str"`
-	Port      int               `json:"port"`
-	Transport string            `json:"transport"`
-	Hostnames []string          `json:"hostnames"`
-	Domain    string            `json:"domain"`
-	Title     string            `json:"title"`
-	Server    string            `json:"server"`
-	HTTP      map[string]string `json:"http"`
-	Status    int               `json:"status"`
-	Country   string            `json:"country_code"`
-	Region    string            `json:"region_code"`
-	City      string            `json:"city"`
-	ASN       string            `json:"asn"`
-	Org       string            `json:"org"`
-	ISP       string            `json:"isp"`
-	OS        string            `json:"os"`
-	Product   string            `json:"product"`
-	Version   string            `json:"version"`
-	Data      string            `json:"data"`
+	IP        string   `json:"ip_str"`
+	Port      int      `json:"port"`
+	Transport string   `json:"transport"`
+	Hostnames []string `json:"hostnames"`
+	Domain    string   `json:"domain"`
+	Title     string   `json:"title"`
+	Server    string   `json:"server"`
+	// HTTP carries the nested http object (title/server/status_code/html/...).
+	// map[string]interface{} keeps every sub-key instead of failing to decode
+	// numeric values (e.g. status_code) into string fields.
+	HTTP     map[string]interface{} `json:"http"`
+	Status   int                    `json:"status"`
+	Country  string                 `json:"country_code"`
+	Region   string                 `json:"region_code"`
+	City     string                 `json:"city"`
+	ASN      string                 `json:"asn"`
+	Org      string                 `json:"org"`
+	ISP      string                 `json:"isp"`
+	OS       string                 `json:"os"`
+	Product  string                 `json:"product"`
+	Version  string                 `json:"version"`
+	Data     string                 `json:"data"`
+	Location *ShodanLocation        `json:"location"`
+	// Extra preserves any top-level keys Shodan returns that this struct does
+	// not declare (e.g. timestamp), so they are not silently dropped.
+	Extra map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON captures unknown top-level keys into Extra instead of
+// dropping them, while decoding declared fields as usual.
+func (m *ShodanMatch) UnmarshalJSON(data []byte) error {
+	type alias ShodanMatch
+	var aux alias
+	extra, err := rawUnknown(data, &aux)
+	if err != nil {
+		return err
+	}
+	*m = ShodanMatch(aux)
+	m.Extra = extra
+	return nil
 }
 
 // NewShodanAdapter 创建Shodan适配器
@@ -285,6 +314,18 @@ func normalizeShodanMatch(m *ShodanMatch) *model.UnifiedAsset {
 		StatusCode: m.Status, CountryCode: m.Country, Region: m.Region, City: m.City,
 		ASN: m.ASN, Org: m.Org, ISP: m.ISP,
 	}
+	// Shodan nests web fields and location under "http" and "location".
+	if m.Location != nil {
+		if asset.CountryCode == "" {
+			asset.CountryCode = m.Location.CountryCode
+		}
+		if asset.Region == "" {
+			asset.Region = m.Location.RegionCode
+		}
+		if asset.City == "" {
+			asset.City = m.Location.City
+		}
+	}
 	// Use first hostname if no domain
 	if asset.Host == "" && len(m.Hostnames) > 0 {
 		asset.Host = m.Hostnames[0]
@@ -295,12 +336,38 @@ func normalizeShodanMatch(m *ShodanMatch) *model.UnifiedAsset {
 	} else {
 		asset.BodySnippet = m.Data
 	}
-	// Shodan Host Search v1 does not include per-result timestamps;
-	// LastSeen is filled from the Extension's browser DOM extraction path.
-	_ = m.OS // OS field available if needed in the future
-	_ = m.Product
-	_ = m.Version
-	_ = m.HTTP
+	// Nested http object: fill title/server/status/body and keep every key.
+	if len(m.HTTP) > 0 {
+		if asset.Title == "" {
+			if v, ok := m.HTTP["title"].(string); ok {
+				asset.Title = v
+			}
+		}
+		if asset.Server == "" {
+			if v, ok := m.HTTP["server"].(string); ok {
+				asset.Server = v
+			}
+		}
+		if asset.StatusCode == 0 {
+			if v, ok := m.HTTP["status_code"].(float64); ok {
+				asset.StatusCode = int(v)
+			}
+		}
+		if asset.BodySnippet == "" {
+			if v, ok := m.HTTP["html"].(string); ok {
+				if len(v) > 200 {
+					asset.BodySnippet = v[:200]
+				} else {
+					asset.BodySnippet = v
+				}
+			}
+		}
+		// Preserve the whole http object (headers, html, ...) under Extra.
+		mergeAssetExtra(asset, map[string]interface{}{"http": m.HTTP})
+	}
+	// Capture unknown top-level fields (e.g. timestamp, ssl, opts) and promote
+	// any timestamp key to LastSeen.
+	applyExtras(asset, m.Extra)
 
 	if asset.IP != "" && asset.Port > 0 {
 		buildShodanURL(asset)

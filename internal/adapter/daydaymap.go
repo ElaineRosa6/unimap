@@ -37,6 +37,23 @@ type DayDayMapItem struct {
 	ASN        string  `json:"asn"`
 	Org        string  `json:"org"`
 	ISP        string  `json:"isp"`
+	// Extra preserves any top-level keys the API returns that this struct does
+	// not declare, so they are not silently dropped.
+	Extra map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON captures unknown top-level keys into Extra instead of
+// dropping them, while decoding declared fields as usual.
+func (d *DayDayMapItem) UnmarshalJSON(data []byte) error {
+	type alias DayDayMapItem
+	var aux alias
+	extra, err := rawUnknown(data, &aux)
+	if err != nil {
+		return err
+	}
+	*d = DayDayMapItem(aux)
+	d.Extra = extra
+	return nil
 }
 
 // DayDayMapAdapter DayDayMap引擎适配器
@@ -305,6 +322,8 @@ func normalizeDayDayMapItem(item *DayDayMapItem, source string) *model.UnifiedAs
 	} else {
 		asset.BodySnippet = item.Body
 	}
+	// Capture unknown top-level fields and promote any timestamp key.
+	applyExtras(asset, item.Extra)
 
 	if asset.IP != "" && asset.Port > 0 {
 		buildAssetURL(asset)

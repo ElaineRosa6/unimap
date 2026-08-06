@@ -242,6 +242,18 @@ const extractHunterJS = `
     var statusText = getCellText(5);
     var sm = statusText.match(/(\d{3})/);
     if (sm) asset.status_code = parseInt(sm[1]);
+    // ICP from column 6
+    var icpText = getCellText(6);
+    if (icpText) asset.icp = icpText;
+    // App/component from column 7 → product (falls back to title later)
+    var productText = getCellText(7);
+    if (productText) asset.product = productText;
+    // Tags from column 8 → extra.tags
+    var tagsText = getCellText(8);
+    if (tagsText) asset.tags = tagsText;
+    // Update time from column 10 → last_seen
+    var lastSeenText = getCellText(10);
+    if (lastSeenText) asset.last_seen = lastSeenText;
     // Region from column 9
     var regionText = getCellText(9);
     if (regionText) asset.region = regionText;

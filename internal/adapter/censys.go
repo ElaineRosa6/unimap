@@ -123,6 +123,9 @@ type CensysRawEntry struct {
 	AutonomousSystem *CensysAS        `json:"autonomous_system,omitempty"`
 	DNS              *CensysDNS       `json:"dns,omitempty"`
 	LastUpdatedAt    string           `json:"last_updated_at,omitempty"`
+	// Extra preserves host-level keys the Censys v3 resource may carry that
+	// CensysHostResource does not declare (e.g. operating_system).
+	Extra map[string]interface{} `json:"-"`
 }
 
 // NewCensysAdapter 创建Censys适配器
@@ -358,6 +361,10 @@ func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName strin
 		return fmt.Errorf("Censys v3 host response missing IP")
 	}
 
+	// Capture host-level keys the typed struct does not declare so no field
+	// returned by the v3 resource is silently dropped.
+	hostExtra := censysHostResourceExtras(body)
+
 	// Build raw data: each service becomes an entry with the host info merged
 	rawData := make([]interface{}, 0, len(resource.Services)+1)
 	for _, svc := range resource.Services {
@@ -372,6 +379,7 @@ func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName strin
 			AutonomousSystem: resource.AutonomousSystem,
 			DNS:              resource.DNS,
 			LastUpdatedAt:    resource.LastUpdatedAt,
+			Extra:            hostExtra,
 		}
 		rawData = append(rawData, entry)
 	}
@@ -383,6 +391,7 @@ func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName strin
 			AutonomousSystem: resource.AutonomousSystem,
 			DNS:              resource.DNS,
 			LastUpdatedAt:    resource.LastUpdatedAt,
+			Extra:            hostExtra,
 		})
 	}
 
@@ -392,6 +401,31 @@ func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName strin
 		Page: page, HasMore: false,
 	}
 	return nil
+}
+
+// censysHostResourceExtras extracts top-level keys from the Censys v3 host
+// resource that CensysHostResource does not declare, so they survive
+// persistence instead of being dropped by the typed decode.
+func censysHostResourceExtras(body []byte) map[string]interface{} {
+	var outer struct {
+		Result struct {
+			Resource map[string]interface{} `json:"resource"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &outer); err != nil {
+		return nil
+	}
+	known := jsonFieldNames(CensysHostResource{})
+	extra := make(map[string]interface{})
+	for k, v := range outer.Result.Resource {
+		if !known[k] {
+			extra[k] = v
+		}
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	return extra
 }
 
 // Normalize 标准化Censys结果
@@ -425,10 +459,12 @@ func normalizeCensysEntry(entry *CensysRawEntry, source string) []model.UnifiedA
 
 	asset := model.UnifiedAsset{
 		IP: entry.IP, Source: source, CountryCode: cc, Region: region, City: city,
-		ASN: asn, Org: org, ISP: org, Host: host,
+		ASN: asn, Org: org, ISP: org, Host: host, LastSeen: entry.LastUpdatedAt,
 	}
 
 	applyCensysServiceFields(entry, &asset)
+	// Preserve host-level keys the typed struct does not declare.
+	applyExtras(&asset, entry.Extra)
 	buildCensysURL(&asset)
 	return []model.UnifiedAsset{asset}
 }
