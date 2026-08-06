@@ -39,6 +39,8 @@ type EngineAdapter interface {
 
 请求流：`UQL → Parser → EngineOrchestrator → Adapter → EngineResult → Normalize → ResultMerger → cache/export`。
 
+Hunter 适配器支持主/备用 API Key 自动故障切换：主 key 返回鉴权（HTTP 401 或业务码 401xx）、积分耗尽/欠费（HTTP 402 或业务码 402xx，如 40204「积分用完了」）、限流（HTTP 429 或业务码 429xx）时自动改用备用 key（`engines.hunter.backup_api_key`），搜索与配额查询均走该切换；两类 key 都失败才返回错误。Hunter 业务码为 4-5 位，需按区间识别而非仅精确匹配 401/402/429。
+
 ## 截图与巡检
 
 - 截图、浏览器查询、调度截图与巡检共用 ScreenshotRouter；`cdp`、`extension`、`auto` 的配置模式和实际活动模式分离，仅在允许 fallback 时切换后端。

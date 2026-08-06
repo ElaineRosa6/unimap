@@ -19,7 +19,7 @@ cp configs/config.yaml.example configs/config.yaml
 2. 编辑 configs/config.yaml，至少配置：
 
 - engines.fofa.api_key + email（如启用）
-- engines.hunter.api_key（如启用）
+- engines.hunter.api_key + engines.hunter.backup_api_key（如启用；备用 key 在主 key 限流/鉴权/积分耗尽失败时自动切换）
 - engines.zoomeye.api_key（如启用）
 - engines.quake.api_key（如启用）
 - engines.shodan.api_key（如启用）
