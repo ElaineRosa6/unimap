@@ -292,6 +292,55 @@ func TestListTasks(t *testing.T) {
 	}
 }
 
+func TestListTasksUsesLiveNextRun(t *testing.T) {
+	s := NewScheduler("", "", 100)
+	s.Start()
+	defer s.Stop()
+
+	s.RegisterHandler(&testHandler{typ: TaskQuery})
+
+	task := &ScheduledTask{Name: "live-next", Type: TaskQuery, Enabled: true, CronExpr: "*/1 * * * *"}
+	s.AddTask(task)
+	// Let the cron goroutine process the add and compute the entry's Next.
+	time.Sleep(150 * time.Millisecond)
+
+	// Simulate a stale NextRunAt persisted from before a restart: the live
+	// cron entry already knows the next fire time, so ListTasks/GetTask must
+	// return that instead of the stale value.
+	s.mu.Lock()
+	stale := time.Now().Add(-time.Hour)
+	s.tasks[task.ID].NextRunAt = &stale
+	s.mu.Unlock()
+
+	s.mu.RLock()
+	live := s.getNextRunTime(task.ID)
+	s.mu.RUnlock()
+	if live.IsZero() {
+		t.Fatal("expected a live next-run time for a running cron task")
+	}
+
+	got, err := s.GetTask(task.ID)
+	if err != nil {
+		t.Fatalf("GetTask failed: %v", err)
+	}
+	if got.NextRunAt == nil || !got.NextRunAt.Equal(live) {
+		t.Fatalf("GetTask: expected live next run %v, got %v", live, got.NextRunAt)
+	}
+
+	var listed *ScheduledTask
+	for _, t := range s.ListTasks() {
+		if t.ID == task.ID {
+			listed = t
+		}
+	}
+	if listed == nil {
+		t.Fatal("ListTasks: task not returned")
+	}
+	if listed.NextRunAt == nil || !listed.NextRunAt.Equal(live) {
+		t.Fatalf("ListTasks: expected live next run %v, got %v", live, listed.NextRunAt)
+	}
+}
+
 func TestDeleteTask(t *testing.T) {
 	s := NewScheduler("", "", 100)
 	s.Start()
