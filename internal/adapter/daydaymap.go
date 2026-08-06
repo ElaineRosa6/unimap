@@ -42,7 +42,10 @@ func (n *FlexNumber) UnmarshalJSON(b []byte) error {
 		}
 		i, err := strconv.Atoi(str)
 		if err != nil {
-			return fmt.Errorf("parse numeric string %q: %w", str, err)
+			// DayDayMap 可能对敏感端口/状态码做掩码脱敏（如 "4****"），
+			// 这类值无法解析为整数时视为未知（0），避免单个字段格式漂移
+			// 丢弃整条资产。
+			return nil
 		}
 		*n = FlexNumber(i)
 		return nil
