@@ -310,6 +310,19 @@ type schedulerStore interface {
 	SaveTasks([]*ScheduledTask) error
 }
 
+// PushLogRecord is one notification push audit event captured by the scheduler
+// right before a task notification is fanned out to its channels. The web layer
+// adapts it into the persistent history repository (notification_push_log).
+type PushLogRecord struct {
+	TaskID        string
+	TaskName      string
+	ChannelIDs    []string
+	Status        string
+	ResultCount   int
+	ResultSummary string
+	Error         string
+}
+
 // Scheduler manages cron-based task scheduling with persistence.
 type Scheduler struct {
 	tasks      map[string]*ScheduledTask
@@ -333,4 +346,7 @@ type Scheduler struct {
 	notifyWg          sync.WaitGroup
 	notifyTimeout     time.Duration
 	stopping          bool
+	// recordPushLog persists a notification push audit event when set. Nil-safe:
+	// without a recorder the push still sends, it just isn't logged.
+	recordPushLog func(PushLogRecord) error
 }

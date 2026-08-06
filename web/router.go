@@ -153,6 +153,7 @@ func (r *Router) registerSchedulerRoutes() {
 	r.addAPIRoute("scheduler-task-enable", "POST", "/api/scheduler/tasks/enable", s.handleEnableTask, true)
 	r.addAPIRoute("scheduler-task-disable", "POST", "/api/scheduler/tasks/disable", s.handleDisableTask, true)
 	r.addAPIRoute("scheduler-history", "GET", "/api/scheduler/history", s.handleTaskHistory, true)
+	r.addAPIRoute("scheduler-push-logs", "GET", "/api/scheduler/push-logs", s.handleListPushLogs, true)
 }
 
 func (r *Router) registerNotificationRoutes() {

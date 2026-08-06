@@ -66,6 +66,13 @@ func (s *Scheduler) SetNotifyCfgProvider(provider func() *notify.NotifyGlobalCfg
 	s.notifyCfgProvider = provider
 }
 
+// SetNotificationLogRecorder installs an optional callback that persists a
+// notification push audit event (see history.NotificationPushLog). When unset,
+// pushes still send normally but are not recorded.
+func (s *Scheduler) SetNotificationLogRecorder(fn func(PushLogRecord) error) {
+	s.recordPushLog = fn
+}
+
 // Start begins the internal cron scheduler. Call this after registering
 // handlers and loading persisted tasks.
 func (s *Scheduler) Start() {

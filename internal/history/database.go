@@ -79,11 +79,34 @@ func (d *Database) InitSchema() error {
 		return fmt.Errorf("failed to create notify_push_state table: %w", err)
 	}
 
+	// notification_push_log is an append-only audit trail of every notification
+	// push from a scheduled task: when, which task, to which channels, and the
+	// outcome. notify_push_state above is the dedup state used by only_new; this
+	// table records the push events themselves so past pushes stay inspectable
+	// even after the in-memory scheduler history is trimmed.
+	if _, err := d.db.Exec(`
+		CREATE TABLE IF NOT EXISTS notification_push_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id TEXT NOT NULL,
+			task_name TEXT NOT NULL,
+			channel_ids TEXT NOT NULL,
+			status TEXT NOT NULL,
+			result_count INTEGER NOT NULL DEFAULT 0,
+			result_summary TEXT,
+			error TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`); err != nil {
+		return fmt.Errorf("failed to create notification_push_log table: %w", err)
+	}
+
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_op_history_type ON operation_history(operation_type)`,
 		`CREATE INDEX IF NOT EXISTS idx_op_history_created ON operation_history(created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_op_results_history ON operation_results(history_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_push_state_task ON notify_push_state(task_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_push_log_task ON notification_push_log(task_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_push_log_created ON notification_push_log(created_at)`,
 	}
 	for _, idx := range indexes {
 		if _, err := d.db.Exec(idx); err != nil {

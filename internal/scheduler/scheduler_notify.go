@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +35,7 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 
 	logger.Infof("[scheduler] notify: preparing to send to %d channels for task %s (status=%s)", len(channelIDs), task.ID, record.Status)
 	msg := s.buildNotificationMessage(task, record)
+	s.recordPushLogAudit(task, record, channelIDs, msg)
 	timeout := s.notifyTimeout
 	maxRetries := 0
 	if s.notifyCfgProvider != nil {
@@ -56,6 +59,50 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 		}
 		s.sendRegistryChannelNotification(chID, msg, timeout, maxRetries)
 	}
+}
+
+// recordPushLogAudit appends one persistent push-log row for the notification
+// being sent. Best-effort: a recorder failure is logged and never blocks the
+// push itself.
+func (s *Scheduler) recordPushLogAudit(task *ScheduledTask, record ExecutionRecord, channelIDs []string, msg notify.TaskNotification) {
+	if s.recordPushLog == nil {
+		return
+	}
+	if err := s.recordPushLog(PushLogRecord{
+		TaskID:        task.ID,
+		TaskName:      task.Name,
+		ChannelIDs:    channelIDs,
+		Status:        record.Status,
+		ResultCount:   parsePushResultCount(msg.Result),
+		ResultSummary: pushResultSummary(msg.Result),
+		Error:         record.Error,
+	}); err != nil {
+		logger.Errorf("[scheduler] notify: failed to record push log for task %s: %v", task.ID, err)
+	}
+}
+
+// pushResultCountRe matches the query-result header QueryRunner builds, e.g.
+// "新增 100 条（去重后）", "返回 100 条", "无新增资产（已全部推送过）".
+var pushResultCountRe = regexp.MustCompile(`(?:新增|返回)\s*(\d+)\s*条`)
+
+func parsePushResultCount(result string) int {
+	if m := pushResultCountRe.FindStringSubmatch(result); len(m) == 2 {
+		if n, err := strconv.Atoi(m[1]); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
+// pushResultSummary bounds the stored result text so the audit row stays small;
+// full asset detail is already persisted in the query history and workbook.
+const pushResultSummaryMaxLen = 300
+
+func pushResultSummary(result string) string {
+	if len(result) <= pushResultSummaryMaxLen {
+		return result
+	}
+	return result[:pushResultSummaryMaxLen]
 }
 
 func (s *Scheduler) shouldSendNotification(task *ScheduledTask, record ExecutionRecord) bool {

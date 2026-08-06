@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	historydb "github.com/unimap/project/internal/history"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/scheduler"
@@ -626,6 +627,38 @@ func (s *Server) handleTaskHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, history)
+}
+
+// handleListPushLogs returns the persisted notification push audit log,
+// newest first. It mirrors handleTaskHistory's limit handling.
+func (s *Server) handleListPushLogs(w http.ResponseWriter, r *http.Request) {
+	if s.historyRepo == nil {
+		writeSchedulerJSONError(w, http.StatusServiceUnavailable, "history repository not initialized")
+		return
+	}
+
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &limit); n == 1 && err == nil {
+			if limit < 1 || limit > 500 {
+				limit = 50
+			}
+		} else {
+			limit = 50
+		}
+	}
+
+	logs, err := s.historyRepo.ListNotificationLogs(limit)
+	if err != nil {
+		logger.Errorf("[scheduler] push logs query failed: %v", err)
+		writeSchedulerJSONError(w, http.StatusInternalServerError, "failed to list push logs")
+		return
+	}
+	if logs == nil {
+		logs = []historydb.NotificationPushLog{}
+	}
+
+	writeJSON(w, http.StatusOK, logs)
 }
 
 // mapToTaskPayload converts a raw map (from JSON) to a typed TaskPayload.
