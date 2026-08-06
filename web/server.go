@@ -646,16 +646,19 @@ func reloadNotifyChannelConfigs(reg *notify.Registry, cfg *config.Config) {
 	var chanCfgs []notify.ChannelConfig
 	for _, cc := range cfg.Notifications.Channels {
 		chanCfgs = append(chanCfgs, notify.ChannelConfig{
-			ID:             cc.ID,
-			Type:           cc.Type,
-			Enabled:        cc.Enabled,
-			WebhookURL:     cc.WebhookURL,
-			Secret:         cc.Secret,
-			AppID:          cc.AppID,
-			AppSecret:      cc.AppSecret,
-			ChatID:         cc.ChatID,
-			Headers:        cc.Headers,
-			AllowPrivateIP: cc.AllowPrivateIP,
+			ID:                       cc.ID,
+			Type:                     cc.Type,
+			Enabled:                  cc.Enabled,
+			WebhookURL:               cc.WebhookURL,
+			Secret:                   cc.Secret,
+			AppID:                    cc.AppID,
+			AppSecret:                cc.AppSecret,
+			ChatID:                   cc.ChatID,
+			Headers:                  cc.Headers,
+			AllowPrivateIP:           cc.AllowPrivateIP,
+			WeComMsgType:             cc.WeComMsgType,
+			WeComMentionedList:       cc.WeComMentionedList,
+			WeComMentionedMobileList: cc.WeComMentionedMobileList,
 		})
 	}
 	reg.Reload(chanCfgs)
