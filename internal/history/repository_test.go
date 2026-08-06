@@ -218,3 +218,102 @@ func TestListHistoryByType(t *testing.T) {
 		t.Fatalf("expected 2 query items, got %d", total)
 	}
 }
+
+func TestNotificationPushLogRoundTrip(t *testing.T) {
+	repo := setupTestDB(t)
+
+	// Empty before any push.
+	logs, err := repo.ListNotificationLogs(10)
+	if err != nil {
+		t.Fatalf("list empty push logs: %v", err)
+	}
+	if len(logs) != 0 {
+		t.Fatalf("expected no push logs, got %d", len(logs))
+	}
+
+	first := NotificationPushLog{
+		TaskID:        "task-a",
+		TaskName:      "FOFA 每日巡检",
+		ChannelIDs:    []string{"builtin-log", "wecom_ynmobile"},
+		Status:        "success",
+		ResultCount:   120,
+		ResultSummary: "**查询完成｜引擎: fofa ｜ 新增 120 条（去重后）**",
+	}
+	second := NotificationPushLog{
+		TaskID:        "task-b",
+		TaskName:      "Hunter 精简巡检",
+		ChannelIDs:    []string{"wecom_ynmobile"},
+		Status:        "failed",
+		ResultCount:   0,
+		ResultSummary: "无新增资产（已全部推送过）",
+		Error:         "webhook 40058 截断",
+	}
+	for _, l := range []NotificationPushLog{first, second} {
+		if err := repo.RecordNotificationLog(l); err != nil {
+			t.Fatalf("record push log: %v", err)
+		}
+	}
+
+	logs, err = repo.ListNotificationLogs(10)
+	if err != nil {
+		t.Fatalf("list push logs: %v", err)
+	}
+	if len(logs) != 2 {
+		t.Fatalf("expected 2 push logs, got %d", len(logs))
+	}
+	// Newest first.
+	if logs[0].TaskID != "task-b" || logs[1].TaskID != "task-a" {
+		t.Fatalf("expected newest-first order, got %s then %s", logs[0].TaskID, logs[1].TaskID)
+	}
+	// ChannelIDs JSON round-trip.
+	got := logs[0]
+	if len(got.ChannelIDs) != 1 || got.ChannelIDs[0] != "wecom_ynmobile" {
+		t.Fatalf("unexpected channel_ids: %v", got.ChannelIDs)
+	}
+	if got.Status != "failed" || got.Error != "webhook 40058 截断" {
+		t.Fatalf("unexpected log fields: %#v", got)
+	}
+	if got.ResultCount != 0 || got.ResultSummary != "无新增资产（已全部推送过）" {
+		t.Fatalf("unexpected result fields: %#v", got)
+	}
+	if got.CreatedAt.IsZero() {
+		t.Fatal("expected created_at to be set")
+	}
+
+	// Second row keeps multi-channel list.
+	gotFirst := logs[1]
+	if len(gotFirst.ChannelIDs) != 2 || gotFirst.ChannelIDs[1] != "wecom_ynmobile" {
+		t.Fatalf("unexpected first row channel_ids: %v", gotFirst.ChannelIDs)
+	}
+}
+
+func TestNotificationPushLogLimit(t *testing.T) {
+	repo := setupTestDB(t)
+	for i := range 3 {
+		if err := repo.RecordNotificationLog(NotificationPushLog{
+			TaskID: "t", TaskName: "n", ChannelIDs: []string{"log"}, Status: "success",
+		}); err != nil {
+			t.Fatalf("record push log %d: %v", i, err)
+		}
+	}
+
+	// limit<=0 or >500 falls back to 100; here it means all 3 rows.
+	for _, lim := range []int{0, -1, 600} {
+		logs, err := repo.ListNotificationLogs(lim)
+		if err != nil {
+			t.Fatalf("list with limit=%d: %v", lim, err)
+		}
+		if len(logs) != 3 {
+			t.Fatalf("limit=%d: expected 3 rows, got %d", lim, len(logs))
+		}
+	}
+
+	// Positive limit truncates newest first.
+	logs, err := repo.ListNotificationLogs(2)
+	if err != nil {
+		t.Fatalf("list with limit=2: %v", err)
+	}
+	if len(logs) != 2 {
+		t.Fatalf("limit=2: expected 2 rows, got %d", len(logs))
+	}
+}

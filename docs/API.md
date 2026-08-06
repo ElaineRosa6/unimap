@@ -172,6 +172,7 @@ SSRF、通知和重启验收。
 | POST | `/api/v1/scheduler/tasks/enable` | 启用 |
 | POST | `/api/v1/scheduler/tasks/disable` | 停用 |
 | GET | `/api/v1/scheduler/history` | 执行历史；可选 `task_id`、`task_type`、`status`、`limit` |
+| GET | `/api/v1/scheduler/push-logs` | 通知推送审计日志（持久化）；可选 `limit`（1-500，默认 50） |
 | GET/POST/DELETE | `/api/v1/notifications/channels` | 列出、保存、删除通知通道 |
 | POST | `/api/v1/notifications/channels/test` | 测试通道 |
 | POST | `/api/v1/notifications/reload` | 重载通知配置 |
@@ -181,6 +182,8 @@ SSRF、通知和重启验收。
 通知通道列表返回 `id`、`type`、`enabled`，以及编辑所需的非凭据字段 `app_id`、`chat_id`、`allow_private_ip`；不会返回 Webhook URL、签名 secret 或 app secret。编辑既有通道时，POST 请求可设置 `preserve_existing=true`，服务端会在同一配置事务内保留请求中留空的 Webhook URL、secret、app 凭据、chat ID 和 headers；该标志不能用于不存在的通道，也不能用于修改渠道类型。类型变更应删除旧渠道后按新类型创建。新建通道仍必须提供对应类型的全部必填字段。
 
 调度器任务请求的权威字段是 `web/scheduler_handlers.go` 中的创建/更新结构：`name`、`type`、`enabled`、`cron_expr`、`payload`、`timeout_seconds`、`max_retries`，以及可选 `notifications`、`schedule_type`、`run_at`、`delay_seconds`。任务响应额外包含只读 `runtime_status`（`scheduled`、`disabled`、`schedule_error`）和可选 `schedule_error`；`enabled` 仍表示用户期望，不代表任务一定已成功布置。当前工作区定义 23 种已提交任务类型，包含备份任务。
+
+`GET /api/v1/scheduler/push-logs` 返回最近的通知推送审计日志（按 `id` 倒序），每条含 `task_id`、`task_name`、`channel_ids`、`status`、`result_count`、`result_summary`、`error`、`created_at`。该表是追加型审计记录：每次调度任务的通知实际分发展开时写入一行，`result_count` 从执行结果文本（如"新增 120 条（去重后）"）解析而来，`result_summary` 截断到 300 字符。它与 `notify_push_state`（按资产去重的 only_new 状态表）相互独立：前者记录"推送事件本身"，后者记录"哪些资产已推过"。
 
 ### 通用规则
 

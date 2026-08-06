@@ -2,6 +2,7 @@ package history
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -235,4 +236,67 @@ func (r *Repository) RecordPushedAssets(taskID string, keys []string) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// NotificationPushLog is one audit record of a notification push event from a
+// scheduled task. It is append-only; notify_push_state above holds the dedup
+// state used by only_new filtering, whereas this log records the push events
+// themselves (when, which task, to which channels, outcome).
+type NotificationPushLog struct {
+	ID            int64     `json:"id"`
+	TaskID        string    `json:"task_id"`
+	TaskName      string    `json:"task_name"`
+	ChannelIDs    []string  `json:"channel_ids"`
+	Status        string    `json:"status"`
+	ResultCount   int       `json:"result_count"`
+	ResultSummary string    `json:"result_summary"`
+	Error         string    `json:"error,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// RecordNotificationLog appends a push-log row.
+func (r *Repository) RecordNotificationLog(l NotificationPushLog) error {
+	chans, err := json.Marshal(l.ChannelIDs)
+	if err != nil {
+		chans = []byte("[]")
+	}
+	if l.CreatedAt.IsZero() {
+		l.CreatedAt = time.Now()
+	}
+	_, err = r.db.Exec(`
+		INSERT INTO notification_push_log
+			(task_id, task_name, channel_ids, status, result_count, result_summary, error, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.TaskID, l.TaskName, string(chans), l.Status, l.ResultCount, l.ResultSummary, l.Error, l.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to insert notification_push_log: %w", err)
+	}
+	return nil
+}
+
+// ListNotificationLogs returns the most recent push-log rows, newest first.
+func (r *Repository) ListNotificationLogs(limit int) ([]NotificationPushLog, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := r.db.Query(`
+		SELECT id, task_id, task_name, channel_ids, status, result_count, result_summary, error, created_at
+		FROM notification_push_log ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query notification_push_log: %w", err)
+	}
+	defer rows.Close()
+
+	logs := make([]NotificationPushLog, 0, limit)
+	for rows.Next() {
+		var l NotificationPushLog
+		var chans string
+		if err := rows.Scan(&l.ID, &l.TaskID, &l.TaskName, &chans, &l.Status, &l.ResultCount, &l.ResultSummary, &l.Error, &l.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan notification_push_log: %w", err)
+		}
+		_ = json.Unmarshal([]byte(chans), &l.ChannelIDs)
+		logs = append(logs, l)
+	}
+	return logs, rows.Err()
 }

@@ -17,6 +17,13 @@ configs/config.yaml
 
 # Live monitoring target queries (target intel — local/server only, never commit)
 tools/cloud-config-gen/ynmobile_targets.json
+# Server-side ops scripts that embed target queries, server task UUIDs, or
+# container paths — deployed via scp, kept out of the public repo
+tools/cloud-config-gen/update_tasks_v2.py
+tools/cloud-config-gen/update_quake_weekly.py
+tools/cloud-config-gen/hunter_history.py
+tools/cloud-config-gen/list_hunter_tasks.py
+tools/cloud-config-gen/get_hunter_quota.py
 
 # Logs
 *.log

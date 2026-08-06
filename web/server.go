@@ -585,6 +585,23 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 	sched.RegisterHandler(scheduler.NewICPQueryRunner(srv.icpConfigProvider, srv.icpRepo, alertManager))
 	sched.RegisterHandler(scheduler.NewICPImportRunner(utils.AppDataDir("icp_imports"), sched))
 
+	// 持久化推送审计：每次通知推送追加到 history 库的 notification_push_log，
+	// 与仅作 only_new 去重状态的 notify_push_state 区分（这是 append-only 推送事件日志）。
+	if srv != nil && srv.historyRepo != nil {
+		repo := srv.historyRepo
+		sched.SetNotificationLogRecorder(func(rec scheduler.PushLogRecord) error {
+			return repo.RecordNotificationLog(historydb.NotificationPushLog{
+				TaskID:        rec.TaskID,
+				TaskName:      rec.TaskName,
+				ChannelIDs:    rec.ChannelIDs,
+				Status:        rec.Status,
+				ResultCount:   rec.ResultCount,
+				ResultSummary: rec.ResultSummary,
+				Error:         rec.Error,
+			})
+		})
+	}
+
 	if err := sched.Load(); err != nil {
 		logger.Warnf("Failed to load scheduled tasks: %v", err)
 	}
