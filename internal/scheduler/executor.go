@@ -6,29 +6,63 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
+	"github.com/unimap/project/internal/alerting"
+	"github.com/unimap/project/internal/backup"
 	"github.com/unimap/project/internal/distributed"
 	"github.com/unimap/project/internal/exporter"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/tamper"
+	"github.com/unimap/project/internal/utils"
 )
 
 // --- QueryRunner (ST-01) ---
 
+const (
+	defaultQueryNotificationDetailLimit = 50
+	maxQueryNotificationDetailLimit     = 100
+	// maxQueryNotificationDetailBytes bounds the asset detail body so the whole
+	// notification fits under the WeCom markdown limit (4096 bytes after the
+	// channel header) while leaving room for the "另有 N 条已持久化" trailer.
+	maxQueryNotificationDetailBytes = 3800
+)
+
+var notificationWhitespace = regexp.MustCompile(`\s+`)
+
 // QueryRunner executes scheduled UQL queries via QueryAppService.
 type QueryRunner struct {
-	querySvc *service.QueryAppService
+	querySvc      *service.QueryAppService
+	screenshotSvc *service.ScreenshotAppService
+	mgr           *screenshot.Manager
+	browserRouter service.BrowserRouter
+	health        *SessionHealthTracker // shared session health tracker for circuit breaking
+	exportDir     string                // directory for format=excel workbooks (default AppDataDir("exports"))
 }
 
 // NewQueryRunner creates a QueryRunner.
 func NewQueryRunner(b *service.QueryAppService) *QueryRunner {
 	return &QueryRunner{querySvc: b}
+}
+
+// NewQueryRunnerWithBrowser creates a query runner capable of completing the
+// durable Bridge collect+capture workflow. An optional SessionHealthTracker
+// enables per-engine circuit breaking for browser tasks.
+func NewQueryRunnerWithBrowser(b *service.QueryAppService, screenshotSvc *service.ScreenshotAppService, mgr *screenshot.Manager, browserRouter service.BrowserRouter, health ...*SessionHealthTracker) *QueryRunner {
+	r := &QueryRunner{querySvc: b, screenshotSvc: screenshotSvc, mgr: mgr, browserRouter: browserRouter}
+	if len(health) > 0 && health[0] != nil {
+		r.health = health[0]
+	}
+	return r
 }
 
 func (r *QueryRunner) Type() TaskType { return TaskQuery }
@@ -38,37 +72,321 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 		return "", fmt.Errorf("query service not available")
 	}
 
-	if payload == nil || payload.Query == "" {
-		return "", fmt.Errorf("missing 'query' in payload")
+	query := extractString(payload, "query", "")
+	if query == "" {
+		return "", fmt.Errorf("%s runner: missing 'query' in payload", r.Type())
 	}
 
-	engines := payload.Engines
+	engines := extractStrings(payload, "engines", nil)
 	if len(engines) == 0 {
 		engines = extractStrings(payload, "engine", []string{})
+	}
+	engines = r.querySvc.ResolveEngines(engines)
+	if len(engines) == 0 {
+		return "", fmt.Errorf("no query engines available")
 	}
 	pageSize := payload.PageSize
 	if pageSize == 0 {
 		pageSize = 100
 	}
 
-	resp, err := r.querySvc.ExecuteQuery(ctx, payload.Query, engines, pageSize)
+	var resp *service.QueryResponse
+	var browserOutcome service.BrowserQueryOutcome
+	var err error
+	if payload.BrowserQuery {
+		action := strings.TrimSpace(payload.BrowserAction)
+		if action == "" {
+			action = "collect_and_capture"
+		}
+		if action != "collect_and_capture" {
+			return "", fmt.Errorf("scheduled browser query requires browser_action=collect_and_capture")
+		}
+		if r.browserRouter == nil || r.screenshotSvc == nil {
+			return "", fmt.Errorf("scheduled browser query requires an available Bridge screenshot provider")
+		}
+		// Circuit breaker: skip engines whose session health is tripped.
+		if r.health != nil {
+			var allowed []string
+			var blocked []string
+			for _, eng := range engines {
+				if r.health.AllowBrowserTask(eng) {
+					allowed = append(allowed, eng)
+				} else {
+					blocked = append(blocked, eng)
+				}
+			}
+			if len(blocked) > 0 {
+				logger.Warnf("browser query: skipping circuit-open engines: %s", strings.Join(blocked, ", "))
+			}
+			if len(allowed) == 0 {
+				return "", fmt.Errorf("all engines circuit-open, browser query skipped (blocked: %s)", strings.Join(blocked, ", "))
+			}
+			engines = allowed
+		}
+		queryID := strings.TrimSpace(payload.QueryID)
+		if queryID == "" {
+			queryID = fmt.Sprintf("scheduled_query_%d", time.Now().UnixNano())
+		}
+		resp, browserOutcome, err = r.querySvc.ExecuteQueryWithBrowserWorkflow(ctx, query, engines, pageSize, service.BrowserQueryWorkflowOptions{
+			Action:             action,
+			QueryID:            queryID,
+			AutoCaptureEnabled: true,
+			ScreenshotApp:      r.screenshotSvc,
+			ScreenshotManager:  r.mgr,
+			BrowserRouter:      r.browserRouter,
+			RequireComplete:    true,
+			RequirePersistence: true,
+		})
+	} else {
+		resp, err = r.querySvc.ExecuteQuery(ctx, query, engines, pageSize)
+	}
 	if err != nil {
 		return "", fmt.Errorf("query execution failed: %w", err)
 	}
 
+	// Incremental push: drop assets already pushed for this task, keeping only
+	// the new fingerprints. The task name scopes the dedup set (see
+	// taskNameFromContext); a re-created task with the same name keeps its
+	// pushed history. Assets without an IP key cannot be deduplicated and are
+	// always delivered, but never recorded.
+	var onlyNewTaskID string
+	var onlyNewKeys []string
+	var pushed map[string]struct{}
+	if payload.OnlyNew {
+		onlyNewTaskID = taskNameFromContext(ctx)
+		if onlyNewTaskID == "" {
+			return "", fmt.Errorf("only_new query task requires a task name")
+		}
+		pushed, err = r.querySvc.LoadPushedAssetKeys(onlyNewTaskID)
+		if err != nil {
+			return "", fmt.Errorf("load pushed asset keys for %s: %w", onlyNewTaskID, err)
+		}
+		fresh := make([]model.UnifiedAsset, 0, len(resp.Assets))
+		freshKeys := make([]string, 0, len(resp.Assets))
+		for _, asset := range resp.Assets {
+			key := asset.Key()
+			if key == "" {
+				fresh = append(fresh, asset)
+				continue
+			}
+			if _, seen := pushed[key]; seen {
+				continue
+			}
+			fresh = append(fresh, asset)
+			freshKeys = append(freshKeys, key)
+		}
+		resp.Assets = fresh
+		resp.TotalCount = len(fresh)
+		onlyNewKeys = freshKeys
+	}
+
+	// Optional Excel export: when format is excel/xlsx and assets remain after
+	// the incremental filter, export the (deduplicated) assets to a workbook and
+	// embed its path so the notification layer delivers it as a file message.
+	// No assets means no workbook is produced (the "no new assets" message still
+	// goes out as text).
+	var excelPath string
+	if strings.EqualFold(payload.Format, "excel") || strings.EqualFold(payload.Format, "xlsx") {
+		if len(resp.Assets) > 0 {
+			if excelPath, err = r.exportAssetsExcel(ctx, resp.Assets); err != nil {
+				return "", fmt.Errorf("export query assets to excel: %w", err)
+			}
+		}
+	}
+
 	var b strings.Builder
-	fmt.Fprintf(&b, "UQL 查询完成\n\n")
-	fmt.Fprintf(&b, "📋 查询: %s\n", payload.Query)
-	fmt.Fprintf(&b, "📋 引擎: %s\n", strings.Join(engines, ","))
-	fmt.Fprintf(&b, "📋 页大小: %d\n", pageSize)
-	fmt.Fprintf(&b, "📊 共返回 %d 条资产\n\n", resp.TotalCount)
-	for eng, count := range resp.EngineStats {
-		fmt.Fprintf(&b, "✅ %s: %d 条\n", eng, count)
+	// Compact header: engine + total. The raw UQL is intentionally not replayed
+	// here — the scheduled task name already identifies the query, and dumping a
+	// 40-clause query made the push unusable while crowding asset rows out of
+	// the notification byte budget.
+	if payload.OnlyNew && resp.TotalCount > 0 {
+		fmt.Fprintf(&b, "**查询完成｜引擎: %s ｜新增 %d 条（去重后）**\n", strings.Join(engines, "+"), resp.TotalCount)
+	} else if payload.OnlyNew {
+		fmt.Fprintf(&b, "**查询完成｜引擎: %s ｜无新增资产（已全部推送过）**\n", strings.Join(engines, "+"))
+	} else {
+		fmt.Fprintf(&b, "**查询完成｜引擎: %s ｜返回 %d 条**\n", strings.Join(engines, "+"), resp.TotalCount)
+	}
+	if len(resp.EngineStats) > 1 {
+		for eng, count := range resp.EngineStats {
+			fmt.Fprintf(&b, "✅ %s: %d 条  ", eng, count)
+		}
+		fmt.Fprintf(&b, "\n")
 	}
 	for _, e := range resp.Errors {
 		fmt.Fprintf(&b, "❌ %s\n", e)
 	}
+	appendQueryAssetDetails(&b, resp.Assets, queryNotificationDetailLimit(payload))
+	if payload.BrowserQuery {
+		enginesWithScreenshots := make([]string, 0, len(browserOutcome.AutoCapturedPaths))
+		for engine := range browserOutcome.AutoCapturedPaths {
+			enginesWithScreenshots = append(enginesWithScreenshots, engine)
+		}
+		sort.Strings(enginesWithScreenshots)
+		for _, engine := range enginesWithScreenshots {
+			path := browserOutcome.AutoCapturedPaths[engine]
+			if _, statErr := os.Stat(path); statErr != nil {
+				return "", fmt.Errorf("Bridge screenshot unavailable for %s: %w", engine, statErr)
+			}
+			fmt.Fprintf(&b, "✅ %s Bridge 截图保存: %s\n", engine, path)
+		}
+		fmt.Fprintf(&b, "✅ Bridge 采集结果已合并并持久化\n")
+	}
+	if payload.OnlyNew && len(onlyNewKeys) > 0 {
+		if err := r.querySvc.RecordPushedAssets(onlyNewTaskID, onlyNewKeys); err != nil {
+			return "", fmt.Errorf("record pushed asset keys for %s: %w", onlyNewTaskID, err)
+		}
+	}
+	if excelPath != "" {
+		fmt.Fprintf(&b, "✅ Excel 文件保存: %s\n", excelPath)
+	}
 	return sanitizeUTF8(b.String()), nil
+}
+
+// WithExportDir sets the directory where format=excel query tasks write their
+// workbooks. When empty, the default AppDataDir("exports") is used.
+func (r *QueryRunner) WithExportDir(dir string) *QueryRunner {
+	r.exportDir = dir
+	return r
+}
+
+// exportAssetsExcel exports the given assets to a timestamped xlsx workbook
+// named after the task (task names are scheduler identifiers; sanitized for use
+// as a file name). Returns the written path.
+func (r *QueryRunner) exportAssetsExcel(ctx context.Context, assets []model.UnifiedAsset) (string, error) {
+	dir := strings.TrimSpace(r.exportDir)
+	if dir == "" {
+		dir = utils.AppDataDir("exports")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	name := "query"
+	if taskName := taskNameFromContext(ctx); taskName != "" {
+		name = safeFileName(taskName)
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%s_%d.xlsx", name, time.Now().Unix()))
+	if err := exporter.NewExcelExporter().ExportFull(assets, path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// safeFileName strips characters unsafe for a file name component from a task
+// name (path separators, whitespace, punctuation).
+func safeFileName(name string) string {
+	return regexp.MustCompile(`[^A-Za-z0-9._-]+`).ReplaceAllString(strings.TrimSpace(name), "_")
+}
+
+func queryNotificationDetailLimit(payload *model.TaskPayload) int {
+	limit := extractInt(payload, "notification_detail_limit", defaultQueryNotificationDetailLimit)
+	if limit < 1 {
+		return defaultQueryNotificationDetailLimit
+	}
+	if limit > maxQueryNotificationDetailLimit {
+		return maxQueryNotificationDetailLimit
+	}
+	return limit
+}
+
+// queryNotificationTableHeader opens the markdown pipe-table for asset rows.
+// DingTalk/Feishu and the WeCom client render pipe tables; cells never contain
+// '|' because queryAssetRow escapes them.
+const queryNotificationTableHeader = "\n| 资产 | 标题 | 状态 |\n| --- | --- | --- |\n"
+
+func appendQueryAssetDetails(b *strings.Builder, assets []model.UnifiedAsset, limit int) {
+	if len(assets) == 0 {
+		return
+	}
+	// Reserve room for the trailer line so "另有 N 条已持久化" survives the byte
+	// budget instead of being silently dropped by the truncation.
+	const trailerReserve = 96
+	b.WriteString(queryNotificationTableHeader)
+	shown := 0
+	for shown < min(len(assets), limit) {
+		row := queryAssetRow(assets[shown])
+		if b.Len()+len(row) > maxQueryNotificationDetailBytes-trailerReserve {
+			break
+		}
+		b.WriteString(row)
+		shown++
+	}
+	if remaining := len(assets) - shown; remaining > 0 {
+		fmt.Fprintf(b, "… 另有 %d 条结果已持久化，通知中未展开。\n", remaining)
+	}
+}
+
+// queryAssetRow renders one asset as a compact single table row. Columns are
+// 资产 (host:port), 标题, 状态 — the fields that matter most for triage while
+// keeping each row small enough to show far more assets than the old verbose
+// multi-line bullet format.
+func queryAssetRow(asset model.UnifiedAsset) string {
+	target := assetEndpoint(asset)
+	if target == "" {
+		target = firstNonEmpty(asset.Host, asset.IP, asset.URL, "未知")
+	}
+	return fmt.Sprintf("| %s | %s | %s |\n",
+		tableCell(target, 22),
+		tableCell(notificationField(asset.Title), 22),
+		tableCell(assetProtocolStatus(asset), 16),
+	)
+}
+
+// tableCell sanitizes a value for a markdown table cell: escapes pipes and
+// newlines (which would break the row layout) and truncates to maxRunes.
+func tableCell(v string, maxRunes int) string {
+	v = strings.ReplaceAll(v, "|", "｜")
+	v = strings.ReplaceAll(v, "\n", " ")
+	return truncateRunes(v, maxRunes)
+}
+
+// truncateRunes truncates s to at most maxRunes runes (CJK-safe) and appends
+// an ellipsis when text was cut.
+func truncateRunes(s string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	if maxRunes == 1 {
+		return string(runes[:1])
+	}
+	return string(runes[:maxRunes-1]) + "…"
+}
+
+func assetEndpoint(asset model.UnifiedAsset) string {
+	return asset.Key()
+}
+
+func assetProtocolStatus(asset model.UnifiedAsset) string {
+	parts := make([]string, 0, 2)
+	if asset.Protocol != "" {
+		parts = append(parts, asset.Protocol)
+	}
+	if asset.StatusCode > 0 {
+		parts = append(parts, fmt.Sprintf("HTTP %d", asset.StatusCode))
+	}
+	return strings.Join(parts, " / ")
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return "未知资产"
+}
+
+func notificationField(value string) string {
+	value = notificationWhitespace.ReplaceAllString(strings.TrimSpace(value), " ")
+	value = strings.NewReplacer("<", "‹", ">", "›", "`", "'", "[", "［", "]", "］").Replace(value)
+	runes := []rune(value)
+	if len(runes) > 160 {
+		value = string(runes[:157]) + "..."
+	}
+	return value
 }
 
 // --- SearchScreenshotRunner (ST-02) ---
@@ -92,11 +410,11 @@ func (r *SearchScreenshotRunner) Execute(ctx context.Context, payload *model.Tas
 	}
 
 	engine := extractString(payload, "engine", "")
-	query := payload.Query
+	query := extractString(payload, "query", "")
 	queryID := extractString(payload, "query_id", "")
 
 	if engine == "" || query == "" {
-		return "", fmt.Errorf("missing 'engine' or 'query' in payload")
+		return "", fmt.Errorf("%s runner: missing 'engine' or 'query' in payload", r.Type())
 	}
 
 	path, eng, q, id, err := r.screenshotSvc.CaptureSearchEngineResult(ctx, r.mgr, engine, query, queryID)
@@ -121,11 +439,16 @@ func (r *SearchScreenshotRunner) Execute(ctx context.Context, payload *model.Tas
 type BatchScreenshotRunner struct {
 	screenshotSvc *service.ScreenshotAppService
 	mgr           *screenshot.Manager
+	repo          *batchdb.Repository
 }
 
 // NewBatchScreenshotRunner creates a BatchScreenshotRunner.
-func NewBatchScreenshotRunner(svc *service.ScreenshotAppService, mgr *screenshot.Manager) *BatchScreenshotRunner {
-	return &BatchScreenshotRunner{screenshotSvc: svc, mgr: mgr}
+func NewBatchScreenshotRunner(svc *service.ScreenshotAppService, mgr *screenshot.Manager, repos ...*batchdb.Repository) *BatchScreenshotRunner {
+	r := &BatchScreenshotRunner{screenshotSvc: svc, mgr: mgr}
+	if len(repos) > 0 {
+		r.repo = repos[0]
+	}
+	return r
 }
 
 func (r *BatchScreenshotRunner) Type() TaskType { return TaskBatchScreenshot }
@@ -137,10 +460,13 @@ func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload *model.Task
 
 	urls := extractStrings(payload, "urls", []string{})
 	if len(urls) == 0 {
-		return "", fmt.Errorf("missing 'urls' in payload")
+		return "", fmt.Errorf("%s runner: missing 'urls' in payload", r.Type())
 	}
 
 	batchID := extractString(payload, "batch_id", "")
+	if batchID == "" {
+		batchID = fmt.Sprintf("scheduled_%d", time.Now().UnixNano())
+	}
 	concurrency := extractInt(payload, "concurrency", 5)
 
 	req := service.BatchURLsRequest{
@@ -149,9 +475,27 @@ func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload *model.Task
 		Concurrency: concurrency,
 	}
 
+	startedAt := time.Now()
+	if r.repo != nil {
+		if err := r.repo.SaveJob(&batchdb.BatchJobRecord{ID: batchID, Status: "running", Total: len(urls), StartedAt: startedAt}); err != nil {
+			return "", fmt.Errorf("persist batch screenshot start: %w", err)
+		}
+	}
 	resp, err := r.screenshotSvc.CaptureBatchURLs(ctx, r.mgr, req)
 	if err != nil {
+		if r.repo != nil {
+			endedAt := time.Now()
+			if saveErr := r.repo.SaveJob(&batchdb.BatchJobRecord{ID: batchID, Status: "failed", Total: len(urls), Error: err.Error(), StartedAt: startedAt, EndedAt: &endedAt}); saveErr != nil {
+				return "", fmt.Errorf("batch screenshot failed: %v; persist failure: %w", err, saveErr)
+			}
+		}
 		return "", fmt.Errorf("batch screenshot failed: %w", err)
+	}
+	if r.repo != nil {
+		endedAt := time.Now()
+		if err := r.repo.SaveJob(&batchdb.BatchJobRecord{ID: batchID, Status: "completed", Total: resp.Total, Completed: len(resp.Results), Success: resp.Success, Failed: resp.Failed, Results: resp.Results, StartedAt: startedAt, EndedAt: &endedAt}); err != nil {
+			return "", fmt.Errorf("persist completed batch screenshot: %w", err)
+		}
 	}
 
 	var b strings.Builder
@@ -171,13 +515,43 @@ func (r *BatchScreenshotRunner) Execute(ctx context.Context, payload *model.Task
 
 // TamperCheckRunner executes scheduled tamper checks.
 type TamperCheckRunner struct {
-	tamperSvc        *service.TamperAppService
-	allocatorFactory service.TamperAllocatorFactory
+	tamperSvc       *service.TamperAppService
+	pageLoader      service.TamperPageLoader
+	evidenceCapture tamperEvidenceCapturer
+	evidenceManager *screenshot.Manager
+	evidenceEnabled func() bool
 }
 
 // NewTamperCheckRunner creates a TamperCheckRunner.
-func NewTamperCheckRunner(svc *service.TamperAppService, af service.TamperAllocatorFactory) *TamperCheckRunner {
-	return &TamperCheckRunner{tamperSvc: svc, allocatorFactory: af}
+func NewTamperCheckRunner(svc *service.TamperAppService, loader service.TamperPageLoader) *TamperCheckRunner {
+	return &TamperCheckRunner{tamperSvc: svc, pageLoader: loader}
+}
+
+type tamperEvidenceCapturer interface {
+	CaptureTargetWebsite(
+		ctx context.Context,
+		mgr *screenshot.Manager,
+		targetURL, ip, port, protocol, queryID string,
+	) (path, normalizedURL, normalizedIP, normalizedPort, normalizedProtocol, normalizedQueryID string, err error)
+}
+
+// NewTamperCheckRunnerWithEvidence creates a tamper runner with optional
+// evidence capture. Production keeps enabled=false until controlled cloud
+// page-change and browser SSRF acceptance have both passed.
+func NewTamperCheckRunnerWithEvidence(
+	svc *service.TamperAppService,
+	loader service.TamperPageLoader,
+	capturer tamperEvidenceCapturer,
+	mgr *screenshot.Manager,
+	enabled func() bool,
+) *TamperCheckRunner {
+	return &TamperCheckRunner{
+		tamperSvc:       svc,
+		pageLoader:      loader,
+		evidenceCapture: capturer,
+		evidenceManager: mgr,
+		evidenceEnabled: enabled,
+	}
 }
 
 func (r *TamperCheckRunner) Type() TaskType { return TaskTamperCheck }
@@ -189,7 +563,7 @@ func (r *TamperCheckRunner) Execute(ctx context.Context, payload *model.TaskPayl
 
 	urls := extractStrings(payload, "urls", []string{})
 	if len(urls) == 0 {
-		return "", fmt.Errorf("missing 'urls' in payload")
+		return "", fmt.Errorf("%s runner: missing 'urls' in payload", r.Type())
 	}
 
 	concurrency := extractInt(payload, "concurrency", 5)
@@ -201,14 +575,18 @@ func (r *TamperCheckRunner) Execute(ctx context.Context, payload *model.TaskPayl
 		Mode:        mode,
 	}
 
-	resp, err := r.tamperSvc.Check(ctx, req, r.allocatorFactory)
+	resp, err := r.tamperSvc.Check(ctx, req, r.pageLoader)
 	if err != nil {
 		return "", fmt.Errorf("tamper check failed: %w", err)
+	}
+	evidencePaths, err := r.captureEvidence(ctx, resp.Results)
+	if err != nil {
+		return "", err
 	}
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "篡改检测完成（模式: %s）：共 %d 个 URL\n\n", mode, len(resp.Results))
-	for _, r := range resp.Results {
+	for i, r := range resp.Results {
 		switch r.Status {
 		case "tampered":
 			fmt.Fprintf(&b, "⚠️ 已篡改 %s", r.URL)
@@ -216,6 +594,9 @@ func (r *TamperCheckRunner) Execute(ctx context.Context, payload *model.TaskPayl
 				fmt.Fprintf(&b, " — 变更区域: %s", strings.Join(r.TamperedSegments, ", "))
 			}
 			b.WriteString("\n")
+			if path := evidencePaths[i]; path != "" {
+				fmt.Fprintf(&b, "  📷 证据截图保存: %s\n", path)
+			}
 		case "no_baseline":
 			fmt.Fprintf(&b, "🆕 首次检测 %s — 已建立基线\n", r.URL)
 		case "unreachable":
@@ -233,16 +614,60 @@ func (r *TamperCheckRunner) Execute(ctx context.Context, payload *model.TaskPayl
 	return sanitizeUTF8(b.String()), nil
 }
 
+func (r *TamperCheckRunner) captureEvidence(ctx context.Context, results []tamper.TamperCheckResult) (map[int]string, error) {
+	if r.evidenceEnabled == nil || !r.evidenceEnabled() {
+		return nil, nil
+	}
+	if r.evidenceCapture == nil {
+		return nil, fmt.Errorf("tamper evidence capture is enabled but screenshot provider is unavailable")
+	}
+
+	paths := make(map[int]string)
+	for i := range results {
+		result := &results[i]
+		if !result.Tampered && !strings.EqualFold(strings.TrimSpace(result.Status), "tampered") {
+			continue
+		}
+		queryID := fmt.Sprintf("tamper_evidence_%d_%d", time.Now().UnixNano(), i)
+		path, _, _, _, _, _, err := r.evidenceCapture.CaptureTargetWebsite(
+			ctx,
+			r.evidenceManager,
+			result.URL,
+			"",
+			"",
+			"",
+			queryID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("capture tamper evidence for %s: %w", result.URL, err)
+		}
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return nil, fmt.Errorf("capture tamper evidence for %s: screenshot path is empty", result.URL)
+		}
+		if _, err := os.Stat(path); err != nil {
+			return nil, fmt.Errorf("capture tamper evidence for %s: verify screenshot: %w", result.URL, err)
+		}
+		paths[i] = path
+	}
+	return paths, nil
+}
+
 // --- URLReachabilityRunner (ST-05) ---
 
 // URLReachabilityRunner executes scheduled URL reachability checks.
 type URLReachabilityRunner struct {
 	monitorSvc *service.MonitorAppService
+	alerts     *alerting.Manager
 }
 
 // NewURLReachabilityRunner creates a URLReachabilityRunner.
-func NewURLReachabilityRunner(svc *service.MonitorAppService) *URLReachabilityRunner {
-	return &URLReachabilityRunner{monitorSvc: svc}
+func NewURLReachabilityRunner(svc *service.MonitorAppService, alerts ...*alerting.Manager) *URLReachabilityRunner {
+	r := &URLReachabilityRunner{monitorSvc: svc}
+	if len(alerts) > 0 {
+		r.alerts = alerts[0]
+	}
+	return r
 }
 
 func (r *URLReachabilityRunner) Type() TaskType { return TaskURLReachability }
@@ -254,7 +679,7 @@ func (r *URLReachabilityRunner) Execute(ctx context.Context, payload *model.Task
 
 	urls := extractStrings(payload, "urls", []string{})
 	if len(urls) == 0 {
-		return "", fmt.Errorf("missing 'urls' in payload")
+		return "", fmt.Errorf("%s runner: missing 'urls' in payload", r.Type())
 	}
 
 	concurrency := extractInt(payload, "concurrency", 5)
@@ -262,6 +687,13 @@ func (r *URLReachabilityRunner) Execute(ctx context.Context, payload *model.Task
 	resp, err := r.monitorSvc.CheckURLReachability(ctx, urls, concurrency)
 	if err != nil {
 		return "", fmt.Errorf("reachability check failed: %w", err)
+	}
+	if r.alerts != nil {
+		for _, item := range resp.Results {
+			if !item.Reachable {
+				r.alerts.SendWarning(alerting.AlertTypeReachability, "URL 不可达", item.Reason, item, "scheduler", item.Input)
+			}
+		}
 	}
 
 	var b strings.Builder
@@ -308,7 +740,7 @@ func (r *CookieVerifyRunner) Execute(ctx context.Context, payload *model.TaskPay
 	engines := extractStrings(payload, "engines", []string{})
 	if len(engines) == 0 {
 		// Default: check all supported engines
-		engines = []string{"fofa", "hunter", "quake", "zoomeye"}
+		engines = []string{"fofa", "hunter", "quake", "zoomeye", "shodan", "censys", "daydaymap"}
 	}
 
 	var b strings.Builder
@@ -328,13 +760,24 @@ func (r *CookieVerifyRunner) Execute(ctx context.Context, payload *model.TaskPay
 
 // LoginStatusCheckRunner executes scheduled login status checks.
 type LoginStatusCheckRunner struct {
-	mgr *screenshot.Manager
+	mgr    *screenshot.Manager
+	health *SessionHealthTracker
 }
 
-// NewLoginStatusCheckRunner creates a LoginStatusCheckRunner.
-func NewLoginStatusCheckRunner(mgr *screenshot.Manager) *LoginStatusCheckRunner {
-	return &LoginStatusCheckRunner{mgr: mgr}
+// NewLoginStatusCheckRunner creates a LoginStatusCheckRunner. An optional
+// external SessionHealthTracker can be provided to share state with other
+// runners (e.g. QueryRunner circuit breaking); if omitted a new tracker is
+// created internally.
+func NewLoginStatusCheckRunner(mgr *screenshot.Manager, health ...*SessionHealthTracker) *LoginStatusCheckRunner {
+	h := NewSessionHealthTracker()
+	if len(health) > 0 && health[0] != nil {
+		h = health[0]
+	}
+	return &LoginStatusCheckRunner{mgr: mgr, health: h}
 }
+
+// Health returns the session health tracker for external inspection/notification.
+func (r *LoginStatusCheckRunner) Health() *SessionHealthTracker { return r.health }
 
 func (r *LoginStatusCheckRunner) Type() TaskType { return TaskLoginStatusCheck }
 
@@ -345,7 +788,7 @@ func (r *LoginStatusCheckRunner) Execute(ctx context.Context, payload *model.Tas
 
 	engines := extractStrings(payload, "engines", []string{})
 	if len(engines) == 0 {
-		engines = []string{"fofa", "hunter", "quake", "zoomeye"}
+		engines = []string{"fofa", "hunter", "quake", "zoomeye", "shodan", "censys", "daydaymap"}
 	}
 	testQuery := extractString(payload, "test_query", "test")
 
@@ -353,23 +796,44 @@ func (r *LoginStatusCheckRunner) Execute(ctx context.Context, payload *model.Tas
 	fmt.Fprintf(&b, "登录状态检查完成：%d 个引擎\n\n", len(engines))
 	failedCount := 0
 	for _, engine := range engines {
+		// Skip check if circuit is open (cooldown not elapsed)
+		if !r.health.AllowCheck(engine) {
+			h := r.health.GetHealth(engine)
+			fmt.Fprintf(&b, "⏸️ %s: 熔断中（连续失败 %d 次，%s后重试）\n", engine, h.ConsecutiveFails, h.LastFailure)
+			continue
+		}
+
 		status, err := r.mgr.CheckEngineLoginStatus(ctx, engine, testQuery)
 		if err != nil {
-			fmt.Fprintf(&b, "❌ %s: 检查失败 — %v\n", engine, err)
+			category := ClassifyFailureReason("", err.Error())
+			r.health.RecordFailure(engine, category, err.Error())
+			fmt.Fprintf(&b, "❌ %s: 检查失败 [%s] — %v\n", engine, category, err)
+			fmt.Fprintf(&b, "   💡 %s\n", RecoveryHint(category))
 			failedCount++
 			continue
 		}
 		if status.LoggedIn {
+			r.health.RecordSuccess(engine)
 			fmt.Fprintf(&b, "✅ %s: 已登录", engine)
 		} else {
-			fmt.Fprintf(&b, "❌ %s: 未登录", engine)
+			category := ClassifyFailureReason(status.Reason, status.Error)
+			r.health.RecordFailure(engine, category, status.Reason)
+			fmt.Fprintf(&b, "❌ %s: 未登录 [%s]", engine, category)
 			failedCount++
+			fmt.Fprintf(&b, "\n   💡 %s", RecoveryHint(category))
 		}
 		if status.Reason != "" {
 			fmt.Fprintf(&b, " (%s)", status.Reason)
 		}
 		b.WriteString("\n")
 	}
+
+	// Append circuit breaker summary if any engine is tripped
+	summary := r.health.Summary()
+	if summary != "" && summary != "no engine health data" {
+		fmt.Fprintf(&b, "\n--- 会话健康 ---\n%s", summary)
+	}
+
 	result := sanitizeUTF8(b.String())
 	if failedCount > 0 {
 		return result, fmt.Errorf("%d engine(s) not logged in or errored", failedCount)
@@ -398,7 +862,7 @@ func (r *DistributedSubmitRunner) Execute(ctx context.Context, payload *model.Ta
 
 	taskType := extractString(payload, "task_type", "")
 	if taskType == "" {
-		return "", fmt.Errorf("missing 'task_type' in payload")
+		return "", fmt.Errorf("%s runner: missing 'task_type' in payload", r.Type())
 	}
 
 	taskPayload := make(map[string]any)
@@ -452,6 +916,26 @@ func (r *DistributedSubmitRunner) Execute(ctx context.Context, payload *model.Ta
 // distributedIDCounter is a monotonic counter for unique distributed task IDs.
 var distributedIDCounter atomic.Int64
 
+// BackupRunner executes scheduled archives of selected application data.
+type BackupRunner struct{}
+
+func NewBackupRunner() *BackupRunner   { return &BackupRunner{} }
+func (r *BackupRunner) Type() TaskType { return TaskBackup }
+func (r *BackupRunner) Execute(_ context.Context, payload *model.TaskPayload) (string, error) {
+	sources := extractStrings(payload, "sources", []string{})
+	if len(sources) == 0 {
+		return "", fmt.Errorf("%s runner: missing 'sources' in payload", r.Type())
+	}
+	result, err := backup.Backup(backup.BackupConfig{
+		Sources: sources, OutputDir: extractString(payload, "output_dir", ""),
+		Prefix: extractString(payload, "prefix", "unimap"), MaxBackups: extractInt(payload, "max_backups", 7),
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("备份完成：%s（%d 字节）", result.Path, result.Size), nil
+}
+
 // generateDistributedTaskID creates a unique ID for distributed task envelopes.
 func generateDistributedTaskID() string {
 	return fmt.Sprintf("dist_%d", distributedIDCounter.Add(1))
@@ -480,7 +964,7 @@ func (r *ExportRunner) Execute(ctx context.Context, payload *model.TaskPayload) 
 
 	query := extractString(payload, "query", "")
 	if query == "" {
-		return "", fmt.Errorf("missing 'query' in payload")
+		return "", fmt.Errorf("%s runner: missing 'query' in payload", r.Type())
 	}
 
 	engines := extractStrings(payload, "engines", []string{})
@@ -540,11 +1024,16 @@ func (r *ExportRunner) Execute(ctx context.Context, payload *model.TaskPayload) 
 // PortScanRunner executes scheduled port scans.
 type PortScanRunner struct {
 	monitorSvc *service.MonitorAppService
+	alerts     *alerting.Manager
 }
 
 // NewPortScanRunner creates a PortScanRunner.
-func NewPortScanRunner(svc *service.MonitorAppService) *PortScanRunner {
-	return &PortScanRunner{monitorSvc: svc}
+func NewPortScanRunner(svc *service.MonitorAppService, alerts ...*alerting.Manager) *PortScanRunner {
+	r := &PortScanRunner{monitorSvc: svc}
+	if len(alerts) > 0 {
+		r.alerts = alerts[0]
+	}
+	return r
 }
 
 func (r *PortScanRunner) Type() TaskType { return TaskPortScan }
@@ -556,37 +1045,69 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 
 	urls := extractStrings(payload, "urls", []string{})
 	if len(urls) == 0 {
-		return "", fmt.Errorf("missing 'urls' in payload")
+		return "", fmt.Errorf("%s runner: missing 'urls' in payload", r.Type())
 	}
 
-	ports := extractStrings(payload, "ports", []string{})
 	concurrency := extractInt(payload, "concurrency", 5)
-
-	portNums := make([]int, 0, len(ports))
-	for _, p := range ports {
-		if n := extractIntFromMap(map[string]any{"v": p}, "v", 0); n > 0 {
-			portNums = append(portNums, n)
-		}
+	portSpec := strings.TrimSpace(extractString(payload, "port_spec", ""))
+	if strings.EqualFold(strings.TrimSpace(extractString(payload, "scan_mode", "")), "full") {
+		portSpec = "all"
 	}
-	if len(portNums) == 0 {
-		portNums = []int{80, 443} // default ports
+	if portSpec == "" {
+		portSpec = strings.Join(extractStrings(payload, "ports", []string{}), ",")
+	}
+	portNums, err := service.ParsePortSpec(portSpec)
+	if err != nil {
+		return "", fmt.Errorf("invalid port specification: %w", err)
+	}
+	probeMethodNames := extractStrings(payload, "probe_methods", nil)
+	if vErr := service.ValidatePortScanMethods(probeMethodNames); vErr != nil {
+		return "", fmt.Errorf("invalid port probe methods: %w", vErr)
+	}
+	probeMethods := make([]service.PortScanMethod, len(probeMethodNames))
+	for i := range probeMethodNames {
+		probeMethods[i] = service.PortScanMethod(probeMethodNames[i])
 	}
 
-	resp, err := r.monitorSvc.ScanURLPorts(ctx, urls, portNums, concurrency)
+	resp, err := r.monitorSvc.ScanURLPortsWithOptions(ctx, urls, portNums, service.PortScanOptions{
+		TargetConcurrency: concurrency,
+		PortConcurrency:   extractInt(payload, "port_concurrency", 256),
+		ConnectTimeout:    time.Duration(extractInt(payload, "connect_timeout_ms", 800)) * time.Millisecond,
+		ScanTimeout:       time.Duration(extractInt(payload, "scan_timeout_seconds", 0)) * time.Second,
+		AuthorizedTargets: extractStrings(payload, "authorized_targets", nil),
+		ProbeMethods:      probeMethods,
+		JitterMin:         time.Duration(extractInt(payload, "jitter_min_ms", 0)) * time.Millisecond,
+		JitterMax:         time.Duration(extractInt(payload, "jitter_max_ms", 0)) * time.Millisecond,
+	})
 	if err != nil {
 		return "", fmt.Errorf("port scan failed: %w", err)
 	}
+	if r.alerts != nil {
+		for _, item := range resp.Results {
+			if item.Status == "resolve_failed" || item.Status == "scan_failed" || item.Status == "not_authorized" {
+				r.alerts.SendWarning(alerting.AlertTypeReachability, "端口巡检失败", item.Reason, item, "scheduler", item.Input)
+			}
+		}
+	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "端口扫描完成：%d 个 URL，端口 %v\n\n", resp.Summary.Total, portNums)
+	portDescription := fmt.Sprintf("端口 %v", resp.Ports)
+	if resp.PortCount > 1024 {
+		portDescription = fmt.Sprintf("全端口 1-65535（%d 个）", resp.PortCount)
+	}
+	fmt.Fprintf(&b, "端口扫描完成：%d 个目标，%d 个唯一 IP，%s，连接 %d/%d，耗时 %.1f 秒\n\n",
+		resp.Summary.Total, resp.UniqueIPCount, portDescription, resp.AttemptedConnections, resp.PlannedConnections, float64(resp.DurationMS)/1000)
 	for _, r := range resp.Results {
 		switch r.Status {
 		case "scanned":
-			if len(r.OpenPorts) > 0 {
-				var portDetails []string
-				for ip, ports := range r.OpenPorts {
+			var portDetails []string
+			for ip, ports := range r.OpenPorts {
+				if len(ports) > 0 {
 					portDetails = append(portDetails, fmt.Sprintf("%s: %v", ip, ports))
 				}
+			}
+			sort.Strings(portDetails)
+			if len(portDetails) > 0 {
 				fmt.Fprintf(&b, "✅ %s — 开放端口 %s\n", r.Input, strings.Join(portDetails, "; "))
 			} else {
 				fmt.Fprintf(&b, "✅ %s — 无开放端口\n", r.Input)
@@ -599,6 +1120,8 @@ func (r *PortScanRunner) Execute(ctx context.Context, payload *model.TaskPayload
 			b.WriteString("\n")
 		case "cdn_excluded":
 			fmt.Fprintf(&b, "⚠️ %s — CDN 已排除\n", r.Input)
+		case "not_authorized":
+			fmt.Fprintf(&b, "⛔ %s — 超出授权 IP/CIDR 范围 (%s)\n", r.Input, r.Reason)
 		default:
 			fmt.Fprintf(&b, "❓ %s — %s", r.Input, r.Status)
 			if r.Reason != "" {
@@ -798,4 +1321,3 @@ func (r *QuotaMonitorRunner) Execute(ctx context.Context, payload *model.TaskPay
 	}
 	return result, nil
 }
-

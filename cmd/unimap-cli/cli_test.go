@@ -94,7 +94,7 @@ func TestApplyCookiesFromFlags_AllSet(t *testing.T) {
 	cfg.Engines.Quake.Cookies = nil
 	cfg.Engines.Zoomeye.Cookies = nil
 
-	changed := applyCookiesFromFlags(cfg, "session=fofa123", "token=hunter456", "key=quake789", "api=zoomeye000")
+	changed := applyCookiesFromFlags(cfg, "session=fofa123", "token=hunter456", "key=quake789", "api=zoomeye000", "", "", "")
 	if !changed {
 		t.Fatal("expected true when all cookies are set")
 	}
@@ -108,7 +108,7 @@ func TestApplyCookiesFromFlags_AllSet(t *testing.T) {
 
 func TestApplyCookiesFromFlags_NoneSet(t *testing.T) {
 	cfg := &config.Config{}
-	changed := applyCookiesFromFlags(cfg, "", "", "", "")
+	changed := applyCookiesFromFlags(cfg, "", "", "", "", "", "", "")
 	if changed {
 		t.Fatal("expected false when no cookies are set")
 	}
@@ -116,7 +116,7 @@ func TestApplyCookiesFromFlags_NoneSet(t *testing.T) {
 
 func TestApplyCookiesFromFlags_OnlyFofa(t *testing.T) {
 	cfg := &config.Config{}
-	changed := applyCookiesFromFlags(cfg, "session=fofa123", "", "", "")
+	changed := applyCookiesFromFlags(cfg, "session=fofa123", "", "", "", "", "", "")
 	if !changed {
 		t.Fatal("expected true when only fofa cookie is set")
 	}
@@ -130,7 +130,7 @@ func TestApplyCookiesFromFlags_OnlyFofa(t *testing.T) {
 
 func TestApplyCookiesFromFlags_WhitespaceIgnored(t *testing.T) {
 	cfg := &config.Config{}
-	changed := applyCookiesFromFlags(cfg, "  ", " \t ", "", "")
+	changed := applyCookiesFromFlags(cfg, "  ", " \t ", "", "", "", "", "")
 	if changed {
 		t.Fatal("expected false for whitespace-only cookie")
 	}

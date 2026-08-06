@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,49 +11,67 @@ import (
 	"strings"
 	"time"
 
+	"github.com/unimap/project/internal/exporter"
 	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/tamper"
 )
 
-func (s *Server) newTamperDetector(ctx context.Context, mode string) (*tamper.Detector, context.CancelFunc, error) {
-	cfg := tamper.DetectorConfig{
-		BaseDir:       "./hash_store",
-		DetectionMode: mode,
-	}
-	if s.config != nil {
-		cfg.PortScanEnabled = s.config.Tamper.PortScanEnabled
-		cfg.InsecureSkipVerify = s.config.Tamper.InsecureSkipVerify
-		if s.config.Tamper.PortScanTimeoutMs > 0 {
-			cfg.PortScanTimeout = time.Duration(s.config.Tamper.PortScanTimeoutMs) * time.Millisecond
+func (s *Server) tamperRuntimeConfig() service.TamperRuntimeConfig {
+	cfg := service.TamperRuntimeConfig{}
+	if current := s.currentConfig(); current != nil {
+		cfg.PortScanEnabled = current.Tamper.PortScanEnabled
+		cfg.InsecureSkipVerify = current.Tamper.InsecureSkipVerify
+		if current.Tamper.PortScanTimeoutMs > 0 {
+			cfg.PortScanTimeout = time.Duration(current.Tamper.PortScanTimeoutMs) * time.Millisecond
 		}
 	}
-	detector := tamper.NewDetector(cfg)
-
-	cleanup := func() {}
-	if s.screenshotMgr == nil {
-		return detector, cleanup, nil
-	}
-
-	allocCtx, allocCancel, err := s.screenshotMgr.NewAllocator(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to initialize browser for tamper detection: %w", err)
-	}
-
-	detector.SetAllocator(ctx, allocCtx, allocCancel)
-	cleanup = allocCancel
-	return detector, cleanup, nil
+	return cfg
 }
 
-func (s *Server) tamperAllocatorFactory(proxy string) service.TamperAllocatorFactory {
+func (s *Server) handleTamperHistoryExport(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	limit := 10000
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 && value < limit {
+			limit = value
+		}
+	}
+	filter, err := tamperHistoryFilterFromRequest(r, limit, 0)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_time_range", err.Error(), nil)
+		return
+	}
+	result, err := s.tamperApp.QueryHistory(filter)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "export_history_failed", "export history failed", nil)
+		return
+	}
+	items := make([]exporter.TamperHistoryExportResult, 0, len(result.Records))
+	for _, record := range result.Records {
+		items = append(items, exporter.TamperHistoryExportResult{ID: record.ID, URL: record.URL, Status: record.Status, DetectionMode: record.DetectionMode, Tampered: record.Tampered, TamperedSegments: record.TamperedSegments, ChangesCount: record.ChangesCount, CheckTime: time.Unix(record.Timestamp, 0).Format(time.RFC3339)})
+	}
+	var body bytes.Buffer
+	if err := exporter.ExportTamperHistoryJSON(&body, items); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "export_history_failed", "export history failed", nil)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=tamper-history.json")
+	_, _ = w.Write(body.Bytes())
+}
+
+func (s *Server) tamperPageLoader(proxy string) service.TamperPageLoader {
 	if s.screenshotMgr == nil {
 		return nil
 	}
-	return func(ctx context.Context) (context.Context, context.CancelFunc, error) {
-		if strings.TrimSpace(proxy) != "" {
-			return s.screenshotMgr.NewAllocatorWithProxy(ctx, proxy)
-		}
-		return s.screenshotMgr.NewAllocator(ctx)
+	if strings.TrimSpace(proxy) == "" {
+		return s.screenshotMgr
 	}
+	return tamper.BrowserPageLoaderFunc(func(ctx context.Context, targetURL string) (string, string, error) {
+		return s.screenshotMgr.LoadPageWithProxy(ctx, targetURL, proxy)
+	})
 }
 
 // handleTamperCheck 处理篡改检测请求
@@ -60,7 +79,7 @@ func (s *Server) handleTamperCheck(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -103,7 +122,7 @@ func (s *Server) handleTamperCheck(w http.ResponseWriter, r *http.Request) {
 		URLs:        req.URLs,
 		Concurrency: req.Concurrency,
 		Mode:        req.Mode,
-	}, s.tamperAllocatorFactory(proxy))
+	}, s.tamperPageLoader(proxy))
 	if err != nil {
 		s.reportRequestProxy(proxy, false)
 		if strings.Contains(strings.ToLower(err.Error()), "no urls") {
@@ -116,7 +135,7 @@ func (s *Server) handleTamperCheck(w http.ResponseWriter, r *http.Request) {
 	s.reportRequestProxy(proxy, true)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"mode":    resp.Mode,
 		"summary": resp.Summary,
@@ -129,7 +148,7 @@ func (s *Server) handleTamperBaseline(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -170,7 +189,7 @@ func (s *Server) handleTamperBaseline(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.tamperApp.SetBaseline(r.Context(), service.TamperBaselineRequest{
 		URLs:        req.URLs,
 		Concurrency: req.Concurrency,
-	}, s.tamperAllocatorFactory(proxy))
+	}, s.tamperPageLoader(proxy))
 	if err != nil {
 		s.reportRequestProxy(proxy, false)
 		if strings.Contains(strings.ToLower(err.Error()), "no urls") {
@@ -183,7 +202,7 @@ func (s *Server) handleTamperBaseline(w http.ResponseWriter, r *http.Request) {
 	s.reportRequestProxy(proxy, true)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"summary": resp.Summary,
 		"results": resp.Results,
@@ -203,7 +222,7 @@ func (s *Server) handleTamperBaselineList(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"urls":    urls,
 		"count":   len(urls),
@@ -215,7 +234,7 @@ func (s *Server) handleTamperBaselineDelete(w http.ResponseWriter, r *http.Reque
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -231,7 +250,7 @@ func (s *Server) handleTamperBaselineDelete(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("Baseline for %s deleted", urlValue),
 		"url":     urlValue,
@@ -253,13 +272,21 @@ func (s *Server) handleTamperHistory(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
+	offset := 0
+	if rawOffset := strings.TrimSpace(r.URL.Query().Get("offset")); rawOffset != "" {
+		if v, err := strconv.Atoi(rawOffset); err == nil && v > 0 {
+			const maxTamperHistoryOffset = 100000
+			if v > maxTamperHistoryOffset {
+				v = maxTamperHistoryOffset
+			}
+			offset = v
+		}
+	}
 
-	filter := service.HistoryFilter{
-		URLFilter:   strings.TrimSpace(r.URL.Query().Get("url")),
-		TypeFilter:  strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type"))),
-		ModeFilter:  strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode"))),
-		QueryFilter: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))),
-		Limit:       limit,
+	filter, err := tamperHistoryFilterFromRequest(r, limit, offset)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_time_range", err.Error(), nil)
+		return
 	}
 
 	result, err := s.tamperApp.QueryHistory(filter)
@@ -269,7 +296,7 @@ func (s *Server) handleTamperHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"count":   result.Count,
 		"records": result.Records,
@@ -277,12 +304,57 @@ func (s *Server) handleTamperHistory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func tamperHistoryFilterFromRequest(r *http.Request, limit, offset int) (service.HistoryFilter, error) {
+	startTime, err := parseTamperHistoryTime(strings.TrimSpace(r.URL.Query().Get("start_time")))
+	if err != nil {
+		return service.HistoryFilter{}, fmt.Errorf("invalid start_time: %w", err)
+	}
+	endTime, err := parseTamperHistoryTime(strings.TrimSpace(r.URL.Query().Get("end_time")))
+	if err != nil {
+		return service.HistoryFilter{}, fmt.Errorf("invalid end_time: %w", err)
+	}
+	if startTime > 0 && endTime > 0 && startTime > endTime {
+		return service.HistoryFilter{}, fmt.Errorf("start_time must not be later than end_time")
+	}
+	return service.HistoryFilter{
+		URLFilter:   strings.TrimSpace(r.URL.Query().Get("url")),
+		TypeFilter:  strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type"))),
+		ModeFilter:  strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode"))),
+		QueryFilter: strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))),
+		StartTime:   startTime,
+		EndTime:     endTime,
+		Limit:       limit,
+		Offset:      offset,
+	}, nil
+}
+
+func parseTamperHistoryTime(raw string) (int64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	if unixTime, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		if unixTime <= 0 {
+			return 0, fmt.Errorf("must be a positive Unix timestamp")
+		}
+		return unixTime, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return 0, fmt.Errorf("must be Unix seconds or RFC3339")
+	}
+	unixTime := parsed.Unix()
+	if unixTime <= 0 {
+		return 0, fmt.Errorf("must be later than 1970-01-01T00:00:00Z")
+	}
+	return unixTime, nil
+}
+
 // handleTamperHistoryDelete 处理删除指定URL的检测历史请求
 func (s *Server) handleTamperHistoryDelete(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 

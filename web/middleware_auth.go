@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/unimap/project/internal/auth"
+	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/logger"
 )
 
@@ -19,6 +21,7 @@ const (
 	// 0 means legacy single-user mode or admin-token-only auth.
 	// -1 means admin-token auth (synthetic admin, not from user DB).
 	contextKeyUserID contextKey = "user_id"
+	contextKeyUser   contextKey = "authenticated_user"
 
 	// adminSyntheticUserID is set in context when auth is via X-Admin-Token header.
 	// getCurrentUser treats this as a superuser that bypasses role checks.
@@ -37,9 +40,25 @@ func (s *Server) adminAuthMiddleware() func(http.Handler) http.Handler {
 			}
 
 			// Try session cookie first (set by login page)
-			if s.getSessionToken(r) != "" {
-				userID := s.getSessionUserID(r)
+			if sessionToken, userID, sessionVersion := s.getSessionIdentity(r); sessionToken != "" {
+				var authenticatedUser *auth.User
+				if userID > 0 && s.userRepo != nil {
+					user, err := s.userRepo.GetByID(userID)
+					if err != nil {
+						writeAPIError(w, http.StatusServiceUnavailable, "user_store_unavailable", "user database unavailable", nil)
+						return
+					}
+					if user == nil || user.Status != "active" || user.SessionVersion != sessionVersion {
+						s.clearSessionCookie(w, r)
+						writeAPIError(w, http.StatusUnauthorized, "session_invalid", "session is no longer valid", nil)
+						return
+					}
+					authenticatedUser = user
+				}
 				ctx := context.WithValue(r.Context(), contextKeyUserID, userID)
+				if authenticatedUser != nil {
+					ctx = context.WithValue(ctx, contextKeyUser, authenticatedUser)
+				}
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -83,10 +102,6 @@ func (s *Server) isNodeAuthPath(path string) bool {
 		"/api/v1/nodes/heartbeat",
 		"/api/v1/nodes/task/claim",
 		"/api/v1/nodes/task/result",
-		"/api/nodes/register",
-		"/api/nodes/heartbeat",
-		"/api/nodes/task/claim",
-		"/api/nodes/task/result",
 	}
 	for _, p := range nodePaths {
 		if path == p {
@@ -98,14 +113,15 @@ func (s *Server) isNodeAuthPath(path string) bool {
 
 // authenticateNodeToken checks X-Node-Token against configured node auth tokens.
 func (s *Server) authenticateNodeToken(r *http.Request) bool {
-	if s.config == nil || !s.config.Distributed.Enabled {
+	cfg := s.currentConfig()
+	if cfg == nil || !cfg.Distributed.Enabled {
 		return false
 	}
 	nodeToken := r.Header.Get("X-Node-Token")
 	if nodeToken == "" {
 		return false
 	}
-	for _, configuredToken := range s.config.Distributed.NodeAuthTokens {
+	for _, configuredToken := range cfg.Distributed.NodeAuthTokens {
 		if subtle.ConstantTimeCompare([]byte(nodeToken), []byte(configuredToken)) == 1 {
 			return true
 		}
@@ -187,27 +203,39 @@ func maskTokenForLog(token string) string {
 
 // adminToken returns the configured admin token.
 func (s *Server) adminToken() string {
-	if s.config == nil || !s.config.Web.Auth.Enabled {
+	s.configMutex.Lock()
+	ephemeral := s.ephemeralAdminToken
+	s.configMutex.Unlock()
+	if ephemeral != "" {
+		return ephemeral
+	}
+	cfg := s.currentConfig()
+	if cfg == nil || !cfg.Web.Auth.Enabled {
 		return ""
 	}
-	token := s.config.Web.Auth.AdminToken
+	token := cfg.Web.Auth.AdminToken
 	if token != "" {
 		return token
 	}
-	s.configMutex.Lock()
-	defer s.configMutex.Unlock()
-	if s.config.Web.Auth.AdminToken != "" {
-		return s.config.Web.Auth.AdminToken
-	}
 	token = generateRandomToken()
-	s.config.Web.Auth.AdminToken = token
 	// FINDING-006: do not log any token fragment (even masked) — just notify
 	// the operator to check config.yaml for the persisted value.
 	logger.Warnf("Admin token was not configured; auto-generated a random token and saved to config.yaml. See web.auth.admin_token.")
-	if s.configManager != nil {
-		if err := s.configManager.Save(); err != nil {
-			logger.Warnf("failed to persist auto-generated admin token: %v", err)
+	committed, err := s.updateConfig(func(candidate *config.Config) error {
+		if candidate.Web.Auth.AdminToken == "" {
+			candidate.Web.Auth.AdminToken = token
 		}
+		return nil
+	})
+	if err != nil {
+		logger.Warnf("failed to persist auto-generated admin token: %v", err)
+		s.configMutex.Lock()
+		if s.ephemeralAdminToken == "" {
+			s.ephemeralAdminToken = token
+		}
+		token = s.ephemeralAdminToken
+		s.configMutex.Unlock()
+		return token
 	}
-	return token
+	return committed.Web.Auth.AdminToken
 }

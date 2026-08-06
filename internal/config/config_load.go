@@ -78,6 +78,10 @@ func (m *Manager) resolveEnv(config *Config) {
 	config.Engines.Censys.APISecret = m.ResolveEnv(config.Engines.Censys.APISecret)
 	config.Engines.Censys.BaseURL = m.ResolveEnv(config.Engines.Censys.BaseURL)
 
+	// 解析Shodan配置
+	config.Engines.Shodan.APIKey = m.ResolveEnv(config.Engines.Shodan.APIKey)
+	config.Engines.Shodan.BaseURL = m.ResolveEnv(config.Engines.Shodan.BaseURL)
+
 	// 解析DayDayMap配置
 	config.Engines.Daydaymap.APIKey = m.ResolveEnv(config.Engines.Daydaymap.APIKey)
 	config.Engines.Daydaymap.BaseURL = m.ResolveEnv(config.Engines.Daydaymap.BaseURL)
@@ -100,7 +104,15 @@ func (m *Manager) resolveEnv(config *Config) {
 		config.Network.ProxyPool.Proxies[i] = m.ResolveEnv(config.Network.ProxyPool.Proxies[i])
 	}
 	config.Distributed.AdminToken = m.ResolveEnv(config.Distributed.AdminToken)
+	for nodeID, token := range config.Distributed.NodeAuthTokens {
+		config.Distributed.NodeAuthTokens[nodeID] = m.ResolveEnv(token)
+	}
 	config.Web.Auth.AdminToken = m.ResolveEnv(config.Web.Auth.AdminToken)
+	config.Web.Auth.Username = m.ResolveEnv(config.Web.Auth.Username)
+
+	// 解析旧版告警 Webhook 配置
+	config.Alerting.Webhook.URL = m.ResolveEnv(config.Alerting.Webhook.URL)
+	config.Alerting.Webhook.AuthToken = m.ResolveEnv(config.Alerting.Webhook.AuthToken)
 
 	// 解析 ICP 配置
 	config.ICP.BaseURL = m.ResolveEnv(config.ICP.BaseURL)
@@ -113,28 +125,39 @@ func (m *Manager) resolveEnv(config *Config) {
 	config.Cache.Redis.Prefix = m.ResolveEnv(config.Cache.Redis.Prefix)
 
 	// 解析通知渠道环境变量
+	if config.Notifications.FeishuApp != nil {
+		config.Notifications.FeishuApp.AppID = m.ResolveEnv(config.Notifications.FeishuApp.AppID)
+		config.Notifications.FeishuApp.AppSecret = m.ResolveEnv(config.Notifications.FeishuApp.AppSecret)
+		config.Notifications.FeishuApp.ChatID = m.ResolveEnv(config.Notifications.FeishuApp.ChatID)
+	}
 	for i := range config.Notifications.Channels {
 		config.Notifications.Channels[i].WebhookURL = m.ResolveEnv(config.Notifications.Channels[i].WebhookURL)
 		config.Notifications.Channels[i].Secret = m.ResolveEnv(config.Notifications.Channels[i].Secret)
+		config.Notifications.Channels[i].AppID = m.ResolveEnv(config.Notifications.Channels[i].AppID)
+		config.Notifications.Channels[i].AppSecret = m.ResolveEnv(config.Notifications.Channels[i].AppSecret)
+		config.Notifications.Channels[i].ChatID = m.ResolveEnv(config.Notifications.Channels[i].ChatID)
 	}
 }
 
-// ResolveEnv 解析环境变量
+// ResolveEnv 解析环境变量。
+// 如果值是 $VAR 或 ${VAR} 格式但对应环境变量未设置，返回空字符串（而非原始占位符），
+// 使下游能优雅跳过空配置（如未配置的 webhook URL）。
 func (m *Manager) ResolveEnv(value string) string {
-	// 检查是否包含环境变量
-	if strings.HasPrefix(value, "$") {
+	// 检查 $VAR 格式
+	if strings.HasPrefix(value, "$") && !strings.HasPrefix(value, "${") {
 		envName := strings.TrimPrefix(value, "$")
 		if envValue := os.Getenv(envName); envValue != "" {
 			return envValue
 		}
+		return "" // 环境变量未设置，返回空字符串
 	}
-	// 检查是否包含${}格式的环境变量
+	// 检查 ${VAR} 格式
 	if strings.HasPrefix(value, "${") && strings.HasSuffix(value, "}") {
 		envName := strings.TrimSuffix(strings.TrimPrefix(value, "${"), "}")
 		if envValue := os.Getenv(envName); envValue != "" {
 			return envValue
 		}
+		return "" // 环境变量未设置，返回空字符串
 	}
 	return value
 }
-

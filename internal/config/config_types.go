@@ -20,12 +20,13 @@ type Config struct {
 			Cookies []Cookie `yaml:"cookies"`
 		} `yaml:"zoomeye"`
 		Hunter struct {
-			Enabled bool     `yaml:"enabled"`
-			APIKey  string   `yaml:"api_key"`
-			BaseURL string   `yaml:"base_url"`
-			QPS     int      `yaml:"qps"`
-			Timeout int      `yaml:"timeout"`
-			Cookies []Cookie `yaml:"cookies"`
+			Enabled      bool     `yaml:"enabled"`
+			APIKey       string   `yaml:"api_key"`
+			BackupAPIKey string   `yaml:"backup_api_key"` // 主 key 限流/鉴权/欠费失败时自动切换
+			BaseURL      string   `yaml:"base_url"`
+			QPS          int      `yaml:"qps"`
+			Timeout      int      `yaml:"timeout"`
+			Cookies      []Cookie `yaml:"cookies"`
 		} `yaml:"hunter"`
 		Fofa struct {
 			Enabled         bool     `yaml:"enabled"`
@@ -41,26 +42,29 @@ type Config struct {
 			AllowPrivateAPI bool     `yaml:"allow_private_api"` // 高级配置，仅限内网自建镜像
 		} `yaml:"fofa"`
 		Shodan struct {
-			Enabled bool   `yaml:"enabled"`
-			APIKey  string `yaml:"api_key"`
-			BaseURL string `yaml:"base_url"`
-			QPS     int    `yaml:"qps"`
-			Timeout int    `yaml:"timeout"`
+			Enabled bool     `yaml:"enabled"`
+			APIKey  string   `yaml:"api_key"`
+			BaseURL string   `yaml:"base_url"`
+			QPS     int      `yaml:"qps"`
+			Timeout int      `yaml:"timeout"`
+			Cookies []Cookie `yaml:"cookies"`
 		} `yaml:"shodan"`
 		Censys struct {
-			Enabled   bool   `yaml:"enabled"`
-			APIID     string `yaml:"api_id"`
-			APISecret string `yaml:"api_secret"`
-			BaseURL   string `yaml:"base_url"`
-			QPS       int    `yaml:"qps"`
-			Timeout   int    `yaml:"timeout"`
+			Enabled   bool     `yaml:"enabled"`
+			APIID     string   `yaml:"api_id"`
+			APISecret string   `yaml:"api_secret"`
+			BaseURL   string   `yaml:"base_url"`
+			QPS       int      `yaml:"qps"`
+			Timeout   int      `yaml:"timeout"`
+			Cookies   []Cookie `yaml:"cookies"`
 		} `yaml:"censys"`
 		Daydaymap struct {
-			Enabled bool   `yaml:"enabled"`
-			APIKey  string `yaml:"api_key"`
-			BaseURL string `yaml:"base_url"`
-			QPS     int    `yaml:"qps"`
-			Timeout int    `yaml:"timeout"`
+			Enabled bool     `yaml:"enabled"`
+			APIKey  string   `yaml:"api_key"`
+			BaseURL string   `yaml:"base_url"`
+			QPS     int      `yaml:"qps"`
+			Timeout int      `yaml:"timeout"`
+			Cookies []Cookie `yaml:"cookies"`
 		} `yaml:"daydaymap"`
 	} `yaml:"engines"`
 
@@ -95,6 +99,8 @@ type Config struct {
 		ChromeProfileDir         string `yaml:"chrome_profile_dir"`
 		ChromeRemoteDebugURL     string `yaml:"chrome_remote_debug_url"`
 		ChromeRemoteDebugAddress string `yaml:"chrome_remote_debug_address"`
+		MaxSessions              int    `yaml:"max_sessions"`
+		NoSandbox                bool   `yaml:"no_sandbox"`
 		Extension                struct {
 			Enabled                      bool   `yaml:"enabled"`
 			ListenAddr                   string `yaml:"listen_addr"`
@@ -135,9 +141,10 @@ type Config struct {
 			AllowedExtensionIDs []string `yaml:"allowed_extension_ids"` // chrome-extension:// 允许的扩展 ID，空表示全部允许（向后兼容）
 		} `yaml:"cors"`
 		RateLimit struct {
-			Enabled           bool `yaml:"enabled"`
-			RequestsPerWindow int  `yaml:"requests_per_window"`
-			WindowSeconds     int  `yaml:"window_seconds"`
+			Enabled           bool     `yaml:"enabled"`
+			RequestsPerWindow int      `yaml:"requests_per_window"`
+			WindowSeconds     int      `yaml:"window_seconds"`
+			TrustedProxyCIDRs []string `yaml:"trusted_proxy_cidrs"`
 		} `yaml:"rate_limit"`
 		RequestLimits struct {
 			MaxBodyBytes       int64 `yaml:"max_body_bytes"`
@@ -267,28 +274,32 @@ type Config struct {
 			OnEmptyResult bool     `yaml:"on_empty_result"` // API 返回空结果时是否 fallback
 			Engines       []string `yaml:"engines"`         // 允许自动 fallback 的引擎白名单
 		} `yaml:"browser_fallback"`
-		} `yaml:"query"`
+	} `yaml:"query"`
 
-		// Tamper 篡改检测配置
-		Tamper struct {
-			PortScanEnabled    bool  `yaml:"port_scan_enabled"`     // 巡检时附带端口扫描
-			PortScanTimeoutMs  int   `yaml:"port_scan_timeout_ms"`  // 单端口超时（毫秒），默认 800
-			InsecureSkipVerify bool  `yaml:"insecure_skip_verify"`  // 跳过 SSL 证书验证（内网/自签证书）
-		} `yaml:"tamper"`
-	}
+	// Tamper 篡改检测配置
+	Tamper struct {
+		PortScanEnabled           bool `yaml:"port_scan_enabled"`           // 巡检时附带端口扫描
+		PortScanTimeoutMs         int  `yaml:"port_scan_timeout_ms"`        // 单端口超时（毫秒），默认 800
+		InsecureSkipVerify        bool `yaml:"insecure_skip_verify"`        // 跳过 SSL 证书验证（内网/自签证书）
+		EvidenceScreenshotEnabled bool `yaml:"evidence_screenshot_enabled"` // 篡改后自动截图；外部安全验收前必须保持 false
+	} `yaml:"tamper"`
+}
 
 // NotificationChannelCfg 全局通知渠道配置
 type NotificationChannelCfg struct {
-	ID             string            `yaml:"id"`
-	Type           string            `yaml:"type"`
-	Enabled        bool              `yaml:"enabled"`
-	WebhookURL     string            `yaml:"webhook_url"`
-	Secret         string            `yaml:"secret"`
-	AppID          string            `yaml:"app_id,omitempty"`
-	AppSecret      string            `yaml:"app_secret,omitempty"`
-	ChatID         string            `yaml:"chat_id,omitempty"`
-	Headers        map[string]string `yaml:"headers"`
-	AllowPrivateIP bool              `yaml:"allow_private_ip"`
+	ID                       string            `yaml:"id"`
+	Type                     string            `yaml:"type"`
+	Enabled                  bool              `yaml:"enabled"`
+	WebhookURL               string            `yaml:"webhook_url"`
+	Secret                   string            `yaml:"secret"`
+	AppID                    string            `yaml:"app_id,omitempty"`
+	AppSecret                string            `yaml:"app_secret,omitempty"`
+	ChatID                   string            `yaml:"chat_id,omitempty"`
+	Headers                  map[string]string `yaml:"headers"`
+	AllowPrivateIP           bool              `yaml:"allow_private_ip"`
+	WeComMsgType             string            `yaml:"wecom_msgtype,omitempty"`
+	WeComMentionedList       []string          `yaml:"wecom_mentioned_list,omitempty"`
+	WeComMentionedMobileList []string          `yaml:"wecom_mentioned_mobile_list,omitempty"`
 }
 
 // EngineCacheConfig 引擎级别的缓存配置
@@ -326,8 +337,11 @@ func (c *Config) Clone() *Config {
 	clone.Engines.Fofa = c.Engines.Fofa
 	clone.Engines.Fofa.Cookies = cloneCookies(c.Engines.Fofa.Cookies)
 	clone.Engines.Shodan = c.Engines.Shodan
+	clone.Engines.Shodan.Cookies = cloneCookies(c.Engines.Shodan.Cookies)
 	clone.Engines.Censys = c.Engines.Censys
+	clone.Engines.Censys.Cookies = cloneCookies(c.Engines.Censys.Cookies)
 	clone.Engines.Daydaymap = c.Engines.Daydaymap
+	clone.Engines.Daydaymap.Cookies = cloneCookies(c.Engines.Daydaymap.Cookies)
 
 	// System, Log are all primitives — safe to copy directly
 	clone.System = c.System
@@ -351,6 +365,7 @@ func (c *Config) Clone() *Config {
 	clone.Web.CORS.AllowedHeaders = cloneStringSlice(c.Web.CORS.AllowedHeaders)
 	clone.Web.CORS.ExposedHeaders = cloneStringSlice(c.Web.CORS.ExposedHeaders)
 	clone.Web.CORS.AllowedExtensionIDs = cloneStringSlice(c.Web.CORS.AllowedExtensionIDs)
+	clone.Web.RateLimit.TrustedProxyCIDRs = cloneStringSlice(c.Web.RateLimit.TrustedProxyCIDRs)
 	clone.Web.Auth = c.Web.Auth
 
 	// Network (has slice: Proxies)
@@ -361,8 +376,27 @@ func (c *Config) Clone() *Config {
 	clone.Distributed = c.Distributed
 	clone.Distributed.NodeAuthTokens = cloneStringMap(c.Distributed.NodeAuthTokens)
 
+	// Alerting and ICP only contain value fields.
+	clone.Alerting = c.Alerting
+	clone.ICP = c.ICP
+
+	// Backup has a source slice.
+	clone.Backup = c.Backup
+	clone.Backup.Sources = cloneStringSlice(c.Backup.Sources)
+
+	// History only contains value fields.
+	clone.History = c.History
+
 	// Scheduler
 	clone.Scheduler = c.Scheduler
+
+	// Notifications have a pointer plus per-channel header maps.
+	clone.Notifications = c.Notifications
+	if c.Notifications.FeishuApp != nil {
+		feishuApp := *c.Notifications.FeishuApp
+		clone.Notifications.FeishuApp = &feishuApp
+	}
+	clone.Notifications.Channels = cloneNotificationChannelConfigs(c.Notifications.Channels)
 
 	// Cache (has map: Engines)
 	clone.Cache = c.Cache
@@ -371,6 +405,9 @@ func (c *Config) Clone() *Config {
 	// Query (has slice: BrowserFallback.Engines)
 	clone.Query = c.Query
 	clone.Query.BrowserFallback.Engines = cloneStringSlice(c.Query.BrowserFallback.Engines)
+
+	// Tamper only contains value fields.
+	clone.Tamper = c.Tamper
 
 	return clone
 }
@@ -415,3 +452,16 @@ func cloneEngineCacheMap(src map[string]EngineCacheConfig) map[string]EngineCach
 	return out
 }
 
+func cloneNotificationChannelConfigs(src []NotificationChannelCfg) []NotificationChannelCfg {
+	if src == nil {
+		return nil
+	}
+	out := make([]NotificationChannelCfg, len(src))
+	copy(out, src)
+	for i := range out {
+		out[i].Headers = cloneStringMap(src[i].Headers)
+		out[i].WeComMentionedList = append([]string(nil), src[i].WeComMentionedList...)
+		out[i].WeComMentionedMobileList = append([]string(nil), src[i].WeComMentionedMobileList...)
+	}
+	return out
+}

@@ -2,6 +2,9 @@ import { apiGet, apiPostBridgeSigned, bridgeRotateToken } from "./api.js";
 import { ensureTab, waitForPageReady, captureVisible, normalizeImagePayload, releaseTab, cleanupTabPool, normalizeCollectPayload, extractEngineAssets, checkLoginCookies } from "./capture.js";
 import { loadSessionToken, isTokenExpired, saveSessionToken, saveRuntimeState, saveLastError, loadAdminToken } from "./storage.js";
 import { pairAndStore } from "./pairing.js";
+import { resolveTabFinalURL } from "./tab_url.js";
+import { prepareDayDayMapSearch } from "./daydaymap.js";
+import { readBrowserCredentials } from "./credentials.js";
 
 const POLL_INTERVAL_MS = 1000;
 const CAPTURE_MIN_INTERVAL_MS = 1200;
@@ -55,6 +58,16 @@ async function handleTask(task, token) {
   async function reportResult(result) {
     result.batch_id = task.batch_id || "";
     result.url = task.url || "";
+    if (tabId) {
+      try {
+        result.final_url = await resolveTabFinalURL(tabId);
+      } catch {
+        if (result.success) {
+          throw new Error("plugin_final_url_unavailable");
+        }
+        result.final_url = "";
+      }
+    }
     await reportTaskResult(result, token);
   }
 
@@ -75,7 +88,13 @@ async function handleTask(task, token) {
   try {
     // Cookie-read tasks don't need a tab — read directly via chrome.cookies API.
     if (action === "get_cookies") {
-      const cookies = await chrome.cookies.getAll({ domain: task.url });
+	  let cookieDomain = task.url;
+	  try {
+		cookieDomain = new URL(task.url).hostname;
+	  } catch {
+		// Backward compatibility for an older loopback server that sent a bare domain.
+	  }
+	  const cookies = await chrome.cookies.getAll({ domain: cookieDomain });
       const durationMs = Math.max(1, Date.now() - startedAt);
       await reportResult({
         request_id: requestId,
@@ -84,6 +103,22 @@ async function handleTask(task, token) {
         image_data: "",
         collected_data: JSON.stringify(cookies),
         structured_collected_data: { cookies: cookies },
+        duration_ms: durationMs
+      });
+      return;
+    }
+
+    if (action === "get_browser_credentials") {
+      const credentials = await readBrowserCredentials(task.url);
+      const durationMs = Math.max(1, Date.now() - startedAt);
+      await reportResult({
+        request_id: requestId,
+        success: true,
+        image_path: "",
+        image_data: "",
+        final_url: credentials.finalURL,
+        collected_data: "",
+        structured_collected_data: { cookies: credentials.cookies, storage: credentials.storage },
         duration_ms: durationMs
       });
       return;
@@ -107,6 +142,11 @@ async function handleTask(task, token) {
       : (task.timeout_ms || 15000);
 
     await waitForPageReady(tabId, waitStrategy, effectiveTimeout);
+
+    if (task.query && new URL(task.url).hostname.endsWith("daydaymap.com")) {
+      await prepareDayDayMapSearch(tabId, task.query);
+      await waitForPageReady(tabId, "spa", effectiveTimeout);
+    }
 
     // Extra render wait for collect action (SPA search results take time to render)
     if (action === "collect" || action === "screenshot" || action === "collect_and_capture") {

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,23 +21,77 @@ const (
 	DayDayMapDefaultQPS = 3
 )
 
+// FlexNumber 兼容 DayDayMap 返回的字符串或数字形式的数值字段
+// （如 port 可能返回 80 或 "80"），避免类型不匹配导致整条响应解析失败。
+type FlexNumber int
+
+// UnmarshalJSON 接受 JSON 数字或字符串两种形式。
+func (n *FlexNumber) UnmarshalJSON(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if s == "" || s == "null" {
+		return nil
+	}
+	if len(s) > 0 && s[0] == '"' {
+		var str string
+		if err := json.Unmarshal(b, &str); err != nil {
+			return err
+		}
+		str = strings.TrimSpace(str)
+		if str == "" {
+			return nil
+		}
+		i, err := strconv.Atoi(str)
+		if err != nil {
+			// DayDayMap 可能对敏感端口/状态码做掩码脱敏（如 "4****"），
+			// 这类值无法解析为整数时视为未知（0），避免单个字段格式漂移
+			// 丢弃整条资产。
+			return nil
+		}
+		*n = FlexNumber(i)
+		return nil
+	}
+	var f float64
+	if err := json.Unmarshal(b, &f); err != nil {
+		return err
+	}
+	*n = FlexNumber(f)
+	return nil
+}
+
 // DayDayMapItem is a single result item from the DayDayMap API.
 // API returns list items as JSON objects with snake_case keys.
 type DayDayMapItem struct {
-	IP         string  `json:"ip"`
-	Port       float64 `json:"port"`
-	Protocol   string  `json:"protocol"`
-	Domain     string  `json:"domain"`
-	Title      string  `json:"title"`
-	Server     string  `json:"server"`
-	Body       string  `json:"body"`
-	StatusCode float64 `json:"status_code"`
-	Country    string  `json:"country"`
-	Province   string  `json:"province"`
-	City       string  `json:"city"`
-	ASN        string  `json:"asn"`
-	Org        string  `json:"org"`
-	ISP        string  `json:"isp"`
+	IP         string     `json:"ip"`
+	Port       FlexNumber `json:"port"`
+	Protocol   string     `json:"protocol"`
+	Domain     string     `json:"domain"`
+	Title      string     `json:"title"`
+	Server     string     `json:"server"`
+	Body       string     `json:"body"`
+	StatusCode FlexNumber `json:"status_code"`
+	Country    string     `json:"country"`
+	Province   string     `json:"province"`
+	City       string     `json:"city"`
+	ASN        string     `json:"asn"`
+	Org        string     `json:"org"`
+	ISP        string     `json:"isp"`
+	// Extra preserves any top-level keys the API returns that this struct does
+	// not declare, so they are not silently dropped.
+	Extra map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON captures unknown top-level keys into Extra instead of
+// dropping them, while decoding declared fields as usual.
+func (d *DayDayMapItem) UnmarshalJSON(data []byte) error {
+	type alias DayDayMapItem
+	var aux alias
+	extra, err := rawUnknown(data, &aux)
+	if err != nil {
+		return err
+	}
+	*d = DayDayMapItem(aux)
+	d.Extra = extra
+	return nil
 }
 
 // DayDayMapAdapter DayDayMap引擎适配器
@@ -138,28 +193,28 @@ func (d *DayDayMapAdapter) translateNode(node *model.UQLNode) string {
 // mapField 映射统一字段到DayDayMap字段
 func (d *DayDayMapAdapter) mapField(field string) string {
 	mapping := map[string]string{
-		"body":        "web.body",
-		"title":       "web.title",
-		"header":      "web.header",
-		"port":        "ip.port",
-		"protocol":    "protocol.service",
-		"ip":          "ip",
-		"country":     "ip.country",
-		"region":      "ip.province",
-		"city":        "ip.city",
-		"asn":         "asn.number",
-		"org":         "org.name",
-		"isp":         "ip.isp",
-		"domain":      "domain",
-		"host":        "domain",
-		"server":      "web.server",
-		"status_code": "web.status_code",
-		"os":          "ip.os",
-		"app":         "app.name",
+		"body":            "web.body",
+		"title":           "web.title",
+		"header":          "web.header",
+		"port":            "ip.port",
+		"protocol":        "protocol.service",
+		"ip":              "ip",
+		"country":         "ip.country",
+		"region":          "ip.province",
+		"city":            "ip.city",
+		"asn":             "asn.number",
+		"org":             "org.name",
+		"isp":             "ip.isp",
+		"domain":          "domain",
+		"host":            "domain",
+		"server":          "web.server",
+		"status_code":     "web.status_code",
+		"os":              "ip.os",
+		"app":             "app.name",
 		"cert":            "cert.subject",
 		"cert.subject.cn": "cert.subject.cn",
 		"cert.issuer.cn":  "cert.issuer.cn",
-		"url":         "domain",
+		"url":             "domain",
 	}
 
 	if mapped, ok := mapping[field]; ok {
@@ -305,6 +360,8 @@ func normalizeDayDayMapItem(item *DayDayMapItem, source string) *model.UnifiedAs
 	} else {
 		asset.BodySnippet = item.Body
 	}
+	// Capture unknown top-level fields and promote any timestamp key.
+	applyExtras(asset, item.Extra)
 
 	if asset.IP != "" && asset.Port > 0 {
 		buildAssetURL(asset)

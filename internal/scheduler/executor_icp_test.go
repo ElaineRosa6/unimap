@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/model"
-	"slices"
 )
 
 func defaultICPConfig() adapter.ICPConfig {
@@ -50,8 +50,10 @@ func TestICPQueryRunner_MissingQueries(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing queries")
 	}
-	if !strings.Contains(err.Error(), "missing 'queries' or 'query'") {
-		t.Errorf("unexpected error: %v", err)
+	for _, want := range []string{string(TaskICPQuery), "missing 'queries' or 'query'"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
 	}
 }
 

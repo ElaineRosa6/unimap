@@ -1,0 +1,26 @@
+# Caddyfile for UniMap acceptance fixture.
+# Replace the domain placeholders with your actual domains.
+#
+# - Control domain: stable, hosts the control API. Never DNS-flipped.
+# - Target domain: hosts the target page and mutable page. DNS-flipped during tests.
+#
+# Both domains must initially resolve to this server's public IP.
+# Caddy obtains Let's Encrypt certificates automatically.
+
+# Control domain — stable control API
+control.example.com {
+	reverse_proxy fixture:9090
+}
+
+# Target domain — DNS rebinding target page + tamper mutable page
+target.example.com {
+	# Mutable page on /tamper path (for tamper evidence test)
+	handle /tamper {
+		reverse_proxy fixture:8082
+	}
+
+	# Default: target page (for DNS rebinding test)
+	handle {
+		reverse_proxy fixture:8081
+	}
+}

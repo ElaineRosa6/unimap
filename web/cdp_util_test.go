@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/unimap/project/internal/config"
 )
 
 // isAllDigits 测试
@@ -113,5 +115,34 @@ func TestHandleCDPStatusOffline(t *testing.T) {
 	// 应该返回 JSON 响应
 	if rec.Body.Len() == 0 {
 		t.Error("expected non-empty response body")
+	}
+}
+
+// resolveCDPURL tests
+func TestResolveCDPURL_NilConfig(t *testing.T) {
+	s := &Server{}
+	got := s.resolveCDPURL()
+	if got != "http://127.0.0.1:9222" {
+		t.Errorf("expected default URL, got %q", got)
+	}
+}
+
+func TestResolveCDPURL_WithConfig(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Screenshot.ChromeRemoteDebugURL = "http://localhost:9333"
+	s := &Server{config: cfg}
+	got := s.resolveCDPURL()
+	if got != "http://localhost:9333" {
+		t.Errorf("expected http://localhost:9333, got %q", got)
+	}
+}
+
+func TestResolveCDPURL_PortOnly(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Screenshot.ChromeRemoteDebugURL = "9444"
+	s := &Server{config: cfg}
+	got := s.resolveCDPURL()
+	if got != "http://127.0.0.1:9444" {
+		t.Errorf("expected http://127.0.0.1:9444, got %q", got)
 	}
 }

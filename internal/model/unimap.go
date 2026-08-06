@@ -1,6 +1,9 @@
 package model
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // FOFAOfficialWebURL FOFA 官方 Web 域名，所有 Web/截图/扩展链路仅允许读此常量或配置中的 WebBaseURL。
 const FOFAOfficialWebURL = "https://fofa.info"
@@ -58,6 +61,19 @@ type UnifiedAsset struct {
 	LastSeen    string                 `json:"last_seen"` // last probe/update time (e.g. Shodan timestamp, ZoomEye icon-time)
 	Source      string                 `json:"source"`
 	Extra       map[string]interface{} `json:"extra"`
+}
+
+// Key returns a stable deduplication fingerprint (ip[:port]) used by
+// incremental push tracking. An asset without an IP has no key, so it can
+// never be deduplicated and is always treated as new.
+func (a UnifiedAsset) Key() string {
+	if a.IP == "" {
+		return ""
+	}
+	if a.Port > 0 {
+		return fmt.Sprintf("%s:%d", a.IP, a.Port)
+	}
+	return a.IP
 }
 
 // QuotaInfo 引擎配额信息

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -29,12 +30,15 @@ const (
 
 	// writeWait is the maximum time allowed for a single write operation.
 	writeWait = 10 * time.Second
+
+	// maxWebSocketConnections is the maximum number of concurrent WebSocket connections.
+	maxWebSocketConnections = 100
 )
 
 // setWriteDeadline sets the write deadline on the connection.
 // Should be called while holding the writeMu lock.
 func setWriteDeadline(conn *websocket.Conn) {
-	conn.SetWriteDeadline(time.Now().Add(writeWait))
+	conn.SetWriteDeadline(time.Now().Add(writeWait)) //nolint:errcheck
 }
 
 func generateConnectionID() string {
@@ -51,12 +55,22 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
 		return
 	}
+	s.connManager.mutex.RLock()
+	connCount := len(s.connManager.connections)
+	s.connManager.mutex.RUnlock()
+	if connCount >= maxWebSocketConnections {
+		writeAPIError(w, http.StatusTooManyRequests, "too_many_connections", "maximum WebSocket connections reached", nil)
+		return
+	}
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		logger.Errorf("WebSocket upgrade failed: %v", err)
 		return
 	}
 	defer conn.Close()
+
+	const maxReadMessageSize = 64 * 1024 // 64KB per message
+	conn.SetReadLimit(maxReadMessageSize)
 
 	connID := generateConnectionID()
 	managed := &managedConn{conn: conn}
@@ -90,9 +104,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 // wsSetupPingPong 设置 WebSocket ping/pong 心跳
 func wsSetupPingPong(conn *websocket.Conn, managed *managedConn, done chan struct{}) {
-	conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetReadDeadline(time.Now().Add(pongWait)) //nolint:errcheck
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(pongWait))
+		conn.SetReadDeadline(time.Now().Add(pongWait)) //nolint:errcheck
 		return nil
 	})
 	go func() {
@@ -138,7 +152,7 @@ func wsMessageLoop(s *Server, conn *websocket.Conn, connCtx context.Context, con
 				logger.Errorf("WebSocket write error: %v", err)
 			}
 		case "pong":
-			conn.SetReadDeadline(time.Now().Add(pongWait))
+			conn.SetReadDeadline(time.Now().Add(pongWait)) //nolint:errcheck
 		case "query":
 			s.handleWebSocketQuery(connCtx, connID, message, writeJSON)
 		}
@@ -235,7 +249,9 @@ func parseWSQueryParams(message map[string]interface{}, orch interface{ ListAdap
 func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query string, engines []string, apiEngines []string, pageSize int, browserQuery bool, browserAction string, writeJSON func(interface{}) error) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("WebSocket query panic for %s: %v", queryID, r)
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			logger.Errorf("WebSocket query panic for %s: %v\n%s", queryID, r, buf[:n])
 			s.sendToConn(connID, map[string]interface{}{
 				"type": "query_error", "error": fmt.Sprintf("internal error: query %s failed", queryID),
 			})
@@ -269,15 +285,17 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 		err  error
 	}
 	apiCh := make(chan apiResult, 1)
-	go func() {
-		resp, err := s.service.Query(apiCtx, service.QueryRequest{
-			Query: query, Engines: apiEngines, PageSize: pageSize, ProcessData: true,
-		})
-		apiCh <- apiResult{resp, err}
-	}()
+	if s.queryApp == nil {
+		apiCh <- apiResult{err: fmt.Errorf("query service not initialized")}
+	} else {
+		go func() {
+			resp, err := s.queryApp.ExecuteQuery(apiCtx, query, apiEngines, pageSize)
+			apiCh <- apiResult{resp, err}
+		}()
+	}
 
 	// 等待两个查询都完成（或超时）
-	// 浏览器查询已并行化，但仍给 60 秒超时保护，避免拖慢 API 查询结果返回。
+	// 浏览器查询已并行化，但仍按 action 给超时保护，避免拖慢 API 查询结果返回。
 	var resp *service.QueryResponse
 	var queryErr error
 	var browserOutcome browserQueryOutcome
@@ -286,8 +304,9 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 	browserDone := browserQueryCh == nil
 	var browserTimer *time.Timer
 	var browserTimerCh <-chan time.Time
+	browserWaitTimeout := service.BrowserQueryWaitTimeoutForAction(browserAction)
 	if !browserDone {
-		browserTimer = time.NewTimer(service.BrowserQueryWaitTimeout)
+		browserTimer = time.NewTimer(browserWaitTimeout)
 		defer browserTimer.Stop()
 		browserTimerCh = browserTimer.C
 	}
@@ -303,7 +322,7 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 		case <-browserTimerCh:
 			// 浏览器查询超时，放弃等待，用已有结果返回
 			browserDone = true
-			logger.Warnf("browser query timed out after %s for WS query %s, returning API results only", service.BrowserQueryWaitTimeout, queryID)
+			logger.Warnf("browser query timed out after %s for WS query %s, returning API results only", browserWaitTimeout, queryID)
 		}
 	}
 	if queryErr == nil && apiCtx.Err() != nil {
@@ -317,9 +336,9 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 	if queryErr != nil {
 		errMsg = fmt.Sprintf("Query failed: %v", queryErr)
 	}
-	resultsPayload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, errMsg)
+	resultsPayload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, false, errMsg)
 	if errMsg != "" {
-		resultsPayload["error"] = errMsg
+		resultsPayload.Error = errMsg
 	}
 	if wErr := writeJSON(map[string]interface{}{
 		"type": "query_complete", "query_id": queryID, "status": statusCopy, "results": resultsPayload,
@@ -336,29 +355,36 @@ func (s *Server) finalizeWSQueryStatus(queryID, query string, engines []string, 
 	if st == nil {
 		return QueryStatus{}
 	}
-	if queryErr != nil {
+	payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, false)
+	if queryErr != nil && len(payload.Assets) == 0 {
 		st.Errors = append(st.Errors, fmt.Sprintf("Query failed: %v", queryErr))
 		st.Errors = appendUniqueStrings(st.Errors, browserOutcome.Errors)
 		st.Errors = appendUniqueStrings(st.Errors, browserOutcome.AutoCaptureErrors)
 		st.Status = "error"
 	} else {
-		payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction)
-		if assets, ok := payload["assets"].([]model.UnifiedAsset); ok {
-			st.Results = assets
+		if queryErr != nil {
+			payload = buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, false, fmt.Sprintf("API query failed: %v", queryErr))
+		}
+		if len(payload.Assets) > 0 {
+			st.Results = payload.Assets
 		} else {
 			st.Results = resp.Assets
 		}
-		if totalCount, ok := payload["totalCount"].(int); ok {
-			st.TotalCount = totalCount
+		if payload.TotalCount > 0 {
+			st.TotalCount = payload.TotalCount
 		} else {
 			st.TotalCount = resp.TotalCount
 		}
-		if errs, ok := payload["errors"].([]string); ok {
-			st.Errors = errs
+		if len(payload.Errors) > 0 {
+			st.Errors = payload.Errors
 		} else {
 			st.Errors = resp.Errors
 		}
-		st.Status = "completed"
+		if payload.Status == "partial" {
+			st.Status = "partial"
+		} else {
+			st.Status = "completed"
+		}
 	}
 	st.Progress = 100
 	st.EndTime = time.Now()
@@ -378,7 +404,9 @@ func (s *Server) scheduleWSQueryCleanup(queryID string) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Errorf("WebSocket query cleanup panic for %s: %v", queryID, r)
+				buf := make([]byte, 4096)
+				n := runtime.Stack(buf, false)
+				logger.Errorf("WebSocket query cleanup panic for %s: %v\n%s", queryID, r, buf[:n])
 			}
 		}()
 		select {

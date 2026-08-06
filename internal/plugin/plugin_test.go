@@ -172,14 +172,14 @@ type testProcessor struct {
 	priority int
 }
 
-func (t *testProcessor) Name() string                            { return t.name }
-func (t *testProcessor) Version() string                         { return "0.1.0" }
-func (t *testProcessor) Description() string                     { return "test" }
-func (t *testProcessor) Author() string                          { return "test" }
-func (t *testProcessor) Type() PluginType                        { return PluginTypeProcessor }
+func (t *testProcessor) Name() string                         { return t.name }
+func (t *testProcessor) Version() string                      { return "0.1.0" }
+func (t *testProcessor) Description() string                  { return "test" }
+func (t *testProcessor) Author() string                       { return "test" }
+func (t *testProcessor) Type() PluginType                     { return PluginTypeProcessor }
 func (t *testProcessor) Initialize(*model.PluginConfig) error { return nil }
-func (t *testProcessor) Start(context.Context) error             { return nil }
-func (t *testProcessor) Stop() error                             { return nil }
+func (t *testProcessor) Start(context.Context) error          { return nil }
+func (t *testProcessor) Stop() error                          { return nil }
 func (t *testProcessor) Health() HealthStatus {
 	return HealthStatus{Healthy: true, Message: "ok"}
 }

@@ -389,10 +389,10 @@ func TestSchedulerE2E_TaskTypeValidation(t *testing.T) {
 }
 
 func TestSchedulerE2E_AllTaskTypesAvailable(t *testing.T) {
-	// Verify all 22 task types are defined
+	// Verify all 23 task types are defined
 	types := AllTaskTypes()
-	if len(types) != 22 {
-		t.Errorf("expected 22 task types, got %d", len(types))
+	if len(types) != 23 {
+		t.Errorf("expected 23 task types, got %d", len(types))
 	}
 
 	// Verify each has a label

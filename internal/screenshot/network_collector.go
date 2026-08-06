@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,9 +48,31 @@ var l1SearchAPIs = map[string]l1SearchAPIConfig{
 		ParseResponse: parseHunterNetworkResponse,
 	},
 	"quake": {
-		URLPattern:    "/api/visitor/search/query_string/quake_service",
+		URLPattern:    "/api/search/query_string/quake_service",
 		Method:        "POST",
 		ParseResponse: parseQuakeNetworkResponse,
+	},
+	// FOFA and Shodan L1 patterns added for P2 CDP grading prep (2026-08-01).
+	// URL patterns and response parsers need real calibration during P2.
+	"fofa": {
+		URLPattern:    "/api/search",
+		Method:        "GET",
+		ParseResponse: parseFofaNetworkResponse,
+	},
+	"shodan": {
+		URLPattern:    "/api/search",
+		Method:        "GET",
+		ParseResponse: parseShodanNetworkResponse,
+	},
+	"censys": {
+		URLPattern:    "/api/v2/hosts/search",
+		Method:        "GET",
+		ParseResponse: parseCensysNetworkResponse,
+	},
+	"daydaymap": {
+		URLPattern:    "/api/v1/raymap/search/all",
+		Method:        "POST",
+		ParseResponse: parseDayDayMapNetworkResponse,
 	},
 }
 
@@ -76,22 +101,38 @@ func (m *Manager) CollectViaNetwork(ctx context.Context, engine, query, queryID 
 	ctx, cancel := context.WithTimeout(ctx, collectTimeout)
 	defer cancel()
 
-	allocCtx, allocCancel, err := m.newAllocator(ctx)
+	session, err := m.newGuardedBrowserSession(ctx, searchURL, "")
 	if err != nil {
 		return nil, err
 	}
-	defer allocCancel()
+	defer session.Close()
+	browserCtx := session.Context()
 
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	defer browserCancel()
+	if cookies := m.GetCookies(engine); len(cookies) > 0 {
+		if err := chromedp.Run(browserCtx, setCookieActions(cookies, searchURL)...); err != nil {
+			logger.Warnf("inject cookies failed for %s: %v", engine, err)
+		}
+	}
 
 	var mu sync.Mutex
 	captured := &networkResponse{}
+	observedPaths := make(map[string]struct{})
 	respCh := make(chan struct{}, 1)
 
 	chromedp.ListenTarget(browserCtx, func(ev interface{}) {
 		switch e := ev.(type) {
 		case *network.EventResponseReceived:
+			if e.Type == network.ResourceTypeXHR || e.Type == network.ResourceTypeFetch {
+				label := networkResponseLabel(e.Response.URL)
+				if label == "" {
+					break
+				}
+				mu.Lock()
+				if len(observedPaths) < 50 {
+					observedPaths[label] = struct{}{}
+				}
+				mu.Unlock()
+			}
 			if strings.Contains(e.Response.URL, apiConfig.URLPattern) {
 				mu.Lock()
 				if captured.URL == "" {
@@ -132,13 +173,19 @@ func (m *Manager) CollectViaNetwork(ctx context.Context, engine, query, queryID 
 		}
 	})
 
-	if err := chromedp.Run(browserCtx, network.Enable()); err != nil {
+	if err := session.Run(network.Enable()); err != nil {
 		return nil, fmt.Errorf("enable network: %w", err)
 	}
 
 	logger.Infof("L1: navigating to %s for engine %s", searchURL, engine)
-	if err := chromedp.Run(browserCtx, chromedp.Navigate(searchURL)); err != nil {
+	if err := session.Run(chromedp.Navigate(searchURL)); err != nil {
 		return nil, fmt.Errorf("navigate failed: %w", err)
+	}
+	if err := applyBrowserStorage(session, m.GetBrowserStorage(engine), searchURL); err != nil {
+		return nil, fmt.Errorf("inject browser storage for %s: %w", engine, err)
+	}
+	if err := prepareStatefulSearchPage(session, engine, query); err != nil {
+		return nil, err
 	}
 
 	select {
@@ -154,8 +201,27 @@ func (m *Manager) CollectViaNetwork(ctx context.Context, engine, query, queryID 
 		}
 		return m.buildL1Result(engine, query, resp, apiConfig.ParseResponse)
 	case <-ctx.Done():
-		return nil, fmt.Errorf("L1: timeout waiting for %s search API response", engine)
+		mu.Lock()
+		observed := make([]string, 0, len(observedPaths))
+		for path := range observedPaths {
+			observed = append(observed, path)
+		}
+		mu.Unlock()
+		sort.Strings(observed)
+		return nil, fmt.Errorf("L1: timeout waiting for %s search API response; observed=%v", engine, observed)
 	}
+}
+
+func networkResponseLabel(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Hostname() == "" {
+		return ""
+	}
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	if !strings.Contains(host, "quake") && !strings.Contains(parsed.Path, "search") && !strings.Contains(parsed.Path, "/api/") {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host + parsed.EscapedPath()
 }
 
 // buildL1Result 解析 L1 捕获的响应并构建 CollectResult
@@ -227,33 +293,33 @@ func parseZoomEyeNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error)
 	return assets, resp.Total, nil
 }
 
+// zoomEyeNetworkResult is a typed alternative parser for ZoomEye search API responses.
+type zoomEyeNetworkResult struct {
+	IP      string  `json:"ip"`
+	Port    float64 `json:"port"`
+	Service string  `json:"service"`
+	Domain  string  `json:"domain"`
+	Title   string  `json:"title"`
+}
+
 func parseZoomEyeNetworkResponseAlt(body []byte) ([]model.UnifiedAsset, int, error) {
 	var resp struct {
-		Total   int                      `json:"total"`
-		Results []map[string]interface{} `json:"results"`
+		Total   int                    `json:"total"`
+		Results []zoomEyeNetworkResult `json:"results"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, 0, fmt.Errorf("failed to parse ZoomEye response: %w", err)
 	}
 	assets := make([]model.UnifiedAsset, 0, len(resp.Results))
 	for _, item := range resp.Results {
-		a := model.UnifiedAsset{Source: "zoomeye"}
-		if v, ok := item["ip"].(string); ok {
-			a.IP = v
-		}
-		if v, ok := item["port"].(float64); ok {
-			a.Port = int(v)
-		}
-		if v, ok := item["service"].(string); ok {
-			a.Protocol = v
-		}
-		if v, ok := item["domain"].(string); ok {
-			a.Host = v
-		}
-		if v, ok := item["title"].(string); ok {
-			a.Title = v
-		}
-		assets = append(assets, a)
+		assets = append(assets, model.UnifiedAsset{
+			Source:   "zoomeye",
+			IP:       item.IP,
+			Port:     int(item.Port),
+			Protocol: item.Service,
+			Host:     item.Domain,
+			Title:    item.Title,
+		})
 	}
 	return assets, resp.Total, nil
 }
@@ -304,54 +370,485 @@ func parseHunterNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) 
 
 // parseQuakeNetworkResponse 解析 Quake 搜索 API 响应
 func parseQuakeNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) {
+	var root map[string]any
+	if err := json.Unmarshal(body, &root); err != nil {
+		return nil, 0, fmt.Errorf("failed to parse Quake response: %w", err)
+	}
+	code := quakeInt(root["code"])
+	if code != 0 {
+		return nil, 0, fmt.Errorf("Quake API error: code=%d message=%s", code, quakeString(root["message"]))
+	}
+
+	var hits []any
+	total := 0
+	switch data := root["data"].(type) {
+	case []any:
+		hits = data
+	case map[string]any:
+		hits, _ = data["hits"].([]any)
+		total = quakeInt(data["total"])
+	}
+	if total == 0 {
+		total = quakeIntAt(root, "meta.pagination.total", "meta.total")
+	}
+
+	assets := make([]model.UnifiedAsset, 0, len(hits))
+	for _, rawHit := range hits {
+		hit, ok := rawHit.(map[string]any)
+		if !ok {
+			continue
+		}
+		protocol := quakeStringAt(hit, "service.name", "transport")
+		var extra map[string]interface{}
+		if countryName := quakeStringAt(hit, "location.country_cn", "location.country"); countryName != "" {
+			extra = map[string]interface{}{"country_name": countryName}
+		}
+		assets = append(assets, model.UnifiedAsset{
+			IP:          quakeStringAt(hit, "ip"),
+			Port:        quakeIntAt(hit, "port"),
+			Protocol:    protocol,
+			Host:        quakeStringAt(hit, "hostname", "service.http.host"),
+			Title:       quakeStringAt(hit, "title.title", "service.http.title", "service.http.response.html_title"),
+			CountryCode: quakeStringAt(hit, "location.country_code"),
+			Region:      quakeStringAt(hit, "location.province_cn", "location.province"),
+			City:        quakeStringAt(hit, "location.city_cn", "location.city"),
+			ASN:         quakeStringAt(hit, "autonomous_system.asn", "asn"),
+			Org:         quakeStringAt(hit, "autonomous_system.name", "org"),
+			ISP:         quakeStringAt(hit, "autonomous_system.isp", "isp"),
+			Server:      quakeStringAt(hit, "server", "service.http.response.headers.server"),
+			Source:      "quake",
+			Extra:       extra,
+		})
+	}
+	collection.NormalizeAssets("quake", assets)
+	return assets, total, nil
+}
+
+func quakeStringAt(root map[string]any, paths ...string) string {
+	for _, path := range paths {
+		var current any = root
+		for _, part := range strings.Split(path, ".") {
+			object, ok := current.(map[string]any)
+			if !ok {
+				current = nil
+				break
+			}
+			current = object[part]
+		}
+		if value := quakeString(current); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func quakeIntAt(root map[string]any, paths ...string) int {
+	for _, path := range paths {
+		var current any = root
+		for _, part := range strings.Split(path, ".") {
+			object, ok := current.(map[string]any)
+			if !ok {
+				current = nil
+				break
+			}
+			current = object[part]
+		}
+		if value := quakeInt(current); value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func quakeString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case json.Number:
+		return typed.String()
+	case []any:
+		for _, item := range typed {
+			if value := quakeString(item); value != "" {
+				return value
+			}
+		}
+	}
+	return ""
+}
+
+func quakeInt(value any) int {
+	switch typed := value.(type) {
+	case float64:
+		return int(typed)
+	case json.Number:
+		parsed, _ := strconv.Atoi(typed.String())
+		return parsed
+	case string:
+		parsed, _ := strconv.Atoi(strings.TrimSpace(typed))
+		return parsed
+	}
+	return 0
+}
+
+// parseFofaNetworkResponse 解析 FOFA 搜索 API 响应。
+// FOFA Web 前端调用 /api/search 返回两种已知格式：
+//   - 对象数组：{"error":false,"size":N,"results":[{"ip":"...","port":"80",...}]}
+//   - 二维数组：{"error":false,"results":[["1.1.1.1","80","http","title","CN"],...]}
+//
+// 本解析器兼容两种格式。字段名基于 FOFA 公开 API 文档，P2 真实定级时需校准。
+func parseFofaNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(body, &root); err != nil {
+		return nil, 0, fmt.Errorf("failed to parse FOFA response: %w", err)
+	}
+
+	// Check error flag.
+	if errRaw, ok := root["error"]; ok {
+		var errVal bool
+		if json.Unmarshal(errRaw, &errVal) == nil && errVal {
+			msg := "unknown FOFA error"
+			if emsg, ok := root["errmsg"]; ok {
+				var s string
+				if json.Unmarshal(emsg, &s) == nil && s != "" {
+					msg = s
+				}
+			}
+			return nil, 0, fmt.Errorf("FOFA API error: %s", msg)
+		}
+	}
+
+	total := 0
+	if sizeRaw, ok := root["size"]; ok {
+		var n json.Number
+		if json.Unmarshal(sizeRaw, &n) == nil {
+			total, _ = strconv.Atoi(n.String())
+		}
+	}
+
+	resultsRaw, ok := root["results"]
+	if !ok {
+		return nil, 0, fmt.Errorf("FOFA response missing results field")
+	}
+
+	// Try object array format first.
+	var objResults []map[string]any
+	if json.Unmarshal(resultsRaw, &objResults) == nil && len(objResults) > 0 {
+		return parseFofaObjectResults(objResults, total)
+	}
+
+	// Fall back to 2D array format.
+	var arrResults [][]string
+	if json.Unmarshal(resultsRaw, &arrResults) == nil && len(arrResults) > 0 {
+		return parseFofaArrayResults(arrResults, total)
+	}
+
+	return nil, 0, nil // empty results
+}
+
+func parseFofaObjectResults(results []map[string]any, total int) ([]model.UnifiedAsset, int, error) {
+	var assets []model.UnifiedAsset
+	for _, hit := range results {
+		port := 0
+		if p := quakeStringAt(hit, "port"); p != "" {
+			port, _ = strconv.Atoi(p)
+		}
+		assets = append(assets, model.UnifiedAsset{
+			IP:          quakeStringAt(hit, "ip", "host", "domain"),
+			Port:        port,
+			Protocol:    quakeStringAt(hit, "protocol", "service"),
+			Host:        quakeStringAt(hit, "host", "domain"),
+			Title:       quakeStringAt(hit, "title", "header"),
+			CountryCode: quakeStringAt(hit, "country_code", "country"),
+			Region:      quakeStringAt(hit, "region", "province"),
+			City:        quakeStringAt(hit, "city"),
+			Org:         quakeStringAt(hit, "org", "isp"),
+			Server:      quakeStringAt(hit, "server", "product"),
+			Source:      "fofa",
+		})
+	}
+	collection.NormalizeAssets("fofa", assets)
+	return assets, total, nil
+}
+
+// parseFofaArrayResults handles the legacy 2D array format where fields are
+// positionally mapped: [ip, port, protocol, title, country, city, org, ...].
+func parseFofaArrayResults(results [][]string, total int) ([]model.UnifiedAsset, int, error) {
+	var assets []model.UnifiedAsset
+	for _, row := range results {
+		if len(row) < 2 {
+			continue
+		}
+		asset := model.UnifiedAsset{Source: "fofa"}
+		if len(row) > 0 {
+			asset.IP = strings.TrimSpace(row[0])
+		}
+		if len(row) > 1 {
+			asset.Port, _ = strconv.Atoi(strings.TrimSpace(row[1]))
+		}
+		if len(row) > 2 {
+			asset.Protocol = strings.TrimSpace(row[2])
+		}
+		if len(row) > 3 {
+			asset.Title = strings.TrimSpace(row[3])
+		}
+		if len(row) > 4 {
+			asset.CountryCode = strings.TrimSpace(row[4])
+		}
+		if len(row) > 5 {
+			asset.City = strings.TrimSpace(row[5])
+		}
+		if len(row) > 6 {
+			asset.Org = strings.TrimSpace(row[6])
+		}
+		if asset.IP != "" || asset.Host != "" {
+			assets = append(assets, asset)
+		}
+	}
+	collection.NormalizeAssets("fofa", assets)
+	return assets, total, nil
+}
+
+// parseShodanNetworkResponse 解析 Shodan 搜索 API 响应。
+// Shodan Web 前端可能调用 /api/search 或内部端点。响应格式基于 Shodan 公开 API：
+//
+//	{"total":N,"matches":[{"ip_str":"...","port":80,"transport":"tcp",...}]}
+//
+// P2 真实定级时需校准实际 Web 前端调用的端点和字段。
+func parseShodanNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) {
 	var resp struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-		Data    struct {
+		Total   int `json:"total"`
+		Matches []struct {
+			IPStr     string   `json:"ip_str"`
+			Port      int      `json:"port"`
+			Transport string   `json:"transport"`
+			Hostnames []string `json:"hostnames"`
+			Location  struct {
+				CountryCode string `json:"country_code"`
+				CountryName string `json:"country_name"`
+				City        string `json:"city"`
+				RegionCode  string `json:"region_code"`
+			} `json:"location"`
+			HTTP struct {
+				Title  string `json:"title"`
+				Server string `json:"server"`
+				Host   string `json:"host"`
+			} `json:"http"`
+			Org     string `json:"org"`
+			ISP     string `json:"isp"`
+			Product string `json:"product"`
+			Version string `json:"version"`
+		} `json:"matches"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, 0, fmt.Errorf("failed to parse Shodan response: %w", err)
+	}
+	if resp.Error != "" {
+		return nil, 0, fmt.Errorf("Shodan API error: %s", resp.Error)
+	}
+
+	var assets []model.UnifiedAsset
+	for _, m := range resp.Matches {
+		host := ""
+		if len(m.Hostnames) > 0 {
+			host = m.Hostnames[0]
+		}
+		if host == "" {
+			host = m.HTTP.Host
+		}
+		region := m.Location.RegionCode
+		org := m.Org
+		if org == "" {
+			org = m.ISP
+		}
+		assets = append(assets, model.UnifiedAsset{
+			IP:          m.IPStr,
+			Port:        m.Port,
+			Protocol:    m.Transport,
+			Host:        host,
+			Title:       m.HTTP.Title,
+			CountryCode: m.Location.CountryCode,
+			Region:      region,
+			City:        m.Location.City,
+			Org:         org,
+			Server:      m.HTTP.Server,
+			Source:      "shodan",
+		})
+	}
+	collection.NormalizeAssets("shodan", assets)
+	return assets, resp.Total, nil
+}
+
+// parseCensysNetworkResponse 解析 Censys 搜索 API 响应。
+// Censys Web 前端调用 /api/v2/hosts/search，响应格式：
+//
+//	{"result":{"total":N,"hits":[{"ip":"...","services":[{"port":80,"service_name":"http",...}],...}]}}
+//
+// 也兼容 v3 格式：{"result":{"total":N,"hits":[{"ip":"...","location":{...},"services":[...]}]}}
+func parseCensysNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) {
+	var resp struct {
+		Result struct {
 			Total int `json:"total"`
 			Hits  []struct {
 				IP       string `json:"ip"`
-				Port     int    `json:"port"`
-				Hostname string `json:"hostname"`
-				Service  struct {
-					Name string `json:"name"`
-				} `json:"service"`
-				Transport string `json:"transport"`
-				Title     struct {
-					Title string `json:"title"`
-				} `json:"title"`
-				Location struct {
+				Location *struct {
 					CountryCode string `json:"country_code"`
-					City        string `json:"city_cn"`
-				} `json:"location"`
-				AS struct {
-					ASN  string `json:"asn"`
-					Name string `json:"name"`
-					ISP  string `json:"isp"`
-				} `json:"autonomous_system"`
-				Server string `json:"server"`
+					Province    string `json:"province"`
+					City        string `json:"city"`
+				} `json:"location,omitempty"`
+				AutonomousSystem *struct {
+					ASN  interface{} `json:"asn"`
+					Name string      `json:"name"`
+				} `json:"autonomous_system,omitempty"`
+				DNS *struct {
+					Names []string `json:"names"`
+				} `json:"dns,omitempty"`
+				Services []struct {
+					Port        float64 `json:"port"`
+					ServiceName string  `json:"service_name"`
+					HTTP        *struct {
+						Response struct {
+							HTMLTitle  string  `json:"html_title"`
+							StatusCode float64 `json:"status_code"`
+							Headers    struct {
+								Server string `json:"Server"`
+							} `json:"headers"`
+						} `json:"response"`
+					} `json:"http,omitempty"`
+				} `json:"services,omitempty"`
 			} `json:"hits"`
+		} `json:"result"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, 0, fmt.Errorf("failed to parse Censys response: %w", err)
+	}
+	if resp.Error != "" {
+		return nil, 0, fmt.Errorf("Censys API error: %s", resp.Error)
+	}
+
+	var assets []model.UnifiedAsset
+	for _, hit := range resp.Result.Hits {
+		if hit.IP == "" {
+			continue
+		}
+		cc, region, city := "", "", ""
+		if hit.Location != nil {
+			cc = hit.Location.CountryCode
+			region = hit.Location.Province
+			city = hit.Location.City
+		}
+		asn, org := "", ""
+		if hit.AutonomousSystem != nil {
+			switch v := hit.AutonomousSystem.ASN.(type) {
+			case string:
+				asn = v
+			case float64:
+				asn = fmt.Sprintf("AS%d", int(v))
+			}
+			org = hit.AutonomousSystem.Name
+		}
+		host := ""
+		if hit.DNS != nil && len(hit.DNS.Names) > 0 {
+			host = hit.DNS.Names[0]
+		}
+
+		if len(hit.Services) == 0 {
+			// Host with no services — emit a single asset with host-level metadata.
+			assets = append(assets, model.UnifiedAsset{
+				IP: hit.IP, Host: host, CountryCode: cc, Region: region,
+				City: city, ASN: asn, Org: org, ISP: org, Source: "censys",
+			})
+			continue
+		}
+		for _, svc := range hit.Services {
+			asset := model.UnifiedAsset{
+				IP: hit.IP, Port: int(svc.Port), Protocol: svc.ServiceName,
+				Host: host, CountryCode: cc, Region: region, City: city,
+				ASN: asn, Org: org, ISP: org, Source: "censys",
+			}
+			if svc.HTTP != nil {
+				asset.Title = svc.HTTP.Response.HTMLTitle
+				asset.StatusCode = int(svc.HTTP.Response.StatusCode)
+				asset.Server = svc.HTTP.Response.Headers.Server
+			}
+			assets = append(assets, asset)
+		}
+	}
+	collection.NormalizeAssets("censys", assets)
+	return assets, resp.Result.Total, nil
+}
+
+// parseDayDayMapNetworkResponse 解析 DayDayMap 搜索 API 响应。
+// DayDayMap Web 前端调用 /api/v1/raymap/search/all，响应格式：
+//
+//	{"code":200,"data":{"list":[{"ip":"...","port":80,...}],"total":N},"msg":"检索成功"}
+func parseDayDayMapNetworkResponse(body []byte) ([]model.UnifiedAsset, int, error) {
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			List []struct {
+				IP         string  `json:"ip"`
+				Port       float64 `json:"port"`
+				Protocol   string  `json:"protocol"`
+				Domain     string  `json:"domain"`
+				Title      string  `json:"title"`
+				Server     string  `json:"server"`
+				Body       string  `json:"body"`
+				StatusCode float64 `json:"status_code"`
+				Country    string  `json:"country"`
+				Province   string  `json:"province"`
+				City       string  `json:"city"`
+				ASN        string  `json:"asn"`
+				Org        string  `json:"org"`
+				ISP        string  `json:"isp"`
+			} `json:"list"`
+			Total int `json:"total"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, 0, fmt.Errorf("failed to parse Quake response: %w", err)
+		return nil, 0, fmt.Errorf("failed to parse DayDayMap response: %w", err)
 	}
-	if resp.Code != 0 {
-		return nil, 0, fmt.Errorf("Quake API error: code=%d message=%s", resp.Code, resp.Message)
-	}
-	assets := make([]model.UnifiedAsset, 0, len(resp.Data.Hits))
-	for _, hit := range resp.Data.Hits {
-		proto := hit.Transport
-		if proto == "" {
-			proto = hit.Service.Name
+	if resp.Code != 200 {
+		errMsg := resp.Msg
+		if errMsg == "" {
+			errMsg = "unknown error"
 		}
-		assets = append(assets, model.UnifiedAsset{
-			IP: hit.IP, Port: hit.Port, Protocol: proto, Host: hit.Hostname,
-			Title: hit.Title.Title, CountryCode: hit.Location.CountryCode, City: hit.Location.City,
-			ASN: hit.AS.ASN, Org: hit.AS.Name, ISP: hit.AS.ISP,
-			Server: hit.Server, Source: "quake",
-		})
+		return nil, 0, fmt.Errorf("DayDayMap API error: %s", errMsg)
 	}
+
+	var assets []model.UnifiedAsset
+	for _, item := range resp.Data.List {
+		if item.IP == "" {
+			continue
+		}
+		asset := model.UnifiedAsset{
+			IP:          item.IP,
+			Port:        int(item.Port),
+			Protocol:    item.Protocol,
+			Host:        item.Domain,
+			Title:       item.Title,
+			Server:      item.Server,
+			StatusCode:  int(item.StatusCode),
+			CountryCode: item.Country,
+			Region:      item.Province,
+			City:        item.City,
+			ASN:         item.ASN,
+			Org:         item.Org,
+			ISP:         item.ISP,
+			Source:      "daydaymap",
+		}
+		if len(item.Body) > 200 {
+			asset.BodySnippet = item.Body[:200]
+		} else {
+			asset.BodySnippet = item.Body
+		}
+		assets = append(assets, asset)
+	}
+	collection.NormalizeAssets("daydaymap", assets)
 	return assets, resp.Data.Total, nil
 }
 

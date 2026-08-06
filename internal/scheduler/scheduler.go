@@ -4,6 +4,7 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,6 +16,12 @@ import (
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/notify"
+)
+
+var (
+	ErrTaskNotFound = errors.New("scheduler task not found")
+	ErrPersistence  = errors.New("scheduler persistence failure")
+	ErrSchedule     = errors.New("scheduler runtime scheduling failure")
 )
 
 // NewScheduler creates a new Scheduler. If storePath is non-empty, tasks are
@@ -59,6 +66,13 @@ func (s *Scheduler) SetNotifyCfgProvider(provider func() *notify.NotifyGlobalCfg
 	s.notifyCfgProvider = provider
 }
 
+// SetNotificationLogRecorder installs an optional callback that persists a
+// notification push audit event (see history.NotificationPushLog). When unset,
+// pushes still send normally but are not recorded.
+func (s *Scheduler) SetNotificationLogRecorder(fn func(PushLogRecord) error) {
+	s.recordPushLog = fn
+}
+
 // Start begins the internal cron scheduler. Call this after registering
 // handlers and loading persisted tasks.
 func (s *Scheduler) Start() {
@@ -80,6 +94,9 @@ func (s *Scheduler) Load() error {
 			if err := s.scheduleTask(t); err != nil {
 				logger.Errorf("[scheduler] failed to schedule persisted task %s (%s): %v — task loaded but will not auto-fire", t.ID, t.Name, err)
 			}
+		} else {
+			t.RuntimeStatus = "disabled"
+			t.ScheduleError = ""
 		}
 	}
 	s.history = history
@@ -108,6 +125,21 @@ func (s *Scheduler) saveLocked() error {
 	if s.store == nil {
 		return nil
 	}
+	tasks := s.taskSnapshotLocked()
+	history := make([]ExecutionRecord, len(s.history))
+	copy(history, s.history)
+
+	return s.store.Save(tasks, history)
+}
+
+func (s *Scheduler) saveTasksLocked() error {
+	if s.store == nil {
+		return nil
+	}
+	return s.store.SaveTasks(s.taskSnapshotLocked())
+}
+
+func (s *Scheduler) taskSnapshotLocked() []*ScheduledTask {
 	tasks := make([]*ScheduledTask, 0, len(s.tasks))
 	for _, t := range s.tasks {
 		cp := *t
@@ -132,10 +164,7 @@ func (s *Scheduler) saveLocked() error {
 		}
 		tasks = append(tasks, &cp)
 	}
-	history := make([]ExecutionRecord, len(s.history))
-	copy(history, s.history)
-
-	return s.store.Save(tasks, history)
+	return tasks
 }
 
 // RegisterHandler registers a task handler. Must be called before Start().
@@ -227,13 +256,20 @@ func (s *Scheduler) AddTask(task *ScheduledTask) error {
 	if s.hasCyclicDependencyLocked(task.ID, task.DependsOn) {
 		return fmt.Errorf("task %s has cyclic dependencies", task.ID)
 	}
+	prepareDelayedRunAt(task)
 
 	s.tasks[task.ID] = task
+	if err := s.saveTasksLocked(); err != nil {
+		delete(s.tasks, task.ID)
+		return fmt.Errorf("%w: persist task: %v", ErrPersistence, err)
+	}
 	if err := s.scheduleTask(task); err != nil {
 		delete(s.tasks, task.ID)
-		return fmt.Errorf("failed to schedule task: %w", err)
+		if rollbackErr := s.saveTasksLocked(); rollbackErr != nil {
+			return fmt.Errorf("%w: schedule task: %v; persist rollback: %v", ErrPersistence, err, rollbackErr)
+		}
+		return fmt.Errorf("%w: %v", ErrSchedule, err)
 	}
-	s.saveLocked()
 	return nil
 }
 
@@ -244,8 +280,9 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 
 	existing, ok := s.tasks[task.ID]
 	if !ok {
-		return fmt.Errorf("task %s not found", task.ID)
+		return fmt.Errorf("%w: task %s", ErrTaskNotFound, task.ID)
 	}
+	previous := cloneScheduledTask(existing)
 
 	// Sanitize on update too
 	task.Name = sanitizeUTF8(task.Name)
@@ -319,18 +356,98 @@ func (s *Scheduler) UpdateTask(task *ScheduledTask) error {
 	}
 	if task.DelaySeconds > 0 {
 		existing.DelaySeconds = task.DelaySeconds
-	}
-	if err := s.validateScheduleTypeLocked(existing.ScheduleType, existing.CronExpr, existing.RunAt, existing.DelaySeconds); err != nil {
-		return err
-	}
-
-	if existing.Enabled {
-		if err := s.scheduleTask(existing); err != nil {
-			return fmt.Errorf("failed to schedule task: %w", err)
+		if task.RunAt == nil {
+			existing.RunAt = nil
 		}
 	}
-	s.saveLocked()
+	if err := s.validateScheduleTypeLocked(existing.ScheduleType, existing.CronExpr, existing.RunAt, existing.DelaySeconds); err != nil {
+		s.tasks[task.ID] = previous
+		if previous.Enabled {
+			if scheduleErr := s.scheduleTask(previous); scheduleErr != nil {
+				return fmt.Errorf("validate updated task: %v; restore schedule: %w", err, scheduleErr)
+			}
+		}
+		return err
+	}
+	prepareDelayedRunAt(existing)
+	existing.NextRunAt = nil
+
+	if err := s.saveTasksLocked(); err != nil {
+		s.tasks[task.ID] = previous
+		if previous.Enabled {
+			if scheduleErr := s.scheduleTask(previous); scheduleErr != nil {
+				return fmt.Errorf("%w: persist task: %v; restore schedule: %v", ErrPersistence, err, scheduleErr)
+			}
+		}
+		return fmt.Errorf("%w: persist task: %v", ErrPersistence, err)
+	}
+	if existing.Enabled {
+		if err := s.scheduleTask(existing); err != nil {
+			s.tasks[task.ID] = previous
+			rollbackErr := s.saveTasksLocked()
+			var scheduleErr error
+			if previous.Enabled {
+				scheduleErr = s.scheduleTask(previous)
+			}
+			if rollbackErr != nil || scheduleErr != nil {
+				return fmt.Errorf("%w: schedule task: %v; persist rollback: %v; restore schedule: %v", ErrPersistence, err, rollbackErr, scheduleErr)
+			}
+			return fmt.Errorf("%w: %v", ErrSchedule, err)
+		}
+	} else {
+		existing.RuntimeStatus = "disabled"
+		existing.ScheduleError = ""
+	}
 	return nil
+}
+
+func prepareDelayedRunAt(task *ScheduledTask) {
+	if task != nil && task.ScheduleType == "delay" && task.RunAt == nil && task.DelaySeconds > 0 {
+		runAt := time.Now().Add(time.Duration(task.DelaySeconds) * time.Second)
+		task.RunAt = &runAt
+	}
+}
+
+func (s *Scheduler) unscheduleTaskLocked(task *ScheduledTask) {
+	if task == nil {
+		return
+	}
+	if entryID, ok := s.cronIDs[task.ID]; ok {
+		s.cron.Remove(entryID)
+		delete(s.cronIDs, task.ID)
+	}
+	if task.timer != nil {
+		task.timer.Stop()
+		task.timer = nil
+	}
+	task.NextRunAt = nil
+}
+
+func cloneScheduledTask(task *ScheduledTask) *ScheduledTask {
+	if task == nil {
+		return nil
+	}
+	clone := *task
+	if task.Payload != nil {
+		data, _ := json.Marshal(task.Payload)
+		var payload model.TaskPayload
+		if json.Unmarshal(data, &payload) == nil {
+			clone.Payload = &payload
+		}
+	}
+	if task.RunAt != nil {
+		value := *task.RunAt
+		clone.RunAt = &value
+	}
+	if task.LastRunAt != nil {
+		value := *task.LastRunAt
+		clone.LastRunAt = &value
+	}
+	if task.NextRunAt != nil {
+		value := *task.NextRunAt
+		clone.NextRunAt = &value
+	}
+	return &clone
 }
 
 // DeleteTask removes a task from the scheduler.
@@ -338,21 +455,29 @@ func (s *Scheduler) DeleteTask(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if entryID, ok := s.cronIDs[id]; ok {
-		s.cron.Remove(entryID)
-		delete(s.cronIDs, id)
-	}
 	task, ok := s.tasks[id]
 	if !ok {
-		return fmt.Errorf("task %s not found", id)
+		return fmt.Errorf("%w: task %s", ErrTaskNotFound, id)
 	}
+	previous := cloneScheduledTask(task)
+	previous.timer = nil
+	s.unscheduleTaskLocked(task)
 	// Stop timer for one-time tasks
 	if task.timer != nil {
 		task.timer.Stop()
 		task.timer = nil
 	}
 	delete(s.tasks, id)
-	return s.saveLocked()
+	if err := s.saveTasksLocked(); err != nil {
+		s.tasks[id] = previous
+		if previous.Enabled {
+			if restoreErr := s.scheduleTask(previous); restoreErr != nil {
+				return fmt.Errorf("%w: persist delete: %v; restore schedule: %v", ErrPersistence, err, restoreErr)
+			}
+		}
+		return fmt.Errorf("%w: persist delete: %v", ErrPersistence, err)
+	}
+	return nil
 }
 
 // EnableTask enables a task and schedules it.
@@ -361,7 +486,7 @@ func (s *Scheduler) EnableTask(id string) error {
 	defer s.mu.Unlock()
 	task, ok := s.tasks[id]
 	if !ok {
-		return fmt.Errorf("task %s not found", id)
+		return fmt.Errorf("%w: task %s", ErrTaskNotFound, id)
 	}
 
 	// Prevent re-enabling expired one-time tasks. This applies to BOTH
@@ -375,11 +500,19 @@ func (s *Scheduler) EnableTask(id string) error {
 	}
 
 	task.Enabled = true
+	prepareDelayedRunAt(task)
+	if err := s.saveTasksLocked(); err != nil {
+		task.Enabled = false
+		return fmt.Errorf("%w: persist task: %v", ErrPersistence, err)
+	}
 	if err := s.scheduleTask(task); err != nil {
 		task.Enabled = false
-		return fmt.Errorf("failed to schedule task: %w", err)
+		if rollbackErr := s.saveTasksLocked(); rollbackErr != nil {
+			return fmt.Errorf("%w: schedule task: %v; persist rollback: %v", ErrPersistence, err, rollbackErr)
+		}
+		return fmt.Errorf("%w: %v", ErrSchedule, err)
 	}
-	return s.saveLocked()
+	return nil
 }
 
 // DisableTask disables a task and removes it from cron.
@@ -388,19 +521,24 @@ func (s *Scheduler) DisableTask(id string) error {
 	defer s.mu.Unlock()
 	task, ok := s.tasks[id]
 	if !ok {
-		return fmt.Errorf("task %s not found", id)
+		return fmt.Errorf("%w: task %s", ErrTaskNotFound, id)
 	}
+	previous := cloneScheduledTask(task)
+	previous.timer = nil
 	task.Enabled = false
-	if entryID, ok := s.cronIDs[id]; ok {
-		s.cron.Remove(entryID)
-		delete(s.cronIDs, id)
+	task.RuntimeStatus = "disabled"
+	task.ScheduleError = ""
+	s.unscheduleTaskLocked(task)
+	if err := s.saveTasksLocked(); err != nil {
+		s.tasks[id] = previous
+		if previous.Enabled {
+			if restoreErr := s.scheduleTask(previous); restoreErr != nil {
+				return fmt.Errorf("%w: persist disable: %v; restore schedule: %v", ErrPersistence, err, restoreErr)
+			}
+		}
+		return fmt.Errorf("%w: persist disable: %v", ErrPersistence, err)
 	}
-	// Stop timer for one-time tasks
-	if task.timer != nil {
-		task.timer.Stop()
-		task.timer = nil
-	}
-	return s.saveLocked()
+	return nil
 }
 
 // RunTaskNow executes a task immediately, regardless of its enabled state.
@@ -409,7 +547,7 @@ func (s *Scheduler) RunTaskNow(id string) error {
 	task, ok := s.tasks[id]
 	if !ok {
 		s.mu.RUnlock()
-		return fmt.Errorf("task %s not found", id)
+		return fmt.Errorf("%w: task %s", ErrTaskNotFound, id)
 	}
 	// Copy task data to avoid holding the lock during execution
 	handler := s.handlers[task.Type]
@@ -459,6 +597,14 @@ func (s *Scheduler) ListTasks() []*ScheduledTask {
 				cp.Payload = &newPayload
 			}
 		}
+		// Prefer the live cron next-run time over the persisted value, which is
+		// stale until the first execution after a restart (the persisted time is
+		// only refreshed in finalizeTaskExecution).
+		if t.Enabled && t.ScheduleType == "cron" {
+			if next := s.getNextRunTime(t.ID); !next.IsZero() {
+				cp.NextRunAt = &next
+			}
+		}
 		result = append(result, &cp)
 	}
 	return result
@@ -470,20 +616,34 @@ func (s *Scheduler) GetTask(id string) (*ScheduledTask, error) {
 	defer s.mu.RUnlock()
 	task, ok := s.tasks[id]
 	if !ok {
-		return nil, fmt.Errorf("task %s not found", id)
+		return nil, fmt.Errorf("%w: task %s", ErrTaskNotFound, id)
 	}
 	cp := *task
+	// Prefer the live cron next-run time over the persisted value (see ListTasks).
+	if task.Enabled && task.ScheduleType == "cron" {
+		if next := s.getNextRunTime(id); !next.IsZero() {
+			cp.NextRunAt = &next
+		}
+	}
 	return &cp, nil
 }
 
-// GetHistory returns execution history, most recent first.
-func (s *Scheduler) GetHistory(limit int, taskType string, status string) []ExecutionRecord {
+// GetHistory returns execution history, most recent first. When taskID is
+// supplied, filtering happens before the limit is applied.
+func (s *Scheduler) GetHistory(limit int, taskType string, status string, taskIDs ...string) []ExecutionRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	taskID := ""
+	if len(taskIDs) > 0 {
+		taskID = taskIDs[0]
+	}
 	result := make([]ExecutionRecord, 0, len(s.history))
 	for i := len(s.history) - 1; i >= 0; i-- {
 		r := s.history[i]
+		if taskID != "" && r.TaskID != taskID {
+			continue
+		}
 		if taskType != "" && r.TaskType != taskType {
 			continue
 		}
@@ -497,7 +657,6 @@ func (s *Scheduler) GetHistory(limit int, taskType string, status string) []Exec
 	}
 	return result
 }
-
 
 // hasCyclicDependency checks for cyclic dependencies in a task's dependency chain.
 func (s *Scheduler) hasCyclicDependencyLocked(taskID string, dependsOn []string) bool {
@@ -538,6 +697,7 @@ func (s *Scheduler) hasCyclicDependencyLocked(taskID string, dependsOn []string)
 }
 
 // hasCyclicDependency checks for cyclic dependencies in a task's dependency chain.
+// nolint:unused
 func (s *Scheduler) hasCyclicDependency(taskID string, dependsOn []string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -579,20 +739,34 @@ func normalizeCronExpr(expr string) string {
 // must not race with concurrent readers — hence the write-lock requirement.
 func (s *Scheduler) scheduleTask(task *ScheduledTask) error {
 	if !task.Enabled {
+		task.RuntimeStatus = "disabled"
+		task.ScheduleError = ""
 		return nil
 	}
 	handler := s.handlers[task.Type]
 	if handler == nil {
-		logger.Warnf("[scheduler] no handler registered for task type %s (id=%s)", task.Type, task.ID)
-		return nil
+		err := fmt.Errorf("no handler registered for task type %s", task.Type)
+		task.RuntimeStatus = "schedule_error"
+		task.ScheduleError = err.Error()
+		logger.Warnf("[scheduler] %v (id=%s)", err, task.ID)
+		return err
 	}
 
+	var err error
 	switch task.ScheduleType {
 	case "once", "delay":
-		return s.scheduleOneTimeTask(task, handler)
+		err = s.scheduleOneTimeTask(task, handler)
 	default: // "cron"
-		return s.scheduleCronTask(task, handler)
+		err = s.scheduleCronTask(task, handler)
 	}
+	if err != nil {
+		task.RuntimeStatus = "schedule_error"
+		task.ScheduleError = err.Error()
+		return err
+	}
+	task.RuntimeStatus = "scheduled"
+	task.ScheduleError = ""
+	return nil
 }
 
 // scheduleCronTask schedules a recurring task via cron.
@@ -677,7 +851,7 @@ func (s *Scheduler) disableOneTimeTask(id string) {
 		task.Enabled = false
 		task.timer = nil
 		task.NextRunAt = nil // one-time task won't run again
-		_ = s.saveLocked()
+		_ = s.saveTasksLocked()
 	}
 }
 
@@ -713,7 +887,7 @@ func (s *Scheduler) executeTaskWithRetry(task *ScheduledTask, handler TaskHandle
 			metrics.IncSchedulerTaskRetry(taskType)
 			time.Sleep(time.Duration(attempt*2) * time.Second)
 		}
-		result, err := s.runTaskHandler(handler, task.Payload, timeoutSec)
+		result, err := s.runTaskHandler(handler, task, timeoutSec)
 		elapsed := time.Since(now)
 		record.FinishedAt = time.Now().Format(time.RFC3339)
 		record.DurationMs = elapsed.Milliseconds()
@@ -735,17 +909,37 @@ func (s *Scheduler) executeTaskWithRetry(task *ScheduledTask, handler TaskHandle
 	return record
 }
 
+// ctxKeyTaskName is the context key carrying the executing task's stable name.
+// Incremental-push runners (QueryRunner) read it to scope their dedup state to
+// the task, so re-creating a task with the same name keeps its pushed set.
+type ctxKeyTaskName struct{}
+
+// taskNameFromContext extracts the executing task's name injected by
+// runTaskHandler. It is empty for direct (non-scheduled) executions.
+func taskNameFromContext(ctx context.Context) string {
+	name, _ := ctx.Value(ctxKeyTaskName{}).(string)
+	return name
+}
+
 // runTaskHandler 执行单次任务 handler（带 panic 恢复和超时）
-func (s *Scheduler) runTaskHandler(handler TaskHandler, payload *model.TaskPayload, timeoutSec int) (string, error) {
+func (s *Scheduler) runTaskHandler(handler TaskHandler, task *ScheduledTask, timeoutSec int) (string, error) {
 	ctx, cancel := context.WithTimeout(s.ctx, time.Duration(timeoutSec)*time.Second)
 	defer cancel()
+	// Scope incremental push state to the task name (stable across re-creation).
+	name := task.Name
+	if name == "" {
+		name = task.ID
+	}
+	ctx = context.WithValue(ctx, ctxKeyTaskName{}, name)
 	var result string
 	var err error
 	func() {
 		defer func() {
-			if r := recover(); r != nil { err = fmt.Errorf("panic in runner: %v", r) }
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic in runner: %v", r)
+			}
 		}()
-		result, err = handler.Execute(ctx, payload)
+		result, err = handler.Execute(ctx, task.Payload)
 	}()
 	return result, err
 }
@@ -759,13 +953,20 @@ func (s *Scheduler) finalizeTaskExecution(task *ScheduledTask, record ExecutionR
 	if t, ok := s.tasks[task.ID]; ok {
 		now := time.Now()
 		t.LastRunAt = &now
-		if next := s.getNextRunTime(task.ID); !next.IsZero() { t.NextRunAt = &next }
+		if next := s.getNextRunTime(task.ID); !next.IsZero() {
+			t.NextRunAt = &next
+		}
 	}
 	s.history = append(s.history, record)
-	if len(s.history) > s.maxHistory { s.history = s.history[len(s.history)-s.maxHistory:] }
+	if len(s.history) > s.maxHistory {
+		s.history = s.history[len(s.history)-s.maxHistory:]
+	}
 	s.mu.Unlock()
 
 	s.updateMetrics()
+	if err := s.Save(); err != nil {
+		logger.Errorf("[scheduler] persist execution history for task %s: %v", task.ID, err)
+	}
 	s.sendNotification(task, record)
 }
 
@@ -875,6 +1076,9 @@ func (s *Scheduler) recordSkippedExecution(task *ScheduledTask, status string, r
 		s.history = s.history[len(s.history)-s.maxHistory:]
 	}
 	s.mu.Unlock()
+	if err := s.Save(); err != nil {
+		logger.Errorf("[scheduler] persist skipped execution for task %s: %v", task.ID, err)
+	}
 
 	metrics.IncSchedulerTaskExecution(string(task.Type), "skipped")
 }
@@ -887,6 +1091,7 @@ func (s *Scheduler) getNextRunTime(taskID string) time.Time {
 }
 
 // saveAsync persists data to disk in a background goroutine.
+// nolint:unused
 func (s *Scheduler) saveAsync() {
 	go func() {
 		defer func() {
@@ -934,4 +1139,3 @@ func (s *Scheduler) Stop() {
 func (s *Scheduler) generateID() string {
 	return uuid.New().String()
 }
-

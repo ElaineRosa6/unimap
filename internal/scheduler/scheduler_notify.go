@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,7 +35,19 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 
 	logger.Infof("[scheduler] notify: preparing to send to %d channels for task %s (status=%s)", len(channelIDs), task.ID, record.Status)
 	msg := s.buildNotificationMessage(task, record)
+	s.recordPushLogAudit(task, record, channelIDs, msg)
 	timeout := s.notifyTimeout
+	maxRetries := 0
+	if s.notifyCfgProvider != nil {
+		if globalCfg := s.notifyCfgProvider(); globalCfg != nil {
+			if globalCfg.SendTimeoutSec > 0 {
+				timeout = time.Duration(globalCfg.SendTimeoutSec) * time.Second
+			}
+			if globalCfg.MaxRetries > 0 {
+				maxRetries = globalCfg.MaxRetries
+			}
+		}
+	}
 	if timeout == 0 {
 		timeout = 10 * time.Second
 	}
@@ -42,8 +57,52 @@ func (s *Scheduler) sendNotification(task *ScheduledTask, record ExecutionRecord
 			s.sendInlineWebhookNotification(task.Notifications.WebhookURL, msg, timeout)
 			continue
 		}
-		s.sendRegistryChannelNotification(chID, msg, timeout)
+		s.sendRegistryChannelNotification(chID, msg, timeout, maxRetries)
 	}
+}
+
+// recordPushLogAudit appends one persistent push-log row for the notification
+// being sent. Best-effort: a recorder failure is logged and never blocks the
+// push itself.
+func (s *Scheduler) recordPushLogAudit(task *ScheduledTask, record ExecutionRecord, channelIDs []string, msg notify.TaskNotification) {
+	if s.recordPushLog == nil {
+		return
+	}
+	if err := s.recordPushLog(PushLogRecord{
+		TaskID:        task.ID,
+		TaskName:      task.Name,
+		ChannelIDs:    channelIDs,
+		Status:        record.Status,
+		ResultCount:   parsePushResultCount(msg.Result),
+		ResultSummary: pushResultSummary(msg.Result),
+		Error:         record.Error,
+	}); err != nil {
+		logger.Errorf("[scheduler] notify: failed to record push log for task %s: %v", task.ID, err)
+	}
+}
+
+// pushResultCountRe matches the query-result header QueryRunner builds, e.g.
+// "新增 100 条（去重后）", "返回 100 条", "无新增资产（已全部推送过）".
+var pushResultCountRe = regexp.MustCompile(`(?:新增|返回)\s*(\d+)\s*条`)
+
+func parsePushResultCount(result string) int {
+	if m := pushResultCountRe.FindStringSubmatch(result); len(m) == 2 {
+		if n, err := strconv.Atoi(m[1]); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
+// pushResultSummary bounds the stored result text so the audit row stays small;
+// full asset detail is already persisted in the query history and workbook.
+const pushResultSummaryMaxLen = 300
+
+func pushResultSummary(result string) string {
+	if len(result) <= pushResultSummaryMaxLen {
+		return result
+	}
+	return result[:pushResultSummaryMaxLen]
 }
 
 func (s *Scheduler) shouldSendNotification(task *ScheduledTask, record ExecutionRecord) bool {
@@ -92,13 +151,16 @@ func (s *Scheduler) buildNotificationMessage(task *ScheduledTask, record Executi
 }
 
 func (s *Scheduler) sendInlineWebhookNotification(webhookURL string, msg notify.TaskNotification, timeout time.Duration) {
-	s.mu.RLock()
-	stopping := s.stopped || s.stopping
-	s.mu.RUnlock()
-	if stopping {
+	// FINDING-002 修复：stopping 检查与 notifyWg.Add(1) 必须在同一把锁内原子完成，
+	// 否则与 Stop() 的设标志 + notifyWg.Wait() 并发时构成 Go 禁止的
+	// "Add called concurrently with Wait"，可触发运行时 panic。
+	s.mu.Lock()
+	if s.stopped || s.stopping {
+		s.mu.Unlock()
 		return
 	}
 	s.notifyWg.Add(1)
+	s.mu.Unlock()
 	go func(url string) {
 		defer func() {
 			s.notifyWg.Done()
@@ -122,7 +184,7 @@ func (s *Scheduler) sendInlineWebhookNotification(webhookURL string, msg notify.
 	}(webhookURL)
 }
 
-func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.TaskNotification, timeout time.Duration) {
+func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.TaskNotification, timeout time.Duration, maxRetries int) {
 	if s.notifyRegistry == nil {
 		logger.Warnf("[scheduler] notify: registry is nil, skipping channel %s", chID)
 		return
@@ -137,14 +199,15 @@ func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.Task
 		return
 	}
 
-	s.mu.RLock()
-	stopping := s.stopped || s.stopping
-	s.mu.RUnlock()
-	if stopping {
+	// FINDING-002 修复：与 sendInlineWebhookNotification 相同，stopping 检查与 Add(1) 原子化。
+	s.mu.Lock()
+	if s.stopped || s.stopping {
+		s.mu.Unlock()
 		logger.Warnf("[scheduler] notify: scheduler stopping, skipping channel %s", chID)
 		return
 	}
 	s.notifyWg.Add(1)
+	s.mu.Unlock()
 	go func(ch notify.NotifyChannel) {
 		defer func() {
 			s.notifyWg.Done()
@@ -152,10 +215,8 @@ func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.Task
 				logger.Errorf("scheduler panic in notify channel %s: %v", ch.ID(), r)
 			}
 		}()
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-		logger.Infof("[scheduler] notify: sending to channel %s (%s), timeout=%v", ch.ID(), ch.Type(), timeout)
-		if err := ch.Send(ctx, msg); err != nil {
+		logger.Infof("[scheduler] notify: sending to channel %s (%s), timeout=%v retries=%d", ch.ID(), ch.Type(), timeout, maxRetries)
+		if err := sendNotifyChannelWithRetry(ch, msg, timeout, maxRetries); err != nil {
 			logger.Errorf("[scheduler] notify %s (%s) failed: %v", ch.ID(), ch.Type(), err)
 			metrics.IncSchedulerNotifyFail(ch.Type())
 		} else {
@@ -163,6 +224,32 @@ func (s *Scheduler) sendRegistryChannelNotification(chID string, msg notify.Task
 			metrics.IncSchedulerNotifySuccess(ch.Type())
 		}
 	}(ch)
+}
+
+func sendNotifyChannelWithRetry(ch notify.NotifyChannel, msg notify.TaskNotification, timeout time.Duration, maxRetries int) error {
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		lastErr = ch.Send(ctx, msg)
+		cancel()
+		if lastErr == nil {
+			return nil
+		}
+		// A timeout means the message may already have been delivered but the
+		// response was slow; retrying would duplicate it. Only clearly transient
+		// errors are worth a retry.
+		if errors.Is(lastErr, context.DeadlineExceeded) {
+			break
+		}
+		if attempt == maxRetries {
+			break
+		}
+		time.Sleep(time.Duration(attempt+1) * time.Second)
+	}
+	return lastErr
 }
 
 // extractImagePaths extracts screenshot file paths from task result text.
@@ -183,7 +270,7 @@ func extractImagePaths(result string) []string {
 			parts := strings.SplitN(line, "→", 2)
 			if len(parts) == 2 {
 				path := strings.TrimSpace(parts[1])
-				if isImageFile(path) {
+				if isDeliverableFile(path) {
 					paths = append(paths, path)
 					continue
 				}
@@ -194,7 +281,7 @@ func extractImagePaths(result string) []string {
 			parts := strings.SplitN(line, "保存:", 2)
 			if len(parts) == 2 {
 				path := strings.TrimSpace(parts[1])
-				if isImageFile(path) {
+				if isDeliverableFile(path) {
 					paths = append(paths, path)
 					continue
 				}
@@ -205,7 +292,7 @@ func extractImagePaths(result string) []string {
 			continue
 		}
 
-		if isImageFile(line) {
+		if isDeliverableFile(line) {
 			paths = append(paths, line)
 		}
 	}
@@ -220,6 +307,19 @@ func isImageFile(path string) bool {
 		strings.HasSuffix(lower, ".jpeg") ||
 		strings.HasSuffix(lower, ".gif") ||
 		strings.HasSuffix(lower, ".webp")
+}
+
+// isSpreadsheetFile reports whether path is an Excel workbook (.xlsx/.xls),
+// which the notification layer can deliver as a WeCom file message.
+func isSpreadsheetFile(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".xlsx") || strings.HasSuffix(lower, ".xls")
+}
+
+// isDeliverableFile reports whether a path embedded in a runner message should
+// be forwarded as a notification attachment (screenshot or workbook).
+func isDeliverableFile(path string) bool {
+	return isImageFile(path) || isSpreadsheetFile(path)
 }
 
 // redactImagePaths strips full server paths from notification text, keeping only filenames.
@@ -394,10 +494,12 @@ func ValidateWebhookURLPublic(webhookURL string) error {
 	return validateWebhookURL(webhookURL)
 }
 
+// nolint:unused
 func safeWebhookClient() *http.Client {
 	return urlguard.SafeHTTPClient(urlguard.CheckOptions{}, 30*time.Second)
 }
 
+// nolint:unused
 func (s *Scheduler) sendWebhookNotification(webhookURL string, payload map[string]interface{}) {
 	go func() {
 		defer func() {

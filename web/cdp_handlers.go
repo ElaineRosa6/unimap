@@ -15,6 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/service"
+
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/unimap/project/internal/logger"
@@ -29,15 +32,21 @@ func (s *Server) handleCDPStatus(w http.ResponseWriter, r *http.Request) {
 	baseURL := s.resolveCDPURL()
 	online, info, err := s.checkCDPStatus(r.Context(), baseURL)
 
-	resp := map[string]interface{}{
-		"online": online,
-		"url":    baseURL,
+	type cdpStatusResponse struct {
+		Online  bool                   `json:"online"`
+		URL     string                 `json:"url"`
+		Version *service.CDPStatusInfo `json:"version,omitempty"`
+		Error   string                 `json:"error,omitempty"`
+	}
+	resp := cdpStatusResponse{
+		Online: online,
+		URL:    baseURL,
 	}
 	if info != nil {
-		resp["version"] = info
+		resp.Version = info
 	}
 	if err != nil && !online {
-		resp["error"] = err.Error()
+		resp.Error = err.Error()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -51,7 +60,7 @@ func (s *Server) handleCDPConnect(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -62,13 +71,20 @@ func (s *Server) handleCDPConnect(w http.ResponseWriter, r *http.Request) {
 	baseURL := s.resolveCDPURL()
 	ctx := r.Context()
 	if ok, info, _ := s.checkCDPStatus(ctx, baseURL); ok {
+		type cdpConnectResponse struct {
+			Success bool                   `json:"success"`
+			Online  bool                   `json:"online"`
+			URL     string                 `json:"url"`
+			Version *service.CDPStatusInfo `json:"version,omitempty"`
+			Message string                 `json:"message"`
+		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"online":  true,
-			"url":     baseURL,
-			"version": info,
-			"message": "CDP already online",
+		if err := json.NewEncoder(w).Encode(cdpConnectResponse{
+			Success: true,
+			Online:  true,
+			URL:     baseURL,
+			Version: info,
+			Message: "CDP already online",
 		}); err != nil {
 			logger.Debugf("failed to encode CDP connect response: %v", err)
 		}
@@ -78,31 +94,34 @@ func (s *Server) handleCDPConnect(w http.ResponseWriter, r *http.Request) {
 	if err := s.startCDPChrome(baseURL); err != nil {
 		_, checked := s.resolveChromePathWithDiagnostics()
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		if encodeErr := json.NewEncoder(w).Encode(map[string]interface{}{
 			"success":             false,
 			"error":               err.Error(),
 			"chrome_path_checked": checked,
-		}); err != nil {
-			logger.Debugf("failed to encode CDP connect error response: %v", err)
+		}); encodeErr != nil {
+			logger.Debugf("failed to encode CDP connect error response: %v", encodeErr)
 		}
 		return
 	}
 
 	online, info, err := s.waitForCDP(ctx, baseURL, 5*time.Second)
 	if online {
-		s.updateCDPConfig(baseURL)
+		if persistErr := s.updateCDPConfig(baseURL); persistErr != nil {
+			writeAPIError(w, http.StatusInternalServerError, "save_failed", "CDP connected but its URL could not be persisted", nil)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if online {
-		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		if encodeErr := json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"online":  true,
 			"url":     baseURL,
 			"version": info,
 			"message": "CDP connected",
-		}); err != nil {
-			logger.Debugf("failed to encode CDP connect success response: %v", err)
+		}); encodeErr != nil {
+			logger.Debugf("failed to encode CDP connect success response: %v", encodeErr)
 		}
 		return
 	}
@@ -122,8 +141,8 @@ func (s *Server) handleCDPConnect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resolveCDPURL() string {
-	if s.config != nil {
-		if raw := strings.TrimSpace(s.config.Screenshot.ChromeRemoteDebugURL); raw != "" {
+	if cfg := s.currentConfig(); cfg != nil {
+		if raw := strings.TrimSpace(cfg.Screenshot.ChromeRemoteDebugURL); raw != "" {
 			if normalized := normalizeCDPBaseURL(raw); normalized != "" {
 				return normalized
 			}
@@ -188,7 +207,7 @@ func isAllDigits(val string) bool {
 	return val != ""
 }
 
-func (s *Server) checkCDPStatus(ctx context.Context, baseURL string) (bool, map[string]interface{}, error) {
+func (s *Server) checkCDPStatus(ctx context.Context, baseURL string) (bool, *service.CDPStatusInfo, error) {
 	baseURL = normalizeCDPBaseURL(baseURL)
 	if baseURL == "" {
 		return false, nil, fmt.Errorf("cdp url is empty")
@@ -211,15 +230,15 @@ func (s *Server) checkCDPStatus(ctx context.Context, baseURL string) (bool, map[
 		return false, nil, fmt.Errorf("unexpected status: %s", resp.Status)
 	}
 
-	var info map[string]interface{}
+	var info service.CDPStatusInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		return false, nil, err
 	}
 
-	return true, info, nil
+	return true, &info, nil
 }
 
-func (s *Server) waitForCDP(ctx context.Context, baseURL string, timeout time.Duration) (bool, map[string]interface{}, error) {
+func (s *Server) waitForCDP(ctx context.Context, baseURL string, timeout time.Duration) (bool, *service.CDPStatusInfo, error) {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
@@ -285,6 +304,7 @@ func (s *Server) startCDPChrome(baseURL string) error {
 	if s.chromeCmd != nil {
 		return nil
 	}
+	cfg := s.currentConfig()
 
 	chromePath, checked := s.resolveChromePathWithDiagnostics()
 	if chromePath == "" {
@@ -296,8 +316,8 @@ func (s *Server) startCDPChrome(baseURL string) error {
 
 	port := resolveCDPPort(baseURL)
 	debugAddr := "127.0.0.1"
-	if s.config != nil {
-		if addr := strings.TrimSpace(s.config.Screenshot.ChromeRemoteDebugAddress); addr != "" {
+	if cfg != nil {
+		if addr := strings.TrimSpace(cfg.Screenshot.ChromeRemoteDebugAddress); addr != "" {
 			if addr != "127.0.0.1" && addr != "localhost" && addr != "::1" {
 				logger.Warnf("ChromeRemoteDebugAddress=%s is not a loopback address; forcing to 127.0.0.1 for security", addr)
 				addr = "127.0.0.1"
@@ -305,44 +325,15 @@ func (s *Server) startCDPChrome(baseURL string) error {
 			debugAddr = addr
 		}
 	}
-	args := []string{
-		fmt.Sprintf("--remote-debugging-port=%d", port),
-		fmt.Sprintf("--remote-debugging-address=%s", debugAddr),
-		"--no-first-run",
-		"--no-default-browser-check",
-	}
-
-	userDataConfigured := false
-
-	if s.config != nil {
-		if dir := strings.TrimSpace(s.config.Screenshot.ChromeUserDataDir); dir != "" {
-			args = append(args, "--user-data-dir="+dir)
-			userDataConfigured = true
-		}
-		if profile := strings.TrimSpace(s.config.Screenshot.ChromeProfileDir); profile != "" {
-			args = append(args, "--profile-directory="+profile)
-		}
-		if proxy := strings.TrimSpace(s.config.Screenshot.ProxyServer); proxy != "" {
-			args = append(args, "--proxy-server="+proxy)
-		} else if proxyEnv := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PROXY_SERVER")); proxyEnv != "" {
-			args = append(args, "--proxy-server="+proxyEnv)
-		}
-		if s.config.Screenshot.Headless != nil && *s.config.Screenshot.Headless {
-			args = append(args, "--headless=new")
-		}
-	}
-
-	// 若未配置用户目录，使用独立目录启动，避免参数被已运行的浏览器实例吞掉。
-	if !userDataConfigured {
-		fallbackUserDataDir := filepath.Join(os.TempDir(), "unimap-cdp-profile")
-		if err := os.MkdirAll(fallbackUserDataDir, 0755); err == nil {
-			args = append(args, "--user-data-dir="+fallbackUserDataDir)
-		}
+	fallbackUserDataDir := filepath.Join(os.TempDir(), "unimap-cdp-profile")
+	args, userDataDir := buildCDPChromeArgs(cfg, port, debugAddr, fallbackUserDataDir)
+	if err := os.MkdirAll(userDataDir, 0755); err != nil {
+		return fmt.Errorf("create Chrome user data directory %s: %w", userDataDir, err)
 	}
 
 	cmd := exec.Command(chromePath, args...)
 	if err := cmd.Start(); err != nil {
-		return err
+		return fmt.Errorf("start Chrome: %w", err)
 	}
 
 	// Start a goroutine to wait for the process to prevent zombie processes
@@ -362,6 +353,45 @@ func (s *Server) startCDPChrome(baseURL string) error {
 	return nil
 }
 
+func buildCDPChromeArgs(cfg *config.Config, port int, debugAddr, fallbackUserDataDir string) ([]string, string) {
+	args := []string{
+		fmt.Sprintf("--remote-debugging-port=%d", port),
+		fmt.Sprintf("--remote-debugging-address=%s", debugAddr),
+		"--no-first-run", "--no-default-browser-check",
+		"--disable-dev-shm-usage", "--disable-gpu",
+	}
+	userDataDir := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_USER_DATA_DIR"))
+	headless := true
+	if cfg != nil {
+		if dir := strings.TrimSpace(cfg.Screenshot.ChromeUserDataDir); dir != "" {
+			userDataDir = dir
+		}
+		if profile := strings.TrimSpace(cfg.Screenshot.ChromeProfileDir); profile != "" {
+			args = append(args, "--profile-directory="+profile)
+		}
+		if proxy := strings.TrimSpace(cfg.Screenshot.ProxyServer); proxy != "" {
+			args = append(args, "--proxy-server="+proxy)
+		} else if proxyEnv := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PROXY_SERVER")); proxyEnv != "" {
+			args = append(args, "--proxy-server="+proxyEnv)
+		}
+		if cfg.Screenshot.Headless != nil {
+			headless = *cfg.Screenshot.Headless
+		}
+		if cfg.Screenshot.NoSandbox {
+			args = append(args, "--no-sandbox", "--disable-setuid-sandbox")
+		}
+	}
+	if userDataDir == "" {
+		userDataDir = fallbackUserDataDir
+	}
+	args = append(args, "--user-data-dir="+userDataDir)
+	if headless {
+		args = append(args, "--headless=new")
+	}
+	return args, userDataDir
+}
+
+// nolint:unused
 func (s *Server) resolveChromePath() string {
 	path, _ := s.resolveChromePathWithDiagnostics()
 	return path
@@ -383,18 +413,14 @@ func (s *Server) resolveChromePathWithDiagnostics() (string, []string) {
 
 // resolveChromeFromConfigOrEnv checks config and env var for Chrome path.
 func (s *Server) resolveChromeFromConfigOrEnv(checked []string) (string, bool) {
-	if s.config != nil {
-		if raw := strings.TrimSpace(s.config.Screenshot.ChromePath); raw != "" {
-			checked = append(checked, "config:screenshot.chrome_path")
+	if cfg := s.currentConfig(); cfg != nil {
+		if raw := strings.TrimSpace(cfg.Screenshot.ChromePath); raw != "" {
 			return raw, true
 		}
-		checked = append(checked, "config:screenshot.chrome_path(empty)")
 	}
 	if env := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PATH")); env != "" {
-		checked = append(checked, "env:UNIMAP_CHROME_PATH")
 		return env, true
 	}
-	checked = append(checked, "env:UNIMAP_CHROME_PATH(empty)")
 	return "", false
 }
 
@@ -546,22 +572,16 @@ func resolveCDPPort(baseURL string) int {
 	return 9222
 }
 
-func (s *Server) updateCDPConfig(baseURL string) {
-	if s.config == nil {
-		return
+func (s *Server) updateCDPConfig(baseURL string) error {
+	if _, err := s.updateConfig(func(cfg *config.Config) error {
+		cfg.Screenshot.ChromeRemoteDebugURL = baseURL
+		return nil
+	}); err != nil {
+		logger.Warnf("Failed to persist CDP URL: %v", err)
+		return err
 	}
-
 	if s.screenshotMgr != nil {
 		s.screenshotMgr.SetRemoteDebugURL(baseURL)
 	}
-
-	s.configMutex.Lock()
-	s.config.Screenshot.ChromeRemoteDebugURL = baseURL
-	s.configMutex.Unlock()
-
-	if s.configManager != nil {
-		if err := s.configManager.Save(); err != nil {
-			logger.Warnf("Failed to persist CDP URL: %v", err)
-		}
-	}
+	return nil
 }

@@ -158,7 +158,7 @@ func (a *ScriptAnalyzer) analyzeFunctions(script string, result *AnalysisResult)
 
 	for i, line := range lines {
 		matches := a.patterns.FunctionPattern.FindStringSubmatch(line)
-		if matches != nil && len(matches) >= 3 {
+		if len(matches) >= 3 {
 			function := FunctionInfo{
 				Name:       matches[1],
 				StartLine:  i + 1,
@@ -202,7 +202,7 @@ func (a *ScriptAnalyzer) analyzeEventBindings(script string, result *AnalysisRes
 	for i, line := range lines {
 		// 分析addEventListener
 		matches := a.patterns.EventBindings[0].FindStringSubmatch(line)
-		if matches != nil && len(matches) >= 2 {
+		if len(matches) >= 2 {
 			binding := BindingInfo{
 				Element: "unknown",
 				Event:   matches[1],
@@ -215,7 +215,7 @@ func (a *ScriptAnalyzer) analyzeEventBindings(script string, result *AnalysisRes
 
 		// 分析on事件属性
 		matches = a.patterns.EventBindings[1].FindStringSubmatch(line)
-		if matches != nil && len(matches) >= 2 {
+		if len(matches) >= 2 {
 			binding := BindingInfo{
 				Element: "element",
 				Event:   matches[1],
@@ -228,7 +228,7 @@ func (a *ScriptAnalyzer) analyzeEventBindings(script string, result *AnalysisRes
 
 		// 分析element.on事件
 		matches = a.patterns.EventBindings[2].FindStringSubmatch(line)
-		if matches != nil && len(matches) >= 2 {
+		if len(matches) >= 2 {
 			binding := BindingInfo{
 				Element: "element",
 				Event:   matches[1],

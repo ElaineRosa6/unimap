@@ -74,6 +74,7 @@ func (r *Router) registerQueryRoutes() {
 	r.addRoute("health-live", "GET", "/health/live", s.handleHealthLive, false)
 	r.addRoute("metrics", "GET", "/metrics", s.handleMetrics, false)
 	r.addRoute("query", "GET", "/query", s.handleQuery, true)
+	r.addRoute("query-submit", "POST", "/query", s.handleQuery, true)
 	r.addAPIRoute("api-query", "POST", "/api/query", s.handleAPIQuery, true)
 	r.addAPIRoute("query-status", "GET", "/api/query/status", s.handleQueryStatus, true)
 	r.addAPIRoute("websocket", "GET", "/api/ws", s.handleWebSocket, false)
@@ -121,6 +122,8 @@ func (r *Router) registerImportRoutes() {
 	r.addAPIRoute("import-urls", "POST", "/api/import/urls", s.handleImportURLs, true)
 	r.addAPIRoute("url-reachability", "POST", "/api/url/reachability", s.handleURLReachability, true)
 	r.addAPIRoute("url-port-scan", "POST", "/api/url/port-scan", s.handleURLPortScan, true)
+	r.addAPIRoute("url-probe-web", "POST", "/api/url/probe-web", s.handleProbeWebService, true)
+	r.addAPIRoute("url-probe-web-batch", "POST", "/api/url/probe-web-batch", s.handleProbeWebServiceBatch, true)
 }
 
 func (r *Router) registerNodeRoutes() {
@@ -150,6 +153,7 @@ func (r *Router) registerSchedulerRoutes() {
 	r.addAPIRoute("scheduler-task-enable", "POST", "/api/scheduler/tasks/enable", s.handleEnableTask, true)
 	r.addAPIRoute("scheduler-task-disable", "POST", "/api/scheduler/tasks/disable", s.handleDisableTask, true)
 	r.addAPIRoute("scheduler-history", "GET", "/api/scheduler/history", s.handleTaskHistory, true)
+	r.addAPIRoute("scheduler-push-logs", "GET", "/api/scheduler/push-logs", s.handleListPushLogs, true)
 }
 
 func (r *Router) registerNotificationRoutes() {
@@ -168,6 +172,7 @@ func (r *Router) registerTamperRoutes() {
 	r.addAPIRoute("tamper-baseline-list", "GET", "/api/tamper/baseline/list", s.handleTamperBaselineList, true)
 	r.addAPIRoute("tamper-baseline-delete", "DELETE", "/api/tamper/baseline/delete", s.handleTamperBaselineDelete, true)
 	r.addAPIRoute("tamper-history", "GET", "/api/tamper/history", s.handleTamperHistory, true)
+	r.addAPIRoute("tamper-history-export", "GET", "/api/tamper/history/export", s.handleTamperHistoryExport, true)
 	r.addAPIRoute("tamper-history-delete", "DELETE", "/api/tamper/history/delete", s.handleTamperHistoryDelete, true)
 }
 
@@ -201,7 +206,9 @@ func (r *Router) buildMux() http.Handler {
 	mux := http.NewServeMux()
 	for _, route := range r.routes {
 		handler := http.Handler(route.Handler)
-		if route.RateLimited { handler = rateLimitMiddleware(handler) }
+		if route.RateLimited {
+			handler = rateLimitMiddleware(handler)
+		}
 		handler = r.server.apiAuth.OptionalAPIKey()(handler)
 		mux.Handle(route.Method+" "+route.Pattern, handler)
 	}

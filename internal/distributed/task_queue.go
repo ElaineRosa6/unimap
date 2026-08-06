@@ -25,25 +25,25 @@ const (
 
 // TaskEnvelope is the controller-side task description used by node workers.
 type TaskEnvelope struct {
-	TaskID         string              `json:"task_id"`
-	TaskType       string              `json:"task_type"`
-	Payload        *model.TaskPayload  `json:"payload,omitempty"`
-	Priority       int                 `json:"priority,omitempty"`
-	TimeoutSeconds int                 `json:"timeout_seconds,omitempty"`
-	TraceID        string              `json:"trace_id,omitempty"`
-	RequiredCaps   []string            `json:"required_caps,omitempty"`
-	MaxReassign    int                 `json:"max_reassign,omitempty"`
+	TaskID         string             `json:"task_id"`
+	TaskType       string             `json:"task_type"`
+	Payload        *model.TaskPayload `json:"payload,omitempty"`
+	Priority       int                `json:"priority,omitempty"`
+	TimeoutSeconds int                `json:"timeout_seconds,omitempty"`
+	TraceID        string             `json:"trace_id,omitempty"`
+	RequiredCaps   []string           `json:"required_caps,omitempty"`
+	MaxReassign    int                `json:"max_reassign,omitempty"`
 }
 
 // TaskResult is the node callback payload for task completion.
 type TaskResult struct {
-	TaskID     string             `json:"task_id"`
-	NodeID     string             `json:"node_id"`
-	Status     string             `json:"status"`
-	DurationMS int64              `json:"duration_ms,omitempty"`
-	Output     *model.TaskOutput  `json:"output,omitempty"`
-	Error      string             `json:"error,omitempty"`
-	Retryable  bool               `json:"retryable,omitempty"` // 是否可重试
+	TaskID     string            `json:"task_id"`
+	NodeID     string            `json:"node_id"`
+	Status     string            `json:"status"`
+	DurationMS int64             `json:"duration_ms,omitempty"`
+	Output     *model.TaskOutput `json:"output,omitempty"`
+	Error      string            `json:"error,omitempty"`
+	Retryable  bool              `json:"retryable,omitempty"` // 是否可重试
 }
 
 // RetryRecord 重试记录
@@ -58,22 +58,22 @@ type RetryRecord struct {
 
 // TaskRecord is the queue-side task state.
 type TaskRecord struct {
-	TaskID         string              `json:"task_id"`
-	TaskType       string              `json:"task_type"`
-	Payload        *model.TaskPayload  `json:"payload,omitempty"`
-	Priority       int                 `json:"priority"`
-	TimeoutSeconds int                 `json:"timeout_seconds"`
-	TraceID        string              `json:"trace_id,omitempty"`
-	RequiredCaps   []string            `json:"required_caps,omitempty"`
-	Status         string              `json:"status"`
-	AssignedNode   string              `json:"assigned_node,omitempty"`
-	Attempt        int                 `json:"attempt"`
-	MaxReassign    int                 `json:"max_reassign"`
-	LeaseUntil     time.Time           `json:"lease_until,omitempty"`
-	CreatedAt      time.Time           `json:"created_at"`
-	UpdatedAt      time.Time           `json:"updated_at"`
-	LastError      string              `json:"last_error,omitempty"`
-	Result         *model.TaskOutput   `json:"result,omitempty"`
+	TaskID         string             `json:"task_id"`
+	TaskType       string             `json:"task_type"`
+	Payload        *model.TaskPayload `json:"payload,omitempty"`
+	Priority       int                `json:"priority"`
+	TimeoutSeconds int                `json:"timeout_seconds"`
+	TraceID        string             `json:"trace_id,omitempty"`
+	RequiredCaps   []string           `json:"required_caps,omitempty"`
+	Status         string             `json:"status"`
+	AssignedNode   string             `json:"assigned_node,omitempty"`
+	Attempt        int                `json:"attempt"`
+	MaxReassign    int                `json:"max_reassign"`
+	LeaseUntil     time.Time          `json:"lease_until,omitempty"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
+	LastError      string             `json:"last_error,omitempty"`
+	Result         *model.TaskOutput  `json:"result,omitempty"`
 
 	// 重试相关字段
 	Retryable    bool          `json:"retryable"`               // 是否可重试
@@ -137,7 +137,9 @@ func (q *TaskQueue) startBackgroundRecycle() {
 			return
 		case <-ticker.C:
 			q.mu.Lock()
-			q.recycleExpiredLocked()
+			if err := q.recycleExpiredLocked(); err != nil {
+				logger.Errorf("task_queue: recycle expired tasks: %v", err)
+			}
 			q.mu.Unlock()
 		}
 	}
@@ -190,7 +192,11 @@ func (q *TaskQueue) Enqueue(env TaskEnvelope) (TaskRecord, error) {
 	q.tasks[taskID] = rec
 	q.pending = append(q.pending, taskID)
 	q.sortPendingLocked()
-	q.saveLocked()
+	if err := q.saveLocked(); err != nil {
+		delete(q.tasks, taskID)
+		q.removePendingLocked(taskID)
+		return TaskRecord{}, fmt.Errorf("persist task %q: %w", taskID, err)
+	}
 	return *rec, nil
 }
 
@@ -203,7 +209,9 @@ func (q *TaskQueue) Claim(nodeID string, nodeCaps []string) (*TaskRecord, error)
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	q.recycleExpiredLocked()
+	if err := q.recycleExpiredLocked(); err != nil {
+		return nil, err
+	}
 	if len(q.pending) == 0 {
 		return nil, nil
 	}
@@ -234,6 +242,8 @@ func (q *TaskQueue) Claim(nodeID string, nodeCaps []string) (*TaskRecord, error)
 			continue
 		}
 
+		previous := cloneTaskRecord(rec)
+		previousPending := append([]string(nil), q.pending...)
 		rec.Status = TaskStatusClaimed
 		rec.AssignedNode = nodeID
 		rec.LeaseUntil = now.Add(time.Duration(rec.TimeoutSeconds)*time.Second + q.leaseJitter)
@@ -243,7 +253,11 @@ func (q *TaskQueue) Claim(nodeID string, nodeCaps []string) (*TaskRecord, error)
 		rec.RetryDelay = 0
 
 		q.pending = append(q.pending[:idx], q.pending[idx+1:]...)
-		q.saveLocked()
+		if err := q.saveLocked(); err != nil {
+			q.tasks[taskID] = previous
+			q.pending = previousPending
+			return nil, fmt.Errorf("persist claimed task %q: %w", taskID, err)
+		}
 		copyRec := *rec
 		return &copyRec, nil
 	}
@@ -261,7 +275,9 @@ func (q *TaskQueue) ClaimWithNode(node *NodeRecord) (*TaskRecord, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	q.recycleExpiredLocked()
+	if err := q.recycleExpiredLocked(); err != nil {
+		return nil, err
+	}
 	if len(q.pending) == 0 {
 		return nil, nil
 	}
@@ -310,6 +326,9 @@ func (q *TaskQueue) ClaimWithNode(node *NodeRecord) (*TaskRecord, error) {
 		return nil, nil
 	}
 
+	previous := cloneTaskRecord(selected)
+	previousPending := append([]string(nil), q.pending...)
+
 	// Mark task as claimed
 	selected.Status = TaskStatusClaimed
 	selected.AssignedNode = node.NodeID
@@ -326,7 +345,11 @@ func (q *TaskQueue) ClaimWithNode(node *NodeRecord) (*TaskRecord, error) {
 		}
 	}
 
-	q.saveLocked()
+	if err := q.saveLocked(); err != nil {
+		q.tasks[selected.TaskID] = previous
+		q.pending = previousPending
+		return nil, fmt.Errorf("persist claimed task %q: %w", selected.TaskID, err)
+	}
 
 	copyRec := *selected
 	return &copyRec, nil
@@ -372,6 +395,8 @@ func (q *TaskQueue) SubmitResult(res TaskResult) (TaskRecord, error) {
 	}
 
 	now := time.Now()
+	previous := cloneTaskRecord(rec)
+	previousPending := append([]string(nil), q.pending...)
 
 	if status == TaskStatusCompleted {
 		// 任务成功完成
@@ -420,7 +445,11 @@ func (q *TaskQueue) SubmitResult(res TaskResult) (TaskRecord, error) {
 		}
 	}
 
-	q.saveLocked()
+	if err := q.saveLocked(); err != nil {
+		q.tasks[taskID] = previous
+		q.pending = previousPending
+		return TaskRecord{}, fmt.Errorf("persist task result %q: %w", taskID, err)
+	}
 	return *rec, nil
 }
 
@@ -482,23 +511,29 @@ func (q *TaskQueue) Delete(taskID string) error {
 		}
 	}
 
+	previousPending := append([]string(nil), q.pending...)
 	delete(q.tasks, taskID)
-	_ = rec
-	q.saveLocked()
+	if err := q.saveLocked(); err != nil {
+		q.tasks[taskID] = rec
+		q.pending = previousPending
+		return fmt.Errorf("persist deleted task %q: %w", taskID, err)
+	}
 	return nil
 }
 
 // ReleaseNodeTasks releases all claimed tasks for a specific node (used when node goes offline)
-func (q *TaskQueue) ReleaseNodeTasks(nodeID string) int {
+func (q *TaskQueue) ReleaseNodeTasks(nodeID string) (int, error) {
 	nodeID = strings.TrimSpace(nodeID)
 	if nodeID == "" {
-		return 0
+		return 0, fmt.Errorf("node_id is required")
 	}
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
+	previousTasks, previousPending := q.cloneStateLocked()
 	released := 0
+	changed := false
 	now := time.Now()
 	for _, rec := range q.tasks {
 		if rec.Status != TaskStatusClaimed {
@@ -509,27 +544,38 @@ func (q *TaskQueue) ReleaseNodeTasks(nodeID string) int {
 		}
 
 		// Re-queue the task
-		if rec.Attempt <= rec.MaxReassign+1 {
+		if rec.Attempt < rec.MaxReassign {
+			rec.Attempt++
 			rec.Status = TaskStatusPending
 			rec.AssignedNode = ""
 			rec.LeaseUntil = time.Time{}
 			rec.UpdatedAt = now
 			q.pending = append(q.pending, rec.TaskID)
 			released++
+			changed = true
 		} else {
 			// Max reassign exceeded, mark as failed
 			rec.Status = TaskStatusFailed
 			rec.LastError = "node offline and max reassign exceeded"
 			rec.UpdatedAt = now
+			changed = true
 		}
 	}
-	if released > 0 {
+	if changed {
 		q.sortPendingLocked()
+		if err := q.saveLocked(); err != nil {
+			q.tasks = previousTasks
+			q.pending = previousPending
+			logger.Errorf("task_queue: persist released tasks for node %s: %v", nodeID, err)
+			return 0, fmt.Errorf("persist released tasks for node %s: %w", nodeID, err)
+		}
 	}
-	return released
+	return released, nil
 }
 
-func (q *TaskQueue) recycleExpiredLocked() {
+func (q *TaskQueue) recycleExpiredLocked() error {
+	previousTasks, previousPending := q.cloneStateLocked()
+	changed := false
 	now := time.Now()
 	for _, rec := range q.tasks {
 		if rec == nil || rec.Status != TaskStatusClaimed {
@@ -538,20 +584,32 @@ func (q *TaskQueue) recycleExpiredLocked() {
 		if rec.LeaseUntil.IsZero() || now.Before(rec.LeaseUntil) {
 			continue
 		}
-		if rec.Attempt > rec.MaxReassign+1 {
+		if rec.Attempt >= rec.MaxReassign {
 			rec.Status = TaskStatusFailed
 			rec.LastError = "lease expired and max reassign exceeded"
 			rec.UpdatedAt = now
+			changed = true
 			continue
 		}
+		rec.Attempt++
 		rec.Status = TaskStatusPending
 		rec.AssignedNode = ""
 		rec.LeaseUntil = time.Time{}
 		rec.UpdatedAt = now
 		q.pending = append(q.pending, rec.TaskID)
+		changed = true
+	}
+	if !changed {
+		return nil
 	}
 	q.dedupPendingLocked()
 	q.sortPendingLocked()
+	if err := q.saveLocked(); err != nil {
+		q.tasks = previousTasks
+		q.pending = previousPending
+		return fmt.Errorf("persist recycled tasks: %w", err)
+	}
+	return nil
 }
 
 func (q *TaskQueue) dedupPendingLocked() {
@@ -713,25 +771,62 @@ func cloneTaskOutput(in *model.TaskOutput) *model.TaskOutput {
 	return &out
 }
 
+func cloneTaskRecord(in *TaskRecord) *TaskRecord {
+	if in == nil {
+		return nil
+	}
+	raw, err := json.Marshal(in)
+	if err != nil {
+		copyRecord := *in
+		return &copyRecord
+	}
+	var out TaskRecord
+	if err := json.Unmarshal(raw, &out); err != nil {
+		copyRecord := *in
+		return &copyRecord
+	}
+	return &out
+}
+
+func (q *TaskQueue) cloneStateLocked() (map[string]*TaskRecord, []string) {
+	tasks := make(map[string]*TaskRecord, len(q.tasks))
+	for id, record := range q.tasks {
+		tasks[id] = cloneTaskRecord(record)
+	}
+	return tasks, append([]string(nil), q.pending...)
+}
+
+func (q *TaskQueue) removePendingLocked(taskID string) {
+	for index, id := range q.pending {
+		if id == taskID {
+			q.pending = append(q.pending[:index], q.pending[index+1:]...)
+			return
+		}
+	}
+}
+
 // saveSnapshot persists the current task queue state to disk.
+// nolint:unused
 func (q *TaskQueue) saveSnapshot() {
 	if q.snapshotPath == "" {
 		return
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.saveLocked()
+	if err := q.saveLocked(); err != nil {
+		logger.Errorf("task_queue: save snapshot: %v", err)
+	}
 }
 
-func (q *TaskQueue) saveLocked() {
+func (q *TaskQueue) saveLocked() error {
 	if q.snapshotPath == "" {
-		return
+		return nil
 	}
 
 	dir := filepath.Dir(q.snapshotPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		logger.Errorf("task_queue: failed to create snapshot dir %s: %v", dir, err)
-		return
+		return err
 	}
 
 	type snapshot struct {
@@ -750,18 +845,20 @@ func (q *TaskQueue) saveLocked() {
 	data, err := json.Marshal(s)
 	if err != nil {
 		logger.Errorf("task_queue: failed to marshal snapshot: %v", err)
-		return
+		return err
 	}
 
 	tmpPath := q.snapshotPath + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
 		logger.Errorf("task_queue: failed to write snapshot tmp %s: %v", tmpPath, err)
-		return
+		return err
 	}
 	if err := os.Rename(tmpPath, q.snapshotPath); err != nil {
 		_ = os.Remove(tmpPath)
 		logger.Errorf("task_queue: failed to rename snapshot %s: %v", q.snapshotPath, err)
+		return err
 	}
+	return nil
 }
 
 // loadSnapshot restores the task queue state from disk.

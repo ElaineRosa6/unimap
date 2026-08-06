@@ -139,16 +139,22 @@ func TestDetector_ComputeButtonHash(t *testing.T) {
 	}
 }
 
-// ===== SetAllocator =====
+func TestDetector_ComputePageHashUsesBrowserPageLoader(t *testing.T) {
+	d := NewDetector(DetectorConfig{BaseDir: t.TempDir(), DetectionMode: DetectionModeBalanced})
+	d.SetBrowserPageLoader(BrowserPageLoaderFunc(func(_ context.Context, targetURL string) (string, string, error) {
+		if targetURL != "https://example.com/page" {
+			t.Fatalf("loader target = %q", targetURL)
+		}
+		return "Rendered", `<html><head><title>Rendered</title></head><body><main id="ready">ok</main></body></html>`, nil
+	}))
 
-func TestDetector_SetAllocator(t *testing.T) {
-	d := NewDetector(DetectorConfig{BaseDir: "/tmp", DetectionMode: "normal"})
-
-	ctx := context.Background()
-	allocCtx, allocCancel := context.WithCancel(ctx)
-
-	d.SetAllocator(ctx, allocCtx, allocCancel)
-	// Verify no panic and the method completes
+	result, err := d.ComputePageHash(t.Context(), "https://example.com/page")
+	if err != nil {
+		t.Fatalf("ComputePageHash failed: %v", err)
+	}
+	if result.Title != "Rendered" {
+		t.Fatalf("title = %q, want Rendered", result.Title)
+	}
 }
 
 // ===== ListBaselines =====

@@ -95,7 +95,11 @@ func (r *Registry) cleanupStaleNodes() {
 		if !record.Online && now.Sub(record.LastHeartbeatAt) > cutoff {
 			// Release orphaned tasks from stale node before removing record
 			if r.taskQueue != nil {
-				released := r.taskQueue.ReleaseNodeTasks(nodeID)
+				released, err := r.taskQueue.ReleaseNodeTasks(nodeID)
+				if err != nil {
+					logger.Errorf("registry: keep stale node %s after task release failure: %v", nodeID, err)
+					continue
+				}
 				if released > 0 {
 					logger.Infof("registry: released %d orphaned task(s) from stale node %s", released, nodeID)
 				}
@@ -199,7 +203,7 @@ func (r *Registry) Heartbeat(hb NodeHeartbeat) (NodeRecord, error) {
 	if hb.ActiveTasks >= 0 {
 		record.ActiveTasks = hb.ActiveTasks
 	}
-	if hb.HealthChecks != nil && len(hb.HealthChecks) > 0 {
+	if len(hb.HealthChecks) > 0 {
 		if record.HealthChecks == nil {
 			record.HealthChecks = make(map[string]bool)
 		}
@@ -289,6 +293,14 @@ func (r *Registry) MarkOffline(nodeID string) error {
 	}
 
 	wasOnline := record.Online
+	recoveredTasks := 0
+	if wasOnline && r.taskQueue != nil {
+		var err error
+		recoveredTasks, err = r.taskQueue.ReleaseNodeTasks(nodeID)
+		if err != nil {
+			return fmt.Errorf("release tasks before marking node offline: %w", err)
+		}
+	}
 	record.Online = false
 	record.HealthStatus = "offline"
 
@@ -299,8 +311,7 @@ func (r *Registry) MarkOffline(nodeID string) error {
 	}
 
 	// Release tasks if node was online and we have a task queue
-	if wasOnline && r.taskQueue != nil {
-		recoveredTasks := r.taskQueue.ReleaseNodeTasks(nodeID)
+	if wasOnline {
 		record.TaskRecoveryCount += recoveredTasks
 	}
 
@@ -321,7 +332,7 @@ func (r *Registry) GetFailoverStrategy() FailoverStrategy {
 	return r.failoverStrategy
 }
 
-// GetHealthyNodes 获取健康节点列表
+// GetHealthyNodes 获取健康节点列表（返回深拷贝，防止外部修改）
 func (r *Registry) GetHealthyNodes() []*NodeRecord {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -329,7 +340,7 @@ func (r *Registry) GetHealthyNodes() []*NodeRecord {
 	var healthyNodes []*NodeRecord
 	for _, node := range r.nodes {
 		if node.Online && node.HealthStatus != "critical" && node.HealthStatus != "offline" {
-			healthyNodes = append(healthyNodes, node)
+			healthyNodes = append(healthyNodes, copyNodeRecord(node))
 		}
 	}
 
@@ -401,7 +412,9 @@ func (r *Registry) Deregister(nodeID string) error {
 
 	// Release tasks before removing
 	if r.taskQueue != nil {
-		r.taskQueue.ReleaseNodeTasks(nodeID)
+		if _, err := r.taskQueue.ReleaseNodeTasks(nodeID); err != nil {
+			return fmt.Errorf("release tasks before deregistering node: %w", err)
+		}
 	}
 
 	delete(r.nodes, nodeID)
@@ -527,4 +540,26 @@ func cloneStringSlice(in []string) []string {
 		return nil
 	}
 	return out
+}
+
+// copyNodeRecord creates a deep copy of a NodeRecord to prevent external mutation.
+func copyNodeRecord(src *NodeRecord) *NodeRecord {
+	cp := *src
+	if src.Labels != nil {
+		cp.Labels = make(map[string]string, len(src.Labels))
+		for k, v := range src.Labels {
+			cp.Labels[k] = v
+		}
+	}
+	if src.Capabilities != nil {
+		cp.Capabilities = make([]string, len(src.Capabilities))
+		copy(cp.Capabilities, src.Capabilities)
+	}
+	if src.HealthChecks != nil {
+		cp.HealthChecks = make(map[string]bool, len(src.HealthChecks))
+		for k, v := range src.HealthChecks {
+			cp.HealthChecks[k] = v
+		}
+	}
+	return &cp
 }

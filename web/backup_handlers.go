@@ -6,7 +6,14 @@ import (
 	"os"
 
 	"github.com/unimap/project/internal/backup"
+	"github.com/unimap/project/internal/utils"
 )
+
+// isAuthEnabled returns true if the server has auth configured.
+func (s *Server) isAuthEnabled() bool {
+	cfg := s.currentConfig()
+	return cfg != nil && cfg.Web.Auth.Enabled
+}
 
 // handleCreateBackup POST /api/v1/backup/create
 func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
@@ -14,18 +21,30 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use POST", nil)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
+	}
+	if s.isAuthEnabled() {
+		if ok, msg := s.requireAdmin(r); !ok {
+			writeAPIError(w, http.StatusForbidden, "forbidden", msg, nil)
+			return
+		}
 	}
 
 	// 从配置读取备份目录
 	backupDir := "./backups"
 	backupPrefix := "unimap"
-	if s.config != nil && s.config.Backup.OutputDir != "" {
-		backupDir = s.config.Backup.OutputDir
-	}
-	if s.config != nil && s.config.Backup.Prefix != "" {
-		backupPrefix = s.config.Backup.Prefix
+	maxBackups := 5
+	if current := s.currentConfig(); current != nil {
+		if current.Backup.OutputDir != "" {
+			backupDir = current.Backup.OutputDir
+		}
+		if current.Backup.Prefix != "" {
+			backupPrefix = current.Backup.Prefix
+		}
+		if current.Backup.MaxBackups > 0 {
+			maxBackups = current.Backup.MaxBackups
+		}
 	}
 
 	// 收集要备份的源
@@ -38,7 +57,7 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 	cfg := backup.BackupConfig{
 		Sources:    sources,
 		OutputDir:  backupDir,
-		MaxBackups: s.config.Backup.MaxBackups,
+		MaxBackups: maxBackups,
 		Prefix:     backupPrefix,
 	}
 
@@ -48,10 +67,13 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"path":       result.Path,
-		"size":       result.Size,
-		"created_at": result.CreatedAt,
+	type backupCreateResponse struct {
+		Path      string      `json:"path"`
+		Size      int64       `json:"size"`
+		CreatedAt interface{} `json:"created_at"`
+	}
+	writeJSON(w, http.StatusCreated, backupCreateResponse{
+		Path: result.Path, Size: result.Size, CreatedAt: result.CreatedAt,
 	})
 }
 
@@ -61,14 +83,22 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use GET", nil)
 		return
 	}
+	if s.isAuthEnabled() {
+		if ok, msg := s.requireAdmin(r); !ok {
+			writeAPIError(w, http.StatusForbidden, "forbidden", msg, nil)
+			return
+		}
+	}
 
 	backupDir := "./backups"
 	backupPrefix := "unimap"
-	if s.config != nil && s.config.Backup.OutputDir != "" {
-		backupDir = s.config.Backup.OutputDir
-	}
-	if s.config != nil && s.config.Backup.Prefix != "" {
-		backupPrefix = s.config.Backup.Prefix
+	if current := s.currentConfig(); current != nil {
+		if current.Backup.OutputDir != "" {
+			backupDir = current.Backup.OutputDir
+		}
+		if current.Backup.Prefix != "" {
+			backupPrefix = current.Backup.Prefix
+		}
 	}
 
 	backups, err := backup.ListBackups(backupDir, backupPrefix)
@@ -82,18 +112,19 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 		backups = []backup.BackupResult{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"backups": backups,
-		"count":   len(backups),
-	})
+	type backupListResponse struct {
+		Backups []backup.BackupResult `json:"backups"`
+		Count   int                   `json:"count"`
+	}
+	writeJSON(w, http.StatusOK, backupListResponse{Backups: backups, Count: len(backups)})
 }
 
 // buildBackupSources 构建备份源列表
 func (s *Server) buildBackupSources() []string {
 	// 如果配置了自定义源，使用配置的
-	if s.config != nil && len(s.config.Backup.Sources) > 0 {
+	if current := s.currentConfig(); current != nil && len(current.Backup.Sources) > 0 {
 		var sources []string
-		for _, src := range s.config.Backup.Sources {
+		for _, src := range current.Backup.Sources {
 			if dirExists(src) {
 				sources = append(sources, src)
 			}
@@ -104,18 +135,18 @@ func (s *Server) buildBackupSources() []string {
 	sources := []string{}
 
 	// 始终包含 hash_store（篡改检测基线）
-	if dirExists("./hash_store") {
-		sources = append(sources, "./hash_store")
+	if dirExists(utils.HashStoreDir()) {
+		sources = append(sources, utils.HashStoreDir())
 	}
 
 	// 包含截图数据
-	if dirExists("./screenshots") {
-		sources = append(sources, "./screenshots")
+	if dirExists(utils.ScreenshotsDir()) {
+		sources = append(sources, utils.ScreenshotsDir())
 	}
 
 	// 包含调度器数据
-	if dirExists("./data") {
-		sources = append(sources, "./data")
+	if dirExists(utils.AppDataDir()) {
+		sources = append(sources, utils.AppDataDir())
 	}
 
 	// 注意：不包含 ./configs，避免泄露敏感配置（API keys、tokens）

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/screenshot"
 )
 
 func TestConvertConfigCookies_Extended(t *testing.T) {
@@ -34,6 +35,37 @@ func TestConvertConfigCookies_Nil_Extended(t *testing.T) {
 	got := convertConfigCookies(nil)
 	if len(got) != 0 {
 		t.Fatalf("expected empty slice, got %d", len(got))
+	}
+}
+
+func TestLoadEngineCookiesLoadsAllSevenEngines(t *testing.T) {
+	mgr := screenshot.NewManager(screenshot.Config{BaseDir: t.TempDir()})
+	cfg := &config.Config{}
+	for _, engine := range []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"} {
+		setEngineCookies(cfg, engine, []config.Cookie{{Name: "session", Value: engine}})
+		switch engine {
+		case "fofa":
+			cfg.Engines.Fofa.Enabled = true
+		case "hunter":
+			cfg.Engines.Hunter.Enabled = true
+		case "zoomeye":
+			cfg.Engines.Zoomeye.Enabled = true
+		case "quake":
+			cfg.Engines.Quake.Enabled = true
+		case "shodan":
+			cfg.Engines.Shodan.Enabled = true
+		case "censys":
+			cfg.Engines.Censys.Enabled = true
+		case "daydaymap":
+			cfg.Engines.Daydaymap.Enabled = true
+		}
+	}
+
+	loadEngineCookies(mgr, cfg)
+	for _, engine := range []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"} {
+		if got := mgr.GetCookies(engine); len(got) != 1 || got[0].Value != engine {
+			t.Fatalf("manager cookies for %s = %#v", engine, got)
+		}
 	}
 }
 

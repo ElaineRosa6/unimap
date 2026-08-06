@@ -43,7 +43,9 @@ const LOGIN_COOKIE_NAMES = {
   hunter: ["HSESSION", "hunter_token", "sessionid", "jwt"],
   zoomeye: ["session", "jwt", "zmsession", "ctoken"],
   quake: ["session", "jwt", "token", "QSESSIONID"],
-  shodan: ["session_id", "flash", "reveal", "token"]
+  shodan: ["session_id", "flash", "reveal", "token"],
+  censys: ["session", "jwt", "token", "censys_session"],
+  daydaymap: ["session", "token", "jwt", "daydaymap_token"]
 };
 
 /**
@@ -420,7 +422,7 @@ const ENGINE_SELECTORS = {
       ".el-table__body tr"
     ],
     cells: {
-      ip: { selector: "div.ip span.copy_btn, [data-clipboard-text]" },
+      ip: { selector: "div.ip span.copy_btn, [data-clipboard-text]", attr: "data-clipboard-text", extract: "ip_from_hostport" },
       port: { selector: "span.port" },
       protocol: { selector: "span.server-protocol" },
       title: { selector: ".title-line span.ellipse-text, [class*='title']" },
@@ -656,6 +658,10 @@ export async function extractEngineAssets(tabId) {
                 if (m2) return m2[1];
                 return "";
               }
+              if (cellConfig.extract === "ip_from_hostport") {
+                const m = val.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::\d{1,5})?$/);
+                return m ? m[1] : "";
+              }
             }
             return val.trim();
           }
@@ -752,6 +758,25 @@ export async function extractEngineAssets(tabId) {
                 if (timeEl) item.last_seen = timeEl.textContent.trim();
               }
             }
+          }
+
+          if (eng === "quake") {
+            const copyButton = row.querySelector("div.ip span.copy_btn[data-clipboard-text], [data-clipboard-text]");
+            const endpoint = copyButton?.getAttribute("data-clipboard-text") || "";
+            const endpointMatch = endpoint.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$/);
+            if (endpointMatch) {
+              item.ip = endpointMatch[1];
+              if (!item.port && endpointMatch[2]) item.port = parseInt(endpointMatch[2], 10) || 0;
+            }
+            row.querySelectorAll(".item").forEach((detail) => {
+              const label = (detail.querySelector(".label")?.textContent || "").trim().toLowerCase();
+              const value = (detail.querySelector(".ellipse-text")?.textContent || "").trim();
+              if (!value) return;
+              if (/host|domain|主机|域名/.test(label)) item.host = value;
+              else if (/^asn$|自治系统号/.test(label)) item.asn = value;
+              else if (/organization|组织|机构|公司/.test(label)) item.org = value;
+              else if (/^isp$|运营商/.test(label)) item.isp = value;
+            });
           }
 
           // Clean Shodan country/org: extract from multi-line result-details

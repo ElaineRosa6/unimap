@@ -12,11 +12,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/utils"
 )
 
 // ============================================================
@@ -32,16 +34,17 @@ const (
 )
 
 type batchJob struct {
-	ID        string                             `json:"id"`
-	Status    batchJobStatus                     `json:"status"`
-	Total     int                                `json:"total"`
-	Completed int                                `json:"completed"`
-	Success   int                                `json:"success"`
-	Failed    int                                `json:"failed"`
-	Results   []screenshot.BatchScreenshotResult `json:"results,omitempty"`
-	Error     string                             `json:"error,omitempty"`
-	StartedAt time.Time                          `json:"started_at"`
-	EndedAt   *time.Time                         `json:"ended_at,omitempty"`
+	ID               string                             `json:"id"`
+	Status           batchJobStatus                     `json:"status"`
+	Total            int                                `json:"total"`
+	Completed        int                                `json:"completed"`
+	Success          int                                `json:"success"`
+	Failed           int                                `json:"failed"`
+	Results          []screenshot.BatchScreenshotResult `json:"results,omitempty"`
+	Error            string                             `json:"error,omitempty"`
+	PersistenceError string                             `json:"persistence_error,omitempty"`
+	StartedAt        time.Time                          `json:"started_at"`
+	EndedAt          *time.Time                         `json:"ended_at,omitempty"`
 }
 
 type batchJobStore struct {
@@ -64,11 +67,19 @@ func (s *batchJobStore) setRepo(repo *batchdb.Repository) {
 
 // persistLocked writes the current job snapshot to the DB.
 // Must be called with s.mu held (at least read-locked); no-op if repo is nil.
-func (s *batchJobStore) persistLocked(job *batchJob) {
+func (s *batchJobStore) persistLocked(job *batchJob) error {
 	if s.repo == nil || job == nil {
-		return
+		return nil
 	}
-	rec := &batchdb.BatchJobRecord{
+	if err := s.repo.SaveJob(batchJobRecord(job)); err != nil {
+		logger.Warnf("screenshot: failed to persist batch job %s: %v", job.ID, err)
+		return err
+	}
+	return nil
+}
+
+func batchJobRecord(job *batchJob) *batchdb.BatchJobRecord {
+	return &batchdb.BatchJobRecord{
 		ID:        job.ID,
 		Status:    string(job.Status),
 		Total:     job.Total,
@@ -79,9 +90,6 @@ func (s *batchJobStore) persistLocked(job *batchJob) {
 		Results:   job.Results,
 		StartedAt: job.StartedAt,
 		EndedAt:   job.EndedAt,
-	}
-	if err := s.repo.SaveJob(rec); err != nil {
-		logger.Warnf("screenshot: failed to persist batch job %s: %v", job.ID, err)
 	}
 }
 
@@ -128,9 +136,12 @@ func (s *batchJobStore) loadFromDB() {
 	}
 }
 
-func (s *batchJobStore) create(id string, total int) *batchJob {
+func (s *batchJobStore) create(id string, total int) (*batchJob, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, exists := s.jobs[id]; exists {
+		return nil, false, nil
+	}
 	job := &batchJob{
 		ID:        id,
 		Status:    batchJobRunning,
@@ -138,8 +149,18 @@ func (s *batchJobStore) create(id string, total int) *batchJob {
 		StartedAt: time.Now(),
 	}
 	s.jobs[id] = job
-	s.persistLocked(job)
-	return job
+	if s.repo != nil {
+		created, err := s.repo.CreateJob(batchJobRecord(job))
+		if err != nil {
+			delete(s.jobs, id)
+			return nil, false, err
+		}
+		if !created {
+			delete(s.jobs, id)
+			return nil, false, nil
+		}
+	}
+	return job, true, nil
 }
 
 // getSnapshot returns a deep copy of the job to avoid data races when
@@ -174,7 +195,9 @@ func (s *batchJobStore) recordResult(id string, result screenshot.BatchScreensho
 		} else {
 			job.Failed++
 		}
-		s.persistLocked(job)
+		if err := s.persistLocked(job); err != nil {
+			job.PersistenceError = err.Error()
+		}
 	}
 }
 
@@ -189,7 +212,9 @@ func (s *batchJobStore) complete(id string, results []screenshot.BatchScreenshot
 		job.Completed = len(results)
 		now := time.Now()
 		job.EndedAt = &now
-		s.persistLocked(job)
+		if err := s.persistLocked(job); err != nil {
+			job.PersistenceError = err.Error()
+		}
 	}
 }
 
@@ -201,7 +226,9 @@ func (s *batchJobStore) fail(id string, err error) {
 		job.Error = err.Error()
 		now := time.Now()
 		job.EndedAt = &now
-		s.persistLocked(job)
+		if persistErr := s.persistLocked(job); persistErr != nil {
+			job.PersistenceError = persistErr.Error()
+		}
 	}
 }
 
@@ -218,9 +245,9 @@ func (s *batchJobStore) cleanup(maxAge time.Duration) {
 }
 
 func (s *Server) resolveScreenshotBaseDir() string {
-	baseDir := "./screenshots"
-	if s.config != nil && strings.TrimSpace(s.config.Screenshot.BaseDir) != "" {
-		baseDir = s.config.Screenshot.BaseDir
+	baseDir := utils.ScreenshotsDir()
+	if cfg := s.currentConfig(); cfg != nil && strings.TrimSpace(cfg.Screenshot.BaseDir) != "" {
+		baseDir = cfg.Screenshot.BaseDir
 	}
 	if filepath.IsAbs(baseDir) {
 		return filepath.Clean(baseDir)
@@ -270,7 +297,7 @@ func (s *Server) handleScreenshotFile(w http.ResponseWriter, r *http.Request) {
 
 	origin := r.Header.Get("Origin")
 	referer := r.Header.Get("Referer")
-	allowedOrigins := allowedOriginsFromConfig(s.config)
+	allowedOrigins := s.allowedOrigins()
 	if !isOriginAllowed(origin, r.Host, allowedOrigins) && !isOriginAllowed(referer, r.Host, allowedOrigins) {
 		writeAPIError(w, http.StatusForbidden, "forbidden_origin", "origin not allowed", nil)
 		return
@@ -311,9 +338,20 @@ func (s *Server) handleScreenshotFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := os.Stat(absFullPath); err != nil {
+	if _, statErr := os.Stat(absFullPath); statErr != nil {
 		http.NotFound(w, r)
 		return
+	}
+	file, err := os.Open(absFullPath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	header := make([]byte, 512)
+	n, _ := file.Read(header)
+	_ = file.Close()
+	if n > 0 {
+		w.Header().Set("Content-Type", http.DetectContentType(header[:n]))
 	}
 
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -326,7 +364,7 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -366,7 +404,8 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	screenshotPath, err := s.screenshotRouter.CaptureTargetWebsite(ctx, targetURL, "", "", "", "")
+	queryID := fmt.Sprintf("single_%d", time.Now().UnixNano())
+	screenshotPath, err := s.screenshotRouter.CaptureTargetWebsite(ctx, targetURL, "", "", "", queryID)
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "screenshot_failed", "screenshot failed", sanitizeError(err.Error()))
 		return
@@ -378,13 +417,21 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "image/png")
+	contentType := http.DetectContentType(imgData)
+	if contentType != "image/png" {
+		writeAPIError(w, http.StatusInternalServerError, "screenshot_format_invalid", "screenshot provider returned a non-PNG image", nil)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
 	_, _ = w.Write(imgData)
 }
 
 // handleSearchEngineScreenshot 处理搜索引擎结果页面截图请求
 func (s *Server) handleSearchEngineScreenshot(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -405,17 +452,22 @@ func (s *Server) handleSearchEngineScreenshot(w http.ResponseWriter, r *http.Req
 	if queryID == "" {
 		queryID = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
+	if err := screenshot.ValidateIdentifier(queryID); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_query_id", "query_id is invalid", nil)
+		return
+	}
 
 	startTime := time.Now()
 
 	var screenshotPath string
 	var err error
 
-	if s.screenshotRouter != nil {
-		screenshotPath, err = s.screenshotRouter.CaptureSearchEngineResult(r.Context(), engine, query, queryID)
-	} else {
-		proxy := s.selectRequestProxy()
-		screenshotPath, _, _, _, err = s.screenshotApp.CaptureSearchEngineResultWithProxy(r.Context(), s.screenshotMgr, engine, query, queryID, proxy)
+	proxy := ""
+	if s.screenshotRouter == nil || s.screenshotRouter.SupportsRequestProxy() {
+		proxy = s.selectRequestProxy()
+	}
+	screenshotPath, _, _, _, err = s.screenshotApp.CaptureSearchEngineResultWithProxy(r.Context(), s.screenshotMgr, engine, query, queryID, proxy)
+	if proxy != "" {
 		s.reportRequestProxy(proxy, err == nil)
 	}
 
@@ -430,13 +482,16 @@ func (s *Server) handleSearchEngineScreenshot(w http.ResponseWriter, r *http.Req
 	metrics.IncScreenshotRequest("search_engine", "success")
 	metrics.ObserveScreenshotDuration("search_engine", time.Since(startTime))
 
+	type screenshotResponse struct {
+		Success bool   `json:"success"`
+		Path    string `json:"path"`
+		Engine  string `json:"engine"`
+		Query   string `json:"query"`
+		QueryID string `json:"query_id"`
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":  true,
-		"path":     screenshotPath,
-		"engine":   engine,
-		"query":    query,
-		"query_id": queryID,
+	_ = json.NewEncoder(w).Encode(screenshotResponse{
+		Success: true, Path: screenshotPath, Engine: engine, Query: query, QueryID: queryID,
 	})
 }
 
@@ -450,7 +505,7 @@ func (s *Server) handleTargetScreenshot(w http.ResponseWriter, r *http.Request) 
 		writeAPIError(w, http.StatusServiceUnavailable, "screenshot_manager_unavailable", "screenshot manager not initialized", nil)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -463,6 +518,12 @@ func (s *Server) handleTargetScreenshot(w http.ResponseWriter, r *http.Request) 
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
+	}
+	if req.QueryID != "" {
+		if err := screenshot.ValidateIdentifier(req.QueryID); err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_query_id", "query_id is invalid", nil)
+			return
+		}
 	}
 
 	if req.URL != "" {
@@ -484,28 +545,14 @@ func (s *Server) handleTargetScreenshot(w http.ResponseWriter, r *http.Request) 
 	var screenshotPath, targetURL, ip, port, protocol, queryID string
 	var err error
 
-	if s.screenshotRouter != nil {
-		screenshotPath, err = s.screenshotRouter.CaptureTargetWebsite(r.Context(), req.URL, req.IP, req.Port, req.Protocol, req.QueryID)
-		targetURL = req.URL
-		ip = req.IP
-		port = req.Port
-		protocol = req.Protocol
-		queryID = req.QueryID
-		if queryID == "" {
-			queryID = fmt.Sprintf("%d", time.Now().UnixNano())
-		}
-	} else {
-		proxy := s.selectRequestProxy()
-		screenshotPath, targetURL, ip, port, protocol, queryID, err = s.screenshotApp.CaptureTargetWebsiteWithProxy(
-			r.Context(),
-			s.screenshotMgr,
-			req.URL,
-			req.IP,
-			req.Port,
-			req.Protocol,
-			req.QueryID,
-			proxy,
-		)
+	proxy := ""
+	if s.screenshotRouter == nil || s.screenshotRouter.SupportsRequestProxy() {
+		proxy = s.selectRequestProxy()
+	}
+	screenshotPath, targetURL, ip, port, protocol, queryID, err = s.screenshotApp.CaptureTargetWebsiteWithProxy(
+		r.Context(), s.screenshotMgr, req.URL, req.IP, req.Port, req.Protocol, req.QueryID, proxy,
+	)
+	if proxy != "" {
 		s.reportRequestProxy(proxy, err == nil)
 	}
 	if err != nil {
@@ -523,15 +570,19 @@ func (s *Server) handleTargetScreenshot(w http.ResponseWriter, r *http.Request) 
 	metrics.IncScreenshotRequest("target", "success")
 	metrics.ObserveScreenshotDuration("target", time.Since(startTime))
 
+	type targetScreenshotResponse struct {
+		Success  bool   `json:"success"`
+		Path     string `json:"path"`
+		URL      string `json:"url"`
+		IP       string `json:"ip"`
+		Port     string `json:"port"`
+		Protocol string `json:"protocol"`
+		QueryID  string `json:"query_id"`
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":  true,
-		"path":     screenshotPath,
-		"url":      targetURL,
-		"ip":       ip,
-		"port":     port,
-		"protocol": protocol,
-		"query_id": queryID,
+	_ = json.NewEncoder(w).Encode(targetScreenshotResponse{
+		Success: true, Path: screenshotPath, URL: targetURL, IP: ip,
+		Port: port, Protocol: protocol, QueryID: queryID,
 	})
 }
 
@@ -545,7 +596,7 @@ func (s *Server) handleBatchScreenshot(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusServiceUnavailable, "screenshot_manager_unavailable", "screenshot manager not initialized", nil)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -565,6 +616,12 @@ func (s *Server) handleBatchScreenshot(w http.ResponseWriter, r *http.Request) {
 
 	if !decodeJSONBody(w, r, &req) {
 		return
+	}
+	if req.QueryID != "" {
+		if err := screenshot.ValidateIdentifier(req.QueryID); err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_query_id", "query_id is invalid", nil)
+			return
+		}
 	}
 
 	// SSRF: validate target URLs
@@ -612,7 +669,7 @@ func (s *Server) handleBatchScreenshot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	_ = json.NewEncoder(w).Encode(results)
 }
 
 // handleBatchURLsScreenshot 处理批量URL截图请求（P1-4: 异步执行，返回 job ID）
@@ -624,7 +681,7 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, http.StatusServiceUnavailable, "screenshot_manager_unavailable", "screenshot manager not initialized", nil)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -654,7 +711,17 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 	if jobID == "" {
 		jobID = fmt.Sprintf("batch_%d", time.Now().UnixNano())
 	}
-	s.batchJobs.create(jobID, len(req.URLs))
+	if err := screenshot.ValidateIdentifier(jobID); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_batch_id", "batch_id is invalid", nil)
+		return
+	}
+	if _, created, err := s.batchJobs.create(jobID, len(req.URLs)); err != nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "batch_persistence_unavailable", "failed to persist batch job", nil)
+		return
+	} else if !created {
+		writeAPIError(w, http.StatusConflict, "batch_id_conflict", "batch_id already exists", nil)
+		return
+	}
 	for _, item := range invalidResults {
 		s.batchJobs.recordResult(jobID, item.Result)
 	}
@@ -662,11 +729,12 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 	if len(validURLs) == 0 {
 		finalResults, successCount, failedCount := mergeBatchURLResults(len(req.URLs), validItems, invalidResults, nil)
 		s.batchJobs.complete(jobID, finalResults, successCount, failedCount)
-		writeJSON(w, http.StatusAccepted, map[string]interface{}{
-			"job_id": jobID,
-			"total":  len(req.URLs),
-			"status": "completed",
-		})
+		type batchResponse struct {
+			JobID  string `json:"job_id"`
+			Total  int    `json:"total"`
+			Status string `json:"status"`
+		}
+		writeJSON(w, http.StatusAccepted, batchResponse{JobID: jobID, Total: len(req.URLs), Status: "completed"})
 		return
 	}
 	req.URLs = validURLs
@@ -698,10 +766,13 @@ func (s *Server) handleBatchURLsScreenshot(w http.ResponseWriter, r *http.Reques
 	}()
 
 	// 立即返回 job ID
-	writeJSON(w, http.StatusAccepted, map[string]interface{}{
-		"job_id": jobID,
-		"total":  len(validURLs) + len(invalidResults),
-		"status": "running",
+	type batchStartResponse struct {
+		JobID  string `json:"job_id"`
+		Total  int    `json:"total"`
+		Status string `json:"status"`
+	}
+	writeJSON(w, http.StatusAccepted, batchStartResponse{
+		JobID: jobID, Total: len(validURLs) + len(invalidResults), Status: "running",
 	})
 }
 
@@ -951,7 +1022,7 @@ func (s *Server) handleScreenshotBatchDelete(w http.ResponseWriter, r *http.Requ
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -984,7 +1055,7 @@ func (s *Server) handleScreenshotFileDelete(w http.ResponseWriter, r *http.Reque
 	if !requireMethod(w, r, http.MethodDelete) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -1030,7 +1101,7 @@ func (s *Server) handleScreenshotRouterStatus(w http.ResponseWriter, r *http.Req
 
 	if s.screenshotRouter == nil {
 		mode := "cdp"
-		if cfg := s.config; cfg != nil {
+		if cfg := s.currentConfig(); cfg != nil {
 			mode = strings.ToLower(strings.TrimSpace(cfg.Screenshot.Engine))
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -1044,12 +1115,14 @@ func (s *Server) handleScreenshotRouterStatus(w http.ResponseWriter, r *http.Req
 	cfg := s.screenshotRouter.Config()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"router_enabled": true,
-		"current_mode":   string(s.screenshotRouter.ActiveMode()),
-		"cdp_healthy":    cdpHealthy,
-		"ext_healthy":    extHealthy,
-		"priority":       string(cfg.Priority),
-		"fallback":       cfg.Fallback,
+		"router_enabled":  true,
+		"configured_mode": string(s.screenshotRouter.ConfiguredMode()),
+		"current_mode":    string(s.screenshotRouter.ActiveMode()),
+		"ready":           s.screenshotRouter.Ready(),
+		"cdp_healthy":     cdpHealthy,
+		"ext_healthy":     extHealthy,
+		"priority":        string(cfg.Priority),
+		"fallback":        cfg.Fallback,
 	})
 }
 
@@ -1059,7 +1132,7 @@ func (s *Server) handleSetScreenshotMode(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -1076,24 +1149,21 @@ func (s *Server) handleSetScreenshotMode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Update the router if available
+	if _, err := s.updateConfig(func(cfg *config.Config) error {
+		cfg.Screenshot.Mode = mode
+		return nil
+	}); err != nil {
+		logger.Warnf("failed to persist screenshot mode %q: %v", mode, err)
+		writeAPIError(w, http.StatusInternalServerError, "save_failed", "failed to persist screenshot mode", nil)
+		return
+	}
+
+	// Apply runtime state only after the configuration commit succeeds.
 	if s.screenshotRouter != nil {
 		s.screenshotRouter.SetMode(screenshot.ScreenshotMode(mode))
 	}
-
-	// Also update the app service for its engine-first logic
 	if s.screenshotApp != nil {
 		s.screenshotApp.SetMode(mode)
-	}
-
-	// Persist mode change to config file
-	if s.config != nil {
-		s.config.Screenshot.Mode = mode
-		if s.configManager != nil {
-			if err := s.configManager.Save(); err != nil {
-				logger.Warnf("failed to persist screenshot mode %q: %v", mode, err)
-			}
-		}
 	}
 
 	routerMode := mode

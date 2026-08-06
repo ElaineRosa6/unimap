@@ -13,11 +13,12 @@ func (s *Server) isDistributedEnabled() bool {
 	if s == nil {
 		return false
 	}
-	if s.config == nil {
+	cfg := s.currentConfig()
+	if cfg == nil {
 		// Default to disabled when config is nil for safety
 		return false
 	}
-	return s.config.Distributed.Enabled
+	return cfg.Distributed.Enabled
 }
 
 func (s *Server) requireDistributedEnabled(w http.ResponseWriter) bool {
@@ -50,7 +51,7 @@ func (s *Server) handleNodeRegister(w http.ResponseWriter, r *http.Request) {
 
 	record, err := s.distributed.NodeRegistry.Register(req)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "node_register_failed", "node register failed", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "node_register_failed", "node register failed", sanitizeError(err.Error()))
 		return
 	}
 
@@ -82,7 +83,7 @@ func (s *Server) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request) {
 
 	record, err := s.distributed.NodeRegistry.Heartbeat(req)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "node_heartbeat_failed", "node heartbeat failed", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "node_heartbeat_failed", "node heartbeat failed", sanitizeError(err.Error()))
 		return
 	}
 
@@ -214,7 +215,7 @@ func (s *Server) handleNodeDeregister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.distributed.NodeRegistry.Deregister(nodeID); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "node_deregister_failed", "node deregister failed", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "node_deregister_failed", "node deregister failed", sanitizeError(err.Error()))
 		return
 	}
 
@@ -248,7 +249,7 @@ func (s *Server) handleNodeGet(w http.ResponseWriter, r *http.Request) {
 
 	rec, err := s.distributed.NodeRegistry.Get(nodeID)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "node_get_failed", "failed to get node", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "node_get_failed", "failed to get node", sanitizeError(err.Error()))
 		return
 	}
 	if rec == nil {

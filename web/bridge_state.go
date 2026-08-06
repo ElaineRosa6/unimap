@@ -20,3 +20,22 @@ type BridgeState struct {
 	LastTaskPullAt int64 // Unix timestamp of last bridge task pull
 	LastCallbackAt int64 // Unix timestamp of last callback result received
 }
+
+func (b *BridgeState) service() *screenshot.BridgeService {
+	if b == nil {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Service
+}
+
+func (b *BridgeState) setService(mock *bridgeMockClient, service *screenshot.BridgeService) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	b.Mock = mock
+	b.Service = service
+	b.mu.Unlock()
+}

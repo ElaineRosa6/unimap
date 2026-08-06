@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/utils"
 )
@@ -30,27 +29,56 @@ type ShodanSearchResponse struct {
 	Error   string        `json:"error,omitempty"`
 }
 
+// ShodanLocation holds the geographic info Shodan nests under "location".
+type ShodanLocation struct {
+	CountryCode string `json:"country_code"`
+	CountryName string `json:"country_name"`
+	RegionCode  string `json:"region_code"`
+	City        string `json:"city"`
+}
+
 // ShodanMatch is a single Shodan result from the Host Search API.
 type ShodanMatch struct {
-	IP        string            `json:"ip_str"`
-	Port      int               `json:"port"`
-	Transport string            `json:"transport"`
-	Hostnames []string          `json:"hostnames"`
-	Domain    string            `json:"domain"`
-	Title     string            `json:"title"`
-	Server    string            `json:"server"`
-	HTTP      map[string]string `json:"http"`
-	Status    int               `json:"status"`
-	Country   string            `json:"country_code"`
-	Region    string            `json:"region_code"`
-	City      string            `json:"city"`
-	ASN       string            `json:"asn"`
-	Org       string            `json:"org"`
-	ISP       string            `json:"isp"`
-	OS        string            `json:"os"`
-	Product   string            `json:"product"`
-	Version   string            `json:"version"`
-	Data      string            `json:"data"`
+	IP        string   `json:"ip_str"`
+	Port      int      `json:"port"`
+	Transport string   `json:"transport"`
+	Hostnames []string `json:"hostnames"`
+	Domain    string   `json:"domain"`
+	Title     string   `json:"title"`
+	Server    string   `json:"server"`
+	// HTTP carries the nested http object (title/server/status_code/html/...).
+	// map[string]interface{} keeps every sub-key instead of failing to decode
+	// numeric values (e.g. status_code) into string fields.
+	HTTP     map[string]interface{} `json:"http"`
+	Status   int                    `json:"status"`
+	Country  string                 `json:"country_code"`
+	Region   string                 `json:"region_code"`
+	City     string                 `json:"city"`
+	ASN      string                 `json:"asn"`
+	Org      string                 `json:"org"`
+	ISP      string                 `json:"isp"`
+	OS       string                 `json:"os"`
+	Product  string                 `json:"product"`
+	Version  string                 `json:"version"`
+	Data     string                 `json:"data"`
+	Location *ShodanLocation        `json:"location"`
+	// Extra preserves any top-level keys Shodan returns that this struct does
+	// not declare (e.g. timestamp), so they are not silently dropped.
+	Extra map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON captures unknown top-level keys into Extra instead of
+// dropping them, while decoding declared fields as usual.
+func (m *ShodanMatch) UnmarshalJSON(data []byte) error {
+	type alias ShodanMatch
+	var aux alias
+	extra, err := rawUnknown(data, &aux)
+	if err != nil {
+		return err
+	}
+	*m = ShodanMatch(aux)
+	m.Extra = extra
+	return nil
 }
 
 // NewShodanAdapter 创建Shodan适配器
@@ -81,13 +109,12 @@ func (s *ShodanAdapter) Translate(ast *model.UQLAST) (string, error) {
 
 	// Shodan使用类似ES的查询语法
 	// 简单实现：遍历AST构建查询字符串
-	query := s.translateNode(ast.Root)
-	return query, nil
+	return s.translateNode(ast.Root)
 }
 
-func (s *ShodanAdapter) translateNode(node *model.UQLNode) string {
+func (s *ShodanAdapter) translateNode(node *model.UQLNode) (string, error) {
 	if node == nil {
-		return ""
+		return "", nil
 	}
 
 	switch node.Type {
@@ -106,33 +133,54 @@ func (s *ShodanAdapter) translateNode(node *model.UQLNode) string {
 				for _, v := range values {
 					quoted = append(quoted, shodanQuote(strings.TrimSpace(v)))
 				}
-				return fmt.Sprintf("%s:%s", mappedField, strings.Join(quoted, ","))
+				return fmt.Sprintf("%s:%s", mappedField, strings.Join(quoted, ",")), nil
 			}
 
 			if op == "!=" || op == "<>" {
-				return fmt.Sprintf("-%s:%s", mappedField, shodanQuote(val))
+				return fmt.Sprintf("-%s:%s", mappedField, shodanQuote(val)), nil
 			}
 			// Shodan 比较操作符: field:>value, field:>=value, field:<value, field:<=value
 			if op == ">" || op == ">=" || op == "<" || op == "<=" {
-				return fmt.Sprintf("%s:%s%s", mappedField, op, shodanQuote(val))
+				return fmt.Sprintf("%s:%s%s", mappedField, op, shodanQuote(val)), nil
 			}
-			return fmt.Sprintf("%s:%s", mappedField, shodanQuote(val))
+			return fmt.Sprintf("%s:%s", mappedField, shodanQuote(val)), nil
 		}
 
 	case "logical":
 		if len(node.Children) >= 2 {
-			left := s.translateNode(node.Children[0])
-			right := s.translateNode(node.Children[1])
+			left, err := s.translateNode(node.Children[0])
+			if err != nil {
+				return "", err
+			}
+			right, err := s.translateNode(node.Children[1])
+			if err != nil {
+				return "", err
+			}
 			if node.Value == "OR" {
-				// Shodan 不支持跨字段 OR / 括号 — 降级为 AND 语义（结果集更小但安全）
-				logger.Warnf("Shodan adapter: OR between (%s) and (%s) degraded to AND (Shodan does not support cross-field OR)", left, right)
+				leftField, leftValue, leftOK := shodanEquality(node.Children[0])
+				rightField, rightValue, rightOK := shodanEquality(node.Children[1])
+				if leftOK && rightOK && leftField == rightField {
+					return fmt.Sprintf("%s:%s,%s", s.mapField(leftField), shodanQuote(leftValue), shodanQuote(rightValue)), nil
+				}
+				return "", fmt.Errorf("shodan does not support cross-field OR: %s OR %s", left, right)
 			}
 			// AND = 空格连接（Shodan 原生语法）
-			return fmt.Sprintf("%s %s", left, right)
+			return fmt.Sprintf("%s %s", left, right), nil
 		}
 	}
 
-	return ""
+	return "", nil
+}
+
+func shodanEquality(node *model.UQLNode) (field, value string, ok bool) {
+	if node == nil || node.Type != "condition" || len(node.Children) < 2 {
+		return "", "", false
+	}
+	op := node.Children[0].Value
+	if op != "=" && op != "==" {
+		return "", "", false
+	}
+	return node.Value, node.Children[1].Value, true
 }
 
 // shodanQuote 对 Shodan 值加引号：含空格或特殊字符时包裹双引号，否则原样返回。
@@ -238,10 +286,11 @@ func parseShodanSearchResponse(body []byte, page, pageSize int, engineName strin
 
 // Normalize 标准化Shodan结果
 func (s *ShodanAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
-	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	if raw == nil || len(raw.RawData) == 0 {
-		return assets, nil
+		return []model.UnifiedAsset{}, nil
 	}
+
+	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	for _, item := range raw.RawData {
 		m, ok := item.(*ShodanMatch)
 		if !ok {
@@ -265,6 +314,18 @@ func normalizeShodanMatch(m *ShodanMatch) *model.UnifiedAsset {
 		StatusCode: m.Status, CountryCode: m.Country, Region: m.Region, City: m.City,
 		ASN: m.ASN, Org: m.Org, ISP: m.ISP,
 	}
+	// Shodan nests web fields and location under "http" and "location".
+	if m.Location != nil {
+		if asset.CountryCode == "" {
+			asset.CountryCode = m.Location.CountryCode
+		}
+		if asset.Region == "" {
+			asset.Region = m.Location.RegionCode
+		}
+		if asset.City == "" {
+			asset.City = m.Location.City
+		}
+	}
 	// Use first hostname if no domain
 	if asset.Host == "" && len(m.Hostnames) > 0 {
 		asset.Host = m.Hostnames[0]
@@ -275,12 +336,38 @@ func normalizeShodanMatch(m *ShodanMatch) *model.UnifiedAsset {
 	} else {
 		asset.BodySnippet = m.Data
 	}
-	// Shodan Host Search v1 does not include per-result timestamps;
-	// LastSeen is filled from the Extension's browser DOM extraction path.
-	_ = m.OS   // OS field available if needed in the future
-	_ = m.Product
-	_ = m.Version
-	_ = m.HTTP
+	// Nested http object: fill title/server/status/body and keep every key.
+	if len(m.HTTP) > 0 {
+		if asset.Title == "" {
+			if v, ok := m.HTTP["title"].(string); ok {
+				asset.Title = v
+			}
+		}
+		if asset.Server == "" {
+			if v, ok := m.HTTP["server"].(string); ok {
+				asset.Server = v
+			}
+		}
+		if asset.StatusCode == 0 {
+			if v, ok := m.HTTP["status_code"].(float64); ok {
+				asset.StatusCode = int(v)
+			}
+		}
+		if asset.BodySnippet == "" {
+			if v, ok := m.HTTP["html"].(string); ok {
+				if len(v) > 200 {
+					asset.BodySnippet = v[:200]
+				} else {
+					asset.BodySnippet = v
+				}
+			}
+		}
+		// Preserve the whole http object (headers, html, ...) under Extra.
+		mergeAssetExtra(asset, map[string]interface{}{"http": m.HTTP})
+	}
+	// Capture unknown top-level fields (e.g. timestamp, ssl, opts) and promote
+	// any timestamp key to LastSeen.
+	applyExtras(asset, m.Extra)
 
 	if asset.IP != "" && asset.Port > 0 {
 		buildShodanURL(asset)
@@ -295,7 +382,11 @@ func normalizeShodanMatch(m *ShodanMatch) *model.UnifiedAsset {
 // buildShodanURL 从 IP/Port/Protocol 构建 URL
 func buildShodanURL(asset *model.UnifiedAsset) {
 	if asset.Protocol == "" {
-		if asset.Port == 443 { asset.Protocol = "https" } else { asset.Protocol = "http" }
+		if asset.Port == 443 {
+			asset.Protocol = "https"
+		} else {
+			asset.Protocol = "http"
+		}
 	}
 	u := &url.URL{Scheme: asset.Protocol}
 	if asset.Host != "" {

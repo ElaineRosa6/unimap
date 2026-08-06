@@ -16,8 +16,9 @@ import (
 
 // ExtensionProvider implements Provider using the Extension Bridge.
 type ExtensionProvider struct {
-	bridge *BridgeService
-	mgr    *Manager
+	bridge         *BridgeService
+	mgr            *Manager
+	egressAttested bool
 }
 
 // NewExtensionProvider creates a Provider that routes through the Extension Bridge.
@@ -44,6 +45,7 @@ func (p *ExtensionProvider) CaptureSearchEngineResult(ctx context.Context, engin
 	task := BridgeTask{
 		RequestID:    fmt.Sprintf("router_search_%d", time.Now().UnixNano()),
 		URL:          searchURL,
+		Query:        query,
 		BatchID:      queryID,
 		WaitStrategy: "spa",
 	}
@@ -70,6 +72,9 @@ func (p *ExtensionProvider) CaptureSearchEngineResult(ctx context.Context, engin
 func (p *ExtensionProvider) CaptureTargetWebsite(ctx context.Context, targetURL, ip, port, protocol, queryID string) (string, error) {
 	if p == nil || p.bridge == nil {
 		return "", fmt.Errorf("extension provider not initialized")
+	}
+	if !p.egressAttested {
+		return "", fmt.Errorf("ssrf: arbitrary Extension screenshot requires attested browser egress")
 	}
 	resolvedURL, err := p.buildTargetURL(targetURL, ip, port, protocol)
 	if err != nil {
@@ -109,6 +114,9 @@ func (p *ExtensionProvider) CaptureBatchURLs(ctx context.Context, urls []string,
 func (p *ExtensionProvider) CaptureBatchURLsWithProgress(ctx context.Context, urls []string, batchID string, concurrency int, onResult func(BatchScreenshotResult)) ([]BatchScreenshotResult, error) {
 	if p == nil || p.bridge == nil {
 		return nil, fmt.Errorf("extension provider not initialized")
+	}
+	if !p.egressAttested {
+		return nil, fmt.Errorf("ssrf: arbitrary Extension batch screenshot requires attested browser egress")
 	}
 
 	results := make([]BatchScreenshotResult, len(urls))
@@ -196,6 +204,7 @@ func (p *ExtensionProvider) OpenSearchEngineResult(ctx context.Context, engine, 
 	task := BridgeTask{
 		RequestID:    fmt.Sprintf("router_open_%d", time.Now().UnixNano()),
 		URL:          searchURL,
+		Query:        query,
 		WaitStrategy: "spa",
 		Timeout:      30 * time.Second,
 		Action:       "open",
@@ -226,7 +235,7 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 		return nil, fmt.Errorf("unsupported engine: %s", engine)
 	}
 
-	result, err := p.submitCollectTask(ctx, searchURL, queryID)
+	result, err := p.submitCollectTask(ctx, searchURL, query, queryID)
 	if err != nil {
 		return nil, err
 	}
@@ -246,6 +255,34 @@ func (p *ExtensionProvider) CollectSearchEngineResult(ctx context.Context, engin
 	return []collection.CollectResult{collectResult}, nil
 }
 
+func (p *ExtensionProvider) CollectAndCaptureSearchEngineResult(ctx context.Context, engine, query, queryID string) ([]collection.CollectResult, string, error) {
+	if p == nil || p.bridge == nil {
+		return nil, "", fmt.Errorf("extension provider not initialized")
+	}
+	searchURL := p.resolveSearchURL(engine, query)
+	if searchURL == "" {
+		return nil, "", fmt.Errorf("unsupported engine: %s", engine)
+	}
+
+	result, err := p.submitCollectAndCaptureTask(ctx, searchURL, query, queryID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	collectResult := collection.CollectResult{
+		Engine: engine, Query: query, RawURL: searchURL, Timestamp: time.Now().Unix(),
+	}
+	if isLoginWallDetected(result) {
+		return p.handleLoginWallResult(collectResult, result, engine), result.ImagePath, nil
+	}
+	if !result.Success {
+		return nil, "", collectBridgeError(result)
+	}
+
+	p.populateCollectResultFromBridge(&collectResult, result, engine)
+	return []collection.CollectResult{collectResult}, result.ImagePath, nil
+}
+
 // resolveSearchURL builds the search engine URL for collection.
 func (p *ExtensionProvider) resolveSearchURL(engine, query string) string {
 	if p.mgr != nil {
@@ -257,13 +294,15 @@ func (p *ExtensionProvider) resolveSearchURL(engine, query string) string {
 }
 
 // submitCollectTask submits a collect action to the bridge.
-func (p *ExtensionProvider) submitCollectTask(ctx context.Context, searchURL, queryID string) (BridgeResult, error) {
+func (p *ExtensionProvider) submitCollectTask(ctx context.Context, searchURL, query, queryID string) (BridgeResult, error) {
 	task := BridgeTask{
 		RequestID:    fmt.Sprintf("router_collect_%d", time.Now().UnixNano()),
 		URL:          searchURL,
+		Query:        query,
 		BatchID:      queryID,
 		WaitStrategy: "spa",
 		Action:       "collect",
+		Timeout:      collectBridgeTaskTimeout,
 	}
 	result, err := p.bridge.Submit(ctx, task)
 	if err != nil {
@@ -273,13 +312,15 @@ func (p *ExtensionProvider) submitCollectTask(ctx context.Context, searchURL, qu
 }
 
 // submitCollectAndCaptureTask submits a combined collect+capture action to the bridge.
-func (p *ExtensionProvider) submitCollectAndCaptureTask(ctx context.Context, searchURL, queryID string) (BridgeResult, error) {
+func (p *ExtensionProvider) submitCollectAndCaptureTask(ctx context.Context, searchURL, query, queryID string) (BridgeResult, error) {
 	task := BridgeTask{
 		RequestID:    fmt.Sprintf("router_collect_capture_%d", time.Now().UnixNano()),
 		URL:          searchURL,
+		Query:        query,
 		BatchID:      queryID,
 		WaitStrategy: "spa",
 		Action:       "collect_and_capture",
+		Timeout:      collectAndCaptureBridgeTaskTimeout,
 	}
 	result, err := p.bridge.Submit(ctx, task)
 	if err != nil {
@@ -290,6 +331,9 @@ func (p *ExtensionProvider) submitCollectAndCaptureTask(ctx context.Context, sea
 
 // isLoginWallDetected checks if the bridge result indicates a login wall.
 func isLoginWallDetected(result BridgeResult) bool {
+	if result.StructuredCollectedData != nil && result.StructuredCollectedData.IsLoginWall {
+		return true
+	}
 	if result.StructuredCollectedData != nil && result.StructuredCollectedData.Extra != nil {
 		if lw, ok := result.StructuredCollectedData.Extra["is_login_wall"].(bool); ok && lw {
 			return true
@@ -311,6 +355,7 @@ func (p *ExtensionProvider) handleLoginWallResult(cr collection.CollectResult, r
 	metrics.IncBrowserLoginRequired(engine)
 	if result.StructuredCollectedData != nil {
 		cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(result.StructuredCollectedData.Items, engine, result.StructuredCollectedData.HasMore)
+		cr.Title = result.StructuredCollectedData.Title
 		if result.StructuredCollectedData.Extra != nil {
 			if title, ok := result.StructuredCollectedData.Extra["title"].(string); ok && title != "" {
 				cr.Title = title
@@ -342,6 +387,15 @@ func (p *ExtensionProvider) populateCollectResultFromBridge(cr *collection.Colle
 	}
 	data := result.StructuredCollectedData
 	cr.Assets, cr.Total, cr.HasMore = collection.ParseStructuredCollectedDataFromItems(data.Items, engine, data.HasMore)
+	cr.Title = data.Title
+	cr.ExtractionMethod = data.ExtractionMethod
+	cr.RowSelectorUsed = data.RowSelectorUsed
+	cr.RowsFound = data.RowsFound
+	cr.ExtractionError = data.ExtractionError
+	if data.LoginRequired {
+		cr.LoginRequired = true
+		metrics.IncBrowserLoginRequired(engine)
+	}
 	if data.Extra != nil {
 		if title, ok := data.Extra["title"].(string); ok && title != "" {
 			cr.Title = title
@@ -379,6 +433,10 @@ func buildSearchEngineURL(engine, query string) string {
 		return fmt.Sprintf("https://www.zoomeye.org/searchResult?q=%s", url.QueryEscape(query))
 	case "shodan":
 		return fmt.Sprintf("https://www.shodan.io/search?query=%s", url.QueryEscape(query))
+	case "censys":
+		return fmt.Sprintf("https://platform.censys.io/search?resource=hosts&sort=RELEVANCE&per_page=25&virtual_hosts=EXCLUDE&q=%s", url.QueryEscape(query))
+	case "daydaymap":
+		return fmt.Sprintf("https://www.daydaymap.com/searchResult?keyword=%s", url.QueryEscape(query))
 	default:
 		return ""
 	}
@@ -408,6 +466,10 @@ func (p *ExtensionProvider) buildTargetURL(targetURL, ip, port, protocol string)
 	if !strings.HasPrefix(resolvedURL, "http://") && !strings.HasPrefix(resolvedURL, "https://") {
 		resolvedURL = "http://" + resolvedURL
 	}
+	// SSRF gate: reject private/loopback/internal targets before sending to Extension.
+	if err := ValidateBrowserURL(resolvedURL); err != nil {
+		return "", err
+	}
 	return resolvedURL, nil
 }
 
@@ -429,6 +491,7 @@ func urlBase64(s string) string {
 }
 
 // extractExtraFields collects unrecognized fields into an Extra map.
+// nolint:unused
 func extractExtraFields(item map[string]interface{}) map[string]interface{} {
 	known := map[string]bool{
 		"url": true, "title": true, "ip": true, "port": true,

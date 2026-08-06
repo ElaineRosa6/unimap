@@ -13,7 +13,43 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
+
+// webhookNotification is the typed payload received by test webhook servers.
+type webhookNotification struct {
+	TaskID   string                 `json:"task_id"`
+	TaskName string                 `json:"task_name"`
+	TaskType string                 `json:"task_type"`
+	Status   string                 `json:"status"`
+	Result   string                 `json:"result"`
+	Error    string                 `json:"error"`
+	Duration float64                `json:"duration"`
+	Payload  map[string]interface{} `json:"payload,omitempty"`
+}
+
+// feishuTokenResponse is the typed response for Feishu token API.
+type feishuTokenResponse struct {
+	Code              int    `json:"code"`
+	Msg               string `json:"msg"`
+	TenantAccessToken string `json:"tenant_access_token,omitempty"`
+	Expire            int    `json:"expire,omitempty"`
+}
+
+// feishuImageUploadResponse is the typed response for Feishu image upload API.
+type feishuImageUploadResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Data *struct {
+		ImageKey string `json:"image_key"`
+	} `json:"data,omitempty"`
+}
+
+// feishuMessageResponse is the typed response for Feishu message send API.
+type feishuMessageResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+}
 
 func TestLogChannel_Send(t *testing.T) {
 	ch := NewLogChannel("test-log", true)
@@ -37,8 +73,38 @@ func TestLogChannel_Disabled(t *testing.T) {
 	}
 }
 
+func TestTruncateUTF8(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    string
+		maxBytes int
+		want     string
+	}{
+		{"short stays", "hello", 4096, "hello"},
+		{"exact fits", "abc", 3, "abc"},
+		{"ascii truncated", "abcdef", 3, "abc"},
+		{"cjk boundary not split", "中文测试", 4, "中"},
+		{"cjk with room", "中文测试", 7, "中文"},
+		{"mixed boundary", "a中文", 5, "a中"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := truncateUTF8(tc.input, tc.maxBytes)
+			if got != tc.want {
+				t.Fatalf("truncateUTF8(%q, %d) = %q, want %q", tc.input, tc.maxBytes, got, tc.want)
+			}
+			if !utf8.ValidString(got) {
+				t.Fatalf("truncateUTF8(%q, %d) produced invalid UTF-8: %q", tc.input, tc.maxBytes, got)
+			}
+			if len(got) > tc.maxBytes {
+				t.Fatalf("truncateUTF8(%q, %d) = %q exceeds %d bytes", tc.input, tc.maxBytes, got, tc.maxBytes)
+			}
+		})
+	}
+}
+
 func TestGenericWebhook_Send_Success(t *testing.T) {
-	var received map[string]interface{}
+	var received webhookNotification
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("expected POST, got %s", r.Method)
@@ -64,8 +130,8 @@ func TestGenericWebhook_Send_Success(t *testing.T) {
 	if err := ch.Send(context.Background(), n); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if received["task_id"] != "t1" {
-		t.Errorf("expected task_id t1, got %v", received["task_id"])
+	if received.TaskID != "t1" {
+		t.Errorf("expected task_id t1, got %v", received.TaskID)
 	}
 }
 
@@ -129,7 +195,7 @@ func TestGenericWebhook_SSRSF_RejectPrivate(t *testing.T) {
 }
 
 func TestDingTalkChannel_Send_Success(t *testing.T) {
-	var received map[string]interface{}
+	var received DingTalkMarkdownBody
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&received)
 		w.WriteHeader(http.StatusOK)
@@ -148,8 +214,8 @@ func TestDingTalkChannel_Send_Success(t *testing.T) {
 	if err := ch.Send(context.Background(), n); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if received["msgtype"] != "markdown" {
-		t.Errorf("expected msgtype markdown, got %v", received["msgtype"])
+	if received.MsgType != "markdown" {
+		t.Errorf("expected msgtype markdown, got %v", received.MsgType)
 	}
 }
 
@@ -164,7 +230,7 @@ func TestDingTalkChannel_Sign(t *testing.T) {
 }
 
 func TestFeishuChannel_Send_Success(t *testing.T) {
-	var received map[string]interface{}
+	var received FeishuCardBody
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&received)
 		w.WriteHeader(http.StatusOK)
@@ -183,8 +249,50 @@ func TestFeishuChannel_Send_Success(t *testing.T) {
 	if err := ch.Send(context.Background(), n); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if received["msg_type"] != "interactive" {
-		t.Errorf("expected msg_type interactive, got %v", received["msg_type"])
+	if received.MsgType != "interactive" {
+		t.Errorf("expected msg_type interactive, got %v", received.MsgType)
+	}
+}
+
+func TestFeishuChannel_Send_WithSecret_SignInURL(t *testing.T) {
+	var receivedBody FeishuCardBody
+	var receivedURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedURL = r.URL.String()
+		json.NewDecoder(r.Body).Decode(&receivedBody)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	ch, err := NewFeishuChannel("test-feishu", server.URL+"/hook/123", "my-secret-key", true, true)
+	if err != nil {
+		t.Fatalf("failed to create channel: %v", err)
+	}
+
+	n := TaskNotification{
+		TaskID: "t1", TaskName: "test", TaskType: "query",
+		Status: "success", Result: "ok", Duration: 1200,
+	}
+	if err := ch.Send(context.Background(), n); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 签名必须在 URL query 参数中，不在 body 中
+	if !strings.Contains(receivedURL, "timestamp=") {
+		t.Errorf("expected timestamp in URL query, got %s", receivedURL)
+	}
+	if !strings.Contains(receivedURL, "sign=") {
+		t.Errorf("expected sign in URL query, got %s", receivedURL)
+	}
+	// body 中不应包含 timestamp/sign 字段
+	raw, _ := json.Marshal(receivedBody)
+	if strings.Contains(string(raw), "timestamp") {
+		t.Errorf("body should not contain timestamp, got %s", string(raw))
+	}
+	if strings.Contains(string(raw), "sign") {
+		t.Errorf("body should not contain sign, got %s", string(raw))
+	}
+	if receivedBody.MsgType != "interactive" {
+		t.Errorf("expected msg_type interactive, got %v", receivedBody.MsgType)
 	}
 }
 
@@ -200,7 +308,7 @@ func TestFeishuChannel_Sign(t *testing.T) {
 }
 
 func TestWeComChannel_Send_Success(t *testing.T) {
-	var received map[string]interface{}
+	var received WeComMarkdownBody
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&received)
 		w.WriteHeader(http.StatusOK)
@@ -219,8 +327,8 @@ func TestWeComChannel_Send_Success(t *testing.T) {
 	if err := ch.Send(context.Background(), n); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if received["msgtype"] != "markdown" {
-		t.Errorf("expected msgtype markdown, got %v", received["msgtype"])
+	if received.MsgType != "markdown" {
+		t.Errorf("expected msgtype markdown, got %v", received.MsgType)
 	}
 }
 
@@ -735,11 +843,9 @@ func newMockFeishuServer(t *testing.T) (serverURL string, tokenCalls, uploadCall
 
 	mux.HandleFunc("/open-apis/auth/v3/tenant_access_token/internal", func(w http.ResponseWriter, r *http.Request) {
 		tokenCnt++
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code":               0,
-			"msg":                "ok",
-			"tenant_access_token": "test-token-xxx",
-			"expire":             7200,
+		json.NewEncoder(w).Encode(feishuTokenResponse{
+			Code: 0, Msg: "ok",
+			TenantAccessToken: "test-token-xxx", Expire: 7200,
 		})
 	})
 
@@ -749,22 +855,19 @@ func newMockFeishuServer(t *testing.T) (serverURL string, tokenCalls, uploadCall
 		if r.Header.Get("Authorization") != "Bearer test-token-xxx" {
 			t.Errorf("expected Bearer token, got %s", r.Header.Get("Authorization"))
 		}
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code": 0,
-			"msg":  "ok",
-			"data": map[string]interface{}{
-				"image_key": fmt.Sprintf("img_%d", uploadCnt),
-			},
+		imgKey := fmt.Sprintf("img_%d", uploadCnt)
+		json.NewEncoder(w).Encode(feishuImageUploadResponse{
+			Code: 0, Msg: "ok",
+			Data: &struct {
+				ImageKey string `json:"image_key"`
+			}{ImageKey: imgKey},
 		})
 	})
 
 	mux.HandleFunc("/open-apis/im/v1/messages", func(w http.ResponseWriter, r *http.Request) {
 		msgCnt++
 		json.NewDecoder(r.Body).Decode(&msgBody)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code": 0,
-			"msg":  "ok",
-		})
+		json.NewEncoder(w).Encode(feishuMessageResponse{Code: 0, Msg: "ok"})
 	})
 
 	server := httptest.NewServer(mux)
@@ -878,13 +981,13 @@ func TestFeishuAppChannel_Send_WithImages(t *testing.T) {
 	}
 
 	n := TaskNotification{
-		TaskID:    "t1",
-		TaskName:  "screenshot task",
-		TaskType:  "batch_screenshot",
-		Status:    "success",
-		Result:    "截图完成",
-		Duration:  5000,
-		Timestamp: time.Now(),
+		TaskID:     "t1",
+		TaskName:   "screenshot task",
+		TaskType:   "batch_screenshot",
+		Status:     "success",
+		Result:     "截图完成",
+		Duration:   5000,
+		Timestamp:  time.Now(),
 		ImagePaths: []string{img1, img2},
 	}
 	err := ch2.Send(context.Background(), n)
@@ -913,21 +1016,16 @@ func TestFeishuAppChannel_Send_UploadFailure(t *testing.T) {
 	// Create a server that fails image uploads
 	mux := http.NewServeMux()
 	mux.HandleFunc("/open-apis/auth/v3/tenant_access_token/internal", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code":                0,
-			"tenant_access_token": "tok",
-			"expire":              7200,
+		json.NewEncoder(w).Encode(feishuTokenResponse{
+			Code: 0, TenantAccessToken: "tok", Expire: 7200,
 		})
 	})
 	mux.HandleFunc("/open-apis/im/v1/images", func(w http.ResponseWriter, r *http.Request) {
 		// Simulate upload failure
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code": 230001,
-			"msg":  "image too large",
-		})
+		json.NewEncoder(w).Encode(feishuImageUploadResponse{Code: 230001, Msg: "image too large"})
 	})
 	mux.HandleFunc("/open-apis/im/v1/messages", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{"code": 0, "msg": "ok"})
+		json.NewEncoder(w).Encode(feishuMessageResponse{Code: 0, Msg: "ok"})
 	})
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
@@ -956,10 +1054,7 @@ func TestFeishuAppChannel_Send_UploadFailure(t *testing.T) {
 func TestFeishuAppChannel_Send_TokenError(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/open-apis/auth/v3/tenant_access_token/internal", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code": 10003,
-			"msg":  "invalid app_id",
-		})
+		json.NewEncoder(w).Encode(feishuTokenResponse{Code: 10003, Msg: "invalid app_id"})
 	})
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
@@ -980,17 +1075,12 @@ func TestFeishuAppChannel_Send_TokenError(t *testing.T) {
 func TestFeishuAppChannel_Send_MessageError(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/open-apis/auth/v3/tenant_access_token/internal", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code":                0,
-			"tenant_access_token": "tok",
-			"expire":              7200,
+		json.NewEncoder(w).Encode(feishuTokenResponse{
+			Code: 0, TenantAccessToken: "tok", Expire: 7200,
 		})
 	})
 	mux.HandleFunc("/open-apis/im/v1/messages", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code": 230002,
-			"msg":  "chat not found",
-		})
+		json.NewEncoder(w).Encode(feishuMessageResponse{Code: 230002, Msg: "chat not found"})
 	})
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
@@ -1128,7 +1218,7 @@ func (c *feishuAppTestChannel) uploadImage(ctx context.Context, imagePath string
 	return result.Data.ImageKey, nil
 }
 
-func (c *feishuAppTestChannel) sendMessage(ctx context.Context, body map[string]interface{}) error {
+func (c *feishuAppTestChannel) sendMessage(ctx context.Context, body FeishuAppMessage) error {
 	token, err := c.getToken(ctx)
 	if err != nil {
 		return err
@@ -1195,83 +1285,50 @@ func (c *feishuAppTestChannel) Send(ctx context.Context, n TaskNotification) err
 		}
 	}
 
-	elements := []map[string]interface{}{}
+	elements := []FeishuCardElement{}
 
 	if len(payloadLines) > 0 {
-		elements = append(elements, map[string]interface{}{
-			"tag":     "markdown",
-			"content": strings.Join(payloadLines, "\n"),
-		})
+		elements = append(elements, FeishuMarkdownElement(strings.Join(payloadLines, "\n")))
 	}
 
-	elements = append(elements, map[string]interface{}{
-		"tag":     "markdown",
-		"content": fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0),
-	})
+	elements = append(elements, FeishuMarkdownElement(fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0)))
 
 	if len(n.ImagePaths) > 0 {
-		elements = append(elements, map[string]interface{}{"tag": "hr"})
-		elements = append(elements, map[string]interface{}{
-			"tag":     "markdown",
-			"content": "**截图预览**:",
-		})
+		elements = append(elements, FeishuHRElement())
+		elements = append(elements, FeishuMarkdownElement("**截图预览**:"))
 
 		for _, imgPath := range n.ImagePaths {
 			imageKey, err := c.uploadImage(ctx, imgPath)
 			if err != nil {
-				elements = append(elements, map[string]interface{}{
-					"tag":     "markdown",
-					"content": fmt.Sprintf("⚠️ %s (上传失败: %v)", filepath.Base(imgPath), err),
-				})
+				elements = append(elements, FeishuMarkdownElement(fmt.Sprintf("⚠️ %s (上传失败: %v)", filepath.Base(imgPath), err)))
 				continue
 			}
-			elements = append(elements, map[string]interface{}{
-				"tag":     "img",
-				"img_key": imageKey,
-				"alt": map[string]interface{}{
-					"tag":     "plain_text",
-					"content": filepath.Base(imgPath),
-				},
-			})
+			elements = append(elements, FeishuImageElement(imageKey, filepath.Base(imgPath)))
 		}
 	}
 
 	if n.Result != "" {
-		elements = append(elements, map[string]interface{}{"tag": "hr"})
-		elements = append(elements, map[string]interface{}{
-			"tag":     "markdown",
-			"content": fmt.Sprintf("**执行结果**:\n%s", n.Result),
-		})
+		elements = append(elements, FeishuHRElement())
+		elements = append(elements, FeishuMarkdownElement(fmt.Sprintf("**执行结果**:\n%s", n.Result)))
 	}
 
 	if n.Error != "" {
-		elements = append(elements, map[string]interface{}{"tag": "hr"})
-		elements = append(elements, map[string]interface{}{
-			"tag":     "markdown",
-			"content": fmt.Sprintf("**错误**: %s", n.Error),
-		})
+		elements = append(elements, FeishuHRElement())
+		elements = append(elements, FeishuMarkdownElement(fmt.Sprintf("**错误**: %s", n.Error)))
 	}
 
-	card := map[string]interface{}{
-		"header": map[string]interface{}{
-			"title": map[string]interface{}{
-				"tag":     "plain_text",
-				"content": title,
-			},
-			"template": template,
-		},
-		"elements": elements,
+	card := FeishuCard{
+		Header:   FeishuCardHeader{Title: FeishuTextElement{Tag: "plain_text", Content: title}, Template: template},
+		Elements: elements,
 	}
 
 	cardJSON, _ := json.Marshal(card)
 
-	body := map[string]interface{}{
-		"receive_id": c.chatID,
-		"msg_type":   "interactive",
-		"content":    string(cardJSON),
-	}
-
-	return c.sendMessage(ctx, body)
+	return c.sendMessage(ctx, FeishuAppMessage{
+		ReceiveID: c.chatID,
+		MsgType:   "interactive",
+		Content:   string(cardJSON),
+	})
 }
 
 // Ensure feishuAppTestChannel implements the Send method we need.

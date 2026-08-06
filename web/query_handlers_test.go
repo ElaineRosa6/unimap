@@ -198,14 +198,50 @@ func TestParseEnginesParam_Empty(t *testing.T) {
 	}
 }
 
+func TestBuildQueryAPIPayloadIncludesPersistenceStatus(t *testing.T) {
+	resp := &service.QueryResponse{Persistence: service.PersistenceStatus{Status: "failed", Warning: "history unavailable"}}
+	payload := buildQueryAPIPayload("test", []string{"fofa"}, resp, browserQueryOutcome{}, "", false)
+	if payload.Persistence.Status != "failed" || payload.Persistence.Warning == "" {
+		t.Fatalf("persistence status was not propagated: %#v", payload.Persistence)
+	}
+}
+
+func TestBuildQueryAPIPayloadMarksBrowserFallbackPartial(t *testing.T) {
+	payload := buildQueryAPIPayload(
+		`port="443"`,
+		[]string{"quake"},
+		nil,
+		browserQueryOutcome{
+			Enabled: true,
+			CollectedResults: []collection.CollectResult{{
+				Engine: "quake",
+				Assets: []model.UnifiedAsset{{IP: "192.0.2.1", Source: "quake"}},
+			}},
+		},
+		"collect_and_capture",
+		false,
+		"API query failed: adapter unavailable",
+	)
+
+	if payload.Status != "partial" {
+		t.Fatalf("status = %q, want partial", payload.Status)
+	}
+	if len(payload.Assets) != 1 {
+		t.Fatalf("expected browser asset in response, got %#v", payload.Assets)
+	}
+	if len(payload.Errors) == 0 || !strings.Contains(payload.Errors[0], "API query failed") {
+		t.Fatalf("expected API diagnostic to be preserved, got %#v", payload.Errors)
+	}
+}
+
 func TestValidateQueryInput_TooLong(t *testing.T) {
 	longQuery := ""
-	for i := 0; i < 1001; i++ {
+	for i := 0; i < 20001; i++ {
 		longQuery += "a"
 	}
 	err := validateQueryInput(longQuery)
 	if err == nil {
-		t.Fatal("expected error for query > 1000 chars")
+		t.Fatal("expected error for query > 20000 chars")
 	}
 }
 
@@ -236,18 +272,16 @@ func TestBuildQueryAPIPayload(t *testing.T) {
 			}},
 		},
 		"capture",
+		false,
 	)
 
-	if payload["query"] != "test" {
-		t.Fatalf("expected query 'test', got %v", payload["query"])
+	if payload.Query != "test" {
+		t.Fatalf("expected query 'test', got %v", payload.Query)
 	}
-	if payload["browserQuery"] != true {
-		t.Fatalf("expected browserQuery true, got %v", payload["browserQuery"])
+	if payload.BrowserQuery != true {
+		t.Fatalf("expected browserQuery true, got %v", payload.BrowserQuery)
 	}
-	collected, ok := payload["browserCollectedData"].([]collection.CollectResult)
-	if !ok {
-		t.Fatal("expected browserCollectedData to be []collection.CollectResult")
-	}
+	collected := payload.BrowserCollectedData
 	if len(collected) != 1 || collected[0].Engine != "quake" {
 		t.Fatalf("unexpected browserCollectedData: %#v", collected)
 	}
@@ -270,9 +304,10 @@ func TestBuildQueryAPIPayload_CleansHunterBrowserCollectedData(t *testing.T) {
 			}},
 		},
 		"collect",
+		false,
 	)
 
-	collected := payload["browserCollectedData"].([]collection.CollectResult)
+	collected := payload.BrowserCollectedData
 	if len(collected) != 1 {
 		t.Fatalf("expected 1 collected result, got %d", len(collected))
 	}
@@ -297,13 +332,11 @@ func TestBuildQueryAPIPayload_CombinesErrors(t *testing.T) {
 			Errors: []string{"browser error"},
 		},
 		"",
+		false,
 		"explicit error",
 	)
 
-	errors, ok := payload["errors"].([]string)
-	if !ok {
-		t.Fatal("expected errors to be []string")
-	}
+	errors := payload.Errors
 	if len(errors) < 2 {
 		t.Fatalf("expected at least 2 errors, got %d", len(errors))
 	}
@@ -330,17 +363,17 @@ func TestBuildQueryAPIPayload_MergesCollectedAssets(t *testing.T) {
 		},
 	}
 
-	payload := buildQueryAPIPayload("test", []string{"fofa", "hunter", "quake"}, resp, browserOutcome, "collect")
+	payload := buildQueryAPIPayload("test", []string{"fofa", "hunter", "quake"}, resp, browserOutcome, "collect", false)
 
-	assets := payload["assets"].([]model.UnifiedAsset)
+	assets := payload.Assets
 	if len(assets) != 4 {
 		t.Fatalf("expected 4 assets (1 query + 3 collected), got %d", len(assets))
 	}
-	total := payload["totalCount"].(int)
+	total := payload.TotalCount
 	if total != 4 {
 		t.Fatalf("expected totalCount 4, got %d", total)
 	}
-	stats := payload["engineStats"].(map[string]int)
+	stats := payload.EngineStats
 	if stats["fofa"] != 1 {
 		t.Errorf("expected fofa=1, got %d", stats["fofa"])
 	}
@@ -370,24 +403,52 @@ func TestBuildQueryAPIPayload_MergesBrowserCollectedAssets(t *testing.T) {
 			}},
 		},
 		"collect",
+		false,
 	)
 
-	assets, ok := payload["assets"].([]model.UnifiedAsset)
-	if !ok {
-		t.Fatal("expected assets to be []model.UnifiedAsset")
-	}
+	assets := payload.Assets
 	if len(assets) != 2 {
 		t.Fatalf("expected 2 merged assets, got %#v", assets)
 	}
-	if payload["totalCount"] != 2 {
-		t.Fatalf("expected totalCount 2, got %v", payload["totalCount"])
+	if payload.TotalCount != 2 {
+		t.Fatalf("expected totalCount 2, got %v", payload.TotalCount)
 	}
-	engineStats, ok := payload["engineStats"].(map[string]int)
-	if !ok {
-		t.Fatal("expected engineStats to be map[string]int")
-	}
+	engineStats := payload.EngineStats
 	if engineStats["fofa"] != 1 {
 		t.Fatalf("expected fofa browser stat 1, got %#v", engineStats)
+	}
+}
+
+func TestBuildQueryAPIPayload_DoesNotDoubleCountMergedBrowserAssets(t *testing.T) {
+	// HTTP API 走 ExecuteQueryWithBrowserWorkflow，resp.Assets 已由 service 层 merge
+	// 浏览器资产；此时必须跳过本函数内的追加逻辑，避免重复计数。
+	resp := &service.QueryResponse{
+		Assets: []model.UnifiedAsset{
+			{URL: "https://api.example.test", Source: "api"},
+			{URL: "https://browser.example.test", Source: "browser"},
+		},
+		TotalCount:  2,
+		EngineStats: map[string]int{"fofa": 2},
+	}
+	browserOutcome := browserQueryOutcome{
+		Enabled: true,
+		CollectedResults: []collection.CollectResult{{
+			Engine: "fofa",
+			Assets: []model.UnifiedAsset{{URL: "https://browser.example.test", Source: "browser"}},
+			Total:  1,
+		}},
+	}
+
+	payload := buildQueryAPIPayload("test", []string{"fofa"}, resp, browserOutcome, "collect", true)
+
+	if len(payload.Assets) != 2 {
+		t.Fatalf("expected 2 assets (browser already in resp), got %d", len(payload.Assets))
+	}
+	if payload.TotalCount != 2 {
+		t.Fatalf("expected totalCount 2, got %v", payload.TotalCount)
+	}
+	if stats := payload.EngineStats; stats["fofa"] != 2 {
+		t.Fatalf("expected fofa stat 2 (api+browser merged), got %#v", stats)
 	}
 }
 
@@ -637,8 +698,10 @@ func TestBrowserQueryProvider_ScreenshotRouterAvailable_ReturnsRouter(t *testing
 	}
 }
 
-func TestBrowserQueryProvider_ExtensionAvailable_ReturnsExtensionProvider(t *testing.T) {
-	// Arrange: no router, but bridge.Service is set
+func TestBrowserQueryProvider_ExtensionWithoutRouter_ReturnsNil(t *testing.T) {
+	// An allocated bridge service is not proof that an extension client is live.
+	// Production initializes the router for all modes; incomplete wiring must
+	// fail closed instead of returning an unusable extension provider.
 	s := &Server{
 		screenshotRouter: nil,
 		screenshotMgr:    nil,
@@ -651,11 +714,8 @@ func TestBrowserQueryProvider_ExtensionAvailable_ReturnsExtensionProvider(t *tes
 	provider := s.browserQueryProvider()
 
 	// Assert
-	if provider == nil {
-		t.Fatal("expected non-nil provider when bridge.Service is set")
-	}
-	if _, ok := provider.(*screenshot.ExtensionProvider); !ok {
-		t.Fatalf("expected *screenshot.ExtensionProvider, got %T", provider)
+	if provider != nil {
+		t.Fatalf("expected nil without the unified router, got %T", provider)
 	}
 }
 
@@ -698,7 +758,7 @@ func TestBrowserQueryProvider_PriorityRouterOverExtension(t *testing.T) {
 	}
 }
 
-func TestBrowserQueryProvider_PriorityExtensionOverCDP(t *testing.T) {
+func TestBrowserQueryProvider_CDPFallbackIgnoresUnroutedBridge(t *testing.T) {
 	// Arrange: no router, but both bridge.Service and screenshotMgr are set
 	s := &Server{
 		screenshotRouter: nil,
@@ -711,9 +771,9 @@ func TestBrowserQueryProvider_PriorityExtensionOverCDP(t *testing.T) {
 	// Act
 	provider := s.browserQueryProvider()
 
-	// Assert: extension takes priority over CDP when router is absent
-	if _, ok := provider.(*screenshot.ExtensionProvider); !ok {
-		t.Fatalf("expected *screenshot.ExtensionProvider (priority over CDP), got %T", provider)
+	// Assert: an unwired bridge cannot bypass router health selection.
+	if _, ok := provider.(*screenshot.CDPProvider); !ok {
+		t.Fatalf("expected *screenshot.CDPProvider, got %T", provider)
 	}
 }
 
@@ -773,15 +833,15 @@ func TestBrowserQueryProvider_Table(t *testing.T) {
 			expectedType: "*screenshot.ScreenshotRouter",
 		},
 		{
-			name:             "extension when no router",
+			name:             "unrouted extension is unavailable",
 			hasBridgeService: true,
-			expectedType:     "*screenshot.ExtensionProvider",
+			expectedNil:      true,
 		},
 		{
-			name:             "extension over CDP when no router",
+			name:             "CDP fallback ignores unrouted extension",
 			hasBridgeService: true,
 			hasScreenshotMgr: true,
-			expectedType:     "*screenshot.ExtensionProvider",
+			expectedType:     "*screenshot.CDPProvider",
 		},
 		{
 			name:             "CDP only fallback",

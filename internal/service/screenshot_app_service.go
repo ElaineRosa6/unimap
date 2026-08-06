@@ -10,6 +10,7 @@ import (
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/utils"
 )
 
 // ScreenshotAppService 封装截图相关应用层流程。
@@ -36,7 +37,7 @@ func NewScreenshotAppService(baseDir string) *ScreenshotAppService {
 
 func NewScreenshotAppServiceWithProvider(baseDir string, provider screenshot.Provider) *ScreenshotAppService {
 	if strings.TrimSpace(baseDir) == "" {
-		baseDir = "./screenshots"
+		baseDir = utils.ScreenshotsDir()
 	}
 	return &ScreenshotAppService{baseDir: baseDir, provider: provider, engine: "cdp"}
 }
@@ -63,6 +64,18 @@ func (s *ScreenshotAppService) SetBridgeService(bridge *screenshot.BridgeService
 	s.mu.Unlock()
 }
 
+// SetProvider atomically replaces the browser provider used by screenshot and
+// scheduler flows. Production startup wires the unified router here so callers
+// cannot bypass health-based backend selection.
+func (s *ScreenshotAppService) SetProvider(provider screenshot.Provider) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.provider = provider
+	s.mu.Unlock()
+}
+
 func (s *ScreenshotAppService) SetFallbackToCDP(enabled bool) {
 	if s == nil {
 		return
@@ -79,10 +92,16 @@ func (s *ScreenshotAppService) SetMode(mode string) {
 		return
 	}
 	mode = strings.ToLower(strings.TrimSpace(mode))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, routed := s.provider.(*screenshot.ScreenshotRouter); routed {
+		// The router owns selection, health checks, and fallback. Keeping the
+		// application service in auto avoids its legacy extension-first branch.
+		s.engine = "auto"
+		return
+	}
 	if mode == "cdp" || mode == "extension" {
-		s.mu.Lock()
 		s.engine = mode
-		s.mu.Unlock()
 	}
 	// "auto" leaves engine as-is; the router handles mode selection.
 }
@@ -92,6 +111,7 @@ type appConfigSnapshot struct {
 	engine        string
 	bridgeService *screenshot.BridgeService
 	fallbackToCDP bool
+	provider      screenshot.Provider
 }
 
 func (s *ScreenshotAppService) configSnapshot() appConfigSnapshot {
@@ -101,12 +121,13 @@ func (s *ScreenshotAppService) configSnapshot() appConfigSnapshot {
 		engine:        s.engine,
 		bridgeService: s.bridgeService,
 		fallbackToCDP: s.fallbackToCDP,
+		provider:      s.provider,
 	}
 }
 
 // IsCaptureAvailable reports whether screenshot capture can run with current dependencies.
 func (s *ScreenshotAppService) IsCaptureAvailable(mgr *screenshot.Manager) bool {
-	if s != nil && s.provider != nil {
+	if s != nil && s.configSnapshot().provider != nil {
 		return true
 	}
 	return mgr != nil
@@ -132,10 +153,26 @@ type BatchScreenshotRequest struct {
 }
 
 type BatchScreenshotResponse struct {
-	QueryID       string                   `json:"query_id"`
-	SearchEngines []map[string]interface{} `json:"search_engines"`
-	Targets       []map[string]interface{} `json:"targets"`
-	Errors        []string                 `json:"errors"`
+	QueryID       string                 `json:"query_id"`
+	SearchEngines []SearchEngineInfo     `json:"search_engines"`
+	Targets       []ScreenshotTargetInfo `json:"targets"`
+	Errors        []string               `json:"errors"`
+}
+
+// SearchEngineInfo represents a search engine entry in batch screenshot response.
+type SearchEngineInfo struct {
+	Engine string `json:"engine"`
+	Query  string `json:"query"`
+	Path   string `json:"path,omitempty"`
+}
+
+// ScreenshotTargetInfo represents a screenshot target in batch screenshot response.
+type ScreenshotTargetInfo struct {
+	URL      string `json:"url"`
+	IP       string `json:"ip,omitempty"`
+	Port     string `json:"port,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
+	Path     string `json:"path,omitempty"`
 }
 
 type BatchURLsRequest struct {
@@ -254,8 +291,8 @@ func (s *ScreenshotAppService) CaptureBatch(ctx context.Context, mgr *screenshot
 
 	resp := &BatchScreenshotResponse{
 		QueryID:       req.QueryID,
-		SearchEngines: []map[string]interface{}{},
-		Targets:       []map[string]interface{}{},
+		SearchEngines: []SearchEngineInfo{},
+		Targets:       []ScreenshotTargetInfo{},
 		Errors:        []string{},
 	}
 
@@ -273,10 +310,10 @@ func (s *ScreenshotAppService) CaptureBatch(ctx context.Context, mgr *screenshot
 				resp.Errors = append(resp.Errors, fmt.Sprintf("%s: %v", engineName, err))
 				return
 			}
-			resp.SearchEngines = append(resp.SearchEngines, map[string]interface{}{
-				"engine": engineName,
-				"query":  query,
-				"path":   path,
+			resp.SearchEngines = append(resp.SearchEngines, SearchEngineInfo{
+				Engine: engineName,
+				Query:  query,
+				Path:   path,
 			})
 		}(engine.Engine, engine.Query)
 	}
@@ -292,12 +329,12 @@ func (s *ScreenshotAppService) CaptureBatch(ctx context.Context, mgr *screenshot
 				resp.Errors = append(resp.Errors, fmt.Sprintf("%s:%s: %v", ip, port, err))
 				return
 			}
-			resp.Targets = append(resp.Targets, map[string]interface{}{
-				"url":      url,
-				"ip":       ip,
-				"port":     port,
-				"protocol": protocol,
-				"path":     path,
+			resp.Targets = append(resp.Targets, ScreenshotTargetInfo{
+				URL:      url,
+				IP:       ip,
+				Port:     port,
+				Protocol: protocol,
+				Path:     path,
 			})
 		}(target.URL, target.IP, target.Port, target.Protocol)
 	}

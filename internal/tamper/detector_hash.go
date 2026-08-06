@@ -15,10 +15,9 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/chromedp/chromedp"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
-	"github.com/unimap/project/internal/utils"
+	"github.com/unimap/project/internal/utils/urlguard"
 )
 
 type segmentTask struct {
@@ -26,12 +25,12 @@ type segmentTask struct {
 	hashFunc func() SegmentHash
 }
 
-// SetAllocator sets the chromedp allocator context for the detector.
-func (d *Detector) SetAllocator(ctx context.Context, allocCtx context.Context, allocCancel context.CancelFunc) {
+// SetBrowserPageLoader configures the guarded browser seam used for
+// JavaScript-rendered page hashing.
+func (d *Detector) SetBrowserPageLoader(loader BrowserPageLoader) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.allocCtx = allocCtx
-	d.allocCancel = allocCancel
+	d.browserPageLoader = loader
 }
 
 // ComputePageHash computes a page hash using the configured performance mode.
@@ -63,41 +62,28 @@ func (d *Detector) ComputePageHash(ctx context.Context, targetURL string) (*Page
 		logger.CtxWarnf(ctx, "Fast mode failed, falling back to chromedp: %v", err)
 	}
 
-	runCtx := ctx
-	runCancel := func() {}
-	if chromedp.FromContext(runCtx) == nil {
-		d.mu.Lock()
-		allocCtx := d.allocCtx
-		d.mu.Unlock()
-		if allocCtx == nil {
-			allocCtx = context.Background()
+	d.mu.Lock()
+	pageLoader := d.browserPageLoader
+	d.mu.Unlock()
+	if pageLoader != nil {
+		timeoutCtx, timeoutCancel := context.WithTimeout(ctx, 45*time.Second)
+		defer timeoutCancel()
+		var err error
+		title, html, err = pageLoader.LoadPage(timeoutCtx, targetURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load page through guarded browser: %w", err)
 		}
-		runCtx, runCancel = chromedp.NewContext(allocCtx)
-	}
-	defer runCancel()
-
-	timeoutCtx, timeoutCancel := context.WithTimeout(runCtx, 45*time.Second)
-	defer timeoutCancel()
-
-	if err := chromedp.Run(timeoutCtx,
-		chromedp.Navigate(targetURL),
-		chromedp.WaitReady("body", chromedp.ByQuery),
-		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Title(&title),
-		chromedp.OuterHTML("html", &html, chromedp.ByQuery),
-	); err != nil {
-		return nil, fmt.Errorf("failed to load page: %w", err)
+		result, err := d.ComputeHashFromHTML(targetURL, title, html, nil)
+		if err == nil {
+			d.runPortScanIfEnabled(ctx, targetURL, result)
+			d.cacheMu.Lock()
+			d.cache[cacheKey] = &cacheEntry{result: result, timestamp: time.Now()}
+			d.cacheMu.Unlock()
+		}
+		return result, err
 	}
 
-	result, err := d.ComputeHashFromHTML(targetURL, title, html, nil) // chromedp 模式不传 headers
-	if err == nil {
-		d.runPortScanIfEnabled(ctx, targetURL, result)
-		d.cacheMu.Lock()
-		d.cache[cacheKey] = &cacheEntry{result: result, timestamp: time.Now()}
-		d.cacheMu.Unlock()
-	}
-
-	return result, err
+	return nil, fmt.Errorf("guarded browser page loader is not configured")
 }
 
 func (d *Detector) computeHashWithHTTP(ctx context.Context, targetURL string) (*PageHashResult, error) {
@@ -107,23 +93,29 @@ func (d *Detector) computeHashWithHTTP(ctx context.Context, targetURL string) (*
 	// 记录重定向链
 	var redirectURLs []string
 
-	// Create an independent client to avoid mutating the shared DefaultHTTPClient.
-	// Cloning the transport and setting CheckRedirect on a fresh client prevents
-	// data races with concurrent tamper checks.
-	baseTransport := utils.DefaultHTTPClient().Transport.(*http.Transport).Clone()
-	if d.insecureSkipVerify {
-		baseTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	client := urlguard.SafeHTTPClient(urlguard.CheckOptions{
+		AllowedSchemes: []string{"http", "https"},
+	}, 30*time.Second)
+	baseTransport, ok := client.Transport.(*http.Transport)
+	if !ok || baseTransport == nil {
+		return nil, fmt.Errorf("safe HTTP transport is unavailable")
 	}
-	client := &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: baseTransport,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return fmt.Errorf("too many redirects")
-			}
-			redirectURLs = append(redirectURLs, req.URL.String())
-			return nil
-		},
+	if d.insecureSkipVerify {
+		baseTransport.TLSClientConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: true, //nolint:gosec // explicit runtime option
+		}
+	}
+	safeRedirect := client.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("too many redirects")
+		}
+		if err := safeRedirect(req, via); err != nil {
+			return err
+		}
+		redirectURLs = append(redirectURLs, req.URL.String())
+		return nil
 	}
 
 	req, err := http.NewRequestWithContext(timeoutCtx, http.MethodGet, targetURL, nil)
@@ -612,7 +604,8 @@ func normalizeInlineScript(content string) string {
 // computeNormalizedHTTPFingerprint 计算规范化 HTTP 指纹
 //
 // 这不是 urlive.py 的原始响应 MD5。这是规范化版本：
-//   MD5(状态行 + 排序规范化头 + 空行 + SimpleMD5Hash)
+//
+//	MD5(状态行 + 排序规范化头 + 空行 + SimpleMD5Hash)
 //
 // 移除 Date/Age/Expires 等易变头，确保同一页面两次请求的指纹一致。
 func computeNormalizedHTTPFingerprint(statusLine string, headers map[string]string, bodyHash string) string {

@@ -27,11 +27,14 @@ func NewManager(path string) *Manager {
 	}
 }
 
-// GetConfig 获取配置 (thread-safe)
+// GetConfig 获取配置 (thread-safe) — 返回深拷贝，防止外部修改
 func (m *Manager) GetConfig() *Config {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.config
+	if m.config == nil {
+		return nil
+	}
+	return copyConfig(m.config)
 }
 
 // SetConfig replaces the current config (thread-safe).
@@ -53,11 +56,16 @@ func (m *Manager) applyDefaults(config *Config) {
 	m.applyMiscDefaults(config)
 }
 
+// ApplyDefaults fills unset values on a candidate configuration.
+func (m *Manager) ApplyDefaults(config *Config) { m.applyDefaults(config) }
 
 // IsValid 检查配置是否有效
 func (m *Manager) IsValid() bool {
 	return m.config != nil
 }
+
+// Validate checks a candidate configuration without publishing it.
+func (m *Manager) Validate(cfg *Config) error { return m.validate(cfg) }
 
 // GetEngineConfig 获取引擎配置
 func (m *Manager) GetEngineConfig(name string) (interface{}, error) {
@@ -87,30 +95,60 @@ func (m *Manager) GetEngineConfig(name string) (interface{}, error) {
 
 // Save 保存配置文件
 func (m *Manager) Save() error {
-	if m.config == nil {
+	candidate := m.GetConfig()
+	if candidate == nil {
 		return fmt.Errorf("config is nil")
 	}
+	return m.SaveConfig(candidate)
+}
+
+// SaveConfig atomically persists a candidate and publishes it only on success.
+func (m *Manager) SaveConfig(candidate *Config) error {
+	if candidate == nil {
+		return fmt.Errorf("config is nil")
+	}
+	persisted := candidate.Clone()
 
 	// 加密通知渠道密钥后再持久化
-	EncryptNotifySecrets(m.config)
-	defer DecryptNotifySecrets(m.config)
+	EncryptNotifySecrets(persisted)
 
-	data, err := yaml.Marshal(m.config)
+	data, err := yaml.Marshal(persisted)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
 	// 确保目录存在
 	dir := filepath.Dir(m.path)
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory: %w", err)
+	if _, stErr := os.Stat(dir); os.IsNotExist(stErr) {
+		if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
+			return fmt.Errorf("failed to create directory: %w", mkdirErr)
 		}
 	}
 
-	if err := os.WriteFile(m.path, data, 0600); err != nil {
+	tmp, err := os.CreateTemp(dir, filepath.Base(m.path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary config file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	cleanup := func() { _ = tmp.Close(); _ = os.Remove(tmpPath) }
+	defer cleanup()
+	if err := tmp.Chmod(0600); err != nil {
+		return fmt.Errorf("failed to chmod config file: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("failed to sync config file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to close config file: %w", err)
+	}
+	if err := os.Rename(tmpPath, m.path); err != nil {
+		return fmt.Errorf("failed to replace config file: %w", err)
+	}
+	tmpPath = ""
+	m.SetConfig(candidate.Clone())
 	return nil
 }
 
@@ -272,4 +310,17 @@ func HashPassword(password string) (string, error) {
 // CheckPassword compares a password against a bcrypt hash.
 func CheckPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+}
+
+// copyConfig creates a deep copy of Config via YAML round-trip.
+func copyConfig(src *Config) *Config {
+	data, err := yaml.Marshal(src)
+	if err != nil {
+		return src
+	}
+	var dst Config
+	if err := yaml.Unmarshal(data, &dst); err != nil {
+		return src
+	}
+	return &dst
 }

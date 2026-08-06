@@ -6,10 +6,22 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
 )
+
+var restrictedPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("2001:db8::/32"),
+}
 
 func Check(rawURL string, opts CheckOptions) (*url.URL, error) {
 	opts = opts.withDefaults()
@@ -60,14 +72,15 @@ func Check(rawURL string, opts CheckOptions) (*url.URL, error) {
 // IP is the actual connection target). This keeps Check() usable in offline
 // environments (config validation, unit tests, CI sandboxes).
 func checkIPLiteralPrivate(host string) error {
-	if host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0" {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
 		return fmt.Errorf("urlguard: host %q is loopback", host)
 	}
 
 	ip := net.ParseIP(host)
 	if ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
-			return fmt.Errorf("urlguard: IP %q is loopback/private/link-local/unspecified", host)
+		if isRestrictedIP(ip) {
+			return fmt.Errorf("urlguard: IP %q is restricted", host)
 		}
 		return nil
 	}
@@ -96,12 +109,35 @@ func checkHostLive(ctx context.Context, host string) error {
 
 	for _, ipAddr := range ips {
 		ip := ipAddr.IP
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		if isRestrictedIP(ip) {
 			return fmt.Errorf("urlguard: DNS for %q resolves to restricted IP %s", host, ip)
 		}
 	}
 
 	return nil
+}
+
+func isRestrictedIP(ip net.IP) bool {
+	if ip == nil ||
+		ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() ||
+		!ip.IsGlobalUnicast() {
+		return true
+	}
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return true
+	}
+	addr = addr.Unmap()
+	for _, prefix := range restrictedPrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsInternalHost checks whether a host resolves to a private/internal address.
@@ -125,21 +161,21 @@ func SafeDialer(opts CheckOptions) *net.Dialer {
 
 func SafeHTTPClient(opts CheckOptions, timeout time.Duration) *http.Client {
 	opts = opts.withDefaults()
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, _, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			if !opts.AllowPrivate {
-				if err := checkHostLive(ctx, host); err != nil {
-					return nil, err
-				}
-			}
-			return net.DialTimeout(network, addr, 10*time.Second)
-		},
+	}
+	if opts.AllowPrivate {
+		transport.Proxy = http.ProxyFromEnvironment
+		transport.DialContext = dialer.DialContext
+	} else {
+		// Public-only clients cannot trust an ambient proxy because it would
+		// resolve and dial the final target outside this process's policy.
+		transport.Proxy = nil
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return safeDialContext(ctx, net.DefaultResolver, dialer.DialContext, network, addr)
+		}
 	}
 
 	return &http.Client{
@@ -155,4 +191,49 @@ func SafeHTTPClient(opts CheckOptions, timeout time.Duration) *http.Client {
 			return nil
 		},
 	}
+}
+
+type safeHostResolver interface {
+	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
+}
+
+type safeDialFunc func(context.Context, string, string) (net.Conn, error)
+
+func safeDialContext(ctx context.Context, resolver safeHostResolver, dial safeDialFunc, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil || strings.TrimSpace(host) == "" || strings.TrimSpace(port) == "" {
+		return nil, fmt.Errorf("urlguard: invalid dial target")
+	}
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+
+	var ips []net.IPAddr
+	if literal := net.ParseIP(host); literal != nil {
+		ips = []net.IPAddr{{IP: literal}}
+	} else {
+		ips, err = resolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("urlguard: DNS lookup failed for %q: %w", host, err)
+		}
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("urlguard: DNS for %q returned no addresses", host)
+	}
+
+	targets := make([]string, 0, len(ips))
+	for _, ipAddr := range ips {
+		if isRestrictedIP(ipAddr.IP) {
+			return nil, fmt.Errorf("urlguard: DNS for %q resolves to restricted IP %s", host, ipAddr.IP)
+		}
+		targets = append(targets, net.JoinHostPort(ipAddr.IP.String(), port))
+	}
+
+	var lastErr error
+	for _, target := range targets {
+		conn, dialErr := dial(ctx, network, target)
+		if dialErr == nil {
+			return conn, nil
+		}
+		lastErr = dialErr
+	}
+	return nil, fmt.Errorf("urlguard: dial validated target: %w", lastErr)
 }

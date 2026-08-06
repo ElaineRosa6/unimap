@@ -42,7 +42,7 @@ type UnifiedService struct {
 	cacheCleanup       time.Duration
 	cacheBackend       string
 	strategyManager    *utils.CacheStrategyManager
-	mu                 sync.RWMutex
+	mu                 sync.RWMutex                // nolint:unused
 	maxMemoryMB        int                         // 最大内存使用限制（MB）
 	maxConcurrent      int                         // 最大并发查询数
 	activeQueries      int                         // 当前活跃查询数
@@ -191,6 +191,12 @@ type QueryResponse struct {
 	TotalCount  int                  // 总数量
 	EngineStats map[string]int       // 各引擎统计
 	Errors      []string             // 错误信息
+	Persistence PersistenceStatus    // 查询历史持久化状态
+}
+
+type PersistenceStatus struct {
+	Status  string `json:"status,omitempty"`
+	Warning string `json:"warning,omitempty"`
 }
 
 // Query 执行查询
@@ -243,6 +249,12 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 	if len(allAssets) > 0 {
 		cacheTTL := s.resolveCacheTTL(req)
 		s.cache.Set(cacheKey, allAssets, cacheTTL)
+		if metadataCache, ok := s.cache.(utils.QueryCacheMetadataCache); ok {
+			metadataCache.SetQueryMetadata(cacheKey, utils.QueryCacheMetadata{
+				EngineStats: engineStats,
+				Errors:      queryErrors,
+			}, cacheTTL)
+		}
 	}
 
 	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", &model.HookData{
@@ -251,10 +263,15 @@ func (s *UnifiedService) Query(ctx context.Context, req QueryRequest) (*QueryRes
 		logger.CtxWarnf(ctx, "post-query hook failed: %v", err)
 	}
 
-	return &QueryResponse{
+	resp := &QueryResponse{
 		Assets: allAssets, TotalCount: len(allAssets),
 		EngineStats: engineStats, Errors: queryErrors,
-	}, nil
+	}
+	if len(engineStats) == 0 && len(queryErrors) > 0 {
+		queryStatus = "error"
+		return resp, fmt.Errorf("all query engines failed: %s", strings.Join(queryErrors, "; "))
+	}
+	return resp, nil
 }
 
 // validateQueryRequest 验证查询请求参数
@@ -276,7 +293,7 @@ func (s *UnifiedService) buildQueryCacheKey(req QueryRequest) string {
 	sortedEngines := make([]string, len(req.Engines))
 	copy(sortedEngines, req.Engines)
 	sort.Strings(sortedEngines)
-	keyData := fmt.Sprintf("%s|%s|%d|%t", strings.Join(sortedEngines, ","), req.Query, req.PageSize, req.ProcessData)
+	keyData := fmt.Sprintf("v2|%s|%s|%d|%t", strings.Join(sortedEngines, ","), req.Query, req.PageSize, req.ProcessData)
 	hash := sha256.Sum256([]byte(keyData))
 	return hex.EncodeToString(hash[:])
 }
@@ -285,6 +302,14 @@ func (s *UnifiedService) buildQueryCacheKey(req QueryRequest) string {
 func (s *UnifiedService) handleCachedQueryResult(ctx context.Context, req QueryRequest, cacheKey string) (*QueryResponse, bool) {
 	cachedAssets, found := s.cache.Get(cacheKey)
 	if !found {
+		return nil, false
+	}
+	metadataCache, ok := s.cache.(utils.QueryCacheMetadataCache)
+	if !ok {
+		return nil, false
+	}
+	metadata, ok := metadataCache.GetQueryMetadata(cacheKey)
+	if !ok {
 		return nil, false
 	}
 	metrics.ObserveCacheLookup(s.cacheBackend, "hit")
@@ -299,10 +324,6 @@ func (s *UnifiedService) handleCachedQueryResult(ctx context.Context, req QueryR
 		return nil, false
 	}
 
-	engineStats := make(map[string]int)
-	for _, engine := range req.Engines {
-		engineStats[engine] = 0
-	}
 	if err := s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterQuery, "query", &model.HookData{
 		Extra: map[string]any{"result_count": len(cachedAssets), "cached": true},
 	}); err != nil {
@@ -310,7 +331,7 @@ func (s *UnifiedService) handleCachedQueryResult(ctx context.Context, req QueryR
 	}
 	return &QueryResponse{
 		Assets: cachedAssets, TotalCount: len(cachedAssets),
-		EngineStats: engineStats, Errors: []string{},
+		EngineStats: metadata.EngineStats, Errors: metadata.Errors,
 	}, true
 }
 
@@ -518,7 +539,7 @@ func (s *UnifiedService) processAssets(ctx context.Context, assets []model.Unifi
 	}
 
 	// 触发处理后钩子
-	s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterProcess, "process", &model.HookData{
+	s.pluginManager.GetHooks().TriggerHook(plugin.HookAfterProcess, "process", &model.HookData{ //nolint:errcheck
 		Extra: map[string]any{
 			"original_count":  len(assets),
 			"processed_count": len(result),
@@ -614,19 +635,37 @@ func (s *UnifiedService) RegisterExporter(exporter plugin.ExporterPlugin, config
 	return s.pluginManager.StartPlugin(exporter.Name())
 }
 
+// EngineInfo represents a plugin engine's metadata.
+type EngineInfo struct {
+	Name        string   `json:"name"`
+	Version     string   `json:"version"`
+	Description string   `json:"description"`
+	Author      string   `json:"author"`
+	Fields      []string `json:"fields"`
+	MaxPageSize int      `json:"max_page_size"`
+}
+
+// ProcessorInfo represents a plugin processor's metadata.
+type ProcessorInfo struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	Priority    int    `json:"priority"`
+}
+
 // ListEngines 列出所有引擎
-func (s *UnifiedService) ListEngines() []map[string]interface{} {
+func (s *UnifiedService) ListEngines() []EngineInfo {
 	engines := s.pluginManager.GetRegistry().GetEnginePlugins()
-	result := make([]map[string]interface{}, 0, len(engines))
+	result := make([]EngineInfo, 0, len(engines))
 
 	for _, engine := range engines {
-		result = append(result, map[string]interface{}{
-			"name":          engine.Name(),
-			"version":       engine.Version(),
-			"description":   engine.Description(),
-			"author":        engine.Author(),
-			"fields":        engine.SupportedFields(),
-			"max_page_size": engine.MaxPageSize(),
+		result = append(result, EngineInfo{
+			Name:        engine.Name(),
+			Version:     engine.Version(),
+			Description: engine.Description(),
+			Author:      engine.Author(),
+			Fields:      engine.SupportedFields(),
+			MaxPageSize: engine.MaxPageSize(),
 		})
 	}
 
@@ -634,16 +673,16 @@ func (s *UnifiedService) ListEngines() []map[string]interface{} {
 }
 
 // ListProcessors 列出所有处理器
-func (s *UnifiedService) ListProcessors() []map[string]interface{} {
+func (s *UnifiedService) ListProcessors() []ProcessorInfo {
 	processors := s.pluginManager.GetRegistry().GetProcessorPlugins()
-	result := make([]map[string]interface{}, 0, len(processors))
+	result := make([]ProcessorInfo, 0, len(processors))
 
 	for _, processor := range processors {
-		result = append(result, map[string]interface{}{
-			"name":        processor.Name(),
-			"version":     processor.Version(),
-			"description": processor.Description(),
-			"priority":    processor.Priority(),
+		result = append(result, ProcessorInfo{
+			Name:        processor.Name(),
+			Version:     processor.Version(),
+			Description: processor.Description(),
+			Priority:    processor.Priority(),
 		})
 	}
 
@@ -693,6 +732,7 @@ func (s *UnifiedService) releaseQueryLock() {
 }
 
 // runWithQueryLock 在查询并发锁保护下执行函数，panic 时确保计数器回退
+// nolint:unused
 func (s *UnifiedService) runWithQueryLock(fn func() error) error {
 	if !s.acquireQueryLock() {
 		return fmt.Errorf("query concurrency limit reached")

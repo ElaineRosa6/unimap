@@ -5,8 +5,34 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/unimap/project/internal/auth"
 	"github.com/unimap/project/internal/config"
 )
+
+func TestAdminAuthMiddlewareRejectsStaleSessionVersion(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "secret-token"
+	user := &auth.User{ID: 7, Status: "active", SessionVersion: 2}
+	s := &Server{config: cfg, userRepo: &mockUserRepo{users: map[int64]*auth.User{7: user}}}
+
+	loginResponse := httptest.NewRecorder()
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/login", nil)
+	if err := s.setSessionCookieForUser(loginResponse, loginRequest, 7); err != nil {
+		t.Fatal(err)
+	}
+	user.SessionVersion++
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
+	req.AddCookie(loginResponse.Result().Cookies()[0])
+	rec := httptest.NewRecorder()
+	s.adminAuthMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected stale session to be rejected, got %d", rec.Code)
+	}
+}
 
 func TestAdminAuthMiddleware_MissingToken_Returns401(t *testing.T) {
 	s := &Server{config: &config.Config{}}
@@ -147,5 +173,39 @@ func TestAdminToken(t *testing.T) {
 	s.config = nil
 	if got := s.adminToken(); got != "" {
 		t.Fatalf("expected empty when config nil, got %q", got)
+	}
+}
+
+func TestAdminToken_AuthDisabled(t *testing.T) {
+	s := &Server{config: &config.Config{}}
+	s.config.Web.Auth.Enabled = false
+	if got := s.adminToken(); got != "" {
+		t.Fatalf("expected empty when auth disabled, got %q", got)
+	}
+}
+
+func TestAdminToken_AlreadySet(t *testing.T) {
+	s := &Server{config: &config.Config{}}
+	s.config.Web.Auth.Enabled = true
+	s.config.Web.Auth.AdminToken = "my-token"
+	if got := s.adminToken(); got != "my-token" {
+		t.Fatalf("expected my-token, got %q", got)
+	}
+}
+
+func TestAdminToken_AutoGenerate(t *testing.T) {
+	s := &Server{config: &config.Config{}}
+	s.config.Web.Auth.Enabled = true
+	s.config.Web.Auth.AdminToken = ""
+	s.configManager = &config.Manager{}
+	s.configManager.SetConfig(s.config)
+	got := s.adminToken()
+	if got == "" {
+		t.Fatal("expected auto-generated token")
+	}
+	// Should return the same token on second call
+	got2 := s.adminToken()
+	if got != got2 {
+		t.Fatalf("expected same token, got %q vs %q", got, got2)
 	}
 }

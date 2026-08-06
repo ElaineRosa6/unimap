@@ -489,7 +489,7 @@ func TestFofaAdapter_GetQuota(t *testing.T) {
 // ===== Hunter Adapter: Translate =====
 
 func TestHunterAdapter_Translate(t *testing.T) {
-	a := NewHunterAdapter("https://hunter.qianxin.com", "key", 3, 30*time.Second)
+	a := NewHunterAdapter("https://hunter.qianxin.com", "key", "", 3, 30*time.Second)
 
 	tests := []struct {
 		name    string
@@ -661,14 +661,14 @@ func TestHunterAdapter_Translate(t *testing.T) {
 }
 
 func TestHunterAdapter_Name(t *testing.T) {
-	a := NewHunterAdapter("https://hunter.qianxin.com", "key", 3, 30*time.Second)
+	a := NewHunterAdapter("https://hunter.qianxin.com", "key", "", 3, 30*time.Second)
 	if got := a.Name(); got != "hunter" {
 		t.Errorf("Name() = %q, want %q", got, "hunter")
 	}
 }
 
 func TestHunterAdapter_IsWebOnly(t *testing.T) {
-	a := NewHunterAdapter("https://hunter.qianxin.com", "key", 3, 30*time.Second)
+	a := NewHunterAdapter("https://hunter.qianxin.com", "key", "", 3, 30*time.Second)
 	if a.IsWebOnly() {
 		t.Error("expected IsWebOnly() = false")
 	}
@@ -677,7 +677,7 @@ func TestHunterAdapter_IsWebOnly(t *testing.T) {
 // ===== Hunter Adapter: Normalize =====
 
 func TestHunterAdapter_Normalize(t *testing.T) {
-	a := NewHunterAdapter("https://hunter.qianxin.com", "key", 3, 30*time.Second)
+	a := NewHunterAdapter("https://hunter.qianxin.com", "key", "", 3, 30*time.Second)
 
 	t.Run("empty result", func(t *testing.T) {
 		results, err := a.Normalize(&model.EngineResult{RawData: []interface{}{}})
@@ -732,7 +732,7 @@ func TestHunterAdapter_Normalize(t *testing.T) {
 
 func TestHunterAdapter_Search(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewHunterAdapter("https://hunter.qianxin.com", "", 3, 30*time.Second)
+		a := NewHunterAdapter("https://hunter.qianxin.com", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -749,7 +749,7 @@ func TestHunterAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewHunterAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewHunterAdapter(server.URL, "key", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "port=80", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -768,7 +768,7 @@ func TestHunterAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewHunterAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewHunterAdapter(server.URL, "key", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -783,7 +783,7 @@ func TestHunterAdapter_Search(t *testing.T) {
 
 func TestHunterAdapter_GetQuota(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewHunterAdapter("https://hunter.qianxin.com", "", 3, 30*time.Second)
+		a := NewHunterAdapter("https://hunter.qianxin.com", "", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error for empty API key")
@@ -796,7 +796,7 @@ func TestHunterAdapter_GetQuota(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewHunterAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewHunterAdapter(server.URL, "key", "", 3, 30*time.Second)
 		quota, err := a.GetQuota()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -926,7 +926,7 @@ func TestShodanAdapter_Translate(t *testing.T) {
 			want: `port:<=443`,
 		},
 		{
-			name: "OR logical (degraded to AND)",
+			name: "same-field OR uses comma syntax",
 			ast: &model.UQLAST{Root: &model.UQLNode{
 				Type:  "logical",
 				Value: "OR",
@@ -941,7 +941,15 @@ func TestShodanAdapter_Translate(t *testing.T) {
 					}},
 				},
 			}},
-			want: `port:80 port:443`,
+			want: `port:80,443`,
+		},
+		{
+			name: "cross-field OR is rejected",
+			ast: &model.UQLAST{Root: &model.UQLNode{Type: "logical", Value: "OR", Children: []*model.UQLNode{
+				{Type: "condition", Value: "port", Children: []*model.UQLNode{{Type: "operator", Value: "="}, {Type: "value", Value: "80"}}},
+				{Type: "condition", Value: "country", Children: []*model.UQLNode{{Type: "operator", Value: "="}, {Type: "value", Value: "CN"}}},
+			}}},
+			wantErr: true,
 		},
 		{
 			name: "value with space gets quoted",
@@ -1206,7 +1214,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80"},
 				},
 			}},
-			want: `port:"80"`,
+			want: `port:80`,
 		},
 		{
 			name: "not equal",
@@ -1236,7 +1244,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 					}},
 				},
 			}},
-			want: `(port:"80" AND ip:"1.2.3.4")`,
+			want: `(port:80 AND ip:"1.2.3.4")`,
 		},
 		{
 			name: "IN operator",
@@ -1248,7 +1256,7 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80,443"},
 				},
 			}},
-			want: `(port:"80" OR port:"443")`,
+			want: `(port:80 OR port:443)`,
 		},
 		{
 			name: "field mapping body->response",
@@ -1572,7 +1580,7 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80"},
 				},
 			}},
-			want: `port="80"`, // ZoomEye 不支持比较运算符，降级为等值查询
+			wantErr: true,
 		},
 		{
 			name: "nested OR and AND",
@@ -1674,6 +1682,22 @@ func TestZoomEyeAdapter_Normalize(t *testing.T) {
 		}
 		if len(assets) != 1 || assets[0].Title != "Example Site" {
 			t.Errorf("Title = %q, want %q", assets[0].Title, "Example Site")
+		}
+	})
+
+	t.Run("rejects non HTTP URLs", func(t *testing.T) {
+		result := &model.EngineResult{RawData: []interface{}{
+			&ZoomEyeItem{IP: "1.2.3.4", Port: 80, Service: "http", URL: "javascript:alert(1)"},
+		}}
+		assets, err := a.Normalize(result)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(assets) != 1 {
+			t.Fatalf("expected 1 asset, got %d", len(assets))
+		}
+		if assets[0].URL != "" {
+			t.Errorf("URL = %q, want empty for a non-HTTP URL", assets[0].URL)
 		}
 	})
 

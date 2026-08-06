@@ -1,16 +1,18 @@
 package web
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/tamper"
 )
@@ -21,19 +23,19 @@ func TestHandleTamperHistoryDelete(t *testing.T) {
 		t.Fatalf("getwd failed: %v", err)
 	}
 	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("chdir failed: %v", err)
+	if chdirErr := os.Chdir(tmpDir); chdirErr != nil {
+		t.Fatalf("chdir failed: %v", chdirErr)
 	}
 	defer func() { _ = os.Chdir(oldWD) }()
 
 	url := "https://example.com"
 	storage := tamper.NewHashStorage("./hash_store")
-	if err := storage.SaveCheckRecord(url, &tamper.CheckRecord{
+	if saveErr := storage.SaveCheckRecord(url, &tamper.CheckRecord{
 		URL:       url,
 		CheckType: "normal",
 		Timestamp: time.Now().Unix(),
-	}); err != nil {
-		t.Fatalf("save record failed: %v", err)
+	}); saveErr != nil {
+		t.Fatalf("save record failed: %v", saveErr)
 	}
 
 	recordsBase := filepath.Join("hash_store", "records")
@@ -77,6 +79,100 @@ func TestHandleTamperHistoryDelete(t *testing.T) {
 
 	if _, err := os.Stat(recordsDir); !os.IsNotExist(err) {
 		t.Fatalf("expected records dir removed, stat err=%v", err)
+	}
+}
+
+func TestHandleTamperHistoryExport(t *testing.T) {
+	dir := t.TempDir()
+	url := "https://export.example.test"
+	storage := tamper.NewHashStorage(dir)
+	if err := storage.SaveCheckRecord(url, &tamper.CheckRecord{URL: url, CheckType: "normal", Timestamp: time.Now().Unix()}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{tamperApp: service.NewTamperAppService(dir, nil)}
+	req := httptest.NewRequest(http.MethodGet, "/api/tamper/history/export?url=https://export.example.test", nil)
+	w := httptest.NewRecorder()
+	s.handleTamperHistoryExport(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if got := w.Header().Get("Content-Disposition"); !strings.Contains(got, "tamper-history.json") {
+		t.Fatalf("unexpected content disposition %q", got)
+	}
+	if !strings.Contains(w.Body.String(), url) {
+		t.Fatalf("export missing URL: %s", w.Body.String())
+	}
+}
+
+func TestHandleTamperHistoryExportCombinesFiltersAndLimit(t *testing.T) {
+	dir := t.TempDir()
+	targetURL := "https://keep.example.test/admin"
+	storage := tamper.NewHashStorage(dir)
+	records := []*tamper.CheckRecord{
+		{ID: "keep", URL: targetURL, CheckType: "normal", DetectionMode: "security", Tampered: true, Timestamp: 300},
+		{ID: "wrong-mode", URL: targetURL, CheckType: "normal", DetectionMode: "balanced", Tampered: true, Timestamp: 200},
+		{ID: "wrong-url", URL: "https://other.example.test/admin", CheckType: "normal", DetectionMode: "security", Tampered: true, Timestamp: 100},
+	}
+	for _, record := range records {
+		if err := storage.SaveCheckRecord(record.URL, record); err != nil {
+			t.Fatalf("save check record %s: %v", record.ID, err)
+		}
+	}
+
+	s := &Server{tamperApp: service.NewTamperAppService(dir, nil)}
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/tamper/history/export?url="+targetURL+"&type=tampered&mode=security&q=keep&limit=1", nil)
+	w := httptest.NewRecorder()
+	s.handleTamperHistoryExport(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var exported []struct {
+		ID            string `json:"id"`
+		URL           string `json:"url"`
+		Status        string `json:"status"`
+		DetectionMode string `json:"detection_mode"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &exported); err != nil {
+		t.Fatalf("decode export: %v", err)
+	}
+	if len(exported) != 1 || exported[0].ID != "keep" || exported[0].URL != targetURL || exported[0].Status != "tampered" || exported[0].DetectionMode != "security" {
+		t.Fatalf("unexpected filtered export: %+v", exported)
+	}
+}
+
+func TestHandleTamperHistoryExportReturnsStableErrorWhenStorageFails(t *testing.T) {
+	dir := t.TempDir()
+	blockedBaseDir := filepath.Join(dir, "not-a-directory")
+	if err := os.WriteFile(blockedBaseDir, []byte("block directory creation"), 0o600); err != nil {
+		t.Fatalf("create blocking file: %v", err)
+	}
+
+	s := &Server{tamperApp: service.NewTamperAppService(blockedBaseDir, nil)}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tamper/history/export", nil)
+	w := httptest.NewRecorder()
+	s.handleTamperHistoryExport(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	var response apiErrorResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode API error: %v", err)
+	}
+	if response.Success || response.Error.Code != "export_history_failed" || response.Error.Message != "export history failed" {
+		t.Fatalf("unexpected API error: %+v", response)
+	}
+}
+
+func TestHandleTamperHistoryExportRejectsWrongMethod(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tamper/history/export", nil)
+	w := httptest.NewRecorder()
+	s.handleTamperHistoryExport(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
 	}
 }
 
@@ -256,34 +352,147 @@ func TestHandleTamperHistory_Empty(t *testing.T) {
 	}
 }
 
-// ============================================================
-// newTamperDetector tests
-// ============================================================
+func TestHandleTamperHistory_UsesOffsetForStoragePagination(t *testing.T) {
+	dir := t.TempDir()
+	targetURL := "https://pagination.example.test"
+	storage := tamper.NewHashStorage(dir)
+	for _, timestamp := range []int64{100, 200, 300} {
+		if err := storage.SaveCheckRecord(targetURL, &tamper.CheckRecord{
+			URL:       targetURL,
+			CheckType: "normal",
+			Timestamp: timestamp,
+		}); err != nil {
+			t.Fatalf("save check record: %v", err)
+		}
+	}
 
-func TestNewTamperDetector_NilMgr(t *testing.T) {
-	s := &Server{}
-	ctx := context.Background()
-	detector, cleanup, err := s.newTamperDetector(ctx, "normal")
-	if err != nil {
-		t.Fatalf("expected no error with nil screenshotMgr, got %v", err)
+	s := &Server{tamperApp: service.NewTamperAppService(dir, nil)}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tamper/history?limit=1&offset=1", nil)
+	w := httptest.NewRecorder()
+	s.handleTamperHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	if detector == nil {
-		t.Fatal("expected non-nil detector")
+	var response struct {
+		Count   int `json:"count"`
+		Records []struct {
+			Timestamp int64 `json:"timestamp"`
+		} `json:"records"`
 	}
-	if cleanup == nil {
-		t.Fatal("expected non-nil cleanup")
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
 	}
-	cleanup()
+	if len(response.Records) != 1 || response.Records[0].Timestamp != 200 {
+		t.Fatalf("expected second newest record (timestamp 200), got %+v", response.Records)
+	}
+	if response.Count != 3 {
+		t.Fatalf("count = %d, want total 3", response.Count)
+	}
+}
+
+func TestHandleTamperHistory_FiltersByTime(t *testing.T) {
+	dir := t.TempDir()
+	targetURL := "https://time.example.test"
+	storage := tamper.NewHashStorage(dir)
+	for _, timestamp := range []int64{100, 200, 300, 400} {
+		if err := storage.SaveCheckRecord(targetURL, &tamper.CheckRecord{
+			URL:       targetURL,
+			CheckType: "normal",
+			Timestamp: timestamp,
+		}); err != nil {
+			t.Fatalf("save check record: %v", err)
+		}
+	}
+
+	s := &Server{tamperApp: service.NewTamperAppService(dir, nil)}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tamper/history?start_time=200&end_time=300", nil)
+	w := httptest.NewRecorder()
+	s.handleTamperHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Count   int `json:"count"`
+		Records []struct {
+			Timestamp int64 `json:"timestamp"`
+		} `json:"records"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Count != 2 || len(response.Records) != 2 {
+		t.Fatalf("unexpected filtered response: %+v", response)
+	}
+}
+
+func TestHandleTamperHistory_RejectsInvalidTimeRange(t *testing.T) {
+	s := &Server{tamperApp: service.NewTamperAppService(t.TempDir(), nil)}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tamper/history?start_time=300&end_time=200", nil)
+	w := httptest.NewRecorder()
+	s.handleTamperHistory(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleTamperHistory_RejectsNonPositiveTime(t *testing.T) {
+	for _, rawTime := range []string{"0", "-1", "1970-01-01T00:00:00Z"} {
+		t.Run(rawTime, func(t *testing.T) {
+			s := &Server{tamperApp: service.NewTamperAppService(t.TempDir(), nil)}
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/tamper/history?end_time="+url.QueryEscape(rawTime), nil)
+			w := httptest.NewRecorder()
+			s.handleTamperHistory(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestTamperRuntimeConfigUsesCurrentConfig(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Tamper.PortScanEnabled = true
+	cfg.Tamper.InsecureSkipVerify = true
+	cfg.Tamper.PortScanTimeoutMs = 1250
+	s := &Server{config: cfg}
+
+	got := s.tamperRuntimeConfig()
+	if !got.PortScanEnabled || !got.InsecureSkipVerify {
+		t.Fatalf("runtime flags were not propagated: %#v", got)
+	}
+	if got.PortScanTimeout != 1250*time.Millisecond {
+		t.Fatalf("port scan timeout = %s, want 1.25s", got.PortScanTimeout)
+	}
 }
 
 // ============================================================
-// tamperAllocatorFactory tests
+// tamperPageLoader tests
 // ============================================================
 
-func TestTamperAllocatorFactory_NilMgr(t *testing.T) {
+func TestTamperPageLoader_NilMgr(t *testing.T) {
 	s := &Server{}
-	factory := s.tamperAllocatorFactory("")
-	if factory != nil {
-		t.Fatal("expected nil factory when screenshotMgr is nil")
+	loader := s.tamperPageLoader("")
+	if loader != nil {
+		t.Fatal("expected nil loader when screenshotMgr is nil")
+	}
+}
+
+func TestTamperPageLoader_WithProxy(t *testing.T) {
+	s := &Server{config: &config.Config{}, screenshotMgr: &screenshot.Manager{}}
+	loader := s.tamperPageLoader("http://proxy:8080")
+	if loader == nil {
+		t.Fatal("expected non-nil loader")
+	}
+}
+
+func TestTamperPageLoader_NoProxy(t *testing.T) {
+	s := &Server{config: &config.Config{}, screenshotMgr: &screenshot.Manager{}}
+	loader := s.tamperPageLoader("")
+	if loader == nil {
+		t.Fatal("expected non-nil loader")
 	}
 }

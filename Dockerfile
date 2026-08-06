@@ -1,5 +1,9 @@
 # 使用官方Go镜像作为构建环境
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26.5-alpine AS builder
+
+ARG UNIMAP_VERSION=dev
+ARG UNIMAP_GIT_COMMIT=unknown
+ARG UNIMAP_BUILD_TIME=unknown
 
 # 设置工作目录
 WORKDIR /app
@@ -7,14 +11,23 @@ WORKDIR /app
 # 复制go.mod和go.sum文件
 COPY go.mod go.sum ./
 
+# 国内网络使用 goproxy.cn，境外 fallback 官方源
+ENV GOPROXY=https://goproxy.cn,direct
+
 # 下载依赖
 RUN go mod download
+
+# 安装 C 工具链（go-sqlite3 需要 CGO）；Alpine 官方源在国内不稳定，改用阿里云镜像
+RUN sed -i 's#dl-cdn.alpinelinux.org#mirrors.aliyun.com#g' /etc/apk/repositories \
+    && apk add --no-cache build-base
 
 # 复制源代码
 COPY . .
 
 # 构建应用（Web）
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o unimap-web ./cmd/unimap-web
+RUN CGO_ENABLED=1 GOOS=linux go build \
+    -ldflags="-s -w -X github.com/unimap/project/internal/appversion.Version=${UNIMAP_VERSION} -X github.com/unimap/project/internal/appversion.GitCommit=${UNIMAP_GIT_COMMIT} -X github.com/unimap/project/internal/appversion.BuildTime=${UNIMAP_BUILD_TIME}" \
+    -o unimap-web ./cmd/unimap-web
 
 # 使用alpine作为运行环境（固定版本）
 FROM alpine:3.21
@@ -22,8 +35,9 @@ FROM alpine:3.21
 # 设置工作目录
 WORKDIR /app
 
-# 安装依赖（HTTPS + chromedp 截图需要 Chromium）
-RUN apk add --no-cache ca-certificates chromium ttf-freefont
+# 安装依赖（HTTPS + chromedp 截图需要 Chromium）；Alpine 官方源在国内不稳定，改用阿里云镜像
+RUN sed -i 's#dl-cdn.alpinelinux.org#mirrors.aliyun.com#g' /etc/apk/repositories \
+    && apk add --no-cache ca-certificates chromium font-noto-cjk ttf-freefont tzdata
 
 # 复制构建结果
 COPY --from=builder /app/unimap-web /app/
@@ -31,14 +45,28 @@ COPY --from=builder /app/unimap-web /app/
 # 复制配置文件
 COPY configs /app/configs
 
+# 允许镜像不依赖宿主机 bind mount 直接启动；生产环境仍可挂载自定义配置。
+RUN cp /app/configs/config.docker.yaml /app/configs/config.yaml
+
 # 复制Web文件
 COPY web /app/web
+
+# 复制容器启动入口；它只在运行时配置不存在时初始化模板。
+COPY scripts/docker-entrypoint.sh /usr/local/bin/unimap-entrypoint
 
 # 创建非root用户
 RUN addgroup -S unimap && adduser -S -G unimap -h /app unimap
 
 # 设置目录所有权
-RUN chown -R unimap:unimap /app
+RUN mkdir -p /app/data /app/screenshots /app/chrome-profile /app/logs /app/backups /app/runtime-config \
+    && chmod 0755 /usr/local/bin/unimap-entrypoint \
+    && chown -R unimap:unimap /app
+
+ENV UNIMAP_CHROME_PATH=/usr/bin/chromium \
+    UNIMAP_CHROME_USER_DATA_DIR=/app/chrome-profile \
+    UNIMAP_DATA_DIR=/app/data \
+    # 调度 cron 需要 Asia/Shanghai zoneinfo（tzdata 已在运行镜像安装）
+    TZ=Asia/Shanghai
 
 # 切换到非root用户
 USER unimap:unimap
@@ -48,7 +76,8 @@ EXPOSE 8448
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8448/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8448/health/ready || exit 1
 
 # 启动应用
+ENTRYPOINT ["unimap-entrypoint"]
 CMD ["./unimap-web"]

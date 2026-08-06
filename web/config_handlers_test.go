@@ -2,10 +2,14 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/unimap/project/internal/config"
@@ -13,6 +17,9 @@ import (
 
 func newServerForConfigTest() *Server {
 	cfg := &config.Config{}
+	mgr := config.NewManager("")
+	// Seed all required defaults so section patches exercise validation rather than setup gaps.
+	mgr.ApplyDefaults(cfg)
 	cfg.ICP.Enabled = true
 	cfg.ICP.BaseURL = "http://localhost:16181"
 	cfg.ICP.APIKey = "abcd1234efgh5678"
@@ -30,9 +37,15 @@ func newServerForConfigTest() *Server {
 	return &Server{config: cfg}
 }
 
+// withAdminContext returns a copy of req with admin-token auth context injected.
+func withAdminContext(req *http.Request) *http.Request {
+	ctx := context.WithValue(req.Context(), contextKeyUserID, adminSyntheticUserID)
+	return req.WithContext(ctx)
+}
+
 func TestHandleGetConfig_MasksSecrets(t *testing.T) {
 	s := newServerForConfigTest()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	req := withAdminContext(httptest.NewRequest(http.MethodGet, "/api/v1/config", nil))
 	w := httptest.NewRecorder()
 	s.handleGetConfig(w, req)
 
@@ -65,9 +78,28 @@ func TestHandleGetConfig_MasksSecrets(t *testing.T) {
 	}
 }
 
+func TestICPConfigProviderUsesCommittedConfig(t *testing.T) {
+	s := newServerForConfigTest()
+	mgr := config.NewManager(filepath.Join(t.TempDir(), "config.yaml"))
+	mgr.SetConfig(s.config.Clone())
+	s.configManager = mgr
+
+	if _, err := s.updateConfig(func(cfg *config.Config) error {
+		cfg.ICP.APIKey = "new-scheduler-key"
+		cfg.ICP.DefaultType = "domain"
+		return nil
+	}); err != nil {
+		t.Fatalf("commit ICP config: %v", err)
+	}
+	got := s.icpConfigProvider()
+	if got.APIKey != "new-scheduler-key" || got.DefaultType != "domain" {
+		t.Fatalf("scheduler provider returned stale ICP config: %#v", got)
+	}
+}
+
 func TestHandleGetConfig_RejectsNonGET(t *testing.T) {
 	s := newServerForConfigTest()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/config", nil)
+	req := withAdminContext(httptest.NewRequest(http.MethodPost, "/api/v1/config", nil))
 	w := httptest.NewRecorder()
 	s.handleGetConfig(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
@@ -85,6 +117,7 @@ func postConfig(t *testing.T, s *Server, payload map[string]interface{}) *httpte
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://localhost:8448")
 	req.Header.Set("Content-Type", "application/json")
+	req = withAdminContext(req)
 	w := httptest.NewRecorder()
 	s.handleSaveConfig(w, req)
 	return w
@@ -128,20 +161,21 @@ func TestHandleSaveConfig_ICPSection_UpdatesFields(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%q)", w.Code, w.Body.String())
 	}
-	if s.config.ICP.Enabled {
+	cfg := s.currentConfig()
+	if cfg.ICP.Enabled {
 		t.Fatalf("expected ICP.Enabled=false after save")
 	}
-	if s.config.ICP.BaseURL != "http://example:18888" {
-		t.Fatalf("expected new base_url, got %q", s.config.ICP.BaseURL)
+	if cfg.ICP.BaseURL != "http://example:18888" {
+		t.Fatalf("expected new base_url, got %q", cfg.ICP.BaseURL)
 	}
-	if s.config.ICP.Timeout != 60 {
-		t.Fatalf("expected new timeout=60, got %d", s.config.ICP.Timeout)
+	if cfg.ICP.Timeout != 60 {
+		t.Fatalf("expected new timeout=60, got %d", cfg.ICP.Timeout)
 	}
-	if s.config.ICP.DefaultType != "app" {
-		t.Fatalf("expected default_type=app, got %q", s.config.ICP.DefaultType)
+	if cfg.ICP.DefaultType != "app" {
+		t.Fatalf("expected default_type=app, got %q", cfg.ICP.DefaultType)
 	}
-	if s.config.ICP.APIKey != originalKey {
-		t.Fatalf("api_key was overwritten by empty value: now=%q want=%q", s.config.ICP.APIKey, originalKey)
+	if cfg.ICP.APIKey != originalKey {
+		t.Fatalf("api_key was overwritten by empty value: now=%q want=%q", cfg.ICP.APIKey, originalKey)
 	}
 }
 
@@ -154,8 +188,8 @@ func TestHandleSaveConfig_ICPSection_RealAPIKeyUpdates(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	if s.config.ICP.APIKey != "new-real-key" {
-		t.Fatalf("expected api_key updated to new-real-key, got %q", s.config.ICP.APIKey)
+	if got := s.currentConfig().ICP.APIKey; got != "new-real-key" {
+		t.Fatalf("expected api_key updated to new-real-key, got %q", got)
 	}
 }
 
@@ -183,11 +217,47 @@ func TestHandleSaveConfig_ScreenshotSection(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%q)", w.Code, w.Body.String())
 	}
-	if s.config.Screenshot.Engine != "extension" {
-		t.Fatalf("expected engine=extension, got %q", s.config.Screenshot.Engine)
+	cfg := s.currentConfig()
+	if cfg.Screenshot.Engine != "extension" {
+		t.Fatalf("expected engine=extension, got %q", cfg.Screenshot.Engine)
 	}
-	if s.config.Screenshot.Timeout != 45 {
-		t.Fatalf("expected timeout=45, got %d", s.config.Screenshot.Timeout)
+	if cfg.Screenshot.Timeout != 45 {
+		t.Fatalf("expected timeout=45, got %d", cfg.Screenshot.Timeout)
+	}
+}
+
+func TestHandleSaveConfig_RejectsInvalidScreenshotMode(t *testing.T) {
+	s := newServerForConfigTest()
+	mgr := config.NewManager(filepath.Join(t.TempDir(), "config.yaml"))
+	mgr.SetConfig(s.config.Clone())
+	s.configManager = mgr
+	w := postConfig(t, s, map[string]interface{}{
+		"section": "screenshot",
+		"data":    map[string]interface{}{"mode": "not-a-mode"},
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if s.config.Screenshot.Mode != "auto" {
+		t.Fatalf("invalid candidate was published: %q", s.config.Screenshot.Mode)
+	}
+}
+
+func TestHandleSaveConfig_PersistenceFailureDoesNotPublish(t *testing.T) {
+	s := newServerForConfigTest()
+	path := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(path, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mgr := config.NewManager(filepath.Join(path, "config.yaml"))
+	mgr.SetConfig(s.config.Clone())
+	s.configManager = mgr
+	w := postConfig(t, s, map[string]interface{}{"section": "system", "data": map[string]interface{}{"cache_ttl": 7200}})
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	if s.config.System.CacheTTL == 7200 {
+		t.Fatal("candidate was published after persistence failure")
 	}
 }
 
@@ -200,11 +270,44 @@ func TestHandleSaveConfig_SystemSection(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d (body=%q)", w.Code, w.Body.String())
 	}
-	if s.config.System.MaxConcurrent != 50 {
-		t.Fatalf("expected max_concurrent=50, got %d", s.config.System.MaxConcurrent)
+	cfg := s.currentConfig()
+	if cfg.System.MaxConcurrent != 50 {
+		t.Fatalf("expected max_concurrent=50, got %d", cfg.System.MaxConcurrent)
 	}
-	if s.config.System.CacheTTL != 7200 {
-		t.Fatalf("expected cache_ttl=7200, got %d", s.config.System.CacheTTL)
+	if cfg.System.CacheTTL != 7200 {
+		t.Fatalf("expected cache_ttl=7200, got %d", cfg.System.CacheTTL)
+	}
+}
+
+func TestUpdateConfigSerializesConcurrentWriters(t *testing.T) {
+	s := newServerForConfigTest()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	mgr := config.NewManager(path)
+	mgr.SetConfig(s.config.Clone())
+	s.configManager = mgr
+
+	var wg sync.WaitGroup
+	for _, mutate := range []func(*config.Config){
+		func(cfg *config.Config) { cfg.System.CacheTTL = 7200 },
+		func(cfg *config.Config) { cfg.System.MaxConcurrent = 42 },
+	} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.updateConfig(func(cfg *config.Config) error { mutate(cfg); return nil }); err != nil {
+				t.Errorf("concurrent update failed: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	reloaded := config.NewManager(path)
+	if err := reloaded.Load(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := reloaded.GetConfig()
+	if cfg.System.CacheTTL != 7200 || cfg.System.MaxConcurrent != 42 {
+		t.Fatalf("concurrent updates overwrote each other: ttl=%d max=%d", cfg.System.CacheTTL, cfg.System.MaxConcurrent)
 	}
 }
 
@@ -215,6 +318,7 @@ func TestHandleSaveConfig_RejectsUntrustedOrigin(t *testing.T) {
 	req.Host = "localhost:8448"
 	req.Header.Set("Origin", "http://evil.example")
 	req.Header.Set("Content-Type", "application/json")
+	req = withAdminContext(req)
 	w := httptest.NewRecorder()
 	s.handleSaveConfig(w, req)
 	if w.Code != http.StatusForbidden {
@@ -238,9 +342,9 @@ func TestIsMaskedSecret(t *testing.T) {
 	}{
 		{"", false},
 		{"abc1234567890def", false},
-		{"abc1****0def", true},  // matches maskAPIKey output (4+****+4)
-		{"****", true},          // pure asterisks still counted as masked
-		{"abc****def", false},   // 3-char prefix doesn't match maskAPIKey format
+		{"abc1****0def", true},   // matches maskAPIKey output (4+****+4)
+		{"****", true},           // pure asterisks still counted as masked
+		{"abc****def", false},    // 3-char prefix doesn't match maskAPIKey format
 		{"mykey****real", false}, // real key containing **** should not be rejected
 	}
 	for _, tc := range tests {
@@ -271,12 +375,12 @@ func TestApplyEngineSections_InvalidEngineType(t *testing.T) {
 func TestApplySingleEngineSection_Fofa(t *testing.T) {
 	cfg := &config.Config{}
 	eng := map[string]interface{}{
-		"enabled":    true,
-		"api_key":    "new-fofa-key",
+		"enabled":      true,
+		"api_key":      "new-fofa-key",
 		"api_base_url": "https://fofa.example.com",
-		"email":      "test@example.com",
-		"qps":        float64(5),
-		"timeout":    float64(60),
+		"email":        "test@example.com",
+		"qps":          float64(5),
+		"timeout":      float64(60),
 	}
 	applySingleEngineSection(cfg, "fofa", eng)
 	if !cfg.Engines.Fofa.Enabled {
@@ -498,5 +602,78 @@ func TestApplyShodanFields_NoTimeout(t *testing.T) {
 	// Shodan doesn't have timeout field - should not be changed
 	if cfg.Engines.Shodan.Timeout != 30 {
 		t.Fatalf("Shodan timeout should not change, got %d", cfg.Engines.Shodan.Timeout)
+	}
+}
+
+func TestApplyNotificationsSection_NilConfig(t *testing.T) {
+	applyNotificationsSection(nil, map[string]interface{}{})
+}
+
+func TestApplyNotificationsSection_Enabled(t *testing.T) {
+	cfg := &config.Config{}
+	data := map[string]interface{}{
+		"enabled": true,
+	}
+	applyNotificationsSection(cfg, data)
+	if !cfg.Notifications.Enabled {
+		t.Fatal("expected notifications enabled")
+	}
+}
+
+func TestApplyNotificationsSection_FeishuApp(t *testing.T) {
+	cfg := &config.Config{}
+	data := map[string]interface{}{
+		"enabled": true,
+		"feishu_app": map[string]interface{}{
+			"app_id":     "test-app-id",
+			"app_secret": "test-secret",
+			"chat_id":    "test-chat-id",
+		},
+	}
+	applyNotificationsSection(cfg, data)
+	if !cfg.Notifications.Enabled {
+		t.Fatal("expected notifications enabled")
+	}
+	if cfg.Notifications.FeishuApp == nil {
+		t.Fatal("expected feishu_app to be initialized")
+	}
+	if cfg.Notifications.FeishuApp.AppID != "test-app-id" {
+		t.Fatalf("expected app_id test-app-id, got %s", cfg.Notifications.FeishuApp.AppID)
+	}
+	if cfg.Notifications.FeishuApp.AppSecret != "test-secret" {
+		t.Fatalf("expected app_secret test-secret, got %s", cfg.Notifications.FeishuApp.AppSecret)
+	}
+	if cfg.Notifications.FeishuApp.ChatID != "test-chat-id" {
+		t.Fatalf("expected chat_id test-chat-id, got %s", cfg.Notifications.FeishuApp.ChatID)
+	}
+}
+
+func TestApplyNotificationsSection_PreserveMaskedSecret(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Notifications.FeishuApp = &struct {
+		AppID     string `yaml:"app_id"`
+		AppSecret string `yaml:"app_secret"`
+		ChatID    string `yaml:"chat_id"`
+	}{AppSecret: "old-secret"}
+
+	data := map[string]interface{}{
+		"feishu_app": map[string]interface{}{
+			"app_secret": "********",
+		},
+	}
+	applyNotificationsSection(cfg, data)
+	if cfg.Notifications.FeishuApp.AppSecret != "old-secret" {
+		t.Fatalf("expected secret preserved, got %s", cfg.Notifications.FeishuApp.AppSecret)
+	}
+}
+
+func TestApplyNotificationsSection_InvalidFeishuAppType(t *testing.T) {
+	cfg := &config.Config{}
+	data := map[string]interface{}{
+		"feishu_app": "not-a-map",
+	}
+	applyNotificationsSection(cfg, data)
+	if cfg.Notifications.FeishuApp != nil {
+		t.Fatal("feishu_app should not be initialized for invalid type")
 	}
 }

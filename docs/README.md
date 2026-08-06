@@ -1,31 +1,48 @@
-# 📚 UniMap 文档体系 (Documentation)
+# UniMap 文档索引
 
-这是 UniMap 网络空间资产查询与网页监控工具的官方文档库。为方便阅读，已按照功能和受众分离成多个文档。
+## 当前操作文档
 
-## 核心文档导航
+- [快速开始](QUICKSTART.md)：本地配置、Web 与 CLI 启动。
+- [使用指南](USAGE.md)：查询、配置、截图和 Web/CLI 操作。
+- [API](API.md)：当前 `/api/v1` HTTP 契约。
+- [运维 Runbook](RUNBOOK.md)：服务、认证、截图、Bridge、调度和节点排障。
+- [云服务器部署评估（2026-07-20）](CLOUD_DEPLOYMENT_ASSESSMENT_2026-07-20.md)：容量建议、CGO/SQLite 发布阻断、生产配置、端口、持久化与正式云机验收清单。
+- [阿里云真实环境验收（2026-07-23）](CLOUD_ACCEPTANCE_2026-07-23.md)：真实容器、headless、截图、巡检、调度、备份和持久化证据及剩余边界。
+- [云服务器常态化运行准备与协作清单（2026-07-23）](CLOUD_STEADY_STATE_PLAN_2026-07-23.md)：当前能力边界、CDP-only 架构、用户配合事项、凭据安全交付、分阶段实施与完全通过标准。
+- [当前剩余工作清单（2026-07-23）](REMAINING_WORK_2026-07-23.md)：七引擎 API/UI/Bridge/CDP 事实矩阵、浏览器层 SSRF 前置条件、优先级和完成标准。
+- [实施收口状态（2026-08-02）](FINAL_IMPLEMENTATION_STATUS_2026-08-02.md)：七引擎、云端发布、飞书通知、交付证据与唯一外部输入的最新结论。
+- [后续实施清单（2026-08-02）](NEXT_STEPS_20260802.md)：当前基线、Quake 主链路、会话闭环、云端验收、发布顺序和协作输入。
+- [安全发布收口修复计划（2026-07-29）](SECURITY_RELEASE_CLOSURE_REPAIR_PLAN_2026-07-29.md)：SSRF、截图格式、Bridge 取消、Quake 双链路、依赖漏洞和文档同步的分阶段修复与发布门槛。
+- [安全发布收口修复记录（2026-07-29）](SECURITY_RELEASE_CLOSURE_REPAIR_REPORT_2026-07-29.md)：本轮代码修复、专项验证、Quake 分链路证据和仍待外部验收的发布边界。
+- [云端安全收口验收 Runbook（2026-07-29）](CLOUD_SECURITY_ACCEPTANCE_RUNBOOK_2026-07-29.md)：DNS 动态变化、页面篡改证据截图、图片通知和重启恢复的受控 live E2E 契约。
+- [后续实施计划（2026-07-23）](IMPLEMENTATION_PLAN_2026-07-23.md)：按旬排期的开发阶段、当前本地提交状态、依赖、验收门槛和用户配合事项。
+- [截图扩展运维](OPS_SCREENSHOT_EXTENSION.md)：本机配对、Bridge token 与回调协议。
+- [2026-08-02 七引擎浏览器验收](BROWSER_SEVEN_ENGINE_VERIFICATION_2026-08-02.md)：Bridge、CDP 凭据交接、闭环通知与外部限制。
+- [无图形浏览器运行时决策](DECISIONS/0006-headless-browser-runtime.md)：云主机 CDP、统一路由、会话限制和容器边界。
+- [架构](ARCHITECTURE.md) 与 [业务架构](BUSINESS_AND_LOGIC_ARCHITECTURE.md)。
+- [UQL 指南](UQL_GUIDE.md) 与 [搜索引擎语法快照](SEARCH_ENGINE_SYNTAX.md)。
+- [插件架构](PLUGIN_ARCHITECTURE.md) 与 [插件开发](PLUGIN_DEVELOPMENT_GUIDE.md)。
+- [GUI 构建历史](GUI_BUILD.md)：GUI 已于 2026-08-01 删除，本页仅保留历史信息。
+- [变更日志](CHANGELOG.md)：按日期记录已完成的功能、兼容性与验证结果。
 
-- **[QUICKSTART.md](./QUICKSTART.md)** 
-  新手与部署人员入门必读，涵盖基础配置与三端（Web/CLI/GUI）快速启动。
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** 
-  高阶开发者指南，图解平台核心组件交互及数据流转架构（多引擎聚合、截图高可用、自动篡改监测调度、分布式架构）。
-- **[BROWSER_RUNTIME_STRATEGY.md](./BROWSER_RUNTIME_STRATEGY.md)**
-  CDP 与 Chrome Extension 的职责边界、运行环境矩阵、默认配置和后续演进策略。
-- **[BROWSER_QUERY_FALLBACK_PLAN.md](./BROWSER_QUERY_FALLBACK_PLAN.md)**
-  浏览器查询降级的安全实施计划、配置建议、测试矩阵和回滚策略。
-- **[UQL_GUIDE.md](./UQL_GUIDE.md)** 
-  多引擎通用聚合查询语言（UQL）语法白皮书及多场景字典。
-- **[RUNBOOK.md](./RUNBOOK.md)** 
-  常见故障诊断速查表以及防封容错预案操作手册。
-- **[USAGE.md](./USAGE.md)**
-  详细命令行参数字典及常规业务工作流指引。
-- **[API.md](./API.md)** 
-  后端 REST 接口定义与使用规范。
-- **[PLUGIN_DEVELOPMENT_GUIDE.md](./PLUGIN_DEVELOPMENT_GUIDE.md)** 
-  如何为现有的5大引擎接入额外资产探针，或扩展安全检测插件的手册。
-- **[PRODUCTION_READINESS_PLAN.md](./PRODUCTION_READINESS_PLAN.md)** 
-  生产网高可用环境发布及告警前哨基准考核要求。
+## 决策与历史资料
 
-## 隐私与合规说明
+- [2026-07-15 → 08-04 工作与提交记录](WORK_LOG_2026-07-15_to_2026-08-04.md)：2026-07-15 至今 51 个本地提交按 9 阶段整理，含时间线、阶段明细与关键交付物；另提供同内容 Word 版 `Unimap_WORK_LOG_2026-07-15_to_2026-08-04.docx`（纯黑白样式，2026-08-04 生成，未提交）。
+- [2026-07-17 代码逻辑、API 适配与用户体验问题报告](CODE_LOGIC_API_UX_REVIEW_2026-07-17.md)：14 项初始问题及后续截图、通知、账号、ICP、调度前后端交互复核记录。
+- [2026-07-17 完整修复与回滚指南](REMEDIATION_GUIDE_2026-07-17.md)：实施结果、两轮交互闭环、兼容性、验证门槛以及上线回滚清单。
+- [决策记录](DECISIONS/)：保留当时的背景与结论；若与当前代码冲突，以当前 API/架构文档和代码为准。
+- [archive](archive/)：历史计划、审计、测试与提交资料，不是当前操作指引。
+- [API 版本化实施方案](API_VERSIONING.md)：已完成的历史设计；旧 `/api` shim 已移除。
+- [生产就绪计划](PRODUCTION_READINESS_PLAN.md)：历史计划快照，不是当前发布门禁。
+- [2026-07-14 Bridge 截图与通知验收](E2E_BRIDGE_SCREENSHOT_NOTIFICATION_2026-07-14.md)：稳定引擎的受控真实联调快照。
+- [2026-07-15 查询通知与 Bridge 定时闭环验收](E2E_BRIDGE_SCHEDULED_QUERY_CLOSED_LOOP_2026-07-15.md)：API/Bridge 查询、资产明细通知、截图、SQLite 结果和五引擎复测状态。
+- [2026-07-14 持久化与前后端终检](FINAL_PERSISTENCE_FRONTEND_AUDIT_2026-07-14.md)：持久化重载、API 契约和前端渲染的日期化验收。
+- [2026-07-15 逻辑可用性三项完善闭环](LOGIC_USABILITY_CLOSEOUT_2026-07-15.md)：Alert 原子持久化回归、ICP history 部分匹配与 scheduler payload 兼容记录。
 
-已完成的历史文档及涉及公司内部资产的安全审计报告，目前已脱离 Git 线上追踪，**仅保留在开发者本地工作区的私密存档目录中**。这些文档不再对外进行公共展示。
+浏览器运行策略和查询降级计划已归档至 [archive/plans](archive/plans/)。
 
+## 安全与隐私
+
+部分历史资料仍在仓库内，用于追溯决策和验证；它们不应被当作当前事实或操作步骤。所有文档、测试记录和 issue 中都不得新增真实 API Key、Cookie、管理令牌、Bridge token、通知凭证或未授权资产信息。
+
+| [CLI_AGENT_GUIDE.md](CLI_AGENT_GUIDE.md) | CLI Agent 友好化接口规范 |

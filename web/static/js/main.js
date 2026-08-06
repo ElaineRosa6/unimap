@@ -615,7 +615,7 @@ function verifyCookies(button) {
 		.then(data => {
 			if (!resultBox) return;
 			if (data && data.results) {
-				resultBox.innerHTML = '';
+				resultBox.replaceChildren();
 				Object.keys(data.results).forEach(engine => {
 					const item = data.results[engine];
 					const ok = item && item.ok;
@@ -803,6 +803,8 @@ const QUERY_CLIENT_TIMEOUT_MS = 5 * 60 * 1000;
 const QUERY_CLIENT_TIMEOUT_LABEL = '5 分钟';
 let currentAssets = []; // P2-2: 当前查询结果数据（用于分页渲染）
 let filteredAssets = null; // P2-2: 筛选后的子集（null 表示未筛选）
+let probeCache = {}; // url → is_web (populated by batch probe after results arrive)
+let probeInFlight = false; // batch probe in progress flag
 
 // ============================================================
 // 登录状态检测
@@ -880,53 +882,83 @@ function updateEngineLoginStatus(engines) {
 		if (!statusEl) return;
 
 		if (engine.logged_in) {
-			statusEl.textContent = '\u2713 已登录';
-			statusEl.className = 'engine-status-text logged-in';
-			if (loginBtn) loginBtn.style.display = 'none';
-		} else {
-			anyNotLoggedIn = true;
-			switch (engine.reason) {
-				case 'cookie_configured':
-					statusEl.textContent = 'Cookie 已配置（headless 模式）';
-					statusEl.className = 'engine-status-text logged-in';
-					break;
-				case 'login_required':
-					statusEl.textContent = '需要登录';
-					statusEl.className = 'engine-status-text not-logged-in';
-					if (loginBtn) {
-						loginBtn.href = engine.login_url || '#';
-						loginBtn.style.display = 'inline-block';
-					}
-					break;
-				case 'no_session':
-					statusEl.textContent = '无浏览器会话';
-					statusEl.className = 'engine-status-text no-session';
-					if (loginBtn) {
-						loginBtn.href = engine.login_url || '#';
-						loginBtn.style.display = 'inline-block';
-					}
-					break;
-				case 'browser_session':
-					statusEl.textContent = '✓ 已登录';
-					statusEl.className = 'engine-status-text logged-in';
-					break;
-				case 'page_too_short':
-					statusEl.textContent = '页面加载异常';
-					statusEl.className = 'engine-status-text not-logged-in';
-					if (loginBtn) {
-						loginBtn.href = engine.login_url || '#';
-						loginBtn.style.display = 'inline-block';
-					}
-					break;
-				case 'extension_paired_session_unverified':
-					statusEl.textContent = '扩展已配对（登录未验证）';
-					statusEl.className = 'engine-status-text not-logged-in';
-					break;
-				default:
-					statusEl.textContent = engine.error || '状态未知';
-					statusEl.className = 'engine-status-text no-session';
+				statusEl.textContent = '\u2713 已登录';
+				statusEl.className = 'engine-status-text logged-in';
+				if (loginBtn) loginBtn.style.display = 'none';
+			} else {
+				// 某些 reason 虽然 logged_in=false，但实际已就绪，不应触发展开 Cookie 区域
+				var effectivelyLoggedIn = false;
+				switch (engine.reason) {
+					case 'api_key_configured':
+					case 'cookie_configured':
+					case 'browser_session':
+					case 'cdp_connected':
+					case 'ext_connected':
+						effectivelyLoggedIn = true;
+						break;
+				}
+				if (!effectivelyLoggedIn) {
+					anyNotLoggedIn = true;
+				}
+				switch (engine.reason) {
+					case 'api_key_configured':
+						statusEl.textContent = 'API Key 已配置';
+						statusEl.className = 'engine-status-text logged-in';
+						if (loginBtn) loginBtn.style.display = 'none';
+						break;
+					case 'cookie_configured':
+						statusEl.textContent = 'Cookie 已配置（headless 模式）';
+						statusEl.className = 'engine-status-text logged-in';
+						break;
+					case 'login_required':
+						statusEl.textContent = '需要登录';
+						statusEl.className = 'engine-status-text not-logged-in';
+						if (loginBtn) {
+							loginBtn.href = engine.login_url || '#';
+							loginBtn.style.display = 'inline-block';
+						}
+						break;
+					case 'no_session':
+						statusEl.textContent = '无浏览器会话';
+						statusEl.className = 'engine-status-text no-session';
+						if (loginBtn) {
+							loginBtn.href = engine.login_url || '#';
+							loginBtn.style.display = 'inline-block';
+						}
+						break;
+					case 'browser_session':
+						statusEl.textContent = '✓ 已登录';
+						statusEl.className = 'engine-status-text logged-in';
+						break;
+					case 'cdp_session_unverified':
+						statusEl.textContent = 'CDP 会话未验证';
+						statusEl.className = 'engine-status-text no-session';
+						break;
+					case 'cdp_connected':
+						statusEl.textContent = 'CDP 已连接';
+						statusEl.className = 'engine-status-text logged-in';
+						break;
+					case 'ext_connected':
+						statusEl.textContent = '扩展已连接';
+						statusEl.className = 'engine-status-text logged-in';
+						break;
+					case 'page_too_short':
+						statusEl.textContent = '页面加载异常';
+						statusEl.className = 'engine-status-text not-logged-in';
+						if (loginBtn) {
+							loginBtn.href = engine.login_url || '#';
+							loginBtn.style.display = 'inline-block';
+						}
+						break;
+					case 'extension_paired_session_unverified':
+						statusEl.textContent = '扩展已配对（登录未验证）';
+						statusEl.className = 'engine-status-text not-logged-in';
+						break;
+					default:
+						statusEl.textContent = engine.error || engine.reason || '状态未知';
+						statusEl.className = 'engine-status-text no-session';
+				}
 			}
-		}
 	});
 
 	// 自动折叠/展开逻辑
@@ -977,6 +1009,7 @@ function initWebSocket() {
 		wsReconnectAttempts = 0;
 		// 发送ping消息保持连接
 		startPingInterval();
+		recoverActiveQueryStatus();
 	};
 
 	wsConnection.onmessage = function(event) {
@@ -1136,6 +1169,7 @@ function handleQueryError(message) {
 	}
 
 	showResultsError(extractErrorMessage(message.error, '查询失败'));
+	currentQueryID = null;
 }
 
 // 提取错误消息文本（兼容 string 和 {code, message} 对象格式）
@@ -1158,6 +1192,27 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
 	return escapeHtml(value).replace(/`/g, '&#96;');
+}
+
+function normalizeSafeExternalURL(value) {
+	if (value === null || value === undefined) return '';
+	try {
+		const parsed = new URL(String(value).trim());
+		if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+		return parsed.href;
+	} catch (_) {
+		return '';
+	}
+}
+
+function openSafeExternalURL(value) {
+	const target = normalizeSafeExternalURL(value);
+	if (!target) {
+		showMessage('目标 URL 无效，仅支持 HTTP/HTTPS', 'warning');
+		return false;
+	}
+	window.open(target, '_blank', 'noopener,noreferrer');
+	return true;
 }
 
 function sanitizePreviewPath(path) {
@@ -1222,27 +1277,72 @@ function removeLoadingIndicator() {
 
 function handleQueryStart(message) {
 	currentQueryID = message.query_id;
-	const status = message.status;
-	const queryID = escapeHtml(status && status.ID ? status.ID : '');
-	const queryStatus = escapeHtml(status && status.Status ? status.Status : '');
+	const status = message.status || {};
+	const queryID = status.ID || '';
+	const queryStatus = status.Status || '';
 	const startTime = status && status.StartTime ? new Date(status.StartTime).toLocaleString() : '';
 
 	// 更新结果页面
 	const resultsContent = document.getElementById('results-content');
 	if (resultsContent) {
-		resultsContent.innerHTML = `
-			<div class="query-status">
-				<h3>查询状态</h3>
-				<p>查询ID: ${queryID}</p>
-				<p>状态: ${queryStatus}</p>
-				<p>进度: <span id="progress-bar">0%</span></p>
-				<div class="progress-container">
-					<div id="progress-fill" class="progress-fill" style="width: 0%"></div>
-				</div>
-				<p>开始时间: ${escapeHtml(startTime)}</p>
-			</div>
-		`;
+		const statusPanel = document.createElement('div');
+		statusPanel.className = 'query-status';
+		const heading = document.createElement('h3');
+		heading.textContent = '查询状态';
+		const queryLine = document.createElement('p');
+		queryLine.textContent = `查询ID: ${queryID}`;
+		const statusLine = document.createElement('p');
+		statusLine.textContent = `状态: ${queryStatus}`;
+		const progressLine = document.createElement('p');
+		progressLine.appendChild(document.createTextNode('进度: '));
+		const progressBar = document.createElement('span');
+		progressBar.id = 'progress-bar';
+		progressBar.textContent = '0%';
+		progressLine.appendChild(progressBar);
+		const progressContainer = document.createElement('div');
+		progressContainer.className = 'progress-container';
+		const progressFill = document.createElement('div');
+		progressFill.id = 'progress-fill';
+		progressFill.className = 'progress-fill';
+		progressFill.style.width = '0%';
+		progressContainer.appendChild(progressFill);
+		const startLine = document.createElement('p');
+		startLine.textContent = `开始时间: ${startTime}`;
+		statusPanel.append(heading, queryLine, statusLine, progressLine, progressContainer, startLine);
+		resultsContent.replaceChildren(statusPanel);
 	}
+}
+
+function recoverActiveQueryStatus() {
+	if (!currentQueryID) {
+		return;
+	}
+	apiFetch('/api/v1/query/status?query_id=' + encodeURIComponent(currentQueryID))
+		.then(parseJsonResponse)
+		.then(function(status) {
+			if (!status || status.ID !== currentQueryID) {
+				return;
+			}
+			const progress = typeof status.Progress === 'number' ? status.Progress : 0;
+			handleProgressUpdate({ progress: progress });
+			if (status.Status === 'completed' || status.Status === 'failed') {
+				if (currentQueryTimeout) { clearTimeout(currentQueryTimeout); currentQueryTimeout = null; }
+				removeLoadingIndicator();
+				const resultsContent = document.getElementById('results-content');
+				if (resultsContent && !resultsContent.querySelector('.query-recovered-status')) {
+					const div = document.createElement('div');
+					div.className = 'query-recovered-status';
+					div.textContent = status.Status === 'completed'
+						? '查询已在连接断开期间完成，请刷新或查看历史记录获取完整结果。'
+						: '查询已在连接断开期间失败，请重新查询。';
+					resultsContent.appendChild(div);
+				}
+				currentQueryID = null;
+			}
+		})
+		.catch(function(err) {
+			console.warn('failed to recover query status:', err);
+		});
 }
 
 // 处理进度更新
@@ -1284,36 +1384,50 @@ function handleQueryComplete(message) {
 	} else {
 		showResults(results);
 	}
+	currentQueryID = null;
+}
+
+// 读取查询页每页条数输入，非法/缺失时回退默认 50
+function getQueryPageSize() {
+	const el = document.getElementById('query-page-size');
+	const v = parseInt(el && el.value, 10);
+	return (v && v > 0) ? v : 50;
 }
 
 // 执行异步查询（WebSocket版本）
 function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, browserQuery, browserAction) {
-	const safeQuery = escapeHtml(query);
-	const safeEnginesText = engines.map(engine => escapeHtml(engine)).join(', ');
-
 	// 创建结果页面
 	const resultsPage = document.createElement('div');
 	resultsPage.className = 'results-page';
-	resultsPage.innerHTML = `
-		<div class="results-header">
-			<h2>查询结果</h2>
-			<p>查询语句: <code>${safeQuery}</code></p>
-			<p>使用引擎: ${safeEnginesText}</p>
-			<p>浏览器查询: ${browserQuery ? '已开启' : '未开启'}${browserAction ? ' (' + browserAction + ')' : ''}</p>
-			<div class="loading-indicator">
-				<div class="spinner"></div>
-				<p>正在查询...请稍候</p>
-			</div>
-		</div>
-		<div id="results-content" class="results-content">
-			<!-- 结果将在这里动态加载 -->
-		</div>
-	`;
+	const resultsHeader = document.createElement('div');
+	resultsHeader.className = 'results-header';
+	const heading = document.createElement('h2');
+	heading.textContent = '查询结果';
+	const querySummary = document.createElement('p');
+	querySummary.appendChild(document.createTextNode('查询语句: '));
+	const queryCode = document.createElement('code');
+	queryCode.textContent = query;
+	querySummary.appendChild(queryCode);
+	const engineSummary = document.createElement('p');
+	engineSummary.textContent = `使用引擎: ${engines.join(', ')}`;
+	const browserSummary = document.createElement('p');
+	browserSummary.textContent = `浏览器查询: ${browserQuery ? '已开启' : '未开启'}${browserAction ? ' (' + browserAction + ')' : ''}`;
+	const loading = document.createElement('div');
+	loading.className = 'loading-indicator';
+	const spinner = document.createElement('div');
+	spinner.className = 'spinner';
+	const loadingText = document.createElement('p');
+	loadingText.textContent = '正在查询...请稍候';
+	loading.append(spinner, loadingText);
+	resultsHeader.append(heading, querySummary, engineSummary, browserSummary, loading);
+	const resultsContent = document.createElement('div');
+	resultsContent.id = 'results-content';
+	resultsContent.className = 'results-content';
+	resultsPage.append(resultsHeader, resultsContent);
 	
 	// 替换当前页面内容
 	const main = document.querySelector('main');
-	main.innerHTML = '';
-	main.appendChild(resultsPage);
+	main.replaceChildren(resultsPage);
 
 	// 检查WebSocket连接
 	if (!wsConnected || wsConnection.readyState !== WebSocket.OPEN) {
@@ -1328,7 +1442,7 @@ function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, 
 		query: query,
 		engines: engines,
 		api_engines: browserQuery ? apiEngines : engines,
-		page_size: 50,
+		page_size: getQueryPageSize(),
 		browser_query: !!browserQuery,
 		browser_action: browserAction || '',
 	}));
@@ -1336,8 +1450,8 @@ function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, 
 	// P1-2: 客户端超时检测
 	currentQueryTimeout = setTimeout(function() {
 		removeLoadingIndicator();
-		const resultsContent = document.getElementById('results-content');
-		if (resultsContent) {
+		const timeoutResultsContent = document.getElementById('results-content');
+		if (timeoutResultsContent) {
 			const wrap = document.createElement('div');
 			wrap.style.cssText = 'color:#856404; background:#fff3cd; padding:16px; border-radius:6px; border:1px solid #ffc107;';
 			const h4 = document.createElement('h4');
@@ -1354,8 +1468,7 @@ function executeAsyncQuery(query, engines, apiEngines, submitBtn, originalText, 
 			wrap.appendChild(h4);
 			wrap.appendChild(p);
 			wrap.appendChild(btn);
-			resultsContent.innerHTML = '';
-			resultsContent.appendChild(wrap);
+			timeoutResultsContent.replaceChildren(wrap);
 		}
 		// 恢复按钮状态
 		if (submitBtn) {
@@ -1381,7 +1494,7 @@ function useFallbackAPI(query, engines, submitBtn, originalText, browserQuery, b
 		body: new URLSearchParams({
 			'query': query,
 			'engines': engines.join(','),
-			'page_size': '50',
+			'page_size': String(getQueryPageSize()),
 			'browser_query': browserQuery ? 'true' : 'false',
 			'browser_action': browserAction || '',
 		}),
@@ -1688,9 +1801,6 @@ function showResults(data) {
 			browserQuery: browserQuery
 		};
 		
-		// 保存到服务端历史
-		try { saveQueryToServerHistory(data.query || '', data.engines || [], data); } catch(e) { console.error('saveQueryToServerHistory:', e); }
-
 		// 用 try/finally 保证：即使某个 init 抛异常，结果行也一定渲染，
 		// 错误折叠展开也一定绑定。否则任一 init 异常会中断后续所有绑定，
 		// 导致表格行/错误展开都不工作。
@@ -1703,9 +1813,11 @@ function showResults(data) {
 			initResultsActionDelegation();
 		} catch(e) { console.error('results init:', e); }
 		try {
-			// P2-2: 渲染第一页数据
-			renderAssetRows(0, 50);
-		} catch(e) { console.error('renderAssetRows:', e); }
+				// P2-2: 渲染第一页数据
+				renderAssetRows(0, 50);
+			} catch(e) { console.error('renderAssetRows:', e); }
+			// 后台批量探测所有资产的 URL，缓存结果供"跳转"按钮使用
+			try { probeAssetsAfterResults(assets); } catch(e) { console.error('probeAssetsAfterResults:', e); }
 	}
 }
 
@@ -1754,13 +1866,37 @@ function assetToRowHTML(asset) {
 	const server = pickGlobal(asset, 'server', 'Server');
 	const statusCode = pickGlobal(asset, 'status_code', 'statusCode', 'StatusCode');
 	const source = pickGlobal(asset, 'source', 'Source');
-	const targetURL = pickGlobal(asset, 'url', 'URL');
-	const engineHref = escapeAttr(getEngineLink(source, ip));
+	const targetURL = normalizeSafeExternalURL(pickGlobal(asset, 'url', 'URL'));
+	// Decide whether to link directly to the target or fall back to an engine
+	// search. Relying solely on the engine-reported protocol is unreliable, so
+	// we also check well-known port mappings as a hint.
+	const scheme = (protocol || '').toLowerCase();
+	const portNum = parseInt(port, 10);
+	const isKnownWebPort = !isNaN(portNum) && (
+		portNum === 80 || portNum === 443 || portNum === 8000 || portNum === 8080 ||
+		portNum === 8443 || portNum === 8888 || portNum === 9000 || portNum === 9090 ||
+		portNum === 3000 || portNum === 4200 || portNum === 5173 || portNum === 3001 ||
+		portNum === 5000 || portNum === 7000 || portNum === 8081 || portNum === 8880 ||
+		portNum === 9443 || portNum === 11434 || portNum === 15672
+	);
+	const isKnownNonWebPort = !isNaN(portNum) && (
+		portNum === 22 || portNum === 23 || portNum === 3389 || portNum === 5900 ||
+		portNum === 3306 || portNum === 5432 || portNum === 6379 || portNum === 27017 ||
+		portNum === 1433 || portNum === 1521 || portNum === 11211 || portNum === 2375 ||
+		portNum === 2376 || portNum === 1434 || portNum === 1522 || portNum === 4848 ||
+		portNum === 6080 || portNum === 8444 || portNum === 9200 || portNum === 9300
+	);
+	const isWebProtocol = scheme === 'http' || scheme === 'https';
+	const likelyWeb = isWebProtocol || isKnownWebPort;
+	const definitelyNonWeb = !isWebProtocol && isKnownNonWebPort;
+	const shouldDirectLink = targetURL && likelyWeb && !definitelyNonWeb;
+	const jumpHref = shouldDirectLink ? targetURL : getEngineLink(source, ip);
+	const fallbackHref = getEngineLink(source, ip);
 	const methodBadge = renderCollectionMethodBadge(asset);
 	return `<tr data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}" data-protocol="${escapeAttr(protocol)}" data-host="${escapeAttr(host)}" data-title="${escapeAttr(title)}" data-server="${escapeAttr(server)}" data-status="${escapeAttr(statusCode)}" data-source="${escapeAttr(source)}" data-url="${escapeAttr(targetURL)}">
-		<td>${escapeHtml(ip)}</td><td>${escapeHtml(port)}</td><td>${escapeHtml(protocol)}</td><td>${escapeHtml(host)}</td><td>${escapeHtml(title)}</td><td>${escapeHtml(server)}</td><td>${escapeHtml(statusCode)}</td><td>${escapeHtml(source)}${methodBadge}</td>
-		<td><button type="button" class="btn btn-sm btn-info btn-detail" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}">详情</button> <button type="button" class="btn btn-sm btn-success btn-copy" data-ip="${escapeAttr(ip)}">复制IP</button> <a href="${engineHref}" target="_blank" class="btn btn-sm btn-primary">跳转</a> <button type="button" class="btn btn-sm btn-warning btn-screenshot" data-url="${escapeAttr(targetURL)}" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}" data-protocol="${escapeAttr(protocol)}">截图</button></td>
-	</tr>`;
+			<td>${escapeHtml(ip)}</td><td>${escapeHtml(port)}</td><td>${escapeHtml(protocol)}</td><td>${escapeHtml(host)}</td><td>${escapeHtml(title)}</td><td>${escapeHtml(server)}</td><td>${escapeHtml(statusCode)}</td><td>${escapeHtml(source)}${methodBadge}</td>
+			<td><div class="result-actions"><button type="button" class="action-btn action-detail btn-detail" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}">详情</button> <button type="button" class="action-btn action-copy btn-copy" data-ip="${escapeAttr(ip)}">复制IP</button> <button type="button" class="action-btn action-goto btn-goto" data-url="${escapeAttr(jumpHref)}" data-fallback="${escapeAttr(fallbackHref)}">跳转</button> <button type="button" class="action-btn action-screenshot btn-screenshot" data-url="${escapeAttr(targetURL)}" data-ip="${escapeAttr(ip)}" data-port="${escapeAttr(port)}" data-protocol="${escapeAttr(protocol)}">截图</button></div></td>
+		</tr>`;
 }
 
 // P2-2: 全局 pick 函数（供 renderAssetRows 使用）
@@ -1772,6 +1908,43 @@ function pickGlobal(obj, ...keys) {
 	return '';
 }
 
+// probeAssetsAfterResults collects URLs from the first page of results and
+// sends a batch probe request to the backend. The cache (probeCache) is then
+// used by the "跳转" button to instantly decide whether to open the target
+// directly or fall back to an engine search.
+function probeAssetsAfterResults(assets) {
+	if (!assets || !assets.length || probeInFlight) return;
+
+	// Collect unique http/https URLs from the first 50 assets
+	const seen = new Set();
+	const urls = [];
+	for (let i = 0; i < Math.min(assets.length, 50); i++) {
+		const url = normalizeSafeExternalURL(pickGlobal(assets[i], 'url', 'URL'));
+		if (!url) continue;
+		if (seen.has(url)) continue;
+		seen.add(url);
+		urls.push(url);
+	}
+	if (!urls.length) return;
+
+	probeInFlight = true;
+	apiFetch('/api/v1/url/probe-web-batch', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ urls: urls })
+	}).then(function(resp) { return resp.json(); })
+	.then(function(data) {
+		if (data && data.results) {
+			Object.assign(probeCache, data.results);
+		}
+	})
+	.catch(function(err) {
+		console.warn('probe batch failed:', err);
+	})
+	.finally(function() {
+		probeInFlight = false;
+	});
+}
 
 // 处理工具栏操作
 function handleToolbarAction(action) {
@@ -1937,43 +2110,6 @@ function clearQueryHistory() {
 	localStorage.removeItem('queryHistory');
 }
 
-// 保存查询到服务端历史
-function saveQueryToServerHistory(query, engines, data) {
-	if (!query || !query.trim()) return;
-	
-	const input = { query: query, engines: engines };
-	const summary = data.engineStats || data.EngineStats || {};
-	const assets = (data.assets || data.Assets || []);
-	const results = assets.slice(0, 1000).map(a => ({
-		ip: a.ip || a.IP || '',
-		port: a.port || a.Port || 0,
-		protocol: a.protocol || a.Protocol || '',
-		host: a.host || a.Host || '',
-		url: a.url || a.URL || '',
-		title: a.title || a.Title || '',
-		server: a.server || a.Server || '',
-		status_code: a.status_code || a.StatusCode || 0,
-		country_code: a.country_code || a.CountryCode || '',
-		source: a.source || a.Source || ''
-	}));
-	
-	const errors = data.errors || data.Errors || [];
-	const status = errors.length > 0 ? 'partial' : 'success';
-	
-	apiFetch('/api/v1/history/save', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			operation_type: 'query',
-			input: input,
-			status: status,
-			total_count: data.totalCount || data.TotalCount || 0,
-			summary: summary,
-			results: results
-		})
-	}).catch(err => console.error('Failed to save query history:', err));
-}
-
 // 保存查询
 function saveQuery() {
 	const queryInput = document.getElementById('query');
@@ -2020,7 +2156,10 @@ function checkEngineStatus() {
 			let anyHasKey = false;
 			Object.entries(data.engines).forEach(([name, eng]) => {
 				const el = document.getElementById(`apikey-${name}`);
-				const hasKey = !!(eng.api_key && eng.api_key !== '****');
+				// Censys 用 api_secret 判断，其余引擎用 api_key
+				const hasKey = eng.api_key
+					? !!(eng.api_key && eng.api_key !== '****')
+					: !!(eng.api_secret && eng.api_secret !== '****');
 				const enabled = eng.enabled !== false;
 				engineStatusMap[name] = { hasKey, enabled };
 				if (hasKey) anyHasKey = true;
@@ -2406,6 +2545,20 @@ function initAssetActionDelegation() {
 			var port = btn.getAttribute('data-port');
 			var proto = btn.getAttribute('data-protocol');
 			viewScreenshot(url, ip, port, proto);
+		} else if (btn.classList.contains('btn-goto')) {
+			var targetUrl = btn.getAttribute('data-url');
+			var fallbackUrl = btn.getAttribute('data-fallback');
+			if (!targetUrl) return;
+			// Read cached probe result; if not cached yet, open direct URL as
+			// best-effort (probe may still be in flight).
+			var isWeb = probeCache[targetUrl];
+			if (isWeb === undefined && !probeInFlight) {
+				// Cache miss and no probe running — try direct, fall back on failure
+				openSafeExternalURL(targetUrl);
+				return;
+			}
+			var href = isWeb ? targetUrl : (fallbackUrl || targetUrl);
+			openSafeExternalURL(href);
 		}
 	});
 }
@@ -2531,9 +2684,8 @@ function initQuotaPage() {
 	// 配额设置按钮
 	const settingsBtn = document.getElementById('btn-quota-settings');
 	if (settingsBtn) {
-		settingsBtn.addEventListener('click', function() {
-			openQuotaSettings();
-		});
+		settingsBtn.disabled = true;
+		settingsBtn.title = '配额自动刷新与告警设置尚未实现';
 	}
 	
 	// 初始化配额概览
@@ -2706,7 +2858,9 @@ function openQuotaSettings() {
 		if (dt && saved.defaultThreshold) dt.value = saved.defaultThreshold;
 		if (ea) ea.checked = !!saved.emailAlert;
 		if (em && saved.alertEmail) em.value = saved.alertEmail;
-	} catch(e) {}
+	} catch(e) {
+		console.warn('Failed to load saved quota settings:', e);
+	}
 
 	modal.style.display = 'block';
 
@@ -2732,12 +2886,7 @@ function openQuotaSettings() {
 				emailAlert: modal.querySelector('[name="email-alert"]')?.checked || false,
 				alertEmail: modal.querySelector('[name="alert-email"]')?.value || '',
 			};
-			try {
-				localStorage.setItem('unimap_quota_settings', JSON.stringify(settings));
-				showMessage('设置已保存', 'success');
-			} catch(e) {
-				showMessage('保存失败: ' + e.message, 'error');
-			}
+			showMessage('配额自动刷新与告警设置尚未实现', 'warning');
 			modal.style.display = 'none';
 		};
 	}
@@ -2895,11 +3044,11 @@ function showMessage(message, type = 'info', duration = 3000) {
 	}, duration);
 }
 
-// 获取引擎跳转链接
+// 获取引擎跳转链接（用于非 Web 服务的 fallback）
 function getEngineLink(source, ip) {
 	if (!ip) return '#';
+	const primarySource = (source || '').split(',')[0].trim().toLowerCase();
 	const query = `ip="${ip}"`;
-	// Base64 encode
 	let b64 = "";
 	try {
 		b64 = btoa(query);
@@ -2907,12 +3056,14 @@ function getEngineLink(source, ip) {
 		console.error("Base64 encode failed", e);
 		return "#";
 	}
-	
-	switch(source ? source.toLowerCase() : '') {
+	switch (primarySource) {
 		case 'fofa': return `https://fofa.info/result?qbase64=${b64}`;
 		case 'hunter': return `https://hunter.qianxin.com/list?searchValue=${b64}`;
 		case 'quake': return `https://quake.360.net/quake/#/searchResult?searchVal=${encodeURIComponent(query)}`;
-		case 'zoomeye': return `https://www.zoomeye.org/searchResult?q=${encodeURIComponent('ip:"'+ip+'"')}`;
+		case 'zoomeye': return `https://www.zoomeye.org/searchResult?q=${encodeURIComponent('ip:"' + ip + '"')}`;
+		case 'shodan': return `https://www.shodan.io/search?query=${encodeURIComponent('ip:"' + ip + '"')}`;
+		case 'censys': return `https://platform.censys.io/search?resource=hosts&q=${encodeURIComponent('ip:' + ip)}`;
+		case 'daydaymap': return `https://www.daydaymap.com/search?q=${encodeURIComponent('ip:"' + ip + '"')}`;
 		default: return '#';
 	}
 }
@@ -2927,6 +3078,11 @@ function viewScreenshot(url, ip, port, protocol) {
 			alert('无法获取目标URL');
 			return;
 		}
+	}
+	target = normalizeSafeExternalURL(target);
+	if (!target) {
+		showMessage('目标 URL 无效，仅支持 HTTP/HTTPS', 'warning');
+		return;
 	}
 	
 	// 创建或获取模态框
@@ -3144,12 +3300,22 @@ function captureAllScreenshots() {
 		// 轮询进度
 		let progressPollFailures = 0;
 		const maxProgressPollFailures = 5;
+		let screenshotPollSettled = false;
+		let screenshotPollTimeout;
+		function finishScreenshotPoll(statusMessage, toastMessage, toastType) {
+			if (screenshotPollSettled) return;
+			screenshotPollSettled = true;
+			clearInterval(pollInterval);
+			if (screenshotPollTimeout !== undefined) clearTimeout(screenshotPollTimeout);
+			statusEl.textContent = statusMessage;
+			if (toastMessage) showMessage(toastMessage, toastType || 'error');
+		}
 		const pollInterval = setInterval(function() {
 			apiFetch(`/api/v1/screenshot/batch/progress?job_id=${encodeURIComponent(jobID)}`)
 				.then(parseJsonResponse)
 				.then(job => {
+					if (screenshotPollSettled) return;
 					progressPollFailures = 0;
-					if (job.error) return;
 
 					const completed = job.completed || 0;
 					const success = job.success || 0;
@@ -3161,33 +3327,37 @@ function captureAllScreenshots() {
 					statusEl.textContent = `正在截图... (${completed}/${total})`;
 
 					if (job.status === 'completed' || job.status === 'failed') {
-						clearInterval(pollInterval);
 						if (job.status === 'completed') {
 							progressBar.style.width = '100%';
 							progressText.textContent = `完成: ${success} 成功, ${failed} 失败`;
-							statusEl.textContent = '所有截图完成!';
-							showMessage(`批量截图完成! 成功 ${success}/${total}`, success > 0 ? 'success' : 'warning');
+							finishScreenshotPoll('所有截图完成!', `批量截图完成! 成功 ${success}/${total}`, success > 0 ? 'success' : 'warning');
 						} else {
-							statusEl.textContent = `截图失败: ${job.error || '未知错误'}`;
-							showMessage(job.error || '截图任务失败', 'error');
+							const errorMessage = extractErrorMessage(job.error, '截图任务失败');
+							finishScreenshotPoll(`截图失败: ${errorMessage}`, errorMessage, 'error');
 						}
+						return;
+					}
+					if (job.error) {
+						const errorMessage = extractErrorMessage(job.error, '截图任务失败');
+						finishScreenshotPoll(`截图失败: ${errorMessage}`, errorMessage, 'error');
 					}
 				})
 				.catch(function() {
+					if (screenshotPollSettled) return;
 					progressPollFailures++;
 					if (progressPollFailures >= maxProgressPollFailures) {
-						clearInterval(pollInterval);
-						statusEl.textContent = '截图进度查询失败，请刷新页面';
-						showMessage('截图进度查询失败，请刷新页面', 'error');
+						finishScreenshotPoll('截图进度查询失败，请刷新页面', '截图进度查询失败，请刷新页面', 'error');
 					}
 				});
 		}, 2000);
 
 		// 安全超时：10 分钟后停止轮询
-		setTimeout(function() {
-			clearInterval(pollInterval);
-			statusEl.textContent = '截图轮询超时，请手动刷新页面查看结果';
-			showMessage('截图轮询超时，请手动刷新页面查看结果', 'warning');
+		screenshotPollTimeout = setTimeout(function() {
+			finishScreenshotPoll(
+				`截图轮询超时，后台任务可能仍在运行（任务 ID: ${jobID}）`,
+				`截图轮询超时，请稍后使用任务 ID ${jobID} 查询结果`,
+				'warning'
+			);
 		}, 600000);
 	})
 	.catch(err => {

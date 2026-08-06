@@ -1,17 +1,29 @@
-version: '3.8'
-
 services:
   unimap:
-    build: .
+    build:
+      context: .
+      args:
+        UNIMAP_VERSION: ${UNIMAP_VERSION:-dev}
+        UNIMAP_GIT_COMMIT: ${UNIMAP_GIT_COMMIT:-unknown}
+        UNIMAP_BUILD_TIME: ${UNIMAP_BUILD_TIME:-unknown}
     ports:
       - "8448:8448"
     volumes:
-      - ./configs/config.yaml:/app/configs/config.yaml
+      - ${UNIMAP_CONFIG_FILE:-./configs/config.docker.yaml}:/app/configs/config.yaml:ro
       - ./web:/app/web
       - ./logs:/app/logs
+      - unimap_data:/app/data
+      - unimap_screenshots:/app/screenshots
+      - unimap_chrome_profile:/app/chrome-profile
+    shm_size: 256m
     environment:
-      - TZ=Asia/Shanghai
-      - LOG_LEVEL=info
+      TZ: Asia/Shanghai
+      LOG_LEVEL: info
+      UNIMAP_CHROME_PATH: /usr/bin/chromium
+      UNIMAP_CHROME_USER_DATA_DIR: /app/chrome-profile
+      UNIMAP_DATA_DIR: /app/data
+      UNIMAP_CONTAINER_BIND_ADDRESS: 0.0.0.0
+      UNIMAP_BOOTSTRAP_PASSWORD: ${UNIMAP_BOOTSTRAP_PASSWORD:?set UNIMAP_BOOTSTRAP_PASSWORD in the deployment environment}
     restart: unless-stopped
     deploy:
       resources:
@@ -22,7 +34,7 @@ services:
           cpus: '0.5'
           memory: 256M
     healthcheck:
-      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:8448/health >/dev/null 2>&1" ]
+      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:8448/health/ready >/dev/null 2>&1" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -40,4 +52,6 @@ services:
   #   restart: unless-stopped
 
 volumes:
-  logs:
+  unimap_data:
+  unimap_screenshots:
+  unimap_chrome_profile:

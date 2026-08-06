@@ -47,23 +47,20 @@ func Backup(cfg BackupConfig) (*BackupResult, error) {
 		return nil, fmt.Errorf("failed to create backup dir: %w", err)
 	}
 
-	// 生成备份文件名
-	timestamp := time.Now().Format("20060102_150405")
-	filename := fmt.Sprintf("%s_backup_%s.tar.gz", cfg.Prefix, timestamp)
-	outputPath := filepath.Join(cfg.OutputDir, filename)
-
-	// 创建 gzip 文件
-	outFile, err := os.Create(outputPath)
+	// Write to an exclusive sibling and publish only after the archive is complete.
+	timestamp := time.Now().Format("20060102_150405.000000000")
+	tmpFile, err := os.CreateTemp(cfg.OutputDir, fmt.Sprintf(".%s_backup_%s_*.tmp", cfg.Prefix, timestamp))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create backup file: %w", err)
 	}
-	defer outFile.Close()
-
-	gw := gzip.NewWriter(outFile)
-	defer gw.Close()
-
+	tmpPath := tmpFile.Name()
+	cleanup := func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+	}
+	defer cleanup()
+	gw := gzip.NewWriter(tmpFile)
 	tw := tar.NewWriter(gw)
-	defer tw.Close()
 
 	// 收集所有要备份的文件（带基础目录信息）
 	type fileWithBase struct {
@@ -73,9 +70,9 @@ func Backup(cfg BackupConfig) (*BackupResult, error) {
 	var files []fileWithBase
 	var sourceErrors []error
 	for _, src := range cfg.Sources {
-		srcFiles, baseDir, err := collectFiles(src)
-		if err != nil {
-			sourceErrors = append(sourceErrors, fmt.Errorf("source %s: %w", src, err))
+		srcFiles, baseDir, collectErr := collectFiles(src)
+		if collectErr != nil {
+			sourceErrors = append(sourceErrors, fmt.Errorf("source %s: %w", src, collectErr))
 			continue
 		}
 		for _, f := range srcFiles {
@@ -93,16 +90,35 @@ func Backup(cfg BackupConfig) (*BackupResult, error) {
 	// 写入 tar
 	var tarErrors []error
 	for _, f := range files {
-		if err := addFileToTar(tw, f.path, f.baseDir); err != nil {
-			tarErrors = append(tarErrors, fmt.Errorf("%s: %w", f.path, err))
-			logger.Warnf("Failed to add %s to backup: %v", f.path, err)
+		if tarErr := addFileToTar(tw, f.path, f.baseDir); tarErr != nil {
+			tarErrors = append(tarErrors, fmt.Errorf("%s: %w", f.path, tarErr))
+			logger.Warnf("Failed to add %s to backup: %v", f.path, tarErr)
 		}
 	}
 
-	// 获取文件大小
-	info, err := outFile.Stat()
+	if closeErr := tw.Close(); closeErr != nil {
+		return nil, fmt.Errorf("finalize tar archive: %w", closeErr)
+	}
+	if closeErr := gw.Close(); closeErr != nil {
+		return nil, fmt.Errorf("finalize gzip archive: %w", closeErr)
+	}
+	if syncErr := tmpFile.Sync(); syncErr != nil {
+		return nil, fmt.Errorf("sync backup archive: %w", syncErr)
+	}
+	if closeErr := tmpFile.Close(); closeErr != nil {
+		return nil, fmt.Errorf("close backup archive: %w", closeErr)
+	}
+	uniqueSuffix := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(tmpPath), fmt.Sprintf(".%s_backup_%s_", cfg.Prefix, timestamp)), ".tmp")
+	filename := fmt.Sprintf("%s_backup_%s_%s.tar.gz", cfg.Prefix, timestamp, uniqueSuffix)
+	outputPath := filepath.Join(cfg.OutputDir, filename)
+	if publishErr := os.Rename(tmpPath, outputPath); publishErr != nil {
+		return nil, fmt.Errorf("publish backup archive: %w", publishErr)
+	}
+	tmpPath = ""
+
+	info, err := os.Stat(outputPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to stat backup file: %w", err)
+		return nil, fmt.Errorf("stat completed backup file: %w", err)
 	}
 
 	result := &BackupResult{
@@ -216,8 +232,8 @@ func addFileToTar(tw *tar.Writer, path string, baseDir string) error {
 	}
 	header.Name = relPath
 
-	if err := tw.WriteHeader(header); err != nil {
-		return err
+	if writeErr := tw.WriteHeader(header); writeErr != nil {
+		return writeErr
 	}
 
 	if info.IsDir() {

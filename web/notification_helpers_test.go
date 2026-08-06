@@ -10,14 +10,14 @@ func TestFillTestRequestFromChannel_FillsEmptyFields(t *testing.T) {
 	s := &Server{}
 	req := &notifyChannelTestRequest{ID: "ch1"}
 	ch := config.NotificationChannelCfg{
-		Type:        "webhook",
-		WebhookURL:  "https://hook.example.com",
-		Secret:      "my-secret",
-		AppID:       "app-123",
-		AppSecret:   "app-secret",
-		ChatID:      "chat-456",
+		Type:           "webhook",
+		WebhookURL:     "https://hook.example.com",
+		Secret:         "my-secret",
+		AppID:          "app-123",
+		AppSecret:      "app-secret",
+		ChatID:         "chat-456",
 		AllowPrivateIP: true,
-		Headers:     map[string]string{"X-Custom": "val"},
+		Headers:        map[string]string{"X-Custom": "val"},
 	}
 	s.fillTestRequestFromChannel(req, ch)
 
@@ -95,8 +95,10 @@ func TestEngineDomain(t *testing.T) {
 		{"fofa", "fofa.info"},
 		{"quake", "quake.360.net"},
 		{"zoomeye", "zoomeye.org"},
+		{"shodan", "shodan.io"},
+		{"censys", "censys.io"},
+		{"daydaymap", "daydaymap.com"},
 		{"unknown", ""},
-		{"shodan", ""},
 	}
 	for _, tt := range tests {
 		got := engineDomain(tt.engine)

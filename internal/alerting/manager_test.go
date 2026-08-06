@@ -1,6 +1,8 @@
 package alerting
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -15,6 +17,49 @@ func TestNewManager(t *testing.T) {
 	}
 	if m.alertRecords == nil {
 		t.Fatal("expected non-nil alertRecords")
+	}
+}
+
+func TestManager_PersistsAndRestoresAlertRecords(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "alerts.json")
+	first := NewManager()
+	if err := first.SetPersistencePath(path); err != nil {
+		t.Fatalf("set persistence path: %v", err)
+	}
+	first.SendAlert(AlertLevelWarning, AlertTypeReachability, "unreachable", "timeout", nil, "test", "https://example.test")
+	if got := len(first.GetAlertRecords()); got != 1 {
+		t.Fatalf("expected one saved alert, got %d", got)
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("temporary alert file remains after atomic replacement: %v", err)
+	}
+
+	second := NewManager()
+	if err := second.SetPersistencePath(path); err != nil {
+		t.Fatalf("restore persistence path: %v", err)
+	}
+	if got := len(second.GetAlertRecords()); got != 1 {
+		t.Fatalf("expected one restored alert, got %d", got)
+	}
+}
+
+func TestManager_PersistsSilencedAlert(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "alerts.json")
+	m := NewManager()
+	if err := m.SetPersistencePath(path); err != nil {
+		t.Fatal(err)
+	}
+	m.SendAlert(AlertLevelWarning, AlertTypeSystem, "title", "message", nil, "test", "")
+	records := m.GetAlertRecords()
+	if err := m.SilenceAlert(records[0].Alert.ID, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	restored := NewManager()
+	if err := restored.SetPersistencePath(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := restored.GetAlertRecords()[0].Status; got != AlertStatusSilenced {
+		t.Fatalf("expected silenced status, got %s", got)
 	}
 }
 

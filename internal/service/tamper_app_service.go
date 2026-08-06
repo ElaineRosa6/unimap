@@ -6,28 +6,48 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/unimap/project/internal/alerting"
 	"github.com/unimap/project/internal/metrics"
 	"github.com/unimap/project/internal/tamper"
+	"github.com/unimap/project/internal/utils"
 )
 
-// TamperAllocatorFactory 用于注入浏览器 allocator，便于复用 screenshot 的 CDP/本地启动策略。
-type TamperAllocatorFactory func(ctx context.Context) (context.Context, context.CancelFunc, error)
+// TamperPageLoader renders JavaScript pages through the screenshot module's
+// guarded browser seam.
+type TamperPageLoader = tamper.BrowserPageLoader
+
+// TamperRuntimeConfig contains the detector settings that may change while the
+// process is running.
+type TamperRuntimeConfig struct {
+	InsecureSkipVerify bool
+	PortScanEnabled    bool
+	PortScanTimeout    time.Duration
+}
+
+// TamperRuntimeConfigProvider returns the latest committed detector settings.
+type TamperRuntimeConfigProvider func() TamperRuntimeConfig
 
 // TamperAppService 封装篡改检测应用层流程。
 type TamperAppService struct {
-	baseDir      string
-	alertManager *alerting.Manager
+	baseDir               string
+	alertManager          *alerting.Manager
+	runtimeConfigProvider TamperRuntimeConfigProvider
 }
 
-func NewTamperAppService(baseDir string, alertManager *alerting.Manager) *TamperAppService {
+func NewTamperAppService(baseDir string, alertManager *alerting.Manager, providers ...TamperRuntimeConfigProvider) *TamperAppService {
 	if strings.TrimSpace(baseDir) == "" {
-		baseDir = "./hash_store"
+		baseDir = utils.HashStoreDir()
+	}
+	var provider TamperRuntimeConfigProvider
+	if len(providers) > 0 {
+		provider = providers[0]
 	}
 	return &TamperAppService{
-		baseDir:      baseDir,
-		alertManager: alertManager,
+		baseDir:               baseDir,
+		alertManager:          alertManager,
+		runtimeConfigProvider: provider,
 	}
 }
 
@@ -53,23 +73,20 @@ type TamperBaselineResponse struct {
 	Results []tamper.PageHashResult
 }
 
-func (s *TamperAppService) Check(ctx context.Context, req TamperCheckRequest, allocatorFactory TamperAllocatorFactory) (*TamperCheckResponse, error) {
+func (s *TamperAppService) Check(ctx context.Context, req TamperCheckRequest, pageLoader TamperPageLoader) (*TamperCheckResponse, error) {
 	if len(req.URLs) == 0 {
 		return nil, fmt.Errorf("no URLs provided")
 	}
 	if req.Concurrency <= 0 {
 		req.Concurrency = 5
 	}
-	mode := strings.ToLower(strings.TrimSpace(req.Mode))
-	if mode != tamper.DetectionModeStrict {
-		mode = tamper.DetectionModeRelaxed
-	}
+	// NormalizeDetectionMode preserves all five supported detection modes
+	// (relaxed/strict/security/balanced/precise); previously the service layer
+	// silently downgraded security/balanced/precise to relaxed, hiding the
+	// detector's richer thresholds from both the UI and scheduled tasks.
+	mode := tamper.NormalizeDetectionMode(req.Mode)
 
-	detector, cleanup, err := s.newDetector(ctx, mode, allocatorFactory)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
+	detector := s.newDetector(mode, pageLoader)
 
 	results, err := detector.BatchCheckTampering(ctx, req.URLs, req.Concurrency)
 	if err != nil {
@@ -128,7 +145,7 @@ func (s *TamperAppService) Check(ctx context.Context, req TamperCheckRequest, al
 	return &TamperCheckResponse{Mode: mode, Summary: summary, Results: results}, nil
 }
 
-func (s *TamperAppService) SetBaseline(ctx context.Context, req TamperBaselineRequest, allocatorFactory TamperAllocatorFactory) (*TamperBaselineResponse, error) {
+func (s *TamperAppService) SetBaseline(ctx context.Context, req TamperBaselineRequest, pageLoader TamperPageLoader) (*TamperBaselineResponse, error) {
 	if len(req.URLs) == 0 {
 		return nil, fmt.Errorf("no URLs provided")
 	}
@@ -136,11 +153,7 @@ func (s *TamperAppService) SetBaseline(ctx context.Context, req TamperBaselineRe
 		req.Concurrency = 5
 	}
 
-	detector, cleanup, err := s.newDetector(ctx, tamper.DetectionModeRelaxed, allocatorFactory)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
+	detector := s.newDetector(tamper.DetectionModeRelaxed, pageLoader)
 
 	results, err := detector.BatchSetBaseline(ctx, req.URLs, req.Concurrency)
 	if err != nil {
@@ -219,7 +232,7 @@ func (s *TamperAppService) ListAllCheckRecords() (map[string][]*tamper.CheckReco
 }
 
 // GetCheckStats 获取检测统计信息
-func (s *TamperAppService) GetCheckStats(url string) (map[string]interface{}, error) {
+func (s *TamperAppService) GetCheckStats(url string) (tamper.CheckStats, error) {
 	detector := tamper.NewDetector(tamper.DetectorConfig{
 		BaseDir:      s.baseDir,
 		AlertManager: s.alertManager,
@@ -242,7 +255,10 @@ type HistoryFilter struct {
 	TypeFilter  string
 	ModeFilter  string
 	QueryFilter string
+	StartTime   int64
+	EndTime     int64
 	Limit       int
+	Offset      int
 }
 
 // HistoryRecord 历史记录
@@ -271,6 +287,28 @@ type HistoryResult struct {
 // QueryHistory 查询检测历史记录（带过滤和排序）
 func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, error) {
 	storage := tamper.NewHashStorage(s.baseDir)
+	if canPageHistoryInStorage(filter) {
+		page, err := storage.ListCheckRecords(tamper.CheckRecordQuery{
+			URL:       strings.TrimSpace(filter.URLFilter),
+			StartTime: filter.StartTime,
+			EndTime:   filter.EndTime,
+			Limit:     filter.Limit,
+			Offset:    filter.Offset,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list history page: %w", err)
+		}
+		records := make([]HistoryRecord, 0, len(page.Records))
+		for _, rec := range page.Records {
+			if rec == nil || strings.TrimSpace(rec.URL) == "" {
+				continue
+			}
+			recordURL := strings.TrimSpace(rec.URL)
+			records = append(records, buildHistoryRecord(rec, recordURL, computeTamperStatus(rec), resolveDetectionMode(rec.DetectionMode)))
+		}
+		return &HistoryResult{Records: records, URLOptions: page.URLs, Count: page.Total}, nil
+	}
+
 	allRecords, err := storage.ListAllCheckRecords()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list history: %w", err)
@@ -288,7 +326,7 @@ func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, e
 			status := computeTamperStatus(rec)
 			recordMode := resolveDetectionMode(rec.DetectionMode)
 
-			if !matchesHistoryFilter(filter, recordURL, rec.CheckType, status, recordMode) {
+			if !matchesHistoryFilter(filter, recordURL, rec.CheckType, status, recordMode, rec.Timestamp) {
 				continue
 			}
 
@@ -299,7 +337,8 @@ func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, e
 	}
 
 	sort.Slice(records, func(i, j int) bool { return records[i].Timestamp > records[j].Timestamp })
-	records = limitHistoryRecords(records, filter.Limit)
+	total := len(records)
+	records = limitHistoryRecords(records, filter.Limit, filter.Offset)
 
 	urlOptions := make([]string, 0, len(urlSet))
 	for u := range urlSet {
@@ -307,7 +346,13 @@ func (s *TamperAppService) QueryHistory(filter HistoryFilter) (*HistoryResult, e
 	}
 	sort.Strings(urlOptions)
 
-	return &HistoryResult{Records: records, URLOptions: urlOptions, Count: len(records)}, nil
+	return &HistoryResult{Records: records, URLOptions: urlOptions, Count: total}, nil
+}
+
+func canPageHistoryInStorage(filter HistoryFilter) bool {
+	return strings.TrimSpace(filter.TypeFilter) == "" &&
+		strings.TrimSpace(filter.ModeFilter) == "" &&
+		strings.TrimSpace(filter.QueryFilter) == ""
 }
 
 // computeTamperStatus 计算检查记录的状态
@@ -334,7 +379,13 @@ func resolveDetectionMode(mode string) string {
 }
 
 // matchesHistoryFilter 检查记录是否匹配过滤条件
-func matchesHistoryFilter(filter HistoryFilter, recordURL, checkType, status, mode string) bool {
+func matchesHistoryFilter(filter HistoryFilter, recordURL, checkType, status, mode string, timestamp int64) bool {
+	if filter.StartTime > 0 && timestamp < filter.StartTime {
+		return false
+	}
+	if filter.EndTime > 0 && timestamp > filter.EndTime {
+		return false
+	}
 	urlLower := strings.ToLower(recordURL)
 	if filter.URLFilter != "" && urlLower != strings.ToLower(filter.URLFilter) {
 		return false
@@ -378,31 +429,45 @@ func buildHistoryRecord(rec *tamper.CheckRecord, recordURL, status, mode string)
 }
 
 // limitHistoryRecords 限制历史记录数量
-func limitHistoryRecords(records []HistoryRecord, limit int) []HistoryRecord {
-	if limit <= 0 { limit = 200 }
-	if limit > 1000 { limit = 1000 }
-	if len(records) > limit { return records[:limit] }
-	return records
+func limitHistoryRecords(records []HistoryRecord, limit, offset int) []HistoryRecord {
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 10000 {
+		limit = 10000
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(records) {
+		return []HistoryRecord{}
+	}
+	end := offset + limit
+	if end > len(records) {
+		end = len(records)
+	}
+	return records[offset:end]
 }
 
-func (s *TamperAppService) newDetector(ctx context.Context, mode string, allocatorFactory TamperAllocatorFactory) (*tamper.Detector, context.CancelFunc, error) {
-	detector := tamper.NewDetector(tamper.DetectorConfig{
+func (s *TamperAppService) newDetector(mode string, pageLoader TamperPageLoader) *tamper.Detector {
+	detector := tamper.NewDetector(s.detectorConfig(mode))
+	if pageLoader != nil {
+		detector.SetBrowserPageLoader(pageLoader)
+	}
+	return detector
+}
+
+func (s *TamperAppService) detectorConfig(mode string) tamper.DetectorConfig {
+	cfg := tamper.DetectorConfig{
 		BaseDir:       s.baseDir,
 		DetectionMode: mode,
 		AlertManager:  s.alertManager,
-	})
-	cleanup := func() {}
-
-	if allocatorFactory == nil {
-		return detector, cleanup, nil
 	}
-
-	allocCtx, allocCancel, err := allocatorFactory(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to initialize browser for tamper detection: %w", err)
+	if s.runtimeConfigProvider != nil {
+		runtimeCfg := s.runtimeConfigProvider()
+		cfg.InsecureSkipVerify = runtimeCfg.InsecureSkipVerify
+		cfg.PortScanEnabled = runtimeCfg.PortScanEnabled
+		cfg.PortScanTimeout = runtimeCfg.PortScanTimeout
 	}
-	detector.SetAllocator(ctx, allocCtx, allocCancel)
-	cleanup = allocCancel
-
-	return detector, cleanup, nil
+	return cfg
 }

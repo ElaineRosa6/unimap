@@ -9,6 +9,29 @@ import (
 	"time"
 )
 
+func TestGetClientIPIgnoresForwardedHeadersFromUntrustedPrivateClient(t *testing.T) {
+	SetTrustedProxyCIDRs(nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.25:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+	if got := getClientIP(req); got != "10.0.0.25" {
+		t.Fatalf("client IP = %q, want direct peer", got)
+	}
+}
+
+func TestGetClientIPUsesForwardedHeaderFromConfiguredProxy(t *testing.T) {
+	if err := SetTrustedProxyCIDRs([]string{"10.0.0.0/8"}); err != nil {
+		t.Fatal(err)
+	}
+	defer SetTrustedProxyCIDRs(nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.25:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.9, 10.0.0.20")
+	if got := getClientIP(req); got != "203.0.113.9" {
+		t.Fatalf("client IP = %q, want forwarded client", got)
+	}
+}
+
 func TestRateLimiter_SlidingWindow_Allow(t *testing.T) {
 	limiter := NewRateLimiter(3, time.Second)
 	defer limiter.Stop()

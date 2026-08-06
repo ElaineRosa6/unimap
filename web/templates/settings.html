@@ -258,8 +258,8 @@
 		.cfg-val input, .cfg-val select { max-width: 100%; }
 	}
 	/* P2-8: API Key 显示/隐藏切换按钮 */
-	.key-toggle-wrap { position: relative; display: inline-flex; align-items: center; width: 100%; }
-	.key-toggle-wrap input { padding-right: 36px; width: 100%; }
+	.key-toggle-wrap { position: relative; display: inline-flex; align-items: center; width: 100%; max-width: 340px; }
+	.key-toggle-wrap input { padding-right: 36px; width: 100%; max-width: none; }
 	.key-toggle-btn { position: absolute; right: 6px; background: none; border: none; cursor: pointer; font-size: 16px; color: #888; padding: 4px; line-height: 1; }
 	.key-toggle-btn:hover { color: #333; }
 </style>
@@ -314,7 +314,8 @@
 					<div class="cfg-group-title"><span class="dot" id="hunter-dot"></span> Hunter</div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="hunter-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
 					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="hunter-api-key" placeholder="Hunter API Key，从 qianxin.com 获取" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
-					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="hunter-base-url" placeholder="https://hunter.qianxin.com/api"></div></div>
+				<div class="cfg-row"><span class="cfg-key">backup_api_key</span><div class="cfg-val"><input type="password" id="hunter-backup-api-key" placeholder="备用 API Key（主 key 限流/鉴权/欠费失败时自动切换）" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
+					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="hunter-base-url" placeholder="https://hunter.qianxin.com"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="hunter-qps" min="1" max="100" value="10"></div></div>
 					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="hunter-timeout" min="5" max="300" value="30"></div></div>
 				</div>
@@ -332,7 +333,7 @@
 					<div class="cfg-group-title"><span class="dot" id="quake-dot"></span> Quake</div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="quake-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
 					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="quake-api-key" placeholder="Quake API Key，从 quake.360.net 获取" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
-					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="quake-base-url" placeholder="https://quake.360.net/api/v1"></div></div>
+					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="quake-base-url" placeholder="https://quake.360.net/api"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="quake-qps" min="1" max="100" value="10"></div></div>
 					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="quake-timeout" min="5" max="300" value="30"></div></div>
 				</div>
@@ -343,6 +344,25 @@
 					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="shodan-api-key" placeholder="Shodan API Key，从 shodan.io 获取" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
 					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="shodan-base-url" placeholder="https://api.shodan.io"></div></div>
 					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="shodan-qps" min="1" max="100" value="10"></div></div>
+				</div>
+
+				<div class="cfg-group" data-engine="censys">
+					<div class="cfg-group-title"><span class="dot" id="censys-dot"></span> Censys</div>
+					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="censys-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_id</span><div class="cfg-val"><input type="text" id="censys-api-id" placeholder="Censys API ID，从 search.censys.io 获取" autocomplete="off" data-1p-ignore></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_secret</span><div class="cfg-val"><input type="password" id="censys-api-secret" placeholder="Censys API Secret" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
+					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="censys-base-url" placeholder="https://search.censys.io"></div></div>
+					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="censys-qps" min="1" max="100" value="10"></div></div>
+					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="censys-timeout" min="5" max="300" value="30"></div></div>
+				</div>
+
+				<div class="cfg-group" data-engine="daydaymap">
+					<div class="cfg-group-title"><span class="dot" id="daydaymap-dot"></span> DayDayMap</div>
+					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="daydaymap-enabled"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此引擎</span></label></div></div>
+					<div class="cfg-row"><span class="cfg-key">api_key</span><div class="cfg-val"><input type="password" id="daydaymap-api-key" placeholder="DayDayMap API Key" autocomplete="new-password" data-1p-ignore data-lpignore="true"></div></div>
+					<div class="cfg-row"><span class="cfg-key">base_url</span><div class="cfg-val"><input type="text" id="daydaymap-base-url" placeholder="https://www.daydaymap.com"></div></div>
+					<div class="cfg-row"><span class="cfg-key">qps</span><div class="cfg-val"><input type="number" id="daydaymap-qps" min="1" max="100" value="10"></div></div>
+					<div class="cfg-row"><span class="cfg-key">timeout_s</span><div class="cfg-val"><input type="number" id="daydaymap-timeout" min="5" max="300" value="30"></div></div>
 				</div>
 
 				<div class="cfg-actions" id="engines-actions">
@@ -414,7 +434,7 @@
 			<div id="panel-cookies" class="ctrl-panel">
 				<div class="ctrl-hdr">
 					<h2>Cookie 管理</h2>
-					<p>各搜索引擎用于截图/采集的会话 Cookie。仅在 Headless 模式下生效。</p>
+					<p>各搜索引擎用于 CDP 截图/采集的会话 Cookie；Extension Bridge 可将同源 Cookie 与 Web Storage 临时交接给 CDP。</p>
 				</div>
 
 				<div class="cfg-group">
@@ -423,6 +443,9 @@
 					<div class="cfg-row"><span class="cfg-key">Hunter</span><div class="cfg-val"><input type="text" id="ck-hunter" placeholder="session=xxx; token=yyy" value="{{.cookieHunter}}"></div></div>
 					<div class="cfg-row"><span class="cfg-key">ZoomEye</span><div class="cfg-val"><input type="text" id="ck-zoomeye" placeholder="session=xxx; token=yyy" value="{{.cookieZoomeye}}"></div></div>
 					<div class="cfg-row"><span class="cfg-key">Quake</span><div class="cfg-val"><input type="text" id="ck-quake" placeholder="session=xxx; token=yyy" value="{{.cookieQuake}}"></div></div>
+					<div class="cfg-row"><span class="cfg-key">Shodan</span><div class="cfg-val"><input type="text" id="ck-shodan" placeholder="session=xxx; token=yyy" value="{{.cookieShodan}}"></div></div>
+					<div class="cfg-row"><span class="cfg-key">Censys</span><div class="cfg-val"><input type="text" id="ck-censys" placeholder="session=xxx; token=yyy" value="{{.cookieCensys}}"></div></div>
+					<div class="cfg-row"><span class="cfg-key">DayDayMap</span><div class="cfg-val"><input type="text" id="ck-daydaymap" placeholder="session=xxx; token=yyy" value="{{.cookieDayDayMap}}"></div></div>
 				</div>
 
 				<div class="cfg-group">
@@ -433,6 +456,9 @@
 							<option value="hunter">Hunter</option>
 							<option value="zoomeye">ZoomEye</option>
 							<option value="quake">Quake</option>
+							<option value="shodan">Shodan</option>
+							<option value="censys">Censys</option>
+							<option value="daydaymap">DayDayMap</option>
 						</select>
 					</div></div>
 					<div class="cfg-row"><span class="cfg-key">JSON</span><div class="cfg-val">
@@ -450,6 +476,9 @@
 					<div class="cfg-row"><span class="cfg-key">Hunter</span><div class="cfg-val"><span id="ck-status-hunter" class="hint">检测中…</span></div></div>
 					<div class="cfg-row"><span class="cfg-key">ZoomEye</span><div class="cfg-val"><span id="ck-status-zoomeye" class="hint">检测中…</span></div></div>
 					<div class="cfg-row"><span class="cfg-key">Quake</span><div class="cfg-val"><span id="ck-status-quake" class="hint">检测中…</span></div></div>
+					<div class="cfg-row"><span class="cfg-key">Shodan</span><div class="cfg-val"><span id="ck-status-shodan" class="hint">检测中…</span></div></div>
+					<div class="cfg-row"><span class="cfg-key">Censys</span><div class="cfg-val"><span id="ck-status-censys" class="hint">检测中…</span></div></div>
+					<div class="cfg-row"><span class="cfg-key">DayDayMap</span><div class="cfg-val"><span id="ck-status-daydaymap" class="hint">检测中…</span></div></div>
 				</div>
 
 				<div class="cfg-actions">
@@ -548,6 +577,18 @@
 						<div class="cfg-row nch-app-row hidden-init"><span class="cfg-key">App ID</span><div class="cfg-val"><input type="text" id="nch-app-id" placeholder="cli_xxxxxxxx"><div class="hint">飞书应用 App ID</div></div></div>
 						<div class="cfg-row nch-app-row hidden-init"><span class="cfg-key">App Secret</span><div class="cfg-val"><input type="password" id="nch-app-secret" placeholder="输入 App Secret" autocomplete="new-password" data-1p-ignore data-lpignore="true"><div class="hint">加密存储，编辑时留空保留原值</div></div></div>
 						<div class="cfg-row nch-app-row hidden-init"><span class="cfg-key">Chat ID</span><div class="cfg-val"><input type="text" id="nch-chat-id" placeholder="oc_xxxxxxxx"><div class="hint">飞书群聊 Chat ID</div></div></div>
+					<div class="cfg-row nch-wecom-row hidden-init"><span class="cfg-key">wecom_msgtype</span><div class="cfg-val">
+						<select id="nch-wecom-msgtype">
+							<option value="markdown">markdown（默认）</option>
+							<option value="markdown_v2">markdown_v2</option>
+							<option value="text">text（纯文本，支持 @提及）</option>
+							<option value="image">image（图片，无媒体时回退 markdown）</option>
+							<option value="file">file（文件，无媒体时回退 markdown）</option>
+						</select>
+						<div class="hint">企业微信消息类型；仅 text 支持 @提及</div>
+					</div></div>
+					<div class="cfg-row nch-wecom-row hidden-init"><span class="cfg-key">wecom_mentioned_list</span><div class="cfg-val"><input type="text" id="nch-wecom-mentioned-list" placeholder="如 zhangsan, @all"><div class="hint">@提及 用户 ID，逗号分隔；仅 text 类型生效</div></div></div>
+					<div class="cfg-row nch-wecom-row hidden-init"><span class="cfg-key">wecom_mentioned_mobile_list</span><div class="cfg-val"><input type="text" id="nch-wecom-mentioned-mobile" placeholder="如 13800000000, @all"><div class="hint">@提及 手机号，逗号分隔；仅 text 类型生效</div></div></div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">enabled</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="nch-enabled" checked><span class="cfg-slider"></span></span><span class="cfg-toggle-label">启用此渠道</span></label></div></div>
 					<div class="cfg-row toggle-row"><span class="cfg-key">allow_private_ip</span><div class="cfg-val"><label class="cfg-toggle"><span class="cfg-switch"><input type="checkbox" id="nch-private-ip"><span class="cfg-slider"></span></span><span class="cfg-toggle-label">允许内网地址（测试用）</span></label></div></div>
 					<div class="cfg-actions">
@@ -625,6 +666,11 @@
 					if (q) q.value = c.qps || 10;
 					var t = document.getElementById(eng + '-timeout');
 					if (t) t.value = c.timeout || 30;
+					// Censys 特殊处理：回显 api_id（api_secret 不回显）
+					if (eng === 'censys') {
+						var cid = document.getElementById('censys-api-id');
+						if (cid) cid.value = c.api_id || '';
+					}
 					var e = document.getElementById(eng + '-email');
 					if (e) e.value = c.email || '';
 					var d = document.getElementById(eng + '-dot');
@@ -698,13 +744,13 @@
 					body: JSON.stringify({ section: "notifications", data: data })
 				});
 				var result = await resp.json();
-				showResult("feishu-app-result", result.success ? "ok" : "fail", result.success ? (result.message || "已保存，重启后生效") : extractErrorMsg(result));
+			showResult("feishu-app-result", result.success ? "ok" : "fail", result.success ? (result.restart_required ? "已保存，重启后生效" : "已保存并生效") : extractErrorMsg(result));
 				if (result.success) loadConfig();
 			} catch (e) { showResult("feishu-app-result", "fail", "保存失败: " + e.message); }
 		};
 
 	window.saveAllEngines = async function() {
-		var engines = ['fofa', 'hunter', 'zoomeye', 'quake', 'shodan'];
+		var engines = ['fofa', 'hunter', 'zoomeye', 'quake', 'shodan', 'censys', 'daydaymap'];
 		var data = {};
 		engines.forEach(function(eng) {
 			var engData = {
@@ -722,8 +768,17 @@
 				var u = document.getElementById(eng + '-base-url');
 				if (u) engData.base_url = u.value;
 			}
+			// Censys 特殊处理：api_id + api_secret
+			if (eng === 'censys') {
+				var cid = document.getElementById('censys-api-id');
+				if (cid && cid.value) engData.api_id = cid.value;
+				var csec = document.getElementById('censys-api-secret');
+				if (csec && csec.value) engData.api_secret = csec.value;
+			}
 			var ak = document.getElementById(eng + '-api-key');
 			if (ak && ak.value) engData.api_key = ak.value;
+			var bak = document.getElementById(eng + '-backup-api-key');
+			if (bak && bak.value) engData.backup_api_key = bak.value;
 			var em = document.getElementById(eng + '-email');
 			if (em && em.value) engData.email = em.value;
 			data[eng] = engData;
@@ -737,7 +792,7 @@
 			});
 			var result = await resp.json();
 			showResult('engines-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '全部保存成功') : extractErrorMsg(result));
-			Object.keys(data).forEach(function(eng) {
+			if (resp.ok && result.success) Object.keys(data).forEach(function(eng) {
 				var d = document.getElementById(eng + '-dot');
 				if (d) d.className = 'dot ' + (data[eng].enabled ? 'on' : 'off');
 			});
@@ -775,7 +830,7 @@
 			if (data.success) {
 				showResult('icp-result', 'ok', '连接成功: ' + (data.base_url || ''));
 			} else {
-				showResult('icp-result', 'fail', '连接失败: ' + (data.error || '未知错误'));
+				showResult('icp-result', 'fail', '连接失败: ' + extractErrorMsg(data));
 			}
 		} catch (e) {
 			showResult('icp-result', 'fail', '检测失败: ' + e.message);
@@ -798,7 +853,7 @@
 				}})
 			});
 			var result = await resp.json();
-			showResult('screenshot-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '保存成功') : extractErrorMsg(result));
+			showResult('screenshot-result', result.success ? 'ok' : 'fail', result.success ? (result.restart_required ? '已保存，重启后生效' : '已保存并生效') : extractErrorMsg(result));
 		} catch (e) { showResult('screenshot-result', 'fail', '保存失败: ' + e.message); }
 	};
 
@@ -814,7 +869,7 @@
 				}})
 			});
 			var result = await resp.json();
-			showResult('system-result', result.success ? 'ok' : 'fail', result.success ? (result.message || '保存成功') : extractErrorMsg(result));
+			showResult('system-result', result.success ? 'ok' : 'fail', result.success ? (result.restart_required ? '已保存，重启后生效' : '已保存并生效') : extractErrorMsg(result));
 		} catch (e) { showResult('system-result', 'fail', '保存失败: ' + e.message); }
 	};
 
@@ -839,7 +894,10 @@
 	}
 
 	// --- Cookie panel ---
-	var ckIds = { fofa: 'ck-fofa', hunter: 'ck-hunter', zoomeye: 'ck-zoomeye', quake: 'ck-quake' };
+	var ckIds = {
+		fofa: 'ck-fofa', hunter: 'ck-hunter', zoomeye: 'ck-zoomeye', quake: 'ck-quake',
+		shodan: 'ck-shodan', censys: 'ck-censys', daydaymap: 'ck-daydaymap'
+	};
 
 	async function saveCookiesPanel() {
 		var form = new URLSearchParams();
@@ -861,13 +919,22 @@
 
 	async function verifyCookiesPanel() {
 		try {
+			var form = new URLSearchParams();
+			form.append('query', 'port="80"');
+			form.append('engines', Object.keys(ckIds).join(','));
 			var resp = await fetch('/api/v1/cookies/verify', {
 				method: 'POST',
-				headers: { 'Authorization': 'Bearer ' + tok() }
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + tok() },
+				body: form.toString()
 			});
 			var data = await resp.json();
-			showResult('cookies-result', data.success ? 'ok' : 'fail',
-				data.success ? '验证完成' : (extractErrorMsg(data)));
+			if (!resp.ok || !data.results) {
+				showResult('cookies-result', 'fail', extractErrorMsg(data));
+				return;
+			}
+			var results = Object.keys(data.results);
+			var passed = results.filter(function(eng) { return data.results[eng] && data.results[eng].ok; }).length;
+			showResult('cookies-result', passed > 0 ? 'ok' : 'fail', '验证完成：' + passed + '/' + results.length + ' 个引擎会话可用');
 		} catch (e) { showResult('cookies-result', 'fail', '验证失败: ' + e.message); }
 	}
 
@@ -1033,12 +1100,22 @@
 		for (var i = 0; i < notifyChannels.length; i++) {
 			var ch = notifyChannels[i];
 			var color = typeBadge[ch.type] || '#666';
+			var typeName = typeNames[ch.type] || escHtml(ch.type || '未知');
+			var wecomSummary = '';
+			if (ch.type === 'wecom' && (ch.wecom_msgtype || (ch.wecom_mentioned_list && ch.wecom_mentioned_list.length) || (ch.wecom_mentioned_mobile_list && ch.wecom_mentioned_mobile_list.length))) {
+				var bits = [];
+				if (ch.wecom_msgtype) bits.push('msgtype: ' + escHtml(ch.wecom_msgtype));
+				if (ch.wecom_mentioned_list && ch.wecom_mentioned_list.length) bits.push('@ ' + escHtml(ch.wecom_mentioned_list.join(', ')));
+				if (ch.wecom_mentioned_mobile_list && ch.wecom_mentioned_mobile_list.length) bits.push('@手机 ' + escHtml(ch.wecom_mentioned_mobile_list.join(', ')));
+				wecomSummary = '<div class="nch-summary hint">' + bits.join(' · ') + '</div>';
+			}
 			html += '<div class="cfg-row nch-row">' +
 				'<div class="nch-flex">' +
-				'<span class="nch-badge" data-badge-color="' + color + '">' + (typeNames[ch.type] || ch.type) + '</span>' +
+				'<span class="nch-badge" data-badge-color="' + color + '">' + typeName + '</span>' +
 				'<span class="nch-id">' + escHtml(ch.id) + '</span>' +
 				(ch.enabled ? '<span class="dot on ml-4"></span>' : '<span class="dot off ml-4"></span>') +
 				'</div>' +
+				wecomSummary +
 				'<div class="nch-actions">' +
 				'<button class="cfg-btn cfg-btn-test nch-edit-btn nch-btn" data-ch-id="' + escAttr(ch.id) + '">编辑</button>' +
 				'<button class="cfg-btn cfg-btn-test nch-test-btn nch-btn" data-ch-id="' + escAttr(ch.id) + '">测试</button>' +
@@ -1054,12 +1131,15 @@
 	function updateNotifyFormVisibility() {
 		var type = document.getElementById('nch-type').value;
 		var isApp = type === 'feishu_app';
+		var isWecom = type === 'wecom';
 		var webhookRows = document.querySelectorAll('.nch-webhook-row');
 		var appRows = document.querySelectorAll('.nch-app-row');
+		var wecomRows = document.querySelectorAll('.nch-wecom-row');
 		webhookRows.forEach(function(row) { row.style.display = isApp ? 'none' : 'block'; });
 		// nch-app-row has class "hidden-init" (display:none); clearing inline display
 		// would let the class win, so use 'block' to actually show the rows.
 		appRows.forEach(function(row) { row.style.display = isApp ? 'block' : 'none'; });
+		wecomRows.forEach(function(row) { row.style.display = isWecom ? 'block' : 'none'; });
 	}
 
 	function showNotifyForm(isEdit) {
@@ -1071,6 +1151,7 @@
 
 		if (isEdit) {
 			document.getElementById('nch-id').disabled = true;
+			document.getElementById('nch-type').disabled = true;
 			var ch = findChannel(isEdit);
 			if (ch) {
 				document.getElementById('nch-id').value = ch.id;
@@ -1080,11 +1161,16 @@
 				document.getElementById('nch-app-id').value = ch.app_id || '';
 				document.getElementById('nch-app-secret').value = '';
 				document.getElementById('nch-chat-id').value = ch.chat_id || '';
+				document.getElementById('nch-wecom-msgtype').value = ch.wecom_msgtype || 'markdown';
+				document.getElementById('nch-wecom-mentioned-list').value = (ch.wecom_mentioned_list || []).join(', ');
+				document.getElementById('nch-wecom-mentioned-mobile').value = (ch.wecom_mentioned_mobile_list || []).join(', ');
 				document.getElementById('nch-enabled').checked = ch.enabled;
+				document.getElementById('nch-private-ip').checked = !!ch.allow_private_ip;
 			}
 			document.getElementById('btn-nch-test').style.display = 'inline-block';
 		} else {
 			document.getElementById('nch-id').disabled = false;
+			document.getElementById('nch-type').disabled = false;
 			document.getElementById('nch-id').value = '';
 			document.getElementById('nch-type').value = 'dingtalk';
 			document.getElementById('nch-url').value = '';
@@ -1092,6 +1178,9 @@
 			document.getElementById('nch-app-id').value = '';
 			document.getElementById('nch-app-secret').value = '';
 			document.getElementById('nch-chat-id').value = '';
+			document.getElementById('nch-wecom-msgtype').value = 'markdown';
+			document.getElementById('nch-wecom-mentioned-list').value = '';
+			document.getElementById('nch-wecom-mentioned-mobile').value = '';
 			document.getElementById('nch-enabled').checked = true;
 			document.getElementById('nch-private-ip').checked = false;
 			document.getElementById('btn-nch-test').style.display = 'none';
@@ -1104,6 +1193,7 @@
 		document.getElementById('notify-form-panel').style.display = 'none';
 		editingChannelId = null;
 		document.getElementById('nch-id').disabled = false;
+		document.getElementById('nch-type').disabled = false;
 		document.getElementById('btn-nch-test').style.display = 'none';
 	}
 
@@ -1124,18 +1214,26 @@
 		var appId = document.getElementById('nch-app-id').value.trim();
 		var appSecret = document.getElementById('nch-app-secret').value;
 		var chatId = document.getElementById('nch-chat-id').value.trim();
+		var wecomMsgType = document.getElementById('nch-wecom-msgtype').value;
+		var wecomMentions = splitList(document.getElementById('nch-wecom-mentioned-list').value);
+		var wecomMobile = splitList(document.getElementById('nch-wecom-mentioned-mobile').value);
 
 		if (!id) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '请输入渠道 ID'); return; }
 		if (type === 'feishu_app') {
-			if (!appId || !appSecret || !chatId) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '飞书应用需要填写 App ID、App Secret 和 Chat ID'); return; }
-		} else if (type !== 'log' && !url) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '请输入 Webhook URL'); return; }
+			if (!appId || !chatId || (!editingChannelId && !appSecret)) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '飞书应用需要填写 App ID、App Secret 和 Chat ID'); return; }
+		} else if (type !== 'log' && !url && !editingChannelId) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '请输入 Webhook URL'); return; }
 
-		var body = { id: id, type: type, enabled: enabled, webhook_url: url, allow_private_ip: allowPrivate };
+		var body = { id: id, type: type, enabled: enabled, webhook_url: url, allow_private_ip: allowPrivate, preserve_existing: !!editingChannelId };
 		if (secret) body.secret = secret;
 		if (type === 'feishu_app') {
 			body.app_id = appId;
 			body.app_secret = appSecret;
 			body.chat_id = chatId;
+		}
+		if (type === 'wecom') {
+			body.wecom_msgtype = wecomMsgType;
+			body.wecom_mentioned_list = wecomMentions;
+			body.wecom_mentioned_mobile_list = wecomMobile;
 		}
 
 		try {
@@ -1205,6 +1303,13 @@
 				body.app_secret = document.getElementById('nch-app-secret').value || ch.app_secret || '';
 				body.chat_id = document.getElementById('nch-chat-id').value.trim() || ch.chat_id || '';
 			}
+			if (ch.type === 'wecom' || document.getElementById('nch-type').value === 'wecom') {
+				body.wecom_msgtype = document.getElementById('nch-wecom-msgtype').value || ch.wecom_msgtype || '';
+				var testMentions = splitList(document.getElementById('nch-wecom-mentioned-list').value);
+				var testMobile = splitList(document.getElementById('nch-wecom-mentioned-mobile').value);
+				body.wecom_mentioned_list = testMentions.length ? testMentions : null;
+				body.wecom_mentioned_mobile_list = testMobile.length ? testMobile : null;
+			}
 			var resp = await fetch('/api/v1/notifications/channels/test', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() },
@@ -1217,6 +1322,11 @@
 				showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', extractErrorMsg(data));
 			}
 		} catch (e) { showResult(editingChannelId ? 'notify-form-result' : 'notify-result', 'fail', '测试失败: ' + e.message); }
+	}
+
+	// splitList parses a comma-separated list of mentions (ASCII or full-width comma).
+	function splitList(raw) {
+		return (raw || '').split(/[,，]/).map(function(s) { return s.trim(); }).filter(Boolean);
 	}
 
 	// extractErrorMsg pulls the human-readable message from a backend error response.

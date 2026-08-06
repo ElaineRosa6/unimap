@@ -2,7 +2,9 @@ package tamper
 
 import (
 	"context"
-	"os/exec"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -84,6 +86,102 @@ func TestHashStorage_SaveAndLoadBaseline(t *testing.T) {
 			t.Errorf("expected sorted URLs, got %v", urls)
 		}
 	})
+}
+
+func TestHashStorage_DeleteCheckRecordsRemovesIndex(t *testing.T) {
+	storage := NewHashStorage(t.TempDir())
+	url := "https://example.test"
+	if err := storage.SaveCheckRecord(url, &CheckRecord{URL: url, CheckType: "normal"}); err != nil {
+		t.Fatalf("save check record: %v", err)
+	}
+	if _, err := storage.ListAllCheckRecords(); err != nil {
+		t.Fatalf("list check records: %v", err)
+	}
+	if err := storage.DeleteCheckRecords(url); err != nil {
+		t.Fatalf("delete check records: %v", err)
+	}
+	records, err := storage.ListAllCheckRecords()
+	if err != nil {
+		t.Fatalf("list after delete: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("expected deleted URL absent from index, got %#v", records)
+	}
+}
+
+func TestHashStorage_ListCheckRecordsFiltersAndPaginatesIndexedRecords(t *testing.T) {
+	storage := NewHashStorage(t.TempDir())
+	primaryURL := "https://primary.example.test"
+	otherURL := "https://other.example.test"
+	for _, record := range []*CheckRecord{
+		{ID: "primary-newest", URL: primaryURL, Timestamp: 300},
+		{ID: "primary-middle", URL: primaryURL, Timestamp: 200},
+		{ID: "primary-oldest", URL: primaryURL, Timestamp: 100},
+		{ID: "other-newest", URL: otherURL, Timestamp: 400},
+	} {
+		if err := storage.SaveCheckRecord(record.URL, record); err != nil {
+			t.Fatalf("save check record: %v", err)
+		}
+	}
+	if _, err := storage.ListAllCheckRecords(); err != nil {
+		t.Fatalf("initialize check record index: %v", err)
+	}
+
+	page, err := storage.ListCheckRecords(CheckRecordQuery{
+		URL:    primaryURL,
+		Limit:  1,
+		Offset: 1,
+	})
+	if err != nil {
+		t.Fatalf("list paginated check records: %v", err)
+	}
+	if page.Total != 3 {
+		t.Fatalf("total = %d, want 3", page.Total)
+	}
+	if len(page.Records) != 1 || page.Records[0].ID != "primary-middle" {
+		t.Fatalf("unexpected page: %#v", page.Records)
+	}
+}
+
+func TestHashStorage_ListCheckRecordsFiltersByTimeBeforeCountingAndPagination(t *testing.T) {
+	storage := NewHashStorage(t.TempDir())
+	for _, record := range []*CheckRecord{
+		{ID: "old", URL: "https://old.example.test", Timestamp: 100},
+		{ID: "start", URL: "https://range.example.test", Timestamp: 200},
+		{ID: "end", URL: "https://range.example.test", Timestamp: 300},
+		{ID: "new", URL: "https://new.example.test", Timestamp: 400},
+	} {
+		if err := storage.SaveCheckRecord(record.URL, record); err != nil {
+			t.Fatalf("save check record: %v", err)
+		}
+	}
+
+	page, err := storage.ListCheckRecords(CheckRecordQuery{
+		StartTime: 200,
+		EndTime:   300,
+		Limit:     1,
+	})
+	if err != nil {
+		t.Fatalf("list time-filtered records: %v", err)
+	}
+	if page.Total != 2 {
+		t.Fatalf("total = %d, want 2", page.Total)
+	}
+	if len(page.Records) != 1 || page.Records[0].ID != "end" {
+		t.Fatalf("unexpected first page: %#v", page.Records)
+	}
+	if len(page.URLs) != 1 || page.URLs[0] != "https://range.example.test" {
+		t.Fatalf("URL options should respect time range: %#v", page.URLs)
+	}
+}
+
+func TestNormalizeCheckRecordQueryAllowsExportLimit(t *testing.T) {
+	if got := normalizeCheckRecordQuery(CheckRecordQuery{Limit: 10000}).Limit; got != 10000 {
+		t.Fatalf("limit = %d, want 10000", got)
+	}
+	if got := normalizeCheckRecordQuery(CheckRecordQuery{Limit: 10001}).Limit; got != 10000 {
+		t.Fatalf("capped limit = %d, want 10000", got)
+	}
 }
 
 func TestHashStorage_SaveAndLoadCheckRecords(t *testing.T) {
@@ -265,8 +363,8 @@ func TestDetector_GetCheckStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCheckStats failed: %v", err)
 	}
-	if stats["total_checks"] != 0 {
-		t.Errorf("expected 0 total checks, got %d", stats["total_checks"])
+	if stats.TotalChecks != 0 {
+		t.Errorf("expected 0 total checks, got %d", stats.TotalChecks)
 	}
 }
 
@@ -288,22 +386,29 @@ func TestDetector_DeleteCheckRecords(t *testing.T) {
 // --- Detector CheckTampering Tests ---
 
 func TestDetector_CheckTampering_NoBaseline(t *testing.T) {
-	// This test requires Chrome/CDP to be available
-	if _, err := exec.LookPath("chrome"); err != nil {
-		if _, err := exec.LookPath("google-chrome"); err != nil {
-			t.Skip("Chrome not available, skipping CDP-dependent test")
-		}
-	}
+	// 用本地 httptest server 提供可加载的页面。
+	// 采用 HTTP Fast 模式（不走 chromedp）以避免 CI 环境下 chromedp 的
+	// "websocket url timeout reached" 不稳定；本用例只验证"无 baseline 时
+	// CheckTampering 正常返回"，与渲染引擎无关。
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<!DOCTYPE html><html><head><title>No Baseline</title></head>
+<body><main><h1>Test</h1></main></body></html>`)
+	}))
+	defer ts.Close()
 
 	dir := t.TempDir()
-	d := NewDetector(DetectorConfig{BaseDir: dir})
+	d := NewDetector(DetectorConfig{
+		BaseDir:         dir,
+		PerformanceMode: PerformanceModeFast,
+	})
+	allowLoopbackTestPageLoader(d)
 
 	ctx := context.Background()
-	result, err := d.CheckTampering(ctx, "https://no-baseline.com")
+	result, err := d.CheckTampering(ctx, ts.URL)
 	if err != nil {
 		t.Fatalf("CheckTampering failed: %v", err)
 	}
-	// Without Chrome, ComputePageHash will fail, returning an error
+	// Without baseline, ComputePageHash succeeds and status defaults to normal.
 	if result != nil {
 		t.Logf("CheckTampering returned status: %s", result.Status)
 	}

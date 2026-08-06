@@ -18,6 +18,7 @@ type CollectResult struct {
 	HasMore          bool                 `json:"has_more,omitempty"`
 	IsLoginWall      bool                 `json:"is_login_wall,omitempty"`
 	LoginRequired    bool                 `json:"login_required,omitempty"`
+	BrowserChallenge bool                 `json:"browser_challenge,omitempty"`
 	ExtractionMethod string               `json:"extraction_method,omitempty"`
 	RowSelectorUsed  string               `json:"row_selector_used,omitempty"`
 	RowsFound        int                  `json:"rows_found,omitempty"`

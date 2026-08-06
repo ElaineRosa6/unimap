@@ -1,9 +1,51 @@
 package distributed
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestTaskQueueEnqueueRollsBackWhenSnapshotFails(t *testing.T) {
+	blockingFile := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	q := NewTaskQueueWithPath(filepath.Join(blockingFile, "queue.json"))
+	t.Cleanup(q.Stop)
+
+	if _, err := q.Enqueue(TaskEnvelope{TaskID: "task-1", TaskType: "scan"}); err == nil {
+		t.Fatal("expected enqueue persistence failure")
+	}
+	if task, err := q.Get("task-1"); err != nil || task != nil {
+		t.Fatalf("failed enqueue must not remain visible: task=%+v err=%v", task, err)
+	}
+}
+
+func TestTaskQueueClaimRollsBackWhenSnapshotFails(t *testing.T) {
+	q := NewTaskQueueWithPath(filepath.Join(t.TempDir(), "queue.json"))
+	t.Cleanup(q.Stop)
+	if _, err := q.Enqueue(TaskEnvelope{TaskID: "task-1", TaskType: "scan"}); err != nil {
+		t.Fatal(err)
+	}
+
+	blockingFile := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	q.snapshotPath = filepath.Join(blockingFile, "queue.json")
+	if _, err := q.Claim("node-1", nil); err == nil {
+		t.Fatal("expected claim persistence failure")
+	}
+	task, err := q.Get("task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task == nil || task.Status != TaskStatusPending || task.AssignedNode != "" {
+		t.Fatalf("failed claim must roll back: %+v", task)
+	}
+}
 
 func TestTaskQueueEnqueueClaimResult(t *testing.T) {
 	q := NewTaskQueue()

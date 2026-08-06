@@ -57,13 +57,16 @@ func TestExtensionProvider_BuildTargetURL(t *testing.T) {
 		wantErr  bool
 	}{
 		{"url provided", "http://example.com", "", "", "", "http://example.com", false},
-		{"ip only", "", "10.0.0.1", "", "", "http://10.0.0.1", false},
-		{"ip + port 443", "", "10.0.0.1", "443", "", "https://10.0.0.1", false},
-		{"ip + port 80", "", "10.0.0.1", "80", "", "http://10.0.0.1", false},
-		{"ip + custom port", "", "10.0.0.1", "8080", "", "http://10.0.0.1:8080", false},
-		{"ip + https protocol", "", "10.0.0.1", "9090", "https", "https://10.0.0.1:9090", false},
-		{"ip + http protocol", "", "10.0.0.1", "443", "http", "http://10.0.0.1", false},
+		{"ip only", "", "93.184.216.34", "", "", "http://93.184.216.34", false},
+		{"ip + port 443", "", "93.184.216.34", "443", "", "https://93.184.216.34", false},
+		{"ip + port 80", "", "93.184.216.34", "80", "", "http://93.184.216.34", false},
+		{"ip + custom port", "", "93.184.216.34", "8080", "", "http://93.184.216.34:8080", false},
+		{"ip + https protocol", "", "93.184.216.34", "9090", "https", "https://93.184.216.34:9090", false},
+		{"ip + http protocol", "", "93.184.216.34", "443", "http", "http://93.184.216.34", false},
 		{"no url, no ip", "", "", "", "", "", true},
+		{"private ip blocked", "", "10.0.0.1", "", "", "", true},
+		{"loopback blocked", "", "127.0.0.1", "8080", "", "", true},
+		{"private url blocked", "http://192.168.1.1/admin", "", "", "", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -259,6 +262,83 @@ func TestExtensionProvider_CollectSearchEngineResult_BridgeStructuredData(t *tes
 	}
 }
 
+func TestExtensionProvider_CollectAndCaptureSearchEngineResult_UsesCombinedActionAndLongTimeout(t *testing.T) {
+	client := &mockBridgeClient{
+		awaitResult: BridgeResult{
+			Success:   true,
+			ImagePath: "/tmp/combined.png",
+			StructuredCollectedData: &model.BridgeCollectedData{
+				Total: 1,
+				Items: []model.CollectedDataItem{{IP: "1.2.3.4", Port: 443}},
+			},
+		},
+	}
+	svc := NewBridgeService(client, 5, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	p := NewExtensionProvider(svc, nil)
+	got, path, err := p.CollectAndCaptureSearchEngineResult(context.Background(), "fofa", "test", "q1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path != "/tmp/combined.png" {
+		t.Fatalf("unexpected image path: %q", path)
+	}
+	if len(got) != 1 || len(got[0].Assets) != 1 {
+		t.Fatalf("expected one collected asset, got %#v", got)
+	}
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.submitCalls) != 1 {
+		t.Fatalf("expected one bridge task, got %d", len(client.submitCalls))
+	}
+	task := client.submitCalls[0]
+	if task.Action != "collect_and_capture" {
+		t.Fatalf("expected collect_and_capture action, got %q", task.Action)
+	}
+	if task.Timeout != collectAndCaptureBridgeTaskTimeout {
+		t.Fatalf("expected timeout %s, got %s", collectAndCaptureBridgeTaskTimeout, task.Timeout)
+	}
+}
+
+func TestExtensionProvider_CollectAndCaptureQuakeReturnsStructuredAssets(t *testing.T) {
+	client := &mockBridgeClient{
+		awaitResult: BridgeResult{
+			Success:   true,
+			ImagePath: "/tmp/quake.png",
+			FinalURL:  "https://quake.360.net/quake/#/searchResult",
+			StructuredCollectedData: &model.BridgeCollectedData{
+				Engine: "quake",
+				Total:  1,
+				Items: []model.CollectedDataItem{{
+					IP:       "203.0.113.10",
+					Port:     443,
+					Protocol: "https",
+					Host:     "example.test",
+				}},
+			},
+		},
+	}
+	svc := NewBridgeService(client, 1, 5*time.Second)
+	svc.urlValidator = func(context.Context, string) error { return nil }
+	svc.Start(t.Context())
+	defer svc.Stop()
+
+	provider := NewExtensionProvider(svc, nil)
+	results, imagePath, err := provider.CollectAndCaptureSearchEngineResult(t.Context(), "quake", `port:"443"`, "q1")
+	if err != nil {
+		t.Fatalf("Quake collect_and_capture failed: %v", err)
+	}
+	if imagePath != "/tmp/quake.png" || len(results) != 1 || len(results[0].Assets) != 1 {
+		t.Fatalf("unexpected Quake result: path=%q results=%#v", imagePath, results)
+	}
+	if results[0].Assets[0].IP != "203.0.113.10" {
+		t.Fatalf("Quake asset was not normalized: %#v", results[0].Assets[0])
+	}
+}
+
 func TestExtensionProvider_OpenSearchEngineResult_UsesOpenAction(t *testing.T) {
 	client := &mockBridgeClient{
 		awaitResult: BridgeResult{Success: true},
@@ -313,6 +393,7 @@ func TestExtensionProvider_CaptureTargetWebsite_BridgeSuccess(t *testing.T) {
 	defer svc.Stop()
 
 	p := NewExtensionProvider(svc, nil)
+	p.egressAttested = true
 
 	got, err := p.CaptureTargetWebsite(context.Background(), "http://example.com", "", "", "", "q1")
 	if err != nil {
@@ -320,6 +401,15 @@ func TestExtensionProvider_CaptureTargetWebsite_BridgeSuccess(t *testing.T) {
 	}
 	if got != "/tmp/target.png" {
 		t.Errorf("got path = %q, want %q", got, "/tmp/target.png")
+	}
+}
+
+func TestExtensionProvider_CaptureTargetWebsiteRequiresAttestedEgress(t *testing.T) {
+	svc := NewBridgeService(&mockBridgeClient{}, 1, time.Second)
+	p := NewExtensionProvider(svc, nil)
+	_, err := p.CaptureTargetWebsite(t.Context(), "https://example.com", "", "", "", "q1")
+	if err == nil || !strings.Contains(err.Error(), "attested browser egress") {
+		t.Fatalf("CaptureTargetWebsite error = %v, want attested-egress failure", err)
 	}
 }
 
@@ -332,8 +422,9 @@ func TestExtensionProvider_CaptureTargetWebsite_IPPort(t *testing.T) {
 	defer svc.Stop()
 
 	p := NewExtensionProvider(svc, nil)
+	p.egressAttested = true
 
-	got, err := p.CaptureTargetWebsite(context.Background(), "", "10.0.0.1", "8080", "", "q1")
+	got, err := p.CaptureTargetWebsite(context.Background(), "", "93.184.216.34", "8080", "", "q1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -351,6 +442,7 @@ func TestExtensionProvider_CaptureBatchURLs(t *testing.T) {
 	defer svc.Stop()
 
 	p := NewExtensionProvider(svc, nil)
+	p.egressAttested = true
 
 	urls := []string{"http://example.com", "http://example.org"}
 	results, err := p.CaptureBatchURLs(context.Background(), urls, "batch1", 2)
@@ -377,6 +469,7 @@ func TestExtensionProvider_CaptureBatchURLs_InvalidURL(t *testing.T) {
 	defer svc.Stop()
 
 	p := NewExtensionProvider(svc, nil)
+	p.egressAttested = true
 
 	results, err := p.CaptureBatchURLs(context.Background(), []string{""}, "batch1", 1)
 	if err != nil {

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,10 +12,41 @@ import (
 	"testing"
 	"time"
 
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/screenshot"
+	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
 )
+
+type successfulScreenshotProvider struct {
+	path string
+}
+
+func (p *successfulScreenshotProvider) CaptureSearchEngineResult(context.Context, string, string, string) (string, error) {
+	return p.path, nil
+}
+
+func (p *successfulScreenshotProvider) CaptureTargetWebsite(_ context.Context, _, _, _, _, queryID string) (string, error) {
+	if err := screenshot.ValidateIdentifier(queryID); err != nil {
+		return "", err
+	}
+	return p.path, nil
+}
+
+func (p *successfulScreenshotProvider) CaptureBatchURLs(context.Context, []string, string, int) ([]screenshot.BatchScreenshotResult, error) {
+	return nil, nil
+}
+
+func (p *successfulScreenshotProvider) GetScreenshotDirectory() string { return filepath.Dir(p.path) }
+
+func (p *successfulScreenshotProvider) OpenSearchEngineResult(context.Context, string, string) (string, error) {
+	return p.path, nil
+}
+
+func (p *successfulScreenshotProvider) CollectSearchEngineResult(context.Context, string, string, string) ([]collection.CollectResult, error) {
+	return nil, nil
+}
 
 func buildTestServerWithScreenshotBase(baseDir string) *Server {
 	cfg := &config.Config{}
@@ -344,6 +376,37 @@ func TestHandleScreenshot_PrivateIPBlockedLocalhost(t *testing.T) {
 	}
 }
 
+func TestHandleScreenshotGeneratesSafeIdentifier(t *testing.T) {
+	pngPath := filepath.Join(t.TempDir(), "capture.png")
+	png := []byte("\x89PNG\r\n\x1a\nacceptance")
+	if err := os.WriteFile(pngPath, png, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	provider := &successfulScreenshotProvider{path: pngPath}
+	router := screenshot.NewScreenshotRouter(screenshot.RouterConfig{
+		Mode:     screenshot.ModeCDP,
+		Priority: screenshot.ModeCDP,
+	}, provider, nil, nil)
+	s := &Server{screenshotRouter: router}
+	body := strings.NewReader(`{"url":"https://93.184.216.34"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot", body)
+	req.Host = "localhost:8448"
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+
+	s.handleScreenshot(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.HasPrefix(w.Header().Get("Content-Type"), "image/png") {
+		t.Fatalf("content type = %q, want image/png", w.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(w.Body.String(), "acceptance") {
+		t.Fatalf("unexpected image response: %q", w.Body.String())
+	}
+}
+
 // ============================================================
 // handleSearchEngineScreenshot error path tests
 // ============================================================
@@ -479,6 +542,23 @@ func TestHandleBatchScreenshot_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestHandleBatchScreenshot_InvalidQueryID(t *testing.T) {
+	s := buildTestServerWithScreenshotBase(t.TempDir())
+	body := strings.NewReader(`{"query_id":"../escape","engines":[{"engine":"fofa","query":"test"}]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch", body)
+	req.Host = "localhost:8448"
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+	s.handleBatchScreenshot(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "invalid_query_id") {
+		t.Fatalf("expected invalid_query_id, got %q", w.Body.String())
+	}
+}
+
 // ============================================================
 // handleBatchURLsScreenshot error path tests
 // ============================================================
@@ -545,6 +625,102 @@ func TestHandleBatchURLsScreenshot_InvalidScheme(t *testing.T) {
 	assertBatchURLAcceptedWithFailedResult(t, s, w, "http/https")
 }
 
+func TestHandleBatchURLsScreenshot_DuplicateBatchID(t *testing.T) {
+	s := buildTestServerWithScreenshotBase(t.TempDir())
+	request := func() *httptest.ResponseRecorder {
+		body := strings.NewReader(`{"urls":["file:///etc/passwd"],"batch_id":"stable-batch"}`)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch-urls", body)
+		req.Host = "localhost:8448"
+		req.Header.Set("Origin", "http://localhost:8448")
+		w := httptest.NewRecorder()
+		s.handleBatchURLsScreenshot(w, req)
+		return w
+	}
+
+	if first := request(); first.Code != http.StatusAccepted {
+		t.Fatalf("first request status = %d, want 202: %s", first.Code, first.Body.String())
+	}
+	if second := request(); second.Code != http.StatusConflict {
+		t.Fatalf("duplicate request status = %d, want 409: %s", second.Code, second.Body.String())
+	}
+}
+
+func TestHandleBatchURLsScreenshot_InvalidBatchID(t *testing.T) {
+	s := buildTestServerWithScreenshotBase(t.TempDir())
+	body := strings.NewReader(`{"urls":["file:///etc/passwd"],"batch_id":"../escape"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/batch-urls", body)
+	req.Host = "localhost:8448"
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+	s.handleBatchURLsScreenshot(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "invalid_batch_id") {
+		t.Fatalf("expected invalid_batch_id, got %q", w.Body.String())
+	}
+}
+
+func TestBatchJobStoreCreateRollsBackOnPersistenceFailure(t *testing.T) {
+	db, err := batchdb.NewDatabase(filepath.Join(t.TempDir(), "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatal(initErr)
+	}
+	repo := batchdb.NewRepository(db.DB())
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store := newBatchJobStore()
+	store.repo = repo
+	if _, created, err := store.create("durable", 1); err == nil || created {
+		t.Fatalf("create = created %v, err %v; want persistence failure", created, err)
+	}
+	if got := store.getSnapshot("durable"); got != nil {
+		t.Fatalf("failed job remained in memory: %#v", got)
+	}
+}
+
+func TestBatchJobStoreCreateRejectsPersistedDuplicateOutsideMemory(t *testing.T) {
+	db, err := batchdb.NewDatabase(filepath.Join(t.TempDir(), "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatal(initErr)
+	}
+	repo := batchdb.NewRepository(db.DB())
+	original := &batchdb.BatchJobRecord{
+		ID:        "persisted-only",
+		Status:    string(batchJobCompleted),
+		Total:     1,
+		Completed: 1,
+		Success:   1,
+		StartedAt: time.Now().Add(-time.Hour),
+	}
+	if saveErr := repo.SaveJob(original); saveErr != nil {
+		t.Fatal(saveErr)
+	}
+
+	store := newBatchJobStore()
+	store.repo = repo // Deliberately do not load the persisted record into the map.
+	_, created, createErr := store.create(original.ID, 99)
+	if createErr != nil || created {
+		t.Fatalf("create persisted duplicate = created %v, err %v; want conflict", created, createErr)
+	}
+	got, err := repo.GetJob(original.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Status != original.Status || got.Total != original.Total {
+		t.Fatalf("persisted job was replaced: %#v", got)
+	}
+}
+
 func TestHandleBatchURLsScreenshot_InvalidJSON(t *testing.T) {
 	s := buildTestServerWithScreenshotBase(t.TempDir())
 	body := strings.NewReader(`not-json`)
@@ -564,13 +740,23 @@ func TestHandleBatchURLsScreenshot_InvalidJSON(t *testing.T) {
 // ============================================================
 
 func TestHandleScreenshotRouterStatus(t *testing.T) {
-	s := &Server{}
+	router := screenshot.NewScreenshotRouter(screenshot.RouterConfig{
+		Mode: screenshot.ModeAuto, Priority: screenshot.ModeCDP, Fallback: true,
+	}, nil, nil, nil)
+	s := &Server{screenshotRouter: router}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/router/status", nil)
 	w := httptest.NewRecorder()
 	s.handleScreenshotRouterStatus(w, req)
 
 	if w.Code != http.StatusOK && w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 200 or 503, got %d", w.Code)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["configured_mode"] != "auto" || body["ready"] != false {
+		t.Fatalf("unexpected router status: %v", body)
 	}
 }
 
@@ -635,5 +821,123 @@ func TestHandleScreenshotFileDelete_WrongMethod(t *testing.T) {
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+// ============================================================
+// writeBatchScreenshotError tests
+// ============================================================
+
+func TestWriteBatchScreenshotError_NoURLs(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeBatchScreenshotError(w, errors.New("no urls provided"))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestWriteBatchScreenshotError_TooMany(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeBatchScreenshotError(w, errors.New("too many urls"))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestWriteBatchScreenshotError_Default(t *testing.T) {
+	w := httptest.NewRecorder()
+	writeBatchScreenshotError(w, errors.New("some other error"))
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+}
+
+// ============================================================
+// handleSetScreenshotMode tests
+// ============================================================
+
+func TestHandleSetScreenshotMode_MethodNotAllowed(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/screenshot/mode", nil)
+	w := httptest.NewRecorder()
+	s.handleSetScreenshotMode(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestHandleSetScreenshotMode_InvalidMode(t *testing.T) {
+	s := &Server{config: &config.Config{}}
+	body := `{"mode":"invalid"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/mode", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+	s.handleSetScreenshotMode(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestHandleSetScreenshotMode_ValidMode(t *testing.T) {
+	s := &Server{config: &config.Config{}}
+	body := `{"mode":"cdp"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/mode", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+	s.handleSetScreenshotMode(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestHandleSetScreenshotMode_PersistenceFailureKeepsRuntimeMode(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Screenshot.Mode = "auto"
+	blocked := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mgr := config.NewManager(filepath.Join(blocked, "config.yaml"))
+	mgr.SetConfig(cfg.Clone())
+	router := screenshot.NewScreenshotRouter(screenshot.RouterConfig{Mode: screenshot.ModeAuto, Priority: screenshot.ModeCDP}, nil, nil, nil)
+	s := &Server{config: cfg, configManager: mgr, screenshotRouter: router}
+
+	body := `{"mode":"cdp"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/screenshot/mode", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+	s.handleSetScreenshotMode(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := router.ConfiguredMode(); got != screenshot.ModeAuto {
+		t.Fatalf("configured runtime mode changed after persistence failure: %q", got)
+	}
+	if got := router.CurrentMode(); got != screenshot.ModeCDP {
+		t.Fatalf("active runtime mode changed after persistence failure: %q", got)
+	}
+	if got := mgr.GetConfig().Screenshot.Mode; got != "auto" {
+		t.Fatalf("persisted snapshot changed after persistence failure: %q", got)
+	}
+}
+
+// ============================================================
+// clearAllEngineCookies tests
+// ============================================================
+
+func TestClearAllEngineCookies(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Engines.Fofa.Cookies = []config.Cookie{{Name: "test", Value: "val"}}
+	cfg.Engines.Hunter.Cookies = []config.Cookie{{Name: "test", Value: "val"}}
+	clearEngineCookies(cfg)
+	if len(cfg.Engines.Fofa.Cookies) != 0 {
+		t.Fatal("expected fofa cookies cleared")
+	}
+	if len(cfg.Engines.Hunter.Cookies) != 0 {
+		t.Fatal("expected hunter cookies cleared")
 	}
 }

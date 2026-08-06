@@ -36,6 +36,7 @@ type URLReachabilitySummary struct {
 	InvalidFormat int `json:"invalidFormat"`
 	Reachable     int `json:"reachable"`
 	Unreachable   int `json:"unreachable"`
+	Blocked       int `json:"blocked"`
 }
 
 // URLReachabilityResponse 批量可达性响应。
@@ -166,6 +167,17 @@ func (s *MonitorAppService) CheckURLReachability(ctx context.Context, urls []str
 		results[item.index] = item.item
 	}
 
+	summary := summarizeReachability(results)
+
+	return &URLReachabilityResponse{Summary: summary, Results: results}, nil
+}
+
+// summarizeReachability aggregates per-URL reachability results into a summary.
+// It counts every known status bucket (including "blocked" for SSRF-rejected
+// URLs) so that Total == Reachable + Unreachable + InvalidFormat + Blocked.
+// Unknown statuses fall through without affecting any bucket, matching the
+// historical behavior.
+func summarizeReachability(results []URLReachabilityResult) URLReachabilitySummary {
 	summary := URLReachabilitySummary{Total: len(results)}
 	for _, result := range results {
 		switch result.Status {
@@ -177,10 +189,11 @@ func (s *MonitorAppService) CheckURLReachability(ctx context.Context, urls []str
 		case "unreachable":
 			summary.FormatValid++
 			summary.Unreachable++
+		case "blocked":
+			summary.Blocked++
 		}
 	}
-
-	return &URLReachabilityResponse{Summary: summary, Results: results}, nil
+	return summary
 }
 
 func normalizeMonitorURLForService(rawURL string) (string, error) {

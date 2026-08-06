@@ -59,15 +59,32 @@ type ZoomEyeItem struct {
 	// Nested objects — variable structure, kept as map for flexibility
 	PortInfo map[string]interface{} `json:"portinfo"`
 	GeoInfo  map[string]interface{} `json:"geoinfo"`
+	// Extra preserves any top-level keys ZoomEye returns that this struct does
+	// not declare (e.g. timestamp), so they are not silently dropped.
+	Extra map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON captures unknown top-level keys into Extra instead of
+// dropping them, while decoding declared fields as usual.
+func (z *ZoomEyeItem) UnmarshalJSON(data []byte) error {
+	type alias ZoomEyeItem
+	var aux alias
+	extra, err := rawUnknown(data, &aux)
+	if err != nil {
+		return err
+	}
+	*z = ZoomEyeItem(aux)
+	z.Extra = extra
+	return nil
 }
 
 // ZoomEyeSearchResponse is the ZoomEye v2 search API response.
 type ZoomEyeSearchResponse struct {
-	Code    int    `json:"code"`
-	Error   string `json:"error"`
-	Message string `json:"message"`
-	Total   int    `json:"total"`
-	Query   string `json:"query"`
+	Code    int               `json:"code"`
+	Error   string            `json:"error"`
+	Message string            `json:"message"`
+	Total   int               `json:"total"`
+	Query   string            `json:"query"`
 	Data    []json.RawMessage `json:"data"`
 }
 
@@ -105,8 +122,28 @@ func (z *ZoomEyeAdapter) Translate(ast *model.UQLAST) (string, error) {
 		return "", fmt.Errorf("invalid AST")
 	}
 
-	query := z.translateNode(ast.Root)
-	return query, nil
+	if err := validateZoomEyeOperators(ast.Root); err != nil {
+		return "", err
+	}
+	return z.translateNode(ast.Root), nil
+}
+
+func validateZoomEyeOperators(node *model.UQLNode) error {
+	if node == nil {
+		return nil
+	}
+	if node.Type == "condition" && len(node.Children) >= 1 {
+		switch node.Children[0].Value {
+		case ">", ">=", "<", "<=":
+			return fmt.Errorf("zoomeye does not support comparison operator %q for field %s", node.Children[0].Value, node.Value)
+		}
+	}
+	for _, child := range node.Children {
+		if err := validateZoomEyeOperators(child); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (z *ZoomEyeAdapter) translateNode(node *model.UQLNode) string {
@@ -154,7 +191,8 @@ func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
 		"title":       "title",
 		"header":      "http.header",
 		"port":        "port",
-		"protocol":    "service",
+		"protocol":    "protocol",
+		"service":     "service",
 		"ip":          "ip",
 		"country":     "country",
 		"region":      "subdivisions",
@@ -169,7 +207,6 @@ func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
 		"banner":      "banner",
 		"server":      "http.header.server",
 		"host":        "hostname",
-		"url":         "site",
 		"status_code": "http.header.status_code",
 		"cert":        "ssl",
 	}
@@ -284,10 +321,10 @@ func parseZoomEyeSearchResponse(body []byte, page, pageSize int, engineName stri
 
 // Normalize 标准化结果
 func (z *ZoomEyeAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
-	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	if raw == nil || len(raw.RawData) == 0 {
-		return assets, nil
+		return []model.UnifiedAsset{}, nil
 	}
+	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	for _, item := range raw.RawData {
 		it, ok := item.(*ZoomEyeItem)
 		if !ok {
@@ -313,6 +350,16 @@ func normalizeZoomEyeItem(it *ZoomEyeItem, source string) *model.UnifiedAsset {
 	parseZoomEyeGeo(it, asset)
 	parseZoomEyeNetwork(it, asset)
 	parseZoomEyeExtra(it, asset)
+	// Preserve raw nested objects so their extra keys survive persistence.
+	if it.PortInfo != nil {
+		mergeAssetExtra(asset, map[string]interface{}{"portinfo": it.PortInfo})
+	}
+	if it.GeoInfo != nil {
+		mergeAssetExtra(asset, map[string]interface{}{"geoinfo": it.GeoInfo})
+	}
+	// Capture unknown top-level fields (e.g. timestamp) and promote any
+	// timestamp key to LastSeen.
+	applyExtras(asset, it.Extra)
 
 	return asset
 }
@@ -411,8 +458,8 @@ func parseZoomEyeBasicFields(it *ZoomEyeItem, asset *model.UnifiedAsset) {
 	if it.ServerName != "" {
 		asset.Server = it.ServerName
 	}
-	if it.URL != "" {
-		asset.URL = it.URL
+	if targetURL := normalizeHTTPURL(it.URL); targetURL != "" {
+		asset.URL = targetURL
 	}
 	if it.Domain != "" {
 		asset.Host = it.Domain
@@ -476,7 +523,8 @@ func parseZoomEyeNetwork(it *ZoomEyeItem, asset *model.UnifiedAsset) {
 	} else if it.ISP != "" {
 		asset.ISP = it.ISP
 	}
-	// Timestamp from Extension DOM extraction (last_seen) or API response (timestamp/icon-time)
+	// LastSeen: explicit last_seen (when present) is mapped here; the API's
+	// "timestamp" key is captured into it.Extra and promoted by applyExtras.
 	if it.LastSeen != "" {
 		asset.LastSeen = it.LastSeen
 	}

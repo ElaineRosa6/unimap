@@ -1,6 +1,9 @@
 package scheduler
 
 import (
+	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/unimap/project/internal/model"
@@ -40,6 +43,27 @@ func TestExtractStrings(t *testing.T) {
 			name:    "extra string value returns single-element slice",
 			payload: &model.TaskPayload{Extra: map[string]any{"engine": "fofa"}},
 			key:     "engine",
+			def:     []string{},
+			want:    []string{"fofa"},
+		},
+		{
+			name:    "comma separated string is split and trimmed",
+			payload: &model.TaskPayload{Extra: map[string]any{"ports": "22, 80,443"}},
+			key:     "ports",
+			def:     []string{},
+			want:    []string{"22", "80", "443"},
+		},
+		{
+			name:    "urls fall back to legacy targets",
+			payload: &model.TaskPayload{Extra: map[string]any{"targets": "https://a.test, https://b.test"}},
+			key:     "urls",
+			def:     []string{},
+			want:    []string{"https://a.test", "https://b.test"},
+		},
+		{
+			name:    "engines fall back to singular engine",
+			payload: &model.TaskPayload{Extra: map[string]any{"engine": "fofa"}},
+			key:     "engines",
 			def:     []string{},
 			want:    []string{"fofa"},
 		},
@@ -148,6 +172,13 @@ func TestExtractString(t *testing.T) {
 			want:    "domain=example.com",
 		},
 		{
+			name:    "query falls back to legacy extra nesting",
+			payload: &model.TaskPayload{Extra: map[string]any{"query": "domain=legacy.example"}},
+			key:     "query",
+			def:     "",
+			want:    "domain=legacy.example",
+		},
+		{
 			name:    "extra non-string value returns default",
 			payload: &model.TaskPayload{Extra: map[string]any{"custom": 123}},
 			key:     "custom",
@@ -215,12 +246,84 @@ func TestReadURLsFromFile(t *testing.T) {
 	// 测试空文件
 	t.Run("empty file", func(t *testing.T) {
 		r := NewURLImportRunner(importDir)
-		_, err := r.Execute(nil, &model.TaskPayload{Extra: map[string]any{"file_pattern": "nonexistent.txt"}})
+		_, err := r.Execute(context.TODO(), &model.TaskPayload{Extra: map[string]any{"file_pattern": "nonexistent.txt"}})
 		// 应该返回错误但不会panic
 		if err != nil {
 			t.Logf("Expected error for non-existent file: %v", err)
 		}
 	})
+}
+
+// sanitizeImportPattern 测试（FINDING-001/004 路径穿越修复回归）
+func TestSanitizeImportPattern(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		wantOK  bool
+	}{
+		{"empty", "", false},
+		{"whitespace", "   ", false},
+		{"simple glob", "*.txt", true},
+		{"subdir glob", "queries/*.txt", true},
+		{"dot only", ".", true},
+		{"star only", "*", true},
+		{"double star", "**/*.csv", true},
+		{"dotdot escape", "../../../../etc/*", false},
+		{"dotdot mid", "queries/../../*.txt", false},
+		{"dotdot prefix clean", "a/../../etc/*", false},
+		{"root relative posix", "/etc/*", false},
+		{"root relative backslash", `\etc\*`, false},
+		{"absolute posix", "/etc/secret.txt", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := sanitizeImportPattern(tt.pattern)
+			if tt.wantOK {
+				if err != nil {
+					t.Fatalf("expected OK, got error: %v", err)
+				}
+				if filepath.IsAbs(got) || containsDotDotSeg(got) {
+					t.Errorf("sanitized %q -> %q still escapes", tt.pattern, got)
+				}
+			} else if err == nil {
+				t.Errorf("expected error for %q, got %q", tt.pattern, got)
+			}
+		})
+	}
+}
+
+// containsDotDotSeg 检查规范化路径是否仍含 `..` 段
+func containsDotDotSeg(p string) bool {
+	for _, seg := range strings.Split(p, string(filepath.Separator)) {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+// URLImportRunner 对逃逸 file_pattern 必须报错而非枚举（FINDING-001 回归）
+func TestURLImportRunnerRejectsEscapingPattern(t *testing.T) {
+	importDir := t.TempDir()
+	r := NewURLImportRunner(importDir)
+	_, err := r.Execute(context.TODO(), &model.TaskPayload{Extra: map[string]any{
+		"file_pattern": "../../../../etc/*",
+	}})
+	if err == nil {
+		t.Fatal("expected error for escaping file_pattern, got nil")
+	}
+}
+
+// ICPImportRunner 对逃逸 file_pattern 必须报错而非枚举（FINDING-004 回归）
+func TestICPImportRunnerRejectsEscapingPattern(t *testing.T) {
+	importDir := t.TempDir()
+	r := NewICPImportRunner(importDir, nil)
+	_, err := r.Execute(context.TODO(), &model.TaskPayload{Extra: map[string]any{
+		"file_pattern": "../../../../etc/*",
+	}})
+	if err == nil {
+		t.Fatal("expected error for escaping file_pattern, got nil")
+	}
 }
 
 // QueryRunner 类型测试

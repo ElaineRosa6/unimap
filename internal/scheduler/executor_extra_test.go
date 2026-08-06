@@ -1,20 +1,95 @@
 package scheduler
 
 import (
+	"archive/zip"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/alerting"
+	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/distributed"
+	"github.com/unimap/project/internal/history"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/tamper"
 )
+
+type failingSchedulerAdapter struct{ name string }
+
+func (a *failingSchedulerAdapter) Name() string { return a.name }
+func (a *failingSchedulerAdapter) Translate(*model.UQLAST) (string, error) {
+	return "translated", nil
+}
+func (a *failingSchedulerAdapter) Search(context.Context, string, int, int) (*model.EngineResult, error) {
+	return nil, fmt.Errorf("authentication failed")
+}
+func (a *failingSchedulerAdapter) Normalize(*model.EngineResult) ([]model.UnifiedAsset, error) {
+	return nil, nil
+}
+func (a *failingSchedulerAdapter) GetQuota() (*model.QuotaInfo, error) { return nil, nil }
+func (a *failingSchedulerAdapter) IsWebOnly() bool                     { return false }
+
+type successfulSchedulerAdapter struct {
+	name   string
+	assets []model.UnifiedAsset
+}
+
+func (a *successfulSchedulerAdapter) Name() string { return a.name }
+func (a *successfulSchedulerAdapter) Translate(*model.UQLAST) (string, error) {
+	return "translated", nil
+}
+func (a *successfulSchedulerAdapter) Search(context.Context, string, int, int) (*model.EngineResult, error) {
+	assets := a.assets
+	if len(assets) == 0 {
+		assets = []model.UnifiedAsset{{
+			IP: "192.0.2.10", Port: 443, URL: "https://api.example.test",
+		}}
+	}
+	return &model.EngineResult{
+		EngineName:     a.name,
+		NormalizedData: assets,
+	}, nil
+}
+func (a *successfulSchedulerAdapter) Normalize(result *model.EngineResult) ([]model.UnifiedAsset, error) {
+	return result.NormalizedData, nil
+}
+func (a *successfulSchedulerAdapter) GetQuota() (*model.QuotaInfo, error) { return nil, nil }
+func (a *successfulSchedulerAdapter) IsWebOnly() bool                     { return false }
+
+type combinedSchedulerBrowserRouter struct {
+	path string
+}
+
+func (r *combinedSchedulerBrowserRouter) OpenSearchEngineResult(context.Context, string, string) (string, error) {
+	return "https://search.example.test", nil
+}
+
+func (r *combinedSchedulerBrowserRouter) CollectSearchEngineResult(context.Context, string, string, string) ([]collection.CollectResult, error) {
+	return nil, errors.New("separate collect should not be used")
+}
+
+func (r *combinedSchedulerBrowserRouter) CollectAndCaptureSearchEngineResult(_ context.Context, engine, query, _ string) ([]collection.CollectResult, string, error) {
+	return []collection.CollectResult{{
+		Engine: engine,
+		Query:  query,
+		Total:  1,
+		Assets: []model.UnifiedAsset{{
+			IP: "198.51.100.20", Port: 8443, URL: "https://bridge.example.test",
+		}},
+	}}, r.path, nil
+}
 
 // ===== Bridge client mock for scheduler tests =====
 
@@ -31,6 +106,25 @@ func (m *mockBridgeSchedulerClient) AwaitResult(ctx context.Context, requestID s
 		return screenshot.BridgeResult{}, m.awaitErr
 	}
 	return m.awaitResult, nil
+}
+
+type fakeTamperEvidenceCapturer struct {
+	path  string
+	err   error
+	calls atomic.Int32
+}
+
+func (f *fakeTamperEvidenceCapturer) CaptureTargetWebsite(
+	context.Context,
+	*screenshot.Manager,
+	string,
+	string,
+	string,
+	string,
+	string,
+) (string, string, string, string, string, string, error) {
+	f.calls.Add(1)
+	return f.path, "", "", "", "", "", f.err
 }
 
 // ===== QueryRunner Execute tests =====
@@ -54,6 +148,350 @@ func TestQueryRunner_Execute_MissingQuery(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing") {
 		t.Errorf("error should mention 'missing': %v", err)
+	}
+}
+
+func TestQueryRunner_Execute_AllEnginesFailed(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&failingSchedulerAdapter{name: "failed-engine"})
+	r := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	_, err := r.Execute(context.Background(), &model.TaskPayload{
+		Query:   `ip="132.232.231.41"`,
+		Engines: []string{"failed-engine"},
+	})
+
+	if err == nil {
+		t.Fatal("expected all-engine failure to fail the scheduled query")
+	}
+	if !strings.Contains(err.Error(), "all query engines failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestQueryRunner_Execute_APIQueryIncludesAssetDetailsForNotification(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa"})
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	result, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("execute API query: %v", err)
+	}
+	for _, want := range []string{"| 资产 | 标题 | 状态 |", "192.0.2.10:443"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("query notification result lacks %q:\n%s", want, result)
+		}
+	}
+}
+
+func TestQueryRunner_Execute_QueryNotificationDetailLimit(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: []model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443, URL: "https://first.example.test"},
+		{IP: "192.0.2.11", Port: 8443, URL: "https://second.example.test"},
+	}})
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	result, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query:                   `port="443"`,
+		Engines:                 []string{"fofa"},
+		PageSize:                10,
+		NotificationDetailLimit: 1,
+	})
+	if err != nil {
+		t.Fatalf("execute API query: %v", err)
+	}
+	firstShown := strings.Contains(result, "192.0.2.10:443")
+	secondShown := strings.Contains(result, "192.0.2.11:8443")
+	if firstShown == secondShown {
+		t.Fatalf("query notification detail limit not applied:\n%s", result)
+	}
+	if !strings.Contains(result, "另有 1 条结果已持久化") {
+		t.Fatalf("query notification omits persisted remainder notice:\n%s", result)
+	}
+}
+
+func TestQueryRunner_Execute_QueryNotificationOmitsSensitiveAssetFields(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: []model.UnifiedAsset{{
+		IP:          "192.0.2.10",
+		Port:        443,
+		URL:         "https://safe.example.test",
+		Title:       "line one\n<at>all</at>",
+		BodySnippet: "body-secret-must-not-be-sent",
+		Headers:     map[string]string{"Authorization": "header-secret-must-not-be-sent"},
+		Extra:       map[string]any{"cookie": "extra-secret-must-not-be-sent"},
+	}}})
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	result, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("execute API query: %v", err)
+	}
+	for _, forbidden := range []string{"body-secret", "header-secret", "extra-secret", "<at>"} {
+		if strings.Contains(result, forbidden) {
+			t.Fatalf("query notification leaked or preserved unsafe field %q:\n%s", forbidden, result)
+		}
+	}
+	if !strings.Contains(result, "line one ‹at›all‹/at›") {
+		t.Fatalf("query notification did not safely normalize the title:\n%s", result)
+	}
+}
+
+func TestQueryRunner_Execute_QueryNotificationCapsDetailBodySize(t *testing.T) {
+	assets := make([]model.UnifiedAsset, 0, 100)
+	for i := 0; i < 100; i++ {
+		assets = append(assets, model.UnifiedAsset{
+			IP: fmt.Sprintf("192.0.2.%d", i+1), Port: 443,
+			URL:    fmt.Sprintf("https://asset-%d.example.test/%s", i, strings.Repeat("x", 120)),
+			Title:  strings.Repeat("title", 32),
+			Server: strings.Repeat("server", 27),
+			Org:    strings.Repeat("organization", 14),
+		})
+	}
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: assets})
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	result, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 100,
+		NotificationDetailLimit: 100,
+	})
+	if err != nil {
+		t.Fatalf("execute API query: %v", err)
+	}
+	if len(result) > maxQueryNotificationDetailBytes+2048 {
+		t.Fatalf("query notification size = %d, expected bounded detail body", len(result))
+	}
+	if !strings.Contains(result, "条结果已持久化，通知中未展开") {
+		t.Fatalf("query notification omits byte-cap remainder notice:\n%s", result)
+	}
+}
+
+func TestQueryRunner_Execute_ExcelExport(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: []model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443, URL: "https://first.example.test"},
+		{IP: "192.0.2.11", Port: 8443, URL: "https://second.example.test"},
+	}})
+	exportDir := t.TempDir()
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator())).WithExportDir(exportDir)
+
+	result, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10, Format: "excel",
+	})
+	if err != nil {
+		t.Fatalf("execute API query: %v", err)
+	}
+
+	// The message embeds the workbook path for the notification layer to forward
+	// as a file message.
+	if !strings.Contains(result, "✅ Excel 文件保存:") {
+		t.Fatalf("query notification omits Excel file line:\n%s", result)
+	}
+	var xlsxPath string
+	for _, ln := range strings.Split(result, "\n") {
+		if i := strings.Index(ln, "保存:"); i >= 0 {
+			xlsxPath = strings.TrimSpace(ln[i+len("保存:"):])
+			break
+		}
+	}
+	if xlsxPath == "" {
+		t.Fatalf("no excel path embedded in:\n%s", result)
+	}
+	if !filepath.IsAbs(xlsxPath) || !strings.HasPrefix(xlsxPath, exportDir) {
+		t.Fatalf("exported workbook outside configured export dir: %s", xlsxPath)
+	}
+	if !strings.HasSuffix(strings.ToLower(xlsxPath), ".xlsx") {
+		t.Fatalf("exported path is not an xlsx: %s", xlsxPath)
+	}
+	if _, statErr := os.Stat(xlsxPath); statErr != nil {
+		t.Fatalf("exported workbook not written at %s: %v", xlsxPath, statErr)
+	}
+
+	// An xlsx is a zip container; validate it opens as one.
+	zf, err := zip.OpenReader(xlsxPath)
+	if err != nil {
+		t.Fatalf("exported xlsx is not a valid workbook zip: %v", err)
+	}
+	defer zf.Close()
+	if len(zf.File) == 0 {
+		t.Fatal("exported workbook has no zip parts")
+	}
+}
+
+func TestQueryRunner_Execute_ExcelExport_NoAssetsProducesNoFile(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa"})
+	exportDir := t.TempDir()
+
+	// only_new dedups every asset against an already-pushed set, so the fresh
+	// slice is empty: format=excel must not create an empty workbook.
+	run := func() string {
+		db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
+		if err != nil {
+			t.Fatalf("open history database: %v", err)
+		}
+		defer db.Close()
+		if initErr := db.InitSchema(); initErr != nil {
+			t.Fatalf("init history schema: %v", initErr)
+		}
+		repo := history.NewRepository(db.DB())
+		if recErr := repo.RecordPushedAssets("excel_none", []string{"192.0.2.10:443"}); recErr != nil {
+			t.Fatalf("record pushed assets: %v", recErr)
+		}
+		qapp := service.NewQueryAppService(svc, svc.GetOrchestrator())
+		qapp.SetHistoryRepository(repo)
+		r := NewQueryRunner(qapp).WithExportDir(exportDir)
+		ctx := context.WithValue(context.Background(), ctxKeyTaskName{}, "excel_none")
+		out, err := r.Execute(ctx, &model.TaskPayload{
+			Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10,
+			Format: "excel", OnlyNew: true,
+		})
+		if err != nil {
+			t.Fatalf("execute only_new query: %v", err)
+		}
+		return out
+	}
+
+	result := run()
+	if !strings.Contains(result, "无新增资产") {
+		t.Fatalf("expected no-new-assets message, got:\n%s", result)
+	}
+	if strings.Contains(result, "Excel 文件保存:") {
+		t.Fatalf("empty fresh set must not produce a workbook:\n%s", result)
+	}
+	entries, err := os.ReadDir(exportDir)
+	if err != nil {
+		t.Fatalf("read export dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("export dir not empty for empty fresh set: %v", entries)
+	}
+}
+
+func TestQueryRunner_Execute_BridgeCollectCapturePersistsCombinedResults(t *testing.T) {
+	db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("open history database: %v", err)
+	}
+	defer db.Close()
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatalf("init history schema: %v", initErr)
+	}
+	repo := history.NewRepository(db.DB())
+
+	unified := service.NewUnifiedService()
+	unified.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa"})
+	queryApp := service.NewQueryAppService(unified, unified.GetOrchestrator())
+	queryApp.SetHistoryRepository(repo)
+
+	screenshotPath := filepath.Join(t.TempDir(), "fofa.png")
+	if writeErr := os.WriteFile(screenshotPath, []byte("png"), 0o600); writeErr != nil {
+		t.Fatalf("write screenshot fixture: %v", writeErr)
+	}
+	router := &combinedSchedulerBrowserRouter{path: screenshotPath}
+	screenshotApp := service.NewScreenshotAppService(t.TempDir())
+	runner := NewQueryRunnerWithBrowser(queryApp, screenshotApp, &screenshot.Manager{}, router)
+
+	result, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query:         `port="443"`,
+		Engines:       []string{"fofa"},
+		PageSize:      10,
+		BrowserQuery:  true,
+		BrowserAction: "collect_and_capture",
+		QueryID:       "scheduled-query-1",
+	})
+	if err != nil {
+		t.Fatalf("execute closed-loop query: %v", err)
+	}
+	if !strings.Contains(result, screenshotPath) {
+		t.Fatalf("task result does not expose screenshot path for notification: %q", result)
+	}
+	if got := extractImagePaths(result); len(got) != 1 || got[0] != screenshotPath {
+		t.Fatalf("notification image paths = %#v, want %q", got, screenshotPath)
+	}
+	for _, want := range []string{"192.0.2.10:443", "198.51.100.20:8443"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("Bridge query notification result lacks %q:\n%s", want, result)
+		}
+	}
+	notification := (&Scheduler{}).buildNotificationMessage(
+		&ScheduledTask{ID: "scheduled-query-1", Name: "closed loop", Type: TaskQuery},
+		ExecutionRecord{Status: "success", Result: result},
+	)
+	if !strings.Contains(notification.Result, "198.51.100.20:8443") {
+		t.Fatalf("notification payload lost Bridge asset details: %#v", notification)
+	}
+	if len(notification.ImagePaths) != 1 || notification.ImagePaths[0] != screenshotPath {
+		t.Fatalf("notification payload image paths = %#v, want %q", notification.ImagePaths, screenshotPath)
+	}
+
+	histories, total, err := repo.ListHistory(string(history.OpTypeQuery), 10, 0)
+	if err != nil {
+		t.Fatalf("list query history: %v", err)
+	}
+	if total != 1 || len(histories) != 1 {
+		t.Fatalf("query history count = %d/%d, want one combined record", total, len(histories))
+	}
+	var summary struct {
+		QueryID     string            `json:"browser_query_id"`
+		Screenshots map[string]string `json:"browser_screenshots"`
+	}
+	if unmarshalErr := json.Unmarshal([]byte(histories[0].Summary), &summary); unmarshalErr != nil {
+		t.Fatalf("decode query history summary: %v", unmarshalErr)
+	}
+	if summary.QueryID != "scheduled-query-1" || summary.Screenshots["fofa"] != screenshotPath {
+		t.Fatalf("query history summary lacks Bridge correlation metadata: %#v", summary)
+	}
+	rows, err := repo.GetResults(histories[0].ID)
+	if err != nil {
+		t.Fatalf("get persisted query results: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("persisted result rows = %d, want API + Bridge assets", len(rows))
+	}
+}
+
+func TestQueryRunner_Execute_BridgeWorkflowFailsWhenScreenshotIsMissing(t *testing.T) {
+	db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("open history database: %v", err)
+	}
+	defer db.Close()
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatalf("init history schema: %v", initErr)
+	}
+	repo := history.NewRepository(db.DB())
+
+	unified := service.NewUnifiedService()
+	unified.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa"})
+	queryApp := service.NewQueryAppService(unified, unified.GetOrchestrator())
+	queryApp.SetHistoryRepository(repo)
+
+	router := &combinedSchedulerBrowserRouter{path: filepath.Join(t.TempDir(), "missing.png")}
+	runner := NewQueryRunnerWithBrowser(queryApp, service.NewScreenshotAppService(t.TempDir()), &screenshot.Manager{}, router)
+	_, err = runner.Execute(context.Background(), &model.TaskPayload{
+		Query:         `port="443"`,
+		Engines:       []string{"fofa"},
+		BrowserQuery:  true,
+		BrowserAction: "collect_and_capture",
+	})
+	if err == nil || !strings.Contains(err.Error(), "screenshot unavailable") {
+		t.Fatalf("missing screenshot error = %v", err)
+	}
+
+	histories, total, err := repo.ListHistory(string(history.OpTypeQuery), 10, 0)
+	if err != nil {
+		t.Fatalf("list query history: %v", err)
+	}
+	if total != 1 || len(histories) != 1 || histories[0].Status != "error" {
+		t.Fatalf("failed workflow history = %#v (total %d), want one error record", histories, total)
 	}
 }
 
@@ -117,6 +555,115 @@ func TestTamperCheckRunner_Execute_MissingURLs(t *testing.T) {
 	_, err := r.Execute(context.Background(), &model.TaskPayload{})
 	if err == nil {
 		t.Fatal("expected error for missing urls")
+	}
+}
+
+func TestTamperCheckRunner_CaptureEvidenceOnlyForTamperedResults(t *testing.T) {
+	evidencePath := filepath.Join(t.TempDir(), "tamper-evidence.png")
+	if writeErr := os.WriteFile(evidencePath, []byte("\x89PNG\r\n\x1a\n"), 0o600); writeErr != nil {
+		t.Fatalf("write evidence fixture: %v", writeErr)
+	}
+	capturer := &fakeTamperEvidenceCapturer{path: evidencePath}
+	r := NewTamperCheckRunnerWithEvidence(
+		nil,
+		nil,
+		capturer,
+		&screenshot.Manager{},
+		func() bool { return true },
+	)
+
+	paths, err := r.captureEvidence(t.Context(), []tamper.TamperCheckResult{
+		{URL: "https://changed.example", Status: "tampered", Tampered: true},
+		{URL: "https://normal.example", Status: "normal"},
+	})
+	if err != nil {
+		t.Fatalf("captureEvidence failed: %v", err)
+	}
+	if capturer.calls.Load() != 1 {
+		t.Fatalf("capture calls = %d, want one tampered URL", capturer.calls.Load())
+	}
+	if paths[0] != evidencePath {
+		t.Fatalf("evidence path = %q, want %q", paths[0], evidencePath)
+	}
+	if _, ok := paths[1]; ok {
+		t.Fatal("normal result must not receive an evidence screenshot")
+	}
+}
+
+func TestTamperCheckRunner_CaptureEvidenceFailsClosedWithoutProvider(t *testing.T) {
+	r := NewTamperCheckRunnerWithEvidence(nil, nil, nil, nil, func() bool { return true })
+
+	if _, err := r.captureEvidence(t.Context(), []tamper.TamperCheckResult{{
+		URL: "https://changed.example", Status: "tampered", Tampered: true,
+	}}); err == nil {
+		t.Fatal("enabled evidence capture without a provider must fail")
+	}
+}
+
+func TestTamperCheckRunner_CaptureEvidenceReadsCurrentGateState(t *testing.T) {
+	var enabled atomic.Bool
+	capturer := &fakeTamperEvidenceCapturer{}
+	r := NewTamperCheckRunnerWithEvidence(nil, nil, capturer, nil, enabled.Load)
+	result := []tamper.TamperCheckResult{{
+		URL: "https://changed.example", Status: "tampered", Tampered: true,
+	}}
+
+	if paths, err := r.captureEvidence(t.Context(), result); err != nil || len(paths) != 0 {
+		t.Fatalf("disabled gate returned paths=%v err=%v", paths, err)
+	}
+	if capturer.calls.Load() != 0 {
+		t.Fatal("disabled gate invoked the evidence capturer")
+	}
+
+	enabled.Store(true)
+	if _, err := r.captureEvidence(t.Context(), result); err == nil {
+		t.Fatal("enabled gate must immediately invoke the capturer and surface its empty-path failure")
+	}
+	if capturer.calls.Load() != 1 {
+		t.Fatalf("capture calls = %d, want one after enabling the gate", capturer.calls.Load())
+	}
+}
+
+func TestTamperCheckRunner_ExecuteAttachesEvidencePath(t *testing.T) {
+	targetURL := "https://controlled.example.test/"
+	var page atomic.Value
+	page.Store("<html><body><main>stable baseline content alpha alpha alpha</main></body></html>")
+	loader := tamper.BrowserPageLoaderFunc(func(context.Context, string) (string, string, error) {
+		return "Controlled fixture", page.Load().(string), nil
+	})
+	svc := service.NewTamperAppService(t.TempDir(), nil)
+	baseline, err := svc.SetBaseline(t.Context(), service.TamperBaselineRequest{
+		URLs: []string{targetURL}, Concurrency: 1,
+	}, loader)
+	if err != nil || baseline.Summary["saved"] != 1 {
+		t.Fatalf("set baseline: saved=%d err=%v", baseline.Summary["saved"], err)
+	}
+	page.Store("<html><body><main>mutated evidence content omega omega omega</main><section>new block</section></body></html>")
+
+	evidencePath := filepath.Join(t.TempDir(), "tamper-evidence.png")
+	if writeErr := os.WriteFile(evidencePath, []byte("\x89PNG\r\n\x1a\n"), 0o600); writeErr != nil {
+		t.Fatalf("write evidence fixture: %v", writeErr)
+	}
+	capturer := &fakeTamperEvidenceCapturer{path: evidencePath}
+	r := NewTamperCheckRunnerWithEvidence(
+		svc,
+		loader,
+		capturer,
+		nil,
+		func() bool { return true },
+	)
+
+	result, err := r.Execute(t.Context(), &model.TaskPayload{
+		URLs: []string{targetURL}, DetectMode: "strict",
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if !strings.Contains(result, "已篡改") || !strings.Contains(result, evidencePath) {
+		t.Fatalf("tamper result omitted evidence path:\n%s", result)
+	}
+	if paths := extractImagePaths(result); len(paths) != 1 || paths[0] != evidencePath {
+		t.Fatalf("notification image paths = %#v, want %q", paths, evidencePath)
 	}
 }
 
@@ -263,6 +810,56 @@ func TestPortScanRunner_Execute_MissingURLs(t *testing.T) {
 	}
 }
 
+func TestPortScanRunner_Execute_UsesConfiguredStringPorts(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+	port := listener.Addr().(*net.TCPAddr).Port
+	r := NewPortScanRunner(service.NewMonitorAppService(nil))
+
+	result, err := r.Execute(context.Background(), &model.TaskPayload{
+		URLs: []string{"http://127.0.0.1"},
+		Extra: map[string]any{
+			"ports":       []any{strconv.Itoa(port)},
+			"concurrency": 1,
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("execute port scan: %v", err)
+	}
+	if !strings.Contains(result, fmt.Sprintf("端口 [%d]", port)) {
+		t.Fatalf("configured port was discarded: %s", result)
+	}
+}
+
+func TestPortScanRunner_RejectsInvalidPortRange(t *testing.T) {
+	r := NewPortScanRunner(service.NewMonitorAppService(nil))
+	_, err := r.Execute(context.Background(), &model.TaskPayload{
+		URLs:  []string{"https://example.com"},
+		Extra: map[string]any{"port_spec": "443,9000-8000"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid port specification") {
+		t.Fatalf("expected invalid port specification error, got %v", err)
+	}
+}
+
+func TestPortScanRunnerRejectsInvalidAuthorizedTarget(t *testing.T) {
+	r := NewPortScanRunner(service.NewMonitorAppService(nil))
+	_, err := r.Execute(context.Background(), &model.TaskPayload{
+		URLs: []string{"https://example.com"},
+		Extra: map[string]any{
+			"port_spec":          "443",
+			"authorized_targets": []any{"not-an-ip"},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "authorized target") {
+		t.Fatalf("expected invalid authorized target error, got %v", err)
+	}
+}
+
 // ===== ScreenshotCleanupRunner Execute tests =====
 
 func TestScreenshotCleanupRunner_Execute_NilService(t *testing.T) {
@@ -349,6 +946,29 @@ func TestBaselineRefreshRunner_Execute_NilService(t *testing.T) {
 	_, err := r.Execute(context.Background(), nil)
 	if err == nil {
 		t.Fatal("expected error for nil service")
+	}
+}
+
+func TestBaselineRefreshRunner_Execute_UsesPageLoader(t *testing.T) {
+	sentinel := errors.New("guarded loader unavailable")
+	var calls atomic.Int32
+	loader := tamper.BrowserPageLoaderFunc(func(context.Context, string) (string, string, error) {
+		calls.Add(1)
+		return "", "", sentinel
+	})
+	r := NewBaselineRefreshRunner(service.NewTamperAppService(t.TempDir(), nil), loader)
+
+	result, err := r.Execute(context.Background(), &model.TaskPayload{Extra: map[string]any{
+		"urls": []string{"https://example.test"},
+	}})
+	if err != nil {
+		t.Fatalf("Execute returned unexpected error: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("page loader calls = %d, want 1", calls.Load())
+	}
+	if !strings.Contains(result, "失败: 1") {
+		t.Fatalf("result should report failed refresh, got %q", result)
 	}
 }
 
@@ -701,10 +1321,26 @@ func TestExtractImagePaths_EmptyResult(t *testing.T) {
 }
 
 func TestExtractImagePaths_NoImages(t *testing.T) {
-	result := "UQL 查询完成\n\n📋 查询: test\n📊 共返回 10 条资产"
+	result := "**查询完成｜引擎: test ｜返回 10 条**"
 	paths := extractImagePaths(result)
 	if len(paths) != 0 {
 		t.Errorf("expected 0 paths, got %d: %v", len(paths), paths)
+	}
+}
+
+func TestExtractImagePaths_ExcelWorkbook(t *testing.T) {
+	result := "查询完成\n\n✅ Excel 文件保存: /tmp/ynmobile_20260806.xlsx\n"
+	paths := extractImagePaths(result)
+	if len(paths) != 1 || paths[0] != "/tmp/ynmobile_20260806.xlsx" {
+		t.Fatalf("extractImagePaths = %#v, want the workbook path", paths)
+	}
+}
+
+func TestExtractImagePaths_IgnoresUnknownExtensions(t *testing.T) {
+	result := "✅ Excel 文件保存: /tmp/out.csv\n✅ 日志: /tmp/run.log\n"
+	paths := extractImagePaths(result)
+	if len(paths) != 0 {
+		t.Fatalf("csv/log paths must not be treated as deliverable files, got %#v", paths)
 	}
 }
 
@@ -792,6 +1428,14 @@ func TestExtractImagePaths_MultipleArrows(t *testing.T) {
 	}
 }
 
+func TestExtractImagePaths_TamperEvidence(t *testing.T) {
+	result := "⚠️ 已篡改 https://example.com\n  📷 证据截图保存: screenshots/tamper/evidence.png"
+	paths := extractImagePaths(result)
+	if len(paths) != 1 || paths[0] != "screenshots/tamper/evidence.png" {
+		t.Fatalf("tamper evidence paths = %#v", paths)
+	}
+}
+
 func TestIsImageFile(t *testing.T) {
 	tests := []struct {
 		path   string
@@ -833,5 +1477,188 @@ func TestDistributedTaskIDMonotonic(t *testing.T) {
 			t.Errorf("duplicate ID: %s", id)
 		}
 		ids[id] = true
+	}
+}
+
+// ===== QueryRunner incremental push (only_new) =====
+
+func TestQueryRunner_Execute_OnlyNewRequiresTaskName(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa"})
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	_, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10, OnlyNew: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "task name") {
+		t.Fatalf("only_new without a task name in ctx should fail, got %v", err)
+	}
+}
+
+func TestQueryRunner_Execute_OnlyNewDeduplicatesAcrossRuns(t *testing.T) {
+	db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("open history database: %v", err)
+	}
+	defer db.Close()
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatalf("init history schema: %v", initErr)
+	}
+	repo := history.NewRepository(db.DB())
+
+	ctx := context.WithValue(context.Background(), ctxKeyTaskName{}, "fofa_ynmobile_daily")
+	payload := &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10, OnlyNew: true,
+	}
+
+	newRunner := func(assets []model.UnifiedAsset) *QueryRunner {
+		svc := service.NewUnifiedService()
+		svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: assets})
+		queryApp := service.NewQueryAppService(svc, svc.GetOrchestrator())
+		queryApp.SetHistoryRepository(repo)
+		return NewQueryRunner(queryApp)
+	}
+
+	// Run 1: both assets are new.
+	result, err := newRunner([]model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443},
+		{IP: "192.0.2.11", Port: 8443},
+	}).Execute(ctx, payload)
+	if err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if !strings.Contains(result, "新增 2 条") {
+		t.Fatalf("first run should report 2 new:\n%s", result)
+	}
+	if !strings.Contains(result, "192.0.2.10:443") || !strings.Contains(result, "192.0.2.11:8443") {
+		t.Fatalf("first run should include both assets:\n%s", result)
+	}
+
+	// Run 2: same assets, nothing new.
+	result, err = newRunner([]model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443},
+		{IP: "192.0.2.11", Port: 8443},
+	}).Execute(ctx, payload)
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if !strings.Contains(result, "无新增资产") {
+		t.Fatalf("second run should report no new assets:\n%s", result)
+	}
+	if strings.Contains(result, "192.0.2.10:443") || strings.Contains(result, "192.0.2.11:8443") {
+		t.Fatalf("second run must not re-push already pushed assets:\n%s", result)
+	}
+
+	// Run 3: one genuinely new asset joins the same two.
+	result, err = newRunner([]model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443},
+		{IP: "192.0.2.11", Port: 8443},
+		{IP: "192.0.2.12", Port: 443},
+	}).Execute(ctx, payload)
+	if err != nil {
+		t.Fatalf("third run: %v", err)
+	}
+	if !strings.Contains(result, "新增 1 条") {
+		t.Fatalf("third run should report exactly 1 new:\n%s", result)
+	}
+	if !strings.Contains(result, "192.0.2.12:443") {
+		t.Fatalf("third run should include the new asset:\n%s", result)
+	}
+	if strings.Contains(result, "192.0.2.10:443") || strings.Contains(result, "192.0.2.11:8443") {
+		t.Fatalf("third run must not re-push already pushed assets:\n%s", result)
+	}
+}
+
+func TestQueryRunner_Execute_OnlyNewIsIsolatedByTaskName(t *testing.T) {
+	db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("open history database: %v", err)
+	}
+	defer db.Close()
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatalf("init history schema: %v", initErr)
+	}
+	repo := history.NewRepository(db.DB())
+
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: []model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443},
+	}})
+	queryApp := service.NewQueryAppService(svc, svc.GetOrchestrator())
+	queryApp.SetHistoryRepository(repo)
+	runner := NewQueryRunner(queryApp)
+	payload := &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10, OnlyNew: true,
+	}
+
+	// Push under task A.
+	ctxA := context.WithValue(context.Background(), ctxKeyTaskName{}, "task_a")
+	if _, runErr := runner.Execute(ctxA, payload); runErr != nil {
+		t.Fatalf("task_a first run: %v", runErr)
+	}
+	// task_a second run: nothing new.
+	result, err := runner.Execute(ctxA, payload)
+	if err != nil {
+		t.Fatalf("task_a second run: %v", err)
+	}
+	if !strings.Contains(result, "无新增资产") {
+		t.Fatalf("task_a should deduplicate after its own push:\n%s", result)
+	}
+
+	// Task B sees the same asset as new.
+	ctxB := context.WithValue(context.Background(), ctxKeyTaskName{}, "task_b")
+	result, err = runner.Execute(ctxB, payload)
+	if err != nil {
+		t.Fatalf("task_b run: %v", err)
+	}
+	if !strings.Contains(result, "新增 1 条") {
+		t.Fatalf("task_b should treat the asset as new:\n%s", result)
+	}
+}
+
+func TestQueryRunner_Execute_OnlyNewKeepsIPLessAssets(t *testing.T) {
+	db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("open history database: %v", err)
+	}
+	defer db.Close()
+	if initErr := db.InitSchema(); initErr != nil {
+		t.Fatalf("init history schema: %v", initErr)
+	}
+	repo := history.NewRepository(db.DB())
+
+	ctx := context.WithValue(context.Background(), ctxKeyTaskName{}, "assetless_task")
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: []model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443},
+		{URL: "https://no-ip.example.test", Title: "no ip asset"},
+	}})
+	queryApp := service.NewQueryAppService(svc, svc.GetOrchestrator())
+	queryApp.SetHistoryRepository(repo)
+	runner := NewQueryRunner(queryApp)
+	payload := &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10, OnlyNew: true,
+	}
+
+	// First run pushes both; the keyless asset has no fingerprint to record.
+	result, err := runner.Execute(ctx, payload)
+	if err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if !strings.Contains(result, "no ip asset") {
+		t.Fatalf("first run should include the keyless asset:\n%s", result)
+	}
+
+	// Second run: the keyed asset is deduplicated, but the keyless asset is
+	// always delivered (it cannot be tracked).
+	result, err = runner.Execute(ctx, payload)
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if strings.Contains(result, "192.0.2.10:443") {
+		t.Fatalf("second run must not re-push the keyed asset:\n%s", result)
+	}
+	if !strings.Contains(result, "no ip asset") {
+		t.Fatalf("second run should still deliver the keyless asset:\n%s", result)
 	}
 }

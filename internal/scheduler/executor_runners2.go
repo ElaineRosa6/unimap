@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
@@ -86,11 +87,16 @@ func (r *AlertSummaryRunner) Execute(ctx context.Context, payload *model.TaskPay
 // --- BaselineRefreshRunner (ST-15) ---
 
 type BaselineRefreshRunner struct {
-	tamperSvc *service.TamperAppService
+	tamperSvc  *service.TamperAppService
+	pageLoader service.TamperPageLoader
 }
 
-func NewBaselineRefreshRunner(svc *service.TamperAppService) *BaselineRefreshRunner {
-	return &BaselineRefreshRunner{tamperSvc: svc}
+func NewBaselineRefreshRunner(svc *service.TamperAppService, loaders ...service.TamperPageLoader) *BaselineRefreshRunner {
+	var loader service.TamperPageLoader
+	if len(loaders) > 0 {
+		loader = loaders[0]
+	}
+	return &BaselineRefreshRunner{tamperSvc: svc, pageLoader: loader}
 }
 
 func (r *BaselineRefreshRunner) Type() TaskType { return TaskBaselineRefresh }
@@ -112,20 +118,46 @@ func (r *BaselineRefreshRunner) Execute(ctx context.Context, payload *model.Task
 		urls = baselines
 	}
 
-	refreshed := 0
-	failed := 0
-	var failedURLs []string
+	// Concurrency: clamp to >=1. Previously baselines were refreshed one URL
+	// at a time, ignoring the payload's concurrency field; large baseline sets
+	// were slow. We now run SetBaseline concurrently with a semaphore.
+	concurrency := extractInt(payload, "concurrency", 5)
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	if concurrency > len(urls) {
+		concurrency = len(urls)
+	}
+
+	var (
+		mu         sync.Mutex
+		refreshed  int
+		failed     int
+		failedURLs []string
+		wg         sync.WaitGroup
+	)
+	sem := make(chan struct{}, concurrency)
 
 	for _, url := range urls {
-		req := service.TamperBaselineRequest{URLs: []string{url}}
-		_, err := r.tamperSvc.SetBaseline(ctx, req, nil)
-		if err != nil {
-			failed++
-			failedURLs = append(failedURLs, url)
-			continue
-		}
-		refreshed++
+		wg.Add(1)
+		go func(url string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			req := service.TamperBaselineRequest{URLs: []string{url}}
+			response, err := r.tamperSvc.SetBaseline(ctx, req, r.pageLoader)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil || response == nil || response.Summary["saved"] != 1 {
+				failed++
+				failedURLs = append(failedURLs, url)
+				return
+			}
+			refreshed++
+		}(url)
 	}
+	wg.Wait()
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "基线刷新完成：%d 个 URL\n\n", len(urls))
@@ -156,7 +188,10 @@ func (r *URLImportRunner) Execute(ctx context.Context, payload *model.TaskPayloa
 		return "", fmt.Errorf("import directory not configured")
 	}
 
-	filePattern := extractString(payload, "file_pattern", "*.txt")
+	filePattern, err := sanitizeImportPattern(extractString(payload, "file_pattern", "*.txt"))
+	if err != nil {
+		return "", fmt.Errorf("invalid file_pattern: %w", err)
+	}
 	maxLines := extractInt(payload, "max_lines", 10000)
 
 	matches, err := filepath.Glob(filepath.Join(r.importDir, filePattern))
@@ -226,6 +261,30 @@ func readURLsFromFile(filePath string, maxLines int) ([]string, error) {
 	return urls, scanner.Err()
 }
 
+// sanitizeImportPattern 校验任务 file_pattern（FINDING-001/004 路径穿越修复）。
+// file_pattern 来自任务 payload，未校验时 `..` 可借 filepath.Glob 逃逸 importDir 越界。
+// 仅允许 importDir 内的相对 glob：拒绝空值、绝对路径、以 / 或 \ 开头的根相对路径，
+// 以及含 `..` 段的路径（filepath.Clean 不会消除前导 `..`，逐段检查覆盖所有逃逸形态）。
+func sanitizeImportPattern(pattern string) (string, error) {
+	if strings.TrimSpace(pattern) == "" {
+		return "", fmt.Errorf("file_pattern must not be empty")
+	}
+	if filepath.IsAbs(pattern) {
+		return "", fmt.Errorf("file_pattern must be relative: %q", pattern)
+	}
+	// Windows 上 filepath.IsAbs 不识别 `/` 或 `\` 开头的根相对路径，单独拒绝。
+	if strings.HasPrefix(pattern, "/") || strings.HasPrefix(pattern, "\\") {
+		return "", fmt.Errorf("file_pattern must be relative: %q", pattern)
+	}
+	cleaned := filepath.Clean(pattern)
+	for _, seg := range strings.Split(cleaned, string(filepath.Separator)) {
+		if seg == ".." {
+			return "", fmt.Errorf("file_pattern must not contain '..': %q", pattern)
+		}
+	}
+	return cleaned, nil
+}
+
 // --- PluginHealthRunner (ST-17) ---
 
 type PluginHealthRunner struct {
@@ -274,24 +333,38 @@ func (r *PluginHealthRunner) Execute(ctx context.Context, payload *model.TaskPay
 // --- BridgeHealthCheckRunner (ST-18) ---
 
 type BridgeHealthCheckRunner struct {
-	bridgeSvc *screenshot.BridgeService
+	bridgeSvc         *screenshot.BridgeService
+	bridgeSvcProvider func() *screenshot.BridgeService
 }
 
+// NewBridgeTokenRotateRunner preserves the legacy constructor and task key.
+// Despite its historical name, the bridge_token task performs a health check.
 func NewBridgeTokenRotateRunner(svc *screenshot.BridgeService) *BridgeHealthCheckRunner {
 	return &BridgeHealthCheckRunner{bridgeSvc: svc}
 }
 
-func (r *BridgeHealthCheckRunner) Type() TaskType { return TaskBridgeTokenRotate }
+// NewBridgeHealthCheckRunnerWithProvider resolves the bridge service only when
+// the task runs. This lets the scheduler register before screenshot mode creates
+// the extension bridge.
+func NewBridgeHealthCheckRunnerWithProvider(provider func() *screenshot.BridgeService) *BridgeHealthCheckRunner {
+	return &BridgeHealthCheckRunner{bridgeSvcProvider: provider}
+}
+
+func (r *BridgeHealthCheckRunner) Type() TaskType { return TaskBridgeHealthCheck }
 
 func (r *BridgeHealthCheckRunner) Execute(ctx context.Context, payload *model.TaskPayload) (string, error) {
-	if r.bridgeSvc == nil {
+	bridgeSvc := r.bridgeSvc
+	if r.bridgeSvcProvider != nil {
+		bridgeSvc = r.bridgeSvcProvider()
+	}
+	if bridgeSvc == nil {
 		return "", fmt.Errorf("bridge service not available")
 	}
 
-	queueLen := r.bridgeSvc.QueueLen()
-	workers := r.bridgeSvc.WorkerCount()
-	inFlight := r.bridgeSvc.InFlight()
-	started := r.bridgeSvc.IsStarted()
+	queueLen := bridgeSvc.QueueLen()
+	workers := bridgeSvc.WorkerCount()
+	inFlight := bridgeSvc.InFlight()
+	started := bridgeSvc.IsStarted()
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "截图桥接服务健康检查\n\n")
@@ -509,7 +582,7 @@ func extractICPQueries(payload *model.TaskPayload) ([]string, error) {
 		}
 	}
 	if len(queries) == 0 {
-		return nil, fmt.Errorf("missing 'queries' or 'query' in payload")
+		return nil, fmt.Errorf("%s runner: missing 'queries' or 'query' in payload", TaskICPQuery)
 	}
 	if len(queries) > icpMaxQueries {
 		return nil, fmt.Errorf("too many queries (%d), maximum is %d", len(queries), icpMaxQueries)
@@ -795,7 +868,10 @@ func (r *ICPImportRunner) Execute(ctx context.Context, payload *model.TaskPayloa
 		return "", fmt.Errorf("import directory not configured")
 	}
 
-	filePattern := extractString(payload, "file_pattern", "*.csv")
+	filePattern, err := sanitizeImportPattern(extractString(payload, "file_pattern", "*.csv"))
+	if err != nil {
+		return "", fmt.Errorf("invalid file_pattern: %w", err)
+	}
 	queryType := extractString(payload, "type", "web")
 	maxRows := extractInt(payload, "max_rows", icpImportMaxRows)
 	if maxRows > icpImportMaxRows {

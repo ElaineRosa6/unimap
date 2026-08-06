@@ -87,8 +87,8 @@ type performanceStat struct {
 
 // volatilityStat 数据波动性统计
 type volatilityStat struct {
-	totalChanges       int
-	checkCount         int
+	totalChanges       int // nolint:unused
+	checkCount         int // nolint:unused
 	changeRate         float64
 	lastChangeDetected time.Time
 }
@@ -112,8 +112,8 @@ type queryStat struct {
 	errorCount         int
 	timeoutCount       int
 	cacheHitRate       float64
-	lastCacheHit       time.Time
-	queryFrequency     float64 // 查询频率（查询/小时）
+	lastCacheHit       time.Time // nolint:unused
+	queryFrequency     float64   // 查询频率（查询/小时）
 	dataChangeDetected bool
 }
 

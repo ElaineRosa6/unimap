@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -72,7 +73,7 @@ func (m *APIKeyManager) GenerateAPIKey(description string, permissions []string,
 	apiKey := &APIKey{
 		ID:          id,
 		Key:         key,
-		KeyHash:     hashKey(key),
+		KeyHash:     hashKeyWithSalt(key),
 		Description: description,
 		CreatedAt:   time.Now(),
 		ExpiresAt:   zeroOrExpiry(expiresIn),
@@ -91,9 +92,8 @@ func (m *APIKeyManager) ValidateAPIKey(key string) (*APIKey, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	providedHash := hashKey(key)
 	for _, apiKey := range m.keys {
-		if apiKey.KeyHash != "" && apiKey.KeyHash == providedHash {
+		if apiKey.KeyHash != "" && verifyKeyHash(key, apiKey.KeyHash) {
 			// 检查密钥状态
 			if apiKey.Status != "active" {
 				return nil, unierror.APIUnauthorized("API key is not active")
@@ -177,9 +177,8 @@ func (m *APIKeyManager) UpdateLastUsed(key string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	providedHash := hashKey(key)
 	for _, apiKey := range m.keys {
-		if apiKey.KeyHash != "" && apiKey.KeyHash == providedHash {
+		if apiKey.KeyHash != "" && verifyKeyHash(key, apiKey.KeyHash) {
 			apiKey.LastUsed = time.Now()
 			m.saveToStorage()
 			return
@@ -240,10 +239,40 @@ func (m *APIKeyManager) loadFromStorage() {
 	}
 }
 
-// hashKey computes a SHA-256 hash of the plaintext key for comparison.
-func hashKey(key string) string {
-	h := sha256.Sum256([]byte(key))
-	return hex.EncodeToString(h[:])
+// hashKeyWithSalt computes a salted SHA-256 hash of the plaintext key.
+// Returns "salt$hash" format where salt is a 16-byte random hex string.
+func hashKeyWithSalt(key string) string {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		// Fallback: should never happen with crypto/rand
+		h := sha256.Sum256([]byte(key))
+		return "$" + hex.EncodeToString(h[:])
+	}
+	saltHex := hex.EncodeToString(salt)
+	h := sha256.Sum256([]byte(saltHex + key))
+	return saltHex + "$" + hex.EncodeToString(h[:])
+}
+
+// verifyKeyHash verifies a key against a stored hash in "salt$hash" format.
+// Also supports legacy unsalted "$hash" format for migration.
+func verifyKeyHash(key, storedHash string) bool {
+	if storedHash == "" {
+		return false
+	}
+	// Legacy unsalted format
+	if !strings.Contains(storedHash, "$") {
+		h := sha256.Sum256([]byte(key))
+		return hex.EncodeToString(h[:]) == storedHash
+	}
+	// Salted format: salt$hash
+	parts := strings.SplitN(storedHash, "$", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	saltHex := parts[0]
+	expectedHash := parts[1]
+	h := sha256.Sum256([]byte(saltHex + key))
+	return hex.EncodeToString(h[:]) == expectedHash
 }
 
 // zeroOrExpiry returns zero time for no expiration, otherwise the computed expiry.

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/unimap/project/internal/utils"
 )
 
 func TestNewManager(t *testing.T) {
@@ -27,9 +28,9 @@ func TestResolveEnv(t *testing.T) {
 	result = mgr.ResolveEnv("${TEST_VAR}")
 	assert.Equal(t, "test_value", result)
 
-	// Test non-existent env var
+	// Test non-existent env var — now returns empty string (2026-07-12)
 	result = mgr.ResolveEnv("$NON_EXISTENT")
-	assert.Equal(t, "$NON_EXISTENT", result)
+	assert.Equal(t, "", result)
 
 	// Test empty string
 	result = mgr.ResolveEnv("")
@@ -81,7 +82,7 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, "console", cfg.Log.Encoding)
 
 	// Test default screenshot configurations
-	assert.Equal(t, "./screenshots", cfg.Screenshot.BaseDir)
+	assert.Equal(t, utils.ScreenshotsDir(), cfg.Screenshot.BaseDir)
 	assert.Equal(t, 30, cfg.Screenshot.Timeout)
 	assert.Equal(t, 1365, cfg.Screenshot.WindowWidth)
 	assert.Equal(t, 768, cfg.Screenshot.WindowHeight)
@@ -103,6 +104,21 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, "memory", cfg.Cache.Backend)
 	assert.Equal(t, "127.0.0.1:6379", cfg.Cache.Redis.Addr)
 	assert.Equal(t, "unimap:", cfg.Cache.Redis.Prefix)
+}
+
+func TestApplyDefaultsDoesNotEnableUnconfiguredEngines(t *testing.T) {
+	mgr := NewManager("test.yaml")
+	var cfg Config
+
+	mgr.applyDefaults(&cfg)
+
+	assert.False(t, cfg.Engines.Fofa.Enabled)
+	assert.False(t, cfg.Engines.Hunter.Enabled)
+	assert.False(t, cfg.Engines.Zoomeye.Enabled)
+	assert.False(t, cfg.Engines.Quake.Enabled)
+	assert.False(t, cfg.Engines.Shodan.Enabled)
+	assert.False(t, cfg.Engines.Censys.Enabled)
+	assert.False(t, cfg.Engines.Daydaymap.Enabled)
 }
 
 func TestValidate(t *testing.T) {
@@ -221,6 +237,48 @@ func TestSave(t *testing.T) {
 	assert.Contains(t, err.Error(), "config is nil")
 }
 
+func TestSaveAndLoadPreservesOperationalConfiguration(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "config_persistence_*.yaml")
+	if err != nil {
+		t.Fatalf("create temporary config: %v", err)
+	}
+	path := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("close temporary config: %v", err)
+	}
+	defer os.Remove(path)
+
+	writer := NewManager(path)
+	config := &Config{}
+	writer.applyDefaults(config)
+	config.System.UserAgent = "UniMap persistence test"
+	config.Screenshot.Mode = "extension"
+	config.Notifications.Enabled = true
+	config.Notifications.Channels = []NotificationChannelCfg{{
+		ID: "audit-log", Type: "log", Enabled: true,
+		Headers: map[string]string{"X-Trace": "persistence-test"},
+	}}
+	writer.SetConfig(config)
+	if err := writer.Save(); err != nil {
+		t.Fatalf("save configuration: %v", err)
+	}
+
+	reader := NewManager(path)
+	if err := reader.Load(); err != nil {
+		t.Fatalf("reload configuration: %v", err)
+	}
+	loaded := reader.GetConfig()
+	if loaded == nil {
+		t.Fatal("expected reloaded configuration")
+	}
+	if loaded.System.UserAgent != "UniMap persistence test" || loaded.Screenshot.Mode != "extension" {
+		t.Fatalf("operational configuration was not preserved: %#v", loaded)
+	}
+	if len(loaded.Notifications.Channels) != 1 || loaded.Notifications.Channels[0].ID != "audit-log" || loaded.Notifications.Channels[0].Headers["X-Trace"] != "persistence-test" {
+		t.Fatalf("notification channel was not preserved: %#v", loaded.Notifications.Channels)
+	}
+}
+
 func TestResolveEnvWithComplexValues(t *testing.T) {
 	mgr := NewManager("test.yaml")
 
@@ -238,8 +296,8 @@ func TestResolveEnvWithComplexValues(t *testing.T) {
 		{"${API_KEY}", "secret123"},
 		{"$DB_PASSWORD", "password456"},
 		{"regular_text", "regular_text"},
-		{"${NON_EXISTENT}", "${NON_EXISTENT}"},
-		{"$NON_EXISTENT", "$NON_EXISTENT"},
+		{"${NON_EXISTENT}", ""}, // 2026-07-12: unresolved env var returns empty
+		{"$NON_EXISTENT", ""},
 	}
 
 	for _, tc := range testCases {
@@ -307,6 +365,42 @@ func TestClone_DeepCopyPointers(t *testing.T) {
 	fbClone := false
 	cloned.Screenshot.Fallback = &fbClone
 	assert.NotEqual(t, *cfg.Screenshot.Fallback, *cloned.Screenshot.Fallback)
+}
+
+func TestClone_PreservesNotificationAndOperationalConfig(t *testing.T) {
+	var cfg Config
+	cfg.Alerting.Webhook.Enabled = true
+	cfg.ICP.DatabasePath = "icp.db"
+	cfg.Backup.Sources = []string{"data", "configs"}
+	cfg.History.DatabasePath = "history.db"
+	cfg.Notifications.Enabled = true
+	cfg.Notifications.FeishuApp = &struct {
+		AppID     string `yaml:"app_id"`
+		AppSecret string `yaml:"app_secret"`
+		ChatID    string `yaml:"chat_id"`
+	}{AppID: "app", AppSecret: "secret", ChatID: "chat"}
+	cfg.Notifications.Channels = []NotificationChannelCfg{{
+		ID: "feishu-app", Type: "feishu_app", Enabled: true,
+		Headers: map[string]string{"X-Mode": "live"},
+	}}
+	cfg.Tamper.PortScanEnabled = true
+
+	cloned := cfg.Clone()
+
+	assert.Equal(t, cfg.Alerting, cloned.Alerting)
+	assert.Equal(t, cfg.ICP, cloned.ICP)
+	assert.Equal(t, cfg.Backup, cloned.Backup)
+	assert.Equal(t, cfg.History, cloned.History)
+	assert.Equal(t, cfg.Notifications, cloned.Notifications)
+	assert.Equal(t, cfg.Tamper, cloned.Tamper)
+
+	cloned.Backup.Sources[0] = "changed"
+	cloned.Notifications.FeishuApp.AppID = "changed"
+	cloned.Notifications.Channels[0].Headers["X-Mode"] = "changed"
+
+	assert.Equal(t, "data", cfg.Backup.Sources[0])
+	assert.Equal(t, "app", cfg.Notifications.FeishuApp.AppID)
+	assert.Equal(t, "live", cfg.Notifications.Channels[0].Headers["X-Mode"])
 }
 
 func TestClone_NilVsEmptySlice(t *testing.T) {

@@ -17,6 +17,7 @@ import (
 	"github.com/unimap/project/internal/alerting"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/tamper/fingerprint"
+	"github.com/unimap/project/internal/utils"
 )
 
 const (
@@ -87,18 +88,18 @@ func randomUA() string {
 
 // volatileHTTPHeaders HTTP 响应头中每次请求可能变化、不应纳入指纹的字段
 var volatileHTTPHeaders = map[string]struct{}{
-	"Date":          {},
-	"Age":           {},
-	"Expires":       {},
-	"Set-Cookie":    {},
-	"X-Request-Id":  {},
-	"X-Trace-Id":    {},
-	"X-Runtime":     {},
+	"Date":              {},
+	"Age":               {},
+	"Expires":           {},
+	"Set-Cookie":        {},
+	"X-Request-Id":      {},
+	"X-Trace-Id":        {},
+	"X-Runtime":         {},
 	"X-RateLimit-Reset": {},
-	"Cf-Cache-Status": {},
-	"X-Cache":       {},
-	"X-Served-By":   {},
-	"X-Timer":       {},
+	"Cf-Cache-Status":   {},
+	"X-Cache":           {},
+	"X-Served-By":       {},
+	"X-Timer":           {},
 }
 
 var compatibilityOptionalSegments = map[string]struct{}{
@@ -151,11 +152,11 @@ var (
 		"phishing", "fake", "login", "admin",
 	}
 
-	hiddenIframePattern    = regexp.MustCompile(`(?i)<iframe[^>]*style\s*=\s*["'][^"']*(display\s*:\s*none|visibility\s*:\s*hidden|width\s*:\s*0|height\s*:\s*0)[^"']*["']`)
-	dangerousEventPattern  = regexp.MustCompile(`(?i)on(?:error|load|mouseover|click|keyup|keydown|submit)\s*=\s*["'][^"']*(?:eval\(|document\.write\(|Function\(|atob\(|btoa\(|unescape\(|decodeURIComponent\(|String\.fromCharCode\(|crypto|miner|coin-hive|coinhive|cryptonight)[^"']*["']`)
-	maliciousKeywordRes    = compileWordBoundaryRegexes(maliciousScriptKeywords)
-	domainKeywordRes       = compileWordBoundaryRegexes(suspiciousDomainKeywords)
-	pathKeywordRes         = compileWordBoundaryRegexes(suspiciousPathKeywords)
+	hiddenIframePattern   = regexp.MustCompile(`(?i)<iframe[^>]*style\s*=\s*["'][^"']*(display\s*:\s*none|visibility\s*:\s*hidden|width\s*:\s*0|height\s*:\s*0)[^"']*["']`)
+	dangerousEventPattern = regexp.MustCompile(`(?i)on(?:error|load|mouseover|click|keyup|keydown|submit)\s*=\s*["'][^"']*(?:eval\(|document\.write\(|Function\(|atob\(|btoa\(|unescape\(|decodeURIComponent\(|String\.fromCharCode\(|crypto|miner|coin-hive|coinhive|cryptonight)[^"']*["']`)
+	maliciousKeywordRes   = compileWordBoundaryRegexes(maliciousScriptKeywords)
+	domainKeywordRes      = compileWordBoundaryRegexes(suspiciousDomainKeywords)
+	pathKeywordRes        = compileWordBoundaryRegexes(suspiciousPathKeywords)
 )
 
 // compiledKeyword pairs a human-readable keyword with its regex.
@@ -229,21 +230,21 @@ type SegmentHash struct {
 
 // PageHashResult holds the full hash computation result for a page.
 type PageHashResult struct {
-	URL           string                          `json:"url"`
-	Title         string                          `json:"title"`
-	FullHash      string                          `json:"full_hash"`
-	SimpleMD5Hash string                          `json:"simple_md5_hash"`
-	SegmentHashes []SegmentHash                   `json:"segment_hashes"`
-	Timestamp     int64                           `json:"timestamp"`
-	HTMLLength    int                             `json:"html_length"`
-	Status        string                          `json:"status"`
-	RawHTML       string                          `json:"-"`
-	HTTPHeaders              map[string]string               `json:"http_headers,omitempty"`
-	Fingerprints             []fingerprint.FingerprintResult `json:"fingerprints,omitempty"`
-	NormalizedHTTPFingerprint string                         `json:"normalized_http_fingerprint,omitempty"`
-	FinalURL                  string                         `json:"final_url,omitempty"`    // 最终落地 URL（跟随重定向后）
-	RedirectURLs              []string                       `json:"redirect_urls,omitempty"` // 重定向链
-	OpenPorts                 []int                          `json:"open_ports,omitempty"`    // 主机开放端口
+	URL                       string                          `json:"url"`
+	Title                     string                          `json:"title"`
+	FullHash                  string                          `json:"full_hash"`
+	SimpleMD5Hash             string                          `json:"simple_md5_hash"`
+	SegmentHashes             []SegmentHash                   `json:"segment_hashes"`
+	Timestamp                 int64                           `json:"timestamp"`
+	HTMLLength                int                             `json:"html_length"`
+	Status                    string                          `json:"status"`
+	RawHTML                   string                          `json:"-"`
+	HTTPHeaders               map[string]string               `json:"http_headers,omitempty"`
+	Fingerprints              []fingerprint.FingerprintResult `json:"fingerprints,omitempty"`
+	NormalizedHTTPFingerprint string                          `json:"normalized_http_fingerprint,omitempty"`
+	FinalURL                  string                          `json:"final_url,omitempty"`     // 最终落地 URL（跟随重定向后）
+	RedirectURLs              []string                        `json:"redirect_urls,omitempty"` // 重定向链
+	OpenPorts                 []int                           `json:"open_ports,omitempty"`    // 主机开放端口
 }
 
 // FingerprintChange 记录指纹变化（新增/消失）
@@ -273,7 +274,7 @@ type TamperCheckResult struct {
 	SuspiciousFlags    []string            `json:"suspicious_flags,omitempty"`
 	FingerprintChanges []FingerprintChange `json:"fingerprint_changes,omitempty"`
 	PortChanges        []PortChange        `json:"port_changes,omitempty"`
-	Timestamp        int64           `json:"timestamp"`
+	Timestamp          int64               `json:"timestamp"`
 }
 
 // SegmentChange describes a single segment-level change.
@@ -298,11 +299,10 @@ type cacheEntry struct {
 
 // Detector is the main tamper-detection engine.
 type Detector struct {
-	storage         *HashStorage
-	allocCtx        context.Context
-	allocCancel     context.CancelFunc
-	detectionMode   string
-	performanceMode string
+	storage            *HashStorage
+	browserPageLoader  BrowserPageLoader
+	detectionMode      string
+	performanceMode    string
 	alertManager       *alerting.Manager
 	fpEngine           *fingerprint.Engine
 	insecureSkipVerify bool
@@ -310,20 +310,34 @@ type Detector struct {
 	portScanList       []int
 	portScanTimeout    time.Duration
 	cache              map[string]*cacheEntry
-	cacheMu         sync.RWMutex
-	mu              sync.Mutex
+	cacheMu            sync.RWMutex
+	mu                 sync.Mutex
+}
+
+// BrowserPageLoader renders one URL through the application's guarded browser
+// path and returns the final title and HTML. Implementations must apply their
+// navigation security policy before making a connection.
+type BrowserPageLoader interface {
+	LoadPage(context.Context, string) (title string, html string, err error)
+}
+
+// BrowserPageLoaderFunc adapts a function to BrowserPageLoader.
+type BrowserPageLoaderFunc func(context.Context, string) (string, string, error)
+
+func (f BrowserPageLoaderFunc) LoadPage(ctx context.Context, targetURL string) (string, string, error) {
+	return f(ctx, targetURL)
 }
 
 // DetectorConfig holds configuration for creating a new Detector.
 type DetectorConfig struct {
-	BaseDir             string
-	DetectionMode       string
-	PerformanceMode     string
-	AlertManager        *alerting.Manager
-	InsecureSkipVerify  bool  // 跳过 SSL 证书验证（内网/自签证书场景）
-	PortScanEnabled     bool  // 巡检时附带端口扫描
-	PortScanList        []int // 扫描端口列表（为空时使用默认 Top 20）
-	PortScanTimeout     time.Duration // 单端口超时（默认 800ms）
+	BaseDir            string
+	DetectionMode      string
+	PerformanceMode    string
+	AlertManager       *alerting.Manager
+	InsecureSkipVerify bool          // 跳过 SSL 证书验证（内网/自签证书场景）
+	PortScanEnabled    bool          // 巡检时附带端口扫描
+	PortScanList       []int         // 扫描端口列表（为空时使用默认 Top 20）
+	PortScanTimeout    time.Duration // 单端口超时（默认 800ms）
 }
 
 // CheckRecord represents a single tamper check record persisted to disk.
@@ -343,7 +357,7 @@ type CheckRecord struct {
 // NewHashStorage creates a new HashStorage with the given base directory.
 func NewHashStorage(baseDir string) *HashStorage {
 	if baseDir == "" {
-		baseDir = "./hash_store"
+		baseDir = utils.HashStoreDir()
 	}
 	return &HashStorage{baseDir: baseDir}
 }
@@ -478,6 +492,9 @@ func (s *HashStorage) SaveCheckRecord(url string, record *CheckRecord) error {
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to save check record: %w", err)
 	}
+	if err := s.indexCheckRecord(record); err != nil {
+		logger.Warnf("Failed to index check record %s: %v", record.ID, err)
+	}
 
 	logger.Infof("Saved check record for %s to %s", url, filePath)
 	return nil
@@ -533,6 +550,14 @@ func (s *HashStorage) LoadCheckRecords(url string, limit int) ([]*CheckRecord, e
 
 // ListAllCheckRecords lists all check records grouped by URL.
 func (s *HashStorage) ListAllCheckRecords() (map[string][]*CheckRecord, error) {
+	markerPath := filepath.Join(s.baseDir, ".check_records_indexed")
+	if _, err := os.Stat(markerPath); err == nil {
+		indexed, indexErr := s.listIndexedCheckRecords()
+		if indexErr != nil {
+			return nil, fmt.Errorf("read check record index: %w", indexErr)
+		}
+		return indexed, nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -585,23 +610,38 @@ func (s *HashStorage) ListAllCheckRecords() (map[string][]*CheckRecord, error) {
 		}
 	}
 
-	return result, nil
+	for _, records := range result {
+		for _, record := range records {
+			if err := s.indexCheckRecord(record); err != nil {
+				return nil, fmt.Errorf("index legacy check record: %w", err)
+			}
+		}
+	}
+	if err := os.WriteFile(markerPath, []byte("indexed\n"), 0o600); err != nil {
+		return nil, fmt.Errorf("write check record index marker: %w", err)
+	}
+	return s.listIndexedCheckRecords()
+}
+
+// CheckStats is the typed report returned by GetCheckStats.
+type CheckStats struct {
+	TotalChecks     int   `json:"total_checks"`
+	TamperedCount   int   `json:"tampered_count"`
+	SafeCount       int   `json:"safe_count"`
+	FirstCheckCount int   `json:"first_check_count"`
+	LastCheckTime   int64 `json:"last_check_time,omitempty"`
+	FirstCheckTime  int64 `json:"first_check_time,omitempty"`
 }
 
 // GetCheckStats returns aggregate statistics for a URL's check records.
-func (s *HashStorage) GetCheckStats(url string) (map[string]interface{}, error) {
+func (s *HashStorage) GetCheckStats(url string) (CheckStats, error) {
 	records, err := s.LoadCheckRecords(url, 0)
 	if err != nil {
-		return nil, err
+		return CheckStats{}, err
 	}
 
 	if len(records) == 0 {
-		return map[string]interface{}{
-			"total_checks":      0,
-			"tampered_count":    0,
-			"safe_count":        0,
-			"first_check_count": 0,
-		}, nil
+		return CheckStats{}, nil
 	}
 
 	var tamperedCount, safeCount, firstCheckCount int
@@ -615,13 +655,13 @@ func (s *HashStorage) GetCheckStats(url string) (map[string]interface{}, error) 
 		}
 	}
 
-	return map[string]interface{}{
-		"total_checks":      len(records),
-		"tampered_count":    tamperedCount,
-		"safe_count":        safeCount,
-		"first_check_count": firstCheckCount,
-		"last_check_time":   records[0].Timestamp,
-		"first_check_time":  records[len(records)-1].Timestamp,
+	return CheckStats{
+		TotalChecks:     len(records),
+		TamperedCount:   tamperedCount,
+		SafeCount:       safeCount,
+		FirstCheckCount: firstCheckCount,
+		LastCheckTime:   records[0].Timestamp,
+		FirstCheckTime:  records[len(records)-1].Timestamp,
 	}, nil
 }
 
@@ -631,7 +671,13 @@ func (s *HashStorage) DeleteCheckRecords(url string) error {
 	defer s.mu.Unlock()
 
 	recordsDir := filepath.Join(s.baseDir, "records", sanitizeFilenameForStorage(url))
-	return os.RemoveAll(recordsDir)
+	if err := os.RemoveAll(recordsDir); err != nil {
+		return err
+	}
+	if err := s.deleteIndexedCheckRecords(url); err != nil {
+		return fmt.Errorf("delete indexed check records: %w", err)
+	}
+	return nil
 }
 
 // NewDetector creates a new Detector with the given configuration.
@@ -646,7 +692,7 @@ func NewDetector(cfg DetectorConfig) *Detector {
 
 	return &Detector{
 		storage:            storage,
-		detectionMode:      normalizeDetectionMode(cfg.DetectionMode),
+		detectionMode:      NormalizeDetectionMode(cfg.DetectionMode),
 		performanceMode:    normalizePerformanceMode(cfg.PerformanceMode),
 		alertManager:       cfg.AlertManager,
 		fpEngine:           fpEngine,
@@ -658,7 +704,10 @@ func NewDetector(cfg DetectorConfig) *Detector {
 	}
 }
 
-func normalizeDetectionMode(raw string) string {
+// NormalizeDetectionMode maps raw user input to one of the supported detection
+// modes, defaulting to DetectionModeRelaxed for unknown values. Exported so the
+// service layer can validate mode strings without re-implementing the mapping.
+func NormalizeDetectionMode(raw string) string {
 	mode := strings.ToLower(strings.TrimSpace(raw))
 	switch mode {
 	case DetectionModeStrict:

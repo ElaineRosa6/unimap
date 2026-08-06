@@ -2,12 +2,15 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/unimap/project/internal/service"
 )
@@ -276,6 +279,159 @@ func TestHandleURLPortScan_NoMonitorApp_Returns503(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", rec.Code)
+	}
+}
+
+func TestParsePortScanPortSpec_CustomAndFullRanges(t *testing.T) {
+	t.Run("custom ports and ranges", func(t *testing.T) {
+		ports, err := parsePortScanPortSpec("22, 80, 443, 8000-8002")
+		if err != nil {
+			t.Fatalf("parse custom port spec: %v", err)
+		}
+		want := []int{22, 80, 443, 8000, 8001, 8002}
+		if !reflect.DeepEqual(ports, want) {
+			t.Fatalf("custom ports = %v, want %v", ports, want)
+		}
+	})
+
+	t.Run("all ports", func(t *testing.T) {
+		ports, err := parsePortScanPortSpec("all")
+		if err != nil {
+			t.Fatalf("parse all ports: %v", err)
+		}
+		if len(ports) != 65535 || ports[0] != 1 || ports[len(ports)-1] != 65535 {
+			t.Fatalf("full port range is incomplete: len=%d first=%d last=%d", len(ports), ports[0], ports[len(ports)-1])
+		}
+	})
+}
+
+func TestHandleURLPortScanRejectsInvalidPortSpec(t *testing.T) {
+	s := &Server{monitorApp: service.NewMonitorAppService(nil)}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/port-scan", strings.NewReader(`{
+		"urls":["https://example.com"],
+		"scan_mode":"custom",
+		"port_spec":"80,9000-8000"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleURLPortScan(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_port_spec") {
+		t.Fatalf("expected invalid_port_spec response, got %s", rec.Body.String())
+	}
+}
+
+func TestHandleURLPortScanAcceptsTargetsAliasAndAppliesSSRFProtection(t *testing.T) {
+	s := &Server{monitorApp: service.NewMonitorAppService(nil)}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/port-scan", strings.NewReader(`{
+		"targets":["127.0.0.1"],
+		"port_spec":"80"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleURLPortScan(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"blocked"`) {
+		t.Fatalf("expected targets alias to reach SSRF protection, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleURLPortScanRejectsInvalidAuthorizedScope(t *testing.T) {
+	s := &Server{monitorApp: service.NewMonitorAppService(nil)}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/port-scan", strings.NewReader(`{
+		"targets":["https://example.com"],
+		"port_spec":"80",
+		"authorized_targets":["not-an-ip"]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleURLPortScan(rec, req)
+
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_authorized_scope") {
+		t.Fatalf("expected invalid_authorized_scope, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleProbeWebService_MissingURL(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/probe-web", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleProbeWebService(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandleProbeWebService_InvalidScheme(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{"url": "ftp://example.com"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/probe-web", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleProbeWebService(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"is_web":false`) {
+		t.Fatalf("expected is_web=false for ftp scheme, got %s", rec.Body.String())
+	}
+}
+
+func TestHandleProbeWebService_BlocksLocalhost(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{"url": "http://127.0.0.1:8080/admin"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/probe-web", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleProbeWebService(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "blocked_url") {
+		t.Fatalf("expected blocked_url error, got %s", rec.Body.String())
+	}
+}
+
+func TestHandleProbeWebServiceBatch_BlocksLocalhost(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]interface{}{"urls": []string{"http://127.0.0.1:8080/admin", "ftp://example.com"}})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/url/probe-web-batch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://localhost:8448")
+	s.handleProbeWebServiceBatch(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	bodyText := rec.Body.String()
+	if !strings.Contains(bodyText, `"http://127.0.0.1:8080/admin":false`) {
+		t.Fatalf("expected localhost result false, got %s", bodyText)
+	}
+	if !strings.Contains(bodyText, `"ftp://example.com":false`) {
+		t.Fatalf("expected invalid scheme result false, got %s", bodyText)
+	}
+}
+
+func TestProbeWebService_BlocksLocalhost(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if probeWebService(ctx, "http://127.0.0.1:8080/admin") {
+		t.Error("expected probeWebService to reject localhost targets")
 	}
 }
 

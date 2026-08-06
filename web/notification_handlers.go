@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -15,21 +16,30 @@ import (
 )
 
 func (s *Server) handleNotificationChannels(w http.ResponseWriter, r *http.Request) {
-	if s.config == nil {
+	if s.currentConfig() == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "service_unavailable", "config not loaded", nil)
 		return
 	}
 
-	s.configMutex.Lock()
-	channels := s.config.Notifications.Channels
-	s.configMutex.Unlock()
+	cfg := s.currentConfig()
+	if cfg == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "service_unavailable", "config not loaded", nil)
+		return
+	}
+	channels := cfg.Notifications.Channels
 
 	infos := make([]model.NotificationChannelInfo, len(channels))
 	for i, ch := range channels {
 		infos[i] = model.NotificationChannelInfo{
-			ID:      ch.ID,
-			Type:    ch.Type,
-			Enabled: ch.Enabled,
+			ID:                       ch.ID,
+			Type:                     ch.Type,
+			Enabled:                  ch.Enabled,
+			AppID:                    ch.AppID,
+			ChatID:                   ch.ChatID,
+			AllowPrivateIP:           ch.AllowPrivateIP,
+			WeComMsgType:             ch.WeComMsgType,
+			WeComMentionedList:       ch.WeComMentionedList,
+			WeComMentionedMobileList: ch.WeComMentionedMobileList,
 		}
 	}
 
@@ -59,25 +69,33 @@ func (s *Server) handleNotifyReload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) reloadNotifyChannels() {
-	cfg := s.configManager.GetConfig()
+	cfg := s.currentConfig()
+	if cfg == nil {
+		return
+	}
 	var chanCfgs []notify.ChannelConfig
 	for _, cc := range cfg.Notifications.Channels {
 		chanCfgs = append(chanCfgs, notify.ChannelConfig{
-			ID:             cc.ID,
-			Type:           cc.Type,
-			Enabled:        cc.Enabled,
-			WebhookURL:     cc.WebhookURL,
-			Secret:         cc.Secret,
-			AppID:          cc.AppID,
-			AppSecret:      cc.AppSecret,
-			ChatID:         cc.ChatID,
-			Headers:        cc.Headers,
-			AllowPrivateIP: cc.AllowPrivateIP,
+			ID:                       cc.ID,
+			Type:                     cc.Type,
+			Enabled:                  cc.Enabled,
+			WebhookURL:               cc.WebhookURL,
+			Secret:                   cc.Secret,
+			AppID:                    cc.AppID,
+			AppSecret:                cc.AppSecret,
+			ChatID:                   cc.ChatID,
+			Headers:                  cc.Headers,
+			AllowPrivateIP:           cc.AllowPrivateIP,
+			WeComMsgType:             cc.WeComMsgType,
+			WeComMentionedList:       cc.WeComMentionedList,
+			WeComMentionedMobileList: cc.WeComMentionedMobileList,
 		})
 	}
 
 	if s.notifyRegistry != nil {
+		s.notifyRegistry.Remove("feishu_app")
 		s.notifyRegistry.Reload(chanCfgs)
+		registerFeishuAppChannel(s.notifyRegistry, cfg)
 	}
 }
 
@@ -85,79 +103,96 @@ func (s *Server) reloadNotifyChannels() {
 // This allows quota and API queries to work immediately after saving API keys
 // without restarting the server.
 func (s *Server) reloadEngineAdapters() {
-	if s.orchestrator == nil || s.config == nil {
+	cfg := s.currentConfig()
+	if s.orchestrator == nil || cfg == nil {
 		return
 	}
-	for _, name := range []string{"fofa", "hunter", "zoomeye", "quake", "shodan"} {
+	for _, name := range []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"} {
 		s.orchestrator.UnregisterAdapter(name)
 	}
-	s.registerCoreEngineAdapters()
+	s.registerCoreEngineAdapters(cfg)
 	if provider := s.browserQueryProvider(); provider != nil {
 		s.orchestrator.SetWebOnlyBrowserBackend(&browserBackendAdapter{provider: provider})
 	}
-	s.reloadBrowserFallbackConfig()
+	s.reloadBrowserFallbackConfig(cfg)
 }
 
-// registerCoreEngineAdapters 注册核心 5 引擎适配器。新引擎适配器代码保留，未来启用时取消注释即可。
-func (s *Server) registerCoreEngineAdapters() {
-	cfg := s.config
+// registerCoreEngineAdapters 根据当前能力边界注册引擎适配器。
+func (s *Server) registerCoreEngineAdapters(cfg *config.Config) {
 	type engineReg struct {
-		enabled bool
-		apiKey  string
-		regAPI  func()
-		regWeb  func()
-		name    string
+		enabled     bool
+		hasCreds    bool
+		supportsWeb bool
+		regAPI      func()
+		regWeb      func()
+		name        string
 	}
 	engines := []engineReg{
-		{cfg.Engines.Fofa.Enabled, cfg.Engines.Fofa.APIKey,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewFofaAdapter(cfg.Engines.Fofa.APIBaseURL, cfg.Engines.Fofa.APIKey, cfg.Engines.Fofa.Email, cfg.Engines.Fofa.QPS, time.Duration(cfg.Engines.Fofa.Timeout)*time.Second)) },
+		{cfg.Engines.Fofa.Enabled, cfg.Engines.Fofa.APIKey != "", true,
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewFofaAdapter(cfg.Engines.Fofa.APIBaseURL, cfg.Engines.Fofa.APIKey, cfg.Engines.Fofa.Email, cfg.Engines.Fofa.QPS, time.Duration(cfg.Engines.Fofa.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewFofaAdapterWebOnly()) }, "FOFA"},
-		{cfg.Engines.Hunter.Enabled, cfg.Engines.Hunter.APIKey,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewHunterAdapter(cfg.Engines.Hunter.BaseURL, cfg.Engines.Hunter.APIKey, cfg.Engines.Hunter.QPS, time.Duration(cfg.Engines.Hunter.Timeout)*time.Second)) },
+		{cfg.Engines.Hunter.Enabled, cfg.Engines.Hunter.APIKey != "", true,
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewHunterAdapter(cfg.Engines.Hunter.BaseURL, cfg.Engines.Hunter.APIKey, cfg.Engines.Hunter.BackupAPIKey, cfg.Engines.Hunter.QPS, time.Duration(cfg.Engines.Hunter.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewHunterAdapterWebOnly()) }, "Hunter"},
-		{cfg.Engines.Zoomeye.Enabled, cfg.Engines.Zoomeye.APIKey,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewZoomEyeAdapter(cfg.Engines.Zoomeye.BaseURL, cfg.Engines.Zoomeye.APIKey, cfg.Engines.Zoomeye.QPS, time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second)) },
+		{cfg.Engines.Zoomeye.Enabled, cfg.Engines.Zoomeye.APIKey != "", true,
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewZoomEyeAdapter(cfg.Engines.Zoomeye.BaseURL, cfg.Engines.Zoomeye.APIKey, cfg.Engines.Zoomeye.QPS, time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewZoomEyeAdapterWebOnly()) }, "ZoomEye"},
-		{cfg.Engines.Quake.Enabled, cfg.Engines.Quake.APIKey,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewQuakeAdapter(cfg.Engines.Quake.BaseURL, cfg.Engines.Quake.APIKey, cfg.Engines.Quake.QPS, time.Duration(cfg.Engines.Quake.Timeout)*time.Second)) },
+		{cfg.Engines.Quake.Enabled, cfg.Engines.Quake.APIKey != "", true,
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewQuakeAdapter(cfg.Engines.Quake.BaseURL, cfg.Engines.Quake.APIKey, cfg.Engines.Quake.QPS, time.Duration(cfg.Engines.Quake.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewQuakeAdapterWebOnly()) }, "Quake"},
-		{cfg.Engines.Shodan.Enabled, cfg.Engines.Shodan.APIKey,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second)) },
+		{cfg.Engines.Shodan.Enabled, cfg.Engines.Shodan.APIKey != "", true,
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewShodanAdapterWebOnly()) }, "Shodan"},
-		{cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second)) },
+		{cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID != "" && cfg.Engines.Censys.APISecret != "", true,
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewCensysAdapterWebOnly()) }, "Censys"},
-		{cfg.Engines.Daydaymap.Enabled, cfg.Engines.Daydaymap.APIKey,
-			func() { s.orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second)) },
+		{cfg.Engines.Daydaymap.Enabled, cfg.Engines.Daydaymap.APIKey != "", true,
+			func() {
+				s.orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second))
+			},
 			func() { s.orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapterWebOnly()) }, "DayDayMap"},
 	}
 	for _, e := range engines {
 		if !e.enabled {
 			continue
 		}
-		if e.apiKey != "" {
+		if e.hasCreds {
 			e.regAPI()
 			logger.Infof("%s engine re-registered (API mode)", e.name)
-		} else {
+		} else if e.supportsWeb {
 			e.regWeb()
 			logger.Infof("%s engine re-registered (Web-only mode)", e.name)
+		} else {
+			logger.Warnf("%s engine is enabled but requires complete API credentials; registration skipped", e.name)
 		}
 	}
 }
 
 // reloadBrowserFallbackConfig 重载浏览器降级配置
-func (s *Server) reloadBrowserFallbackConfig() {
-	if s.service == nil || s.config == nil {
+func (s *Server) reloadBrowserFallbackConfig(cfg *config.Config) {
+	if s.service == nil || cfg == nil {
 		return
 	}
-	if s.config.Query.BrowserFallback.Enabled {
+	if cfg.Query.BrowserFallback.Enabled {
 		bfEngines := make(map[string]bool)
-		for _, e := range s.config.Query.BrowserFallback.Engines {
+		for _, e := range cfg.Query.BrowserFallback.Engines {
 			bfEngines[strings.ToLower(e)] = true
 		}
 		s.service.SetBrowserFallbackConfig(service.BrowserFallbackConfig{
-			Enabled: true, OnAPIError: s.config.Query.BrowserFallback.OnAPIError,
-			OnEmptyResult: s.config.Query.BrowserFallback.OnEmptyResult, Engines: bfEngines,
+			Enabled: true, OnAPIError: cfg.Query.BrowserFallback.OnAPIError,
+			OnEmptyResult: cfg.Query.BrowserFallback.OnEmptyResult, Engines: bfEngines,
 		})
 	} else {
 		s.service.SetBrowserFallbackConfig(service.BrowserFallbackConfig{Enabled: false})
@@ -166,16 +201,53 @@ func (s *Server) reloadBrowserFallbackConfig() {
 
 // notifyChannelSaveRequest is the JSON body for handleNotifyChannelSave.
 type notifyChannelSaveRequest struct {
-	ID             string            `json:"id"`
-	Type           string            `json:"type"`
-	Enabled        bool              `json:"enabled"`
-	WebhookURL     string            `json:"webhook_url"`
-	Secret         string            `json:"secret"`
-	AppID          string            `json:"app_id"`
-	AppSecret      string            `json:"app_secret"`
-	ChatID         string            `json:"chat_id"`
-	Headers        map[string]string `json:"headers"`
-	AllowPrivateIP bool              `json:"allow_private_ip"`
+	ID                       string            `json:"id"`
+	Type                     string            `json:"type"`
+	Enabled                  bool              `json:"enabled"`
+	WebhookURL               string            `json:"webhook_url"`
+	Secret                   string            `json:"secret"`
+	AppID                    string            `json:"app_id"`
+	AppSecret                string            `json:"app_secret"`
+	ChatID                   string            `json:"chat_id"`
+	Headers                  map[string]string `json:"headers"`
+	AllowPrivateIP           bool              `json:"allow_private_ip"`
+	WeComMsgType             string            `json:"wecom_msgtype"`
+	WeComMentionedList       []string          `json:"wecom_mentioned_list"`
+	WeComMentionedMobileList []string          `json:"wecom_mentioned_mobile_list"`
+	PreserveExisting         bool              `json:"preserve_existing"`
+}
+
+type notifyChannelInputError struct {
+	status  int
+	code    string
+	message string
+	details any
+}
+
+func (e *notifyChannelInputError) Error() string { return e.message }
+
+func notifyChannelRequiredFieldsError(req notifyChannelSaveRequest) *notifyChannelInputError {
+	if req.Type == "feishu_app" && (req.AppID == "" || req.AppSecret == "" || req.ChatID == "") {
+		return &notifyChannelInputError{
+			status: http.StatusBadRequest, code: "missing_feishu_app_params",
+			message: "feishu_app requires app_id, app_secret, and chat_id",
+		}
+	}
+	if req.Type != "log" && req.Type != "feishu_app" && req.WebhookURL == "" {
+		return &notifyChannelInputError{
+			status: http.StatusBadRequest, code: "missing_webhook_url",
+			message: "webhook_url is required for this channel type",
+		}
+	}
+	return nil
+}
+
+func validateNotifyChannelRequiredFields(w http.ResponseWriter, req notifyChannelSaveRequest) bool {
+	if inputErr := notifyChannelRequiredFieldsError(req); inputErr != nil {
+		writeAPIError(w, inputErr.status, inputErr.code, inputErr.message, inputErr.details)
+		return false
+	}
+	return true
 }
 
 // parseNotifyChannelSaveRequest decodes, trims, and validates the channel save request.
@@ -206,46 +278,81 @@ func parseNotifyChannelSaveRequest(w http.ResponseWriter, r *http.Request) (noti
 			"unsupported channel type", map[string]string{"type": req.Type})
 		return req, false
 	}
-	if req.Type == "feishu_app" {
-		if req.AppID == "" || req.AppSecret == "" || req.ChatID == "" {
-			writeAPIError(w, http.StatusBadRequest, "missing_feishu_app_params",
-				"feishu_app requires app_id, app_secret, and chat_id", nil)
-			return req, false
-		}
-	} else if req.Type != "log" && req.WebhookURL == "" {
-		writeAPIError(w, http.StatusBadRequest, "missing_webhook_url", "webhook_url is required for this channel type", nil)
+	if req.Type == "wecom" && !notify.ValidWeComMsgType(req.WeComMsgType) {
+		writeAPIError(w, http.StatusBadRequest, "invalid_wecom_msgtype",
+			"unsupported wecom message type (want markdown, markdown_v2, text, image, file)",
+			map[string]string{"wecom_msgtype": req.WeComMsgType})
+		return req, false
+	}
+	if !req.PreserveExisting && !validateNotifyChannelRequiredFields(w, req) {
 		return req, false
 	}
 	return req, true
 }
 
-// upsertNotifyChannel inserts or updates a channel in the config. Must be called with configMutex held.
-func (s *Server) upsertNotifyChannel(req notifyChannelSaveRequest) {
-	for i := range s.config.Notifications.Channels {
-		if s.config.Notifications.Channels[i].ID == req.ID {
+func mergeExistingNotifyChannel(req *notifyChannelSaveRequest, existing config.NotificationChannelCfg) {
+	if req.WebhookURL == "" {
+		req.WebhookURL = existing.WebhookURL
+	}
+	if req.Secret == "" {
+		req.Secret = existing.Secret
+	}
+	if req.AppID == "" {
+		req.AppID = existing.AppID
+	}
+	if req.AppSecret == "" {
+		req.AppSecret = existing.AppSecret
+	}
+	if req.ChatID == "" {
+		req.ChatID = existing.ChatID
+	}
+	if req.Headers == nil {
+		req.Headers = existing.Headers
+	}
+	if req.WeComMsgType == "" {
+		req.WeComMsgType = existing.WeComMsgType
+	}
+	if req.WeComMentionedList == nil {
+		req.WeComMentionedList = existing.WeComMentionedList
+	}
+	if req.WeComMentionedMobileList == nil {
+		req.WeComMentionedMobileList = existing.WeComMentionedMobileList
+	}
+}
+
+// upsertNotifyChannel inserts or updates a channel in a candidate config.
+func upsertNotifyChannel(cfg *config.Config, req notifyChannelSaveRequest) {
+	for i := range cfg.Notifications.Channels {
+		if cfg.Notifications.Channels[i].ID == req.ID {
 			secret := req.Secret
 			if secret == "" {
-				secret = s.config.Notifications.Channels[i].Secret
+				secret = cfg.Notifications.Channels[i].Secret
 			}
 			appSecret := req.AppSecret
 			if appSecret == "" {
-				appSecret = s.config.Notifications.Channels[i].AppSecret
+				appSecret = cfg.Notifications.Channels[i].AppSecret
 			}
-			s.config.Notifications.Channels[i] = config.NotificationChannelCfg{
+			cfg.Notifications.Channels[i] = config.NotificationChannelCfg{
 				ID: req.ID, Type: req.Type, Enabled: req.Enabled,
 				WebhookURL: req.WebhookURL, Secret: secret,
 				AppID: req.AppID, AppSecret: appSecret, ChatID: req.ChatID,
 				Headers: req.Headers, AllowPrivateIP: req.AllowPrivateIP,
+				WeComMsgType:             req.WeComMsgType,
+				WeComMentionedList:       req.WeComMentionedList,
+				WeComMentionedMobileList: req.WeComMentionedMobileList,
 			}
 			return
 		}
 	}
-	s.config.Notifications.Channels = append(s.config.Notifications.Channels,
+	cfg.Notifications.Channels = append(cfg.Notifications.Channels,
 		config.NotificationChannelCfg{
 			ID: req.ID, Type: req.Type, Enabled: req.Enabled,
 			WebhookURL: req.WebhookURL, Secret: req.Secret,
 			AppID: req.AppID, AppSecret: req.AppSecret, ChatID: req.ChatID,
 			Headers: req.Headers, AllowPrivateIP: req.AllowPrivateIP,
+			WeComMsgType:             req.WeComMsgType,
+			WeComMentionedList:       req.WeComMentionedList,
+			WeComMentionedMobileList: req.WeComMentionedMobileList,
 		})
 }
 
@@ -255,10 +362,10 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
-	if s.config == nil || s.configManager == nil {
+	if s.currentConfig() == nil || s.configManager == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "service_unavailable", "config not available", nil)
 		return
 	}
@@ -267,24 +374,55 @@ func (s *Server) handleNotifyChannelSave(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-
-	// P2-12: SSRF 校验 — webhook URL 保存时检查是否为私有/内网地址
-	if req.Type == "webhook" && req.WebhookURL != "" && !req.AllowPrivateIP {
-		if _, err := urlguard.Check(req.WebhookURL, urlguard.CheckOptions{
-			AllowPrivate:   false,
-			AllowedSchemes: []string{"http", "https"},
-		}); err != nil {
-			writeAPIError(w, http.StatusBadRequest, "blocked_webhook_url", "webhook URL resolves to private/internal address: "+sanitizeError(err.Error()), nil)
-			return
+	_, saveErr := s.updateConfig(func(cfg *config.Config) error {
+		resolved := req
+		if resolved.PreserveExisting {
+			found := false
+			for _, channel := range cfg.Notifications.Channels {
+				if channel.ID == resolved.ID {
+					if channel.Type != resolved.Type {
+						return &notifyChannelInputError{
+							status: http.StatusBadRequest, code: "channel_type_change_not_supported",
+							message: "changing channel type requires deleting and recreating the channel",
+						}
+					}
+					mergeExistingNotifyChannel(&resolved, channel)
+					found = true
+					break
+				}
+			}
+			if !found {
+				return &notifyChannelInputError{
+					status: http.StatusNotFound, code: "not_found", message: "channel to edit was not found",
+					details: map[string]string{"id": resolved.ID},
+				}
+			}
+			if inputErr := notifyChannelRequiredFieldsError(resolved); inputErr != nil {
+				return inputErr
+			}
 		}
-	}
-
-	s.configMutex.Lock()
-	s.upsertNotifyChannel(req)
-	saveErr := s.configManager.Save()
-	s.configMutex.Unlock()
+		// Validate the resolved URL's scheme and literal address here. The notify
+		// client's guarded dialer performs the authoritative DNS/IP check at send time.
+		if resolved.Type == "webhook" && resolved.WebhookURL != "" && !resolved.AllowPrivateIP {
+			if _, err := urlguard.Check(resolved.WebhookURL, urlguard.CheckOptions{
+				AllowPrivate: false, AllowedSchemes: []string{"http", "https"},
+			}); err != nil {
+				return &notifyChannelInputError{
+					status: http.StatusBadRequest, code: "blocked_webhook_url",
+					message: "webhook URL is not allowed: " + sanitizeError(err.Error()),
+				}
+			}
+		}
+		upsertNotifyChannel(cfg, resolved)
+		return nil
+	})
 
 	if saveErr != nil {
+		var inputErr *notifyChannelInputError
+		if errors.As(saveErr, &inputErr) {
+			writeAPIError(w, inputErr.status, inputErr.code, inputErr.message, inputErr.details)
+			return
+		}
 		logger.Warnf("notify channel save failed: %v", saveErr)
 		writeAPIError(w, http.StatusInternalServerError, "save_failed", "failed to persist config: "+sanitizeError(saveErr.Error()), nil)
 		return
@@ -305,10 +443,10 @@ func (s *Server) handleNotifyChannelDelete(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
-	if s.config == nil || s.configManager == nil {
+	if s.currentConfig() == nil || s.configManager == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "service_unavailable", "config not available", nil)
 		return
 	}
@@ -318,27 +456,35 @@ func (s *Server) handleNotifyChannelDelete(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, http.StatusBadRequest, "missing_id", "channel id is required", nil)
 		return
 	}
-
-	s.configMutex.Lock()
-
-	removed := false
-	newChannels := make([]config.NotificationChannelCfg, 0, len(s.config.Notifications.Channels))
-	for _, ch := range s.config.Notifications.Channels {
+	current := s.currentConfig()
+	found := false
+	for _, ch := range current.Notifications.Channels {
 		if ch.ID == id {
-			removed = true
-			continue
+			found = true
+			break
 		}
-		newChannels = append(newChannels, ch)
 	}
-	if !removed {
-		s.configMutex.Unlock()
+	if !found {
 		writeAPIError(w, http.StatusNotFound, "not_found", "channel not found", map[string]string{"id": id})
 		return
 	}
-	s.config.Notifications.Channels = newChannels
 
-	saveErr := s.configManager.Save()
-	s.configMutex.Unlock()
+	removed := false
+	_, saveErr := s.updateConfig(func(cfg *config.Config) error {
+		newChannels := make([]config.NotificationChannelCfg, 0, len(cfg.Notifications.Channels))
+		for _, ch := range cfg.Notifications.Channels {
+			if ch.ID == id {
+				removed = true
+				continue
+			}
+			newChannels = append(newChannels, ch)
+		}
+		if !removed {
+			return nil
+		}
+		cfg.Notifications.Channels = newChannels
+		return nil
+	})
 
 	if saveErr != nil {
 		logger.Warnf("notify channel delete failed: %v", saveErr)
@@ -357,15 +503,18 @@ func (s *Server) handleNotifyChannelDelete(w http.ResponseWriter, r *http.Reques
 
 // notifyChannelTestRequest is the JSON body for handleNotifyChannelTest.
 type notifyChannelTestRequest struct {
-	ID             string            `json:"id"`
-	Type           string            `json:"type"`
-	WebhookURL     string            `json:"webhook_url"`
-	Secret         string            `json:"secret"`
-	AppID          string            `json:"app_id"`
-	AppSecret      string            `json:"app_secret"`
-	ChatID         string            `json:"chat_id"`
-	Headers        map[string]string `json:"headers"`
-	AllowPrivateIP bool              `json:"allow_private_ip"`
+	ID                       string            `json:"id"`
+	Type                     string            `json:"type"`
+	WebhookURL               string            `json:"webhook_url"`
+	Secret                   string            `json:"secret"`
+	AppID                    string            `json:"app_id"`
+	AppSecret                string            `json:"app_secret"`
+	ChatID                   string            `json:"chat_id"`
+	Headers                  map[string]string `json:"headers"`
+	AllowPrivateIP           bool              `json:"allow_private_ip"`
+	WeComMsgType             string            `json:"wecom_msgtype"`
+	WeComMentionedList       []string          `json:"wecom_mentioned_list"`
+	WeComMentionedMobileList []string          `json:"wecom_mentioned_mobile_list"`
 }
 
 // resolveNotifyChannelTestRequest decodes the test request and fills missing fields from saved config.
@@ -377,14 +526,17 @@ func (s *Server) resolveNotifyChannelTestRequest(w http.ResponseWriter, r *http.
 
 	needLookup := req.WebhookURL == "" || req.Secret == "" || req.AppID == "" || req.AppSecret == "" || req.ChatID == ""
 	if needLookup {
-		s.configMutex.Lock()
-		for _, ch := range s.config.Notifications.Channels {
+		cfg := s.currentConfig()
+		if cfg == nil {
+			writeAPIError(w, http.StatusServiceUnavailable, "service_unavailable", "config not loaded", nil)
+			return req, false
+		}
+		for _, ch := range cfg.Notifications.Channels {
 			if ch.ID == req.ID {
 				s.fillTestRequestFromChannel(&req, ch)
 				break
 			}
 		}
-		s.configMutex.Unlock()
 	}
 
 	if req.Type == "" {
@@ -427,6 +579,15 @@ func (s *Server) fillTestRequestFromChannel(req *notifyChannelTestRequest, ch co
 	}
 	req.AllowPrivateIP = ch.AllowPrivateIP
 	req.Headers = ch.Headers
+	if req.WeComMsgType == "" {
+		req.WeComMsgType = ch.WeComMsgType
+	}
+	if req.WeComMentionedList == nil {
+		req.WeComMentionedList = ch.WeComMentionedList
+	}
+	if req.WeComMentionedMobileList == nil {
+		req.WeComMentionedMobileList = ch.WeComMentionedMobileList
+	}
 }
 
 // sendTestNotification builds a temporary channel and sends a test message.
@@ -437,6 +598,9 @@ func sendTestNotification(r *http.Request, req notifyChannelTestRequest) error {
 		WebhookURL: req.WebhookURL, Secret: req.Secret,
 		AppID: req.AppID, AppSecret: req.AppSecret, ChatID: req.ChatID,
 		Headers: req.Headers, AllowPrivateIP: req.AllowPrivateIP,
+		WeComMsgType:             req.WeComMsgType,
+		WeComMentionedList:       req.WeComMentionedList,
+		WeComMentionedMobileList: req.WeComMentionedMobileList,
 	}
 
 	ch, err := notify.NewChannelFromConfig(chCfg)
@@ -460,7 +624,7 @@ func (s *Server) handleNotifyChannelTest(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 

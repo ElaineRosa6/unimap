@@ -4,24 +4,59 @@
 	<main>
 		<div class="card">
 			<h2>端口扫描</h2>
-			<p class="text-muted">对目标 URL 进行端口扫描，检测开放端口和服务。</p>
+			<p class="text-muted">对授权公网 URL/IP 执行随机化笛卡尔积探测，支持 TCP、Telnet、原始 TCP 标志与 UDP。</p>
 
 			<div class="form-group">
-				<label>目标 URL（每行一个）</label>
+				<label>目标 URL 或公网 IP（每行一个）</label>
 				<textarea id="scan-urls" rows="5" class="form-control" placeholder="https://example.com&#10;http://1.2.3.4:8080&#10;example.org"></textarea>
+			</div>
+			<div class="form-group">
+				<label>授权 IP / CIDR 范围（可选，每行或逗号分隔）</label>
+				<textarea id="scan-authorized-targets" rows="2" class="form-control" placeholder="203.0.113.10&#10;198.51.100.0/24"></textarea>
+				<small>填写后，域名解析出的每个 IP 都必须落在该范围内；留空表示输入目标均已由操作者确认授权。此范围不会绕过内网 SSRF 拦截。</small>
 			</div>
 
 			<div class="form-row">
+				<div class="form-group" style="flex:1">
+					<label>扫描模式</label>
+					<select id="scan-mode" class="form-control">
+						<option value="common">常用端口</option>
+						<option value="custom">自定义端口</option>
+						<option value="full">全端口（1-65535）</option>
+					</select>
+				</div>
 				<div class="form-group" style="flex:2">
-					<label>扫描端口（逗号分隔，留空使用默认）</label>
-					<input type="text" id="scan-ports" class="form-control" placeholder="80, 443, 8080, 8443, 3306, 6379">
-					<small>默认端口：80, 81, 443, 8000, 8080, 8443, 9000</small>
+					<label>端口表达式</label>
+					<input type="text" id="scan-ports" class="form-control" placeholder="22,80,443,8000-8100" disabled>
+					<small id="scan-port-help">常用端口：80, 81, 443, 8000, 8080, 8443, 9000</small>
 				</div>
 				<div class="form-group" style="flex:1">
-					<label>并发数</label>
-					<input type="number" id="scan-concurrency" class="form-control" value="10" min="1" max="50">
+					<label>目标并发</label>
+					<input type="number" id="scan-concurrency" class="form-control" value="3" min="1" max="10">
 				</div>
 			</div>
+			<div class="form-row">
+				<div class="form-group" style="flex:2">
+					<label>探测方法（可多选）</label>
+					<select id="scan-probe-methods" class="form-control" multiple size="3">
+						<option value="connect" selected>TCP 标准连接</option>
+						<option value="telnet">Telnet 协商</option>
+						<option value="udp">UDP 探测（与 TCP 混合）</option>
+						<option value="fin">TCP FIN</option>
+						<option value="null">TCP NULL</option>
+						<option value="xmas">TCP Xmas (FIN/PSH/URG)</option>
+					</select>
+					<small>FIN/NULL/Xmas 需要管理员/root 原始套接字权限，并必须填写授权 IP/CIDR。</small>
+				</div>
+				<div class="form-group" style="flex:1"><label>端口并发</label><input type="number" id="scan-port-concurrency" class="form-control" value="256" min="1" max="1024"></div>
+				<div class="form-group" style="flex:1"><label>连接超时（毫秒）</label><input type="number" id="scan-connect-timeout" class="form-control" value="800" min="100" max="10000"></div>
+				<div class="form-group" style="flex:1"><label>单目标总超时（秒）</label><input type="number" id="scan-timeout" class="form-control" value="60" min="10" max="900"></div>
+			</div>
+			<div class="form-row">
+				<div class="form-group" style="flex:1"><label>随机抖动最小值（毫秒）</label><input type="number" id="scan-jitter-min" class="form-control" value="0" min="0" max="5000"></div>
+				<div class="form-group" style="flex:1"><label>随机抖动最大值（毫秒）</label><input type="number" id="scan-jitter-max" class="form-control" value="0" min="0" max="5000"></div>
+			</div>
+			<p class="text-muted">仅扫描公网目标；解析到内网/回环地址会被安全策略拒绝，检测到 CDN 的目标会被排除。</p>
 
 			<button class="btn btn-primary" id="btn-scan">开始扫描</button>
 			<button class="btn btn-secondary" id="btn-pscan-history">历史</button>
@@ -39,6 +74,7 @@
 						<th>解析 IP</th>
 						<th>CDN</th>
 						<th>开放端口</th>
+						<th>探测详情</th>
 						<th>状态</th>
 					</tr>
 				</thead>
@@ -73,14 +109,38 @@
 	</style>
 
 	<script nonce="{{.CSPNonce}}">
+	const scanMode = document.getElementById('scan-mode');
+	const scanPorts = document.getElementById('scan-ports');
+	const scanPortHelp = document.getElementById('scan-port-help');
+	function updatePortMode() {
+		const mode = scanMode.value;
+		scanPorts.disabled = mode !== 'custom';
+		if (mode === 'common') scanPortHelp.textContent = '常用端口：80, 81, 443, 8000, 8080, 8443, 9000';
+		if (mode === 'custom') scanPortHelp.textContent = '支持单端口和闭区间，例如：22,80,443,8000-8100';
+		if (mode === 'full') scanPortHelp.textContent = '将扫描 1-65535；耗时取决于目标丢包率和网络质量';
+		document.getElementById('scan-timeout').value = mode === 'full' ? '300' : '60';
+	}
+	scanMode.addEventListener('change', updatePortMode);
+	updatePortMode();
+
 	document.getElementById('btn-scan').addEventListener('click', async () => {
 		const urlsText = document.getElementById('scan-urls').value.trim();
 		if (!urlsText) { showToast('请输入目标 URL', 'error'); return; }
 
 		const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u);
-		const portsText = document.getElementById('scan-ports').value.trim();
-		const ports = portsText ? portsText.split(',').map(p => parseInt(p.trim())).filter(p => p > 0) : [];
-		const concurrency = parseInt(document.getElementById('scan-concurrency').value) || 10;
+		const authorizedTargets = document.getElementById('scan-authorized-targets').value.split(/[\n,]/).map(v => v.trim()).filter(v => v);
+		const mode = scanMode.value;
+		const portSpec = scanPorts.value.trim();
+		if (mode === 'custom' && !portSpec) { showToast('请输入自定义端口或范围', 'error'); return; }
+		if (mode === 'full' && !confirm('全端口扫描会对每个目标尝试 65535 个 TCP 连接，确定继续吗？')) return;
+		const concurrency = parseInt(document.getElementById('scan-concurrency').value) || 3;
+		const portConcurrency = parseInt(document.getElementById('scan-port-concurrency').value) || 256;
+		const connectTimeoutMS = parseInt(document.getElementById('scan-connect-timeout').value) || 800;
+		const scanTimeoutSeconds = parseInt(document.getElementById('scan-timeout').value) || (mode === 'full' ? 300 : 60);
+		const probeMethods = Array.from(document.getElementById('scan-probe-methods').selectedOptions).map(o => o.value);
+		if (probeMethods.length === 0) { showToast('请至少选择一种探测方法', 'error'); return; }
+		const jitterMinMS = Math.max(0, parseInt(document.getElementById('scan-jitter-min').value) || 0);
+		const jitterMaxMS = Math.max(jitterMinMS, parseInt(document.getElementById('scan-jitter-max').value) || 0);
 
 		document.getElementById('btn-scan').disabled = true;
 		document.getElementById('scan-status').textContent = '扫描中...';
@@ -90,7 +150,15 @@
 			const res = await fetch('/api/v1/url/port-scan', {
 				method: 'POST',
 				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({ urls, ports, concurrency })
+				body: JSON.stringify({
+					targets: urls, authorized_targets: authorizedTargets, scan_mode: mode, port_spec: portSpec, concurrency,
+					port_concurrency: portConcurrency,
+					connect_timeout_ms: connectTimeoutMS,
+					scan_timeout_seconds: scanTimeoutSeconds,
+					probe_methods: probeMethods,
+					jitter_min_ms: jitterMinMS,
+					jitter_max_ms: jitterMaxMS
+				})
 			});
 			const data = await res.json();
 			if (!res.ok) {
@@ -101,13 +169,13 @@
 			// 保存到操作历史（fire-and-forget）
 			try {
 				var s = data.summary || {};
-				var hasFailures = (s.scanFailed || 0) > 0 || (s.resolveFailed || 0) > 0;
+				var hasFailures = (s.scanFailed || 0) > 0 || (s.resolveFailed || 0) > 0 || (s.invalidFormat || 0) > 0 || (s.blocked || 0) > 0 || (s.notAuthorized || 0) > 0;
 				apiFetch('/api/v1/history/save', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
 						operation_type: 'port_scan',
-						input: { urls: urls, ports: ports, concurrency: concurrency },
+						input: { targets: urls, authorized_targets: authorizedTargets, scan_mode: mode, port_spec: portSpec, concurrency: concurrency, port_concurrency: portConcurrency, connect_timeout_ms: connectTimeoutMS, scan_timeout_seconds: scanTimeoutSeconds, probe_methods: probeMethods, jitter_min_ms: jitterMinMS, jitter_max_ms: jitterMaxMS },
 						status: hasFailures ? 'partial' : 'success',
 						total_count: s.total || 0,
 						summary: s,
@@ -128,12 +196,25 @@
 		container.style.display = '';
 
 		// Summary cards
-		const s = data.summary;
+		const s = data.summary || {};
+		const total = Number(s.total) || 0;
+		const scanned = Number(s.scanned) || 0;
+		const cdnExcluded = Number(s.cdnExcluded) || 0;
+		const failed = (Number(s.invalidFormat) || 0) + (Number(s.resolveFailed) || 0) + (Number(s.scanFailed) || 0) + (Number(s.blocked) || 0) + (Number(s.notAuthorized) || 0);
+		const portCount = Number(data.port_count) || (data.ports || []).length;
+		const duration = ((Number(data.duration_ms) || 0) / 1000).toFixed(1);
+		const uniqueIPs = Number(data.unique_ip_count) || 0;
+		const planned = Number(data.planned_connections) || 0;
+		const attempted = Number(data.attempted_connections) || 0;
 		const summaryHtml = `
-			<div class="summary-card"><div class="count">${s.total}</div><div class="label">总 URL</div></div>
-			<div class="summary-card"><div class="count">${s.scanned}</div><div class="label">已扫描</div></div>
-			<div class="summary-card"><div class="count">${s.cdnExcluded}</div><div class="label">CDN 排除</div></div>
-			<div class="summary-card"><div class="count">${s.invalidFormat + s.resolveFailed + s.scanFailed}</div><div class="label">失败</div></div>
+			<div class="summary-card"><div class="count">${total}</div><div class="label">总目标</div></div>
+			<div class="summary-card"><div class="count">${scanned}</div><div class="label">已扫描</div></div>
+			<div class="summary-card"><div class="count">${cdnExcluded}</div><div class="label">CDN 排除</div></div>
+			<div class="summary-card"><div class="count">${failed}</div><div class="label">失败</div></div>
+			<div class="summary-card"><div class="count">${portCount}</div><div class="label">请求端口</div></div>
+			<div class="summary-card"><div class="count">${duration}s</div><div class="label">总耗时</div></div>
+			<div class="summary-card"><div class="count">${uniqueIPs}</div><div class="label">唯一 IP</div></div>
+			<div class="summary-card"><div class="count">${attempted}/${planned}</div><div class="label">全局连接进度</div></div>
 		`;
 		document.getElementById('scan-summary').innerHTML = summaryHtml;
 
@@ -149,18 +230,26 @@
 			const ports = [];
 			if (r.open_ports) {
 				Object.entries(r.open_ports).forEach(([ip, portList]) => {
-					portList.forEach(p => ports.push(`<span class="port-badge">${escHtml(ip)}:${p}</span>`));
+				portList.forEach(p => ports.push(`<span class="port-badge">${escHtml(ip)}:${escHtml(p)}</span>`));
+				});
+			}
+			const findingDetails = [];
+			if (r.findings) {
+				Object.entries(r.findings).forEach(([ip, items]) => {
+					(items || []).forEach(item => findingDetails.push(`${escHtml(ip)}:${escHtml(item.port)}/${escHtml(item.protocol)} ${escHtml(item.method)}=${escHtml(item.state)}`));
 				});
 			}
 			const statusClass = r.status === 'scanned' ? 'status-enabled' : 'status-disabled';
-			const statusLabel = {scanned:'已扫描', cdn_excluded:'CDN排除', resolve_failed:'解析失败', scan_failed:'扫描失败', invalid_format:'格式错误'}[r.status] || r.status;
+			const statusLabel = {scanned:'已扫描', blocked:'安全拦截', not_authorized:'超出授权范围', cdn_excluded:'CDN排除', resolve_failed:'解析失败', scan_failed:'扫描未完成', invalid_format:'格式错误'}[r.status] || escHtml(r.status || '未知');
+			const progress = r.expected_connections ? ` (${Number(r.attempted_connections) || 0}/${Number(r.expected_connections)}, ${((Number(r.duration_ms) || 0) / 1000).toFixed(1)}s)` : '';
 
 			tr.innerHTML = `
 				<td>${escHtml(r.input)}</td>
 				<td><code>${escHtml(ips)}</code></td>
 				<td>${cdn}</td>
-				<td>${ports.length > 0 ? ports.join(' ') : '<span class="text-muted">无开放端口</span>'}</td>
-				<td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+				<td>${ports.length > 0 ? ports.join(' ') : '<span class="text-muted">无确定开放端口</span>'}</td>
+				<td>${findingDetails.length ? findingDetails.join('<br>') : '<span class="text-muted">-</span>'}</td>
+				<td><span class="status-badge ${statusClass}">${statusLabel}</span>${escHtml(progress)}${r.reason ? '<br><small>' + escHtml(r.reason) + '</small>' : ''}</td>
 			`;
 			tbody.appendChild(tr);
 		});
@@ -184,11 +273,13 @@
 				}
 				items.forEach(function(item) {
 					var li = document.createElement('li');
-					var urls = '', portsStr = '';
+					var urls = '', portsStr = '', historyMode = 'common', authorizedStr = '';
 					try {
 						var input = JSON.parse(item.input);
-						urls = (input.urls || []).join('\n');
-						portsStr = (input.ports || []).join(', ');
+						urls = (input.targets || input.urls || []).join('\n');
+						authorizedStr = (input.authorized_targets || []).join('\n');
+						portsStr = input.port_spec || (input.ports || []).join(', ');
+						historyMode = input.scan_mode || (portsStr ? 'custom' : 'common');
 					} catch(e) { urls = item.input; }
 
 					var codeEl = document.createElement('code');
@@ -205,6 +296,9 @@
 					li.addEventListener('click', function() {
 						document.getElementById('scan-urls').value = urls;
 						document.getElementById('scan-ports').value = portsStr;
+						document.getElementById('scan-authorized-targets').value = authorizedStr;
+						scanMode.value = historyMode;
+						updatePortMode();
 						closePScanHistory();
 					});
 					list.appendChild(li);

@@ -53,6 +53,21 @@ func buildAssetURL(asset *model.UnifiedAsset) {
 	asset.URL = u.String()
 }
 
+// normalizeHTTPURL only accepts absolute HTTP(S) URLs received from external
+// search engines. Adapter responses are untrusted input and later reach UI
+// actions such as direct navigation and screenshot requests.
+func normalizeHTTPURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return ""
+	}
+	return u.String()
+}
+
 // EngineAdapter 引擎适配器接口
 type EngineAdapter interface {
 	// Name 返回引擎标识

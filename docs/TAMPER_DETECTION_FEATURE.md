@@ -41,19 +41,36 @@
 - 对元素进行排序确保一致性
 - 支持HTML5语义化标签
 
+### 4. 检测模式
+
+`mode` 控制篡改判定的敏感度，由 `tamper.NormalizeDetectionMode` 归一化。5 种模式各有独立阈值（定义于 `internal/tamper/detector_types.go`）：
+
+| 模式 | 说明 |
+|------|------|
+| `relaxed`（默认） | 忽略易变段（head/body/header/nav/footer/scripts/styles/meta/full_content），仅对新增/删除稳定段、关键稳定段变更或 ≥2 处稳定段修改判定为篡改 |
+| `strict` | 任何变更即判定为篡改（含 simpleMD5 变更） |
+| `security` | scripts/forms/head 等安全相关段变更即判定为篡改 |
+| `balanced` | 新增/删除稳定段，或任一关键变更，或 ≥2 处稳定段修改 |
+| `precise` | 任一关键稳定段（main/article/forms）变更即判定为篡改 |
+
+> **历史问题（已于 2026-06-30 修复）**：service 层曾用 `if mode != strict { mode = relaxed }` 把 `security/balanced/precise` 静默降级为 `relaxed`，导致 UI 与定时任务的模式选择不生效。现已改为调用 `NormalizeDetectionMode` 透传全部 5 种模式。
+
 ## API接口
 
 ### 1. 篡改检测接口
 
-**POST** `/api/tamper/check`
+**POST** `/api/v1/tamper/check`
 
 请求体：
 ```json
 {
     "urls": ["https://example.com", "https://example.org"],
-    "concurrency": 5
+    "concurrency": 5,
+    "mode": "relaxed"
 }
 ```
+
+`mode` 可选，取值见下方「检测模式」。
 
 响应：
 ```json
@@ -86,7 +103,7 @@
 
 ### 2. 设置基线接口
 
-**POST** `/api/tamper/baseline`
+**POST** `/api/v1/tamper/baseline`
 
 请求体：
 ```json
@@ -98,34 +115,29 @@
 
 ### 3. 获取基线列表
 
-**GET** `/api/tamper/baseline/list`
+**GET** `/api/v1/tamper/baseline/list`
 
 响应：
 ```json
 {
     "success": true,
-    "urls": ["https_example_com"],
+    "urls": ["https://example.com"],
     "count": 1
 }
 ```
 
 ### 4. 删除基线
 
-**POST** `/api/tamper/baseline/delete`
+**DELETE** `/api/v1/tamper/baseline/delete?url=https%3A%2F%2Fexample.com`
 
-请求体：
-```json
-{
-    "url": "https://example.com"
-}
-```
+URL 通过查询参数传递，不接收 JSON 请求体。
 
 ## 使用示例
 
 ### 1. 设置基线
 
 ```bash
-curl -X POST http://localhost:8448/api/tamper/baseline \
+curl -X POST http://localhost:8448/api/v1/tamper/baseline \
   -H "Content-Type: application/json" \
   -d '{"urls": ["https://www.baidu.com"], "concurrency": 3}'
 ```
@@ -133,7 +145,7 @@ curl -X POST http://localhost:8448/api/tamper/baseline \
 ### 2. 检测篡改
 
 ```bash
-curl -X POST http://localhost:8448/api/tamper/check \
+curl -X POST http://localhost:8448/api/v1/tamper/check \
   -H "Content-Type: application/json" \
   -d '{"urls": ["https://www.baidu.com"], "concurrency": 3}'
 ```
@@ -141,12 +153,12 @@ curl -X POST http://localhost:8448/api/tamper/check \
 ### 3. 查看基线列表
 
 ```bash
-curl http://localhost:8448/api/tamper/baseline/list
+curl http://localhost:8448/api/v1/tamper/baseline/list
 ```
 
 ## 数据存储
 
-基线数据存储在 `./hash_store/` 目录下，每个URL对应一个JSON文件。
+基线数据存储在 `utils.HashStoreDir()` 目录下（跨平台路径，见 `internal/utils/path.go`），每个URL对应一个JSON文件。
 
 文件格式：
 ```json
@@ -190,15 +202,22 @@ curl http://localhost:8448/api/tamper/baseline/list
 2. 动态内容（如时间戳、随机数）可能导致误报，系统会自动清理部分动态内容
 3. 建议在网站稳定时设置基线，避免在更新期间设置
 4. 并发数建议根据网络带宽和目标服务器承受能力设置
+5. **定时巡检与交互式检测能力对齐**（2026-06-30 修复）：定时 `tamper_check` 任务现已从 `screenshotMgr` 注入浏览器 allocator，可渲染 JS/SPA 页面，与交互式 `/api/v1/tamper/check` 能力一致。此前定时任务传 nil allocator 只能走 HTTP/Fast 模式，对 SPA 目标会拿空 hash 导致误报。
+6. **查看已存基线**：巡检页（`/monitor`）"设置基线"旁有"查看基线"按钮，可列出已保存的基线并逐条删除。
 
-## 集成到批量截图
+## 批量截图证据边界
 
-篡改检测功能已集成到批量截图功能中，可以在截图的同时进行篡改检测：
+`CaptureBatchURLsWithTamper` 保留为内部兼容入口，但自动篡改证据截图尚未启用。传入
+`enableTamper=true` 会显式失败关闭，不会静默退化为普通截图，也不会返回伪造或空的
+`TamperResult`。
 
-```go
-// 带篡改检测的批量截图
-results, err := manager.CaptureBatchURLsWithTamper(ctx, urls, batchID, concurrency, true, detector)
-```
+启用该能力前必须完成：
 
-返回的结果中会包含 `TamperResult` 字段，包含篡改检测结果。
+1. 受控公网页面“建立基线 → 页面变化 → 检出变化 → 证据截图”验收；
+2. 截图实际 PNG、通知图片送达和预览验收；
+3. 服务重启后基线、检测记录和任务恢复验收；
+4. CDP 逐跳及连接级 SSRF 防护在同一部署环境中通过。
+
+当前可分别使用篡改检测 API/定时 `tamper_check` 和普通批量截图，但不得把两次独立操作描述为
+自动证据闭环。
 

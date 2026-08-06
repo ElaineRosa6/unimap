@@ -2,12 +2,14 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 
+	historydb "github.com/unimap/project/internal/history"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/scheduler"
@@ -19,15 +21,46 @@ const maxPayloadSizeBytes = 64 * 1024
 func writeSchedulerJSONError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"error": msg,
 	})
 }
 
-func validateTaskPayload(payload map[string]interface{}) error {
-	if payload == nil {
-		return nil
+func schedulerErrorStatus(err error) int {
+	switch {
+	case errors.Is(err, scheduler.ErrTaskNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, scheduler.ErrPersistence):
+		return http.StatusInternalServerError
+	case errors.Is(err, scheduler.ErrSchedule):
+		return http.StatusInternalServerError
+	default:
+		return http.StatusBadRequest
 	}
+}
+
+func (s *Server) requireBackupTaskAdmin(w http.ResponseWriter, r *http.Request, taskType scheduler.TaskType) bool {
+	// 读取本机文件的任务（backup / url_import / icp_import）要求 admin：认证可选时
+	// （OptionalAPIKey 无 key 也放行），限制文件导入类任务只能由管理员创建（FINDING-001/004 纵深防御）。
+	if (taskType != scheduler.TaskBackup && taskType != scheduler.TaskURLImport && taskType != scheduler.TaskICPImport) || !s.isAuthEnabled() {
+		return true
+	}
+	if ok, msg := s.requireAdmin(r); !ok {
+		writeSchedulerJSONError(w, http.StatusForbidden, msg)
+		return false
+	}
+	return true
+}
+
+func (s *Server) requireBackupTaskAdminByID(w http.ResponseWriter, r *http.Request, id string) bool {
+	task, err := s.scheduler.GetTask(id)
+	if err != nil {
+		return true // Let the operation return its normal not-found response.
+	}
+	return s.requireBackupTaskAdmin(w, r, task.Type)
+}
+
+func validateTaskPayload(taskType scheduler.TaskType, payload map[string]interface{}) error {
 	if len(payload) > maxPayloadKeys {
 		return fmt.Errorf("payload exceeds maximum of %d keys", maxPayloadKeys)
 	}
@@ -43,7 +76,97 @@ func validateTaskPayload(payload map[string]interface{}) error {
 			return fmt.Errorf("payload webhook_url invalid: %w", err)
 		}
 	}
-	return nil
+
+	requireString := func(field string) error {
+		if payloadHasString(payload, field) {
+			return nil
+		}
+		return fmt.Errorf("scheduler task type %q payload requires non-empty field %q", taskType, field)
+	}
+	requireStrings := func(field string, aliases ...string) error {
+		if payloadHasStrings(payload, append([]string{field}, aliases...)...) {
+			return nil
+		}
+		if len(aliases) > 0 {
+			return fmt.Errorf("scheduler task type %q payload requires non-empty field %q (legacy alias %q is also accepted)", taskType, field, aliases[0])
+		}
+		return fmt.Errorf("scheduler task type %q payload requires non-empty field %q", taskType, field)
+	}
+
+	switch taskType {
+	case scheduler.TaskQuery, scheduler.TaskExport:
+		return requireString("query")
+	case scheduler.TaskSearchScreenshot:
+		if err := requireString("engine"); err != nil {
+			return err
+		}
+		return requireString("query")
+	case scheduler.TaskBatchScreenshot, scheduler.TaskTamperCheck,
+		scheduler.TaskURLReachability, scheduler.TaskPortScan:
+		return requireStrings("urls", "targets")
+	case scheduler.TaskDistributedSubmit:
+		return requireString("task_type")
+	case scheduler.TaskBackup:
+		return requireStrings("sources")
+	case scheduler.TaskICPQuery:
+		if payloadHasStrings(payload, "queries") || payloadHasString(payload, "query") {
+			return nil
+		}
+		return fmt.Errorf("scheduler task type %q payload requires non-empty field %q or %q", taskType, "queries", "query")
+	default:
+		return nil
+	}
+}
+
+func payloadValue(payload map[string]interface{}, key string) (interface{}, bool) {
+	if value, ok := payload[key]; ok {
+		return value, true
+	}
+	extra, ok := payload["extra"].(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	value, ok := extra[key]
+	return value, ok
+}
+
+func payloadHasString(payload map[string]interface{}, key string) bool {
+	value, ok := payloadValue(payload, key)
+	if !ok {
+		return false
+	}
+	text, ok := value.(string)
+	return ok && strings.TrimSpace(text) != ""
+}
+
+func payloadHasStrings(payload map[string]interface{}, keys ...string) bool {
+	for _, key := range keys {
+		value, ok := payloadValue(payload, key)
+		if !ok {
+			continue
+		}
+		switch values := value.(type) {
+		case string:
+			for _, item := range strings.Split(values, ",") {
+				if strings.TrimSpace(item) != "" {
+					return true
+				}
+			}
+		case []string:
+			for _, item := range values {
+				if strings.TrimSpace(item) != "" {
+					return true
+				}
+			}
+		case []interface{}:
+			for _, item := range values {
+				if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // handleSchedulerPage renders the scheduler management page.
@@ -99,7 +222,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -118,6 +241,9 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if !s.requireBackupTaskAdmin(w, r, scheduler.TaskType(req.Type)) {
 		return
 	}
 
@@ -186,13 +312,13 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := validateTaskPayload(req.Payload); err != nil {
+	if err := validateTaskPayload(task.Type, req.Payload); err != nil {
 		writeSchedulerJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if err := s.scheduler.AddTask(task); err != nil {
-		writeSchedulerJSONError(w, http.StatusBadRequest, err.Error())
+		writeSchedulerJSONError(w, schedulerErrorStatus(err), err.Error())
 		return
 	}
 
@@ -247,7 +373,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -272,6 +398,10 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 
 	if strings.TrimSpace(req.ID) == "" {
 		writeSchedulerJSONError(w, http.StatusBadRequest, "task id is required")
+		return
+	}
+	if !s.requireBackupTaskAdmin(w, r, scheduler.TaskType(req.Type)) ||
+		!s.requireBackupTaskAdminByID(w, r, strings.TrimSpace(req.ID)) {
 		return
 	}
 
@@ -306,13 +436,13 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		DelaySeconds:  req.DelaySeconds,
 	}
 
-	if err := validateTaskPayload(req.Payload); err != nil {
+	if err := validateTaskPayload(task.Type, req.Payload); err != nil {
 		writeSchedulerJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if err := s.scheduler.UpdateTask(task); err != nil {
-		writeSchedulerJSONError(w, http.StatusBadRequest, err.Error())
+		writeSchedulerJSONError(w, schedulerErrorStatus(err), err.Error())
 		return
 	}
 
@@ -329,7 +459,7 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -345,9 +475,12 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 		writeSchedulerJSONError(w, http.StatusBadRequest, "task id is required")
 		return
 	}
+	if !s.requireBackupTaskAdminByID(w, r, strings.TrimSpace(req.ID)) {
+		return
+	}
 
 	if err := s.scheduler.DeleteTask(req.ID); err != nil {
-		writeSchedulerJSONError(w, http.StatusNotFound, err.Error())
+		writeSchedulerJSONError(w, schedulerErrorStatus(err), err.Error())
 		return
 	}
 
@@ -364,7 +497,7 @@ func (s *Server) handleRunTaskNow(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -380,9 +513,12 @@ func (s *Server) handleRunTaskNow(w http.ResponseWriter, r *http.Request) {
 		writeSchedulerJSONError(w, http.StatusBadRequest, "task id is required")
 		return
 	}
+	if !s.requireBackupTaskAdminByID(w, r, strings.TrimSpace(req.ID)) {
+		return
+	}
 
 	if err := s.scheduler.RunTaskNow(req.ID); err != nil {
-		writeSchedulerJSONError(w, http.StatusNotFound, err.Error())
+		writeSchedulerJSONError(w, schedulerErrorStatus(err), err.Error())
 		return
 	}
 
@@ -398,7 +534,7 @@ func (s *Server) handleEnableTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -414,9 +550,12 @@ func (s *Server) handleEnableTask(w http.ResponseWriter, r *http.Request) {
 		writeSchedulerJSONError(w, http.StatusBadRequest, "task id is required")
 		return
 	}
+	if !s.requireBackupTaskAdminByID(w, r, strings.TrimSpace(req.ID)) {
+		return
+	}
 
 	if err := s.scheduler.EnableTask(req.ID); err != nil {
-		writeSchedulerJSONError(w, http.StatusNotFound, err.Error())
+		writeSchedulerJSONError(w, schedulerErrorStatus(err), err.Error())
 		return
 	}
 
@@ -432,7 +571,7 @@ func (s *Server) handleDisableTask(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, "POST") {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -448,9 +587,12 @@ func (s *Server) handleDisableTask(w http.ResponseWriter, r *http.Request) {
 		writeSchedulerJSONError(w, http.StatusBadRequest, "task id is required")
 		return
 	}
+	if !s.requireBackupTaskAdminByID(w, r, strings.TrimSpace(req.ID)) {
+		return
+	}
 
 	if err := s.scheduler.DisableTask(req.ID); err != nil {
-		writeSchedulerJSONError(w, http.StatusNotFound, err.Error())
+		writeSchedulerJSONError(w, schedulerErrorStatus(err), err.Error())
 		return
 	}
 
@@ -477,8 +619,9 @@ func (s *Server) handleTaskHistory(w http.ResponseWriter, r *http.Request) {
 
 	taskType := r.URL.Query().Get("task_type")
 	status := r.URL.Query().Get("status")
+	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
 
-	history := s.scheduler.GetHistory(limit, taskType, status)
+	history := s.scheduler.GetHistory(limit, taskType, status, taskID)
 	if history == nil {
 		history = []scheduler.ExecutionRecord{}
 	}
@@ -486,16 +629,110 @@ func (s *Server) handleTaskHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, history)
 }
 
+// handleListPushLogs returns the persisted notification push audit log,
+// newest first. It mirrors handleTaskHistory's limit handling.
+func (s *Server) handleListPushLogs(w http.ResponseWriter, r *http.Request) {
+	if s.historyRepo == nil {
+		writeSchedulerJSONError(w, http.StatusServiceUnavailable, "history repository not initialized")
+		return
+	}
+
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &limit); n == 1 && err == nil {
+			if limit < 1 || limit > 500 {
+				limit = 50
+			}
+		} else {
+			limit = 50
+		}
+	}
+
+	logs, err := s.historyRepo.ListNotificationLogs(limit)
+	if err != nil {
+		logger.Errorf("[scheduler] push logs query failed: %v", err)
+		writeSchedulerJSONError(w, http.StatusInternalServerError, "failed to list push logs")
+		return
+	}
+	if logs == nil {
+		logs = []historydb.NotificationPushLog{}
+	}
+
+	writeJSON(w, http.StatusOK, logs)
+}
+
 // mapToTaskPayload converts a raw map (from JSON) to a typed TaskPayload.
 func mapToTaskPayload(m map[string]any) *model.TaskPayload {
 	if m == nil {
 		return &model.TaskPayload{}
 	}
-	raw, err := json.Marshal(m)
+	normalized := make(map[string]any, len(m))
+	for key, value := range m {
+		normalized[key] = value
+	}
+	for _, key := range []string{"engines", "queries", "urls"} {
+		if value, ok := normalized[key]; ok {
+			if values, compatible := normalizePayloadStringList(value); compatible {
+				normalized[key] = values
+			}
+		}
+	}
+
+	raw, err := json.Marshal(normalized)
 	if err != nil {
 		return &model.TaskPayload{}
 	}
 	var p model.TaskPayload
 	_ = json.Unmarshal(raw, &p)
+
+	// TaskPayload models common fields, while individual runners also accept
+	// task-specific top-level fields. Preserve those fields in Extra so the
+	// typed conversion does not silently discard runner parameters.
+	knownFields := map[string]struct{}{
+		"query": {}, "engines": {}, "page_size": {}, "notification_detail_limit": {}, "format": {},
+		"detection_mode": {}, "max_age_days": {}, "low_threshold": {},
+		"timeout_seconds": {}, "queries": {}, "type": {}, "page": {},
+		"icp_page_size": {}, "urls": {}, "url": {}, "cookie_file": {},
+		"extra": {},
+	}
+	extra := make(map[string]any, len(p.Extra)+len(normalized))
+	for key, value := range p.Extra {
+		extra[key] = value
+	}
+	for key, value := range normalized {
+		if _, known := knownFields[key]; !known {
+			extra[key] = value
+		}
+	}
+	if len(extra) > 0 {
+		p.Extra = extra
+	}
 	return &p
+}
+
+func normalizePayloadStringList(value any) ([]string, bool) {
+	var raw []string
+	switch values := value.(type) {
+	case string:
+		raw = strings.Split(values, ",")
+	case []string:
+		raw = values
+	case []interface{}:
+		raw = make([]string, 0, len(values))
+		for _, item := range values {
+			if text, ok := item.(string); ok {
+				raw = append(raw, text)
+			}
+		}
+	default:
+		return nil, false
+	}
+
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out, true
 }

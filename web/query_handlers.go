@@ -11,15 +11,15 @@ import (
 
 	"github.com/unimap/project/internal/collection"
 	"github.com/unimap/project/internal/config"
-	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/service"
 )
 
-// stableEngines 前端展示的稳定引擎列表。新引擎（censys/daydaymap）代码保留，API Key 验证通过后补充到此列表即可启用。
+// stableEngines is the browser-tested Web UI allowlist.
 var stableEngines = map[string]bool{
 	"fofa": true, "hunter": true, "zoomeye": true, "quake": true, "shodan": true,
+	"censys": true, "daydaymap": true,
 }
 
 func filterStableEngines(engines []string) []string {
@@ -34,8 +34,8 @@ func filterStableEngines(engines []string) []string {
 
 func (s *Server) runBrowserQueryAsync(ctx context.Context, query string, engines []string, enabled bool, action string, queryID string, progress func(done, total int, engine string, err error)) <-chan browserQueryOutcome {
 	autoCaptureEnabled := false
-	if s.config != nil {
-		autoCaptureEnabled = s.config.Screenshot.AutoCapture.Enabled && s.config.Screenshot.AutoCapture.CaptureSearchResults
+	if cfg := s.currentConfig(); cfg != nil {
+		autoCaptureEnabled = cfg.Screenshot.AutoCapture.Enabled && cfg.Screenshot.AutoCapture.CaptureSearchResults
 	}
 
 	return s.queryApp.RunBrowserQueryAsync(
@@ -61,16 +61,39 @@ func (s *Server) browserQueryProvider() screenshot.Provider {
 	if s.screenshotRouter != nil {
 		return s.screenshotRouter
 	}
-	if s.bridge != nil && s.bridge.Service != nil {
-		return screenshot.NewExtensionProvider(s.bridge.Service, s.screenshotMgr)
-	}
 	if s.screenshotMgr != nil {
 		return screenshot.NewCDPProvider(s.screenshotMgr)
 	}
 	return nil
 }
 
-func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string, explicitErrors ...string) map[string]interface{} {
+// QueryAPIPayload is the typed response for the query API.
+type QueryAPIPayload struct {
+	Status               string                     `json:"status"`
+	Query                string                     `json:"query"`
+	Engines              []string                   `json:"engines"`
+	Assets               []model.UnifiedAsset       `json:"assets"`
+	TotalCount           int                        `json:"totalCount"`
+	EngineStats          map[string]int             `json:"engineStats"`
+	Errors               []string                   `json:"errors"`
+	Persistence          service.PersistenceStatus  `json:"persistence,omitempty"`
+	Error                string                     `json:"error,omitempty"`
+	BrowserQuery         bool                       `json:"browserQuery"`
+	BrowserAction        string                     `json:"browserAction"`
+	BrowserOpenedEngines []string                   `json:"browserOpenedEngines"`
+	BrowserCollectedData []collection.CollectResult `json:"browserCollectedData"`
+	BrowserQueryErrors   []string                   `json:"browserQueryErrors"`
+	AutoCapture          bool                       `json:"autoCapture"`
+	AutoCaptureQueryID   string                     `json:"autoCaptureQueryID"`
+	AutoCapturedPaths    map[string]string          `json:"autoCapturedPaths"`
+	AutoCaptureErrors    []string                   `json:"autoCaptureErrors"`
+}
+
+// buildQueryAPIPayload 组装查询 API 响应。browserAssetsInResp 为 true 时表示
+// resp.Assets 已由 service 层 merge 了浏览器采集资产（HTTP API 走
+// ExecuteQueryWithBrowserWorkflow），此处不再追加，避免重复计数；WebSocket
+// 路径独立并行，resp 不含浏览器资产，需在本函数内追加。
+func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string, browserAssetsInResp bool, explicitErrors ...string) QueryAPIPayload {
 	for i := range browserOutcome.CollectedResults {
 		collection.NormalizeAssets(browserOutcome.CollectedResults[i].Engine, browserOutcome.CollectedResults[i].Assets)
 	}
@@ -108,41 +131,56 @@ func buildQueryAPIPayload(query string, engines []string, resp *service.QueryRes
 	assets := []model.UnifiedAsset{}
 	totalCount := 0
 	engineStats := map[string]int{}
+	persistence := service.PersistenceStatus{}
 	if resp != nil {
 		assets = resp.Assets
 		totalCount = resp.TotalCount
 		if resp.EngineStats != nil {
 			engineStats = resp.EngineStats
 		}
+		persistence = resp.Persistence
 	}
-	for _, collected := range browserOutcome.CollectedResults {
-		assets = append(assets, collected.Assets...)
-		if collected.Total > 0 {
-			totalCount += collected.Total
-		} else {
-			totalCount += len(collected.Assets)
-		}
-		if len(collected.Assets) > 0 {
-			engineStats[collected.Engine] += len(collected.Assets)
+	if !browserAssetsInResp {
+		for _, collected := range browserOutcome.CollectedResults {
+			assets = append(assets, collected.Assets...)
+			if collected.Total > 0 {
+				totalCount += collected.Total
+			} else {
+				totalCount += len(collected.Assets)
+			}
+			if len(collected.Assets) > 0 {
+				engineStats[collected.Engine] += len(collected.Assets)
+			}
 		}
 	}
 
-	return map[string]interface{}{
-		"query":                query,
-		"engines":              engines,
-		"assets":               assets,
-		"totalCount":           totalCount,
-		"engineStats":          engineStats,
-		"errors":               combinedErrors,
-		"browserQuery":         browserOutcome.Enabled,
-		"browserAction":        browserAction,
-		"browserOpenedEngines": browserOutcome.OpenedEngines,
-		"browserCollectedData": browserOutcome.CollectedResults,
-		"browserQueryErrors":   browserOutcome.Errors,
-		"autoCapture":          browserOutcome.AutoCaptureEnabled,
-		"autoCaptureQueryID":   browserOutcome.AutoCaptureQueryID,
-		"autoCapturedPaths":    browserOutcome.AutoCapturedPaths,
-		"autoCaptureErrors":    browserOutcome.AutoCaptureErrors,
+	status := "success"
+	if len(combinedErrors) > 0 {
+		if len(assets) > 0 {
+			status = "partial"
+		} else {
+			status = "error"
+		}
+	}
+
+	return QueryAPIPayload{
+		Status:               status,
+		Query:                query,
+		Engines:              engines,
+		Assets:               assets,
+		TotalCount:           totalCount,
+		EngineStats:          engineStats,
+		Errors:               combinedErrors,
+		Persistence:          persistence,
+		BrowserQuery:         browserOutcome.Enabled,
+		BrowserAction:        browserAction,
+		BrowserOpenedEngines: browserOutcome.OpenedEngines,
+		BrowserCollectedData: browserOutcome.CollectedResults,
+		BrowserQueryErrors:   browserOutcome.Errors,
+		AutoCapture:          browserOutcome.AutoCaptureEnabled,
+		AutoCaptureQueryID:   browserOutcome.AutoCaptureQueryID,
+		AutoCapturedPaths:    browserOutcome.AutoCapturedPaths,
+		AutoCaptureErrors:    browserOutcome.AutoCaptureErrors,
 	}
 }
 
@@ -151,7 +189,7 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -172,6 +210,12 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 			pageSize = size
 		}
 	}
+	// maxPageSize 放开到 3000：DayDayMap API key 单页上限为 2500（更大页返回"积分不足"），
+	// 全局上限需覆盖该能力，避免前端/API 无法一次拉取引擎允许的整页。
+	const maxPageSize = 3000
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
+	}
 
 	// 解析引擎列表（支持 engines=a&engines=b 和 engines=a,b 两种形式）
 	engines := s.queryApp.ResolveEngines(parseEnginesParam(r))
@@ -182,33 +226,50 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 
 	browserQueryID := fmt.Sprintf("query_%d", time.Now().UnixNano())
 	browserAction := strings.TrimSpace(r.FormValue("browser_action"))
-	browserQueryCh := s.runBrowserQueryAsync(r.Context(), query, engines, parseBoolValue(r.FormValue("browser_query")), browserAction, browserQueryID, nil)
+	browserEnabled := parseBoolValue(r.FormValue("browser_query"))
 
-	resp, err := s.queryApp.ExecuteQuery(r.Context(), query, engines, pageSize)
+	var resp *service.QueryResponse
 	var browserOutcome browserQueryOutcome
-	if browserQueryCh != nil {
-		// 浏览器查询已并行化，但仍可能耗时较长；给 60 秒超时保护，
-		// 超时则用已有结果返回，避免浏览器采集拖慢 API 查询响应。
-		select {
-		case browserOutcome = <-browserQueryCh:
-		case <-time.After(service.BrowserQueryWaitTimeout):
-			logger.Warnf("browser query timed out after %s for query %q, returning API results only", service.BrowserQueryWaitTimeout, query)
+	var err error
+	if browserEnabled {
+		autoCaptureEnabled := false
+		if cfg := s.currentConfig(); cfg != nil {
+			autoCaptureEnabled = cfg.Screenshot.AutoCapture.Enabled && cfg.Screenshot.AutoCapture.CaptureSearchResults
 		}
+		workflowCtx, cancel := context.WithTimeout(r.Context(), service.BrowserQueryWaitTimeoutForAction(browserAction))
+		defer cancel()
+		resp, browserOutcome, err = s.queryApp.ExecuteQueryWithBrowserWorkflow(workflowCtx, query, engines, pageSize, service.BrowserQueryWorkflowOptions{
+			Action:             browserAction,
+			QueryID:            browserQueryID,
+			AutoCaptureEnabled: autoCaptureEnabled,
+			PreviewURLBuilder:  s.screenshotPathToPreviewURL,
+			ScreenshotApp:      s.screenshotApp,
+			ScreenshotManager:  s.screenshotMgr,
+			BrowserRouter:      s.browserQueryProvider(),
+		})
+	} else {
+		resp, err = s.queryApp.ExecuteQuery(r.Context(), query, engines, pageSize)
 	}
 	if err != nil {
+		payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, true, fmt.Sprintf("API query failed: %v", err))
+		if payload.Status == "partial" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(payload)
+			return
+		}
 		writeAPIError(
 			w,
 			http.StatusBadGateway,
 			"query_execution_failed",
 			fmt.Sprintf("query failed: %v", err),
-			buildQueryAPIPayload(query, engines, nil, browserOutcome, browserAction, fmt.Sprintf("Query failed: %v", err)),
+			payload,
 		)
 		return
 	}
 
 	// 返回JSON结果
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction))
+	_ = json.NewEncoder(w).Encode(buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, true))
 }
 
 // handleIndex 处理首页请求
@@ -216,12 +277,12 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	engines := filterStableEngines(s.orchestrator.ListAdapters())
 	var fofaCookies, hunterCookies, quakeCookies, zoomeyeCookies []config.Cookie
 	proxyServer := ""
-	if s.config != nil {
-		fofaCookies = s.config.Engines.Fofa.Cookies
-		hunterCookies = s.config.Engines.Hunter.Cookies
-		quakeCookies = s.config.Engines.Quake.Cookies
-		zoomeyeCookies = s.config.Engines.Zoomeye.Cookies
-		proxyServer = strings.TrimSpace(s.config.Screenshot.ProxyServer)
+	if cfg := s.currentConfig(); cfg != nil {
+		fofaCookies = cfg.Engines.Fofa.Cookies
+		hunterCookies = cfg.Engines.Hunter.Cookies
+		quakeCookies = cfg.Engines.Quake.Cookies
+		zoomeyeCookies = cfg.Engines.Zoomeye.Cookies
+		proxyServer = strings.TrimSpace(cfg.Screenshot.ProxyServer)
 	}
 	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "index.html", map[string]interface{}{
 		"engines":          engines,
@@ -287,7 +348,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 		ProcessData: true,
 	}
 
-	resp, err := s.service.Query(r.Context(), req)
+	resp, err := s.queryApp.ExecuteQuery(r.Context(), req.Query, req.Engines, req.PageSize)
 	if err != nil {
 		if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "error.html", map[string]interface{}{
 			"error":   fmt.Sprintf("Query failed: %v", err),
@@ -315,7 +376,7 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 // handleResults 处理结果页面请求
 func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query().Get("query")
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
 	engines := []string{}
 	if engine := strings.TrimSpace(r.URL.Query().Get("engine")); engine != "" {
 		engines = []string{engine}
@@ -326,6 +387,8 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 		"query":         query,
 		"engines":       engines,
 		"assets":        []model.UnifiedAsset{},
+		"totalCount":    0,
+		"engineStats":   map[string]int{},
 		"staticVersion": s.staticVersion,
 	}) {
 		return
@@ -437,7 +500,7 @@ func (s *Server) handleQueryStatus(w http.ResponseWriter, r *http.Request) {
 
 	// 返回JSON结果
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(statusCopy)
+	_ = json.NewEncoder(w).Encode(statusCopy)
 }
 
 // handleAccountPage renders the account management page (GET /account).
@@ -446,6 +509,7 @@ func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 	tokenPrefix := ""
 	isMultiUser := s.userRepo != nil
 	role := ""
+	cfg := s.currentConfig()
 
 	// Try to get current user from session
 	currentUser := s.getCurrentUser(r)
@@ -456,15 +520,15 @@ func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 	} else if currentUser != nil {
 		// Synthetic admin (token auth, userID=-1)
 		role = currentUser.Role
-		if s.config != nil {
+		if cfg != nil {
 			token := s.adminToken()
 			if len(token) >= 8 {
 				tokenPrefix = token[:8]
 			}
 		}
-	} else if s.config != nil {
+	} else if cfg != nil {
 		// Legacy config-based user
-		username = s.config.Web.Auth.Username
+		username = cfg.Web.Auth.Username
 		token := s.adminToken()
 		if len(token) >= 8 {
 			tokenPrefix = token[:8]
@@ -546,6 +610,11 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		// In multi-user mode, legacy endpoint requires admin
+		if ok, msg := s.requireAdmin(r); !ok {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": msg})
+			return
+		}
 	}
 
 	var req struct {
@@ -557,12 +626,12 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.config == nil || s.configManager == nil {
+	if s.currentConfig() == nil || s.configManager == nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server configuration error"})
 		return
 	}
 
-	currentHash := s.config.Web.Auth.PasswordHash
+	currentHash := s.currentConfig().Web.Auth.PasswordHash
 	if currentHash == "" || !config.CheckPassword(req.CurrentPassword, currentHash) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current password is incorrect"})
 		return
@@ -579,15 +648,13 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.configMutex.Lock()
-	s.config.Web.Auth.PasswordHash = newHash
-	if err := s.configManager.Save(); err != nil {
-		s.config.Web.Auth.PasswordHash = currentHash
-		s.configMutex.Unlock()
+	if _, err := s.updateConfig(func(cfg *config.Config) error {
+		cfg.Web.Auth.PasswordHash = newHash
+		return nil
+	}); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to persist config"})
 		return
 	}
-	s.configMutex.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]string{"success": "password updated"})
 }

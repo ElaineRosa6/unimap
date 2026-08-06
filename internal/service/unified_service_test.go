@@ -9,6 +9,7 @@ import (
 	"github.com/unimap/project/internal/adapter"
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/model"
+	"github.com/unimap/project/internal/utils"
 )
 
 func TestNewUnifiedServiceWithConfig_Defaults(t *testing.T) {
@@ -36,6 +37,28 @@ func TestNewUnifiedServiceWithConfig_Defaults(t *testing.T) {
 	stats := svc.cache.GetStats()
 	if stats.MaxSize != 1000 {
 		t.Fatalf("expected cache max size 1000, got %d", stats.MaxSize)
+	}
+}
+
+func TestHandleCachedQueryResultPreservesResponseMetadata(t *testing.T) {
+	svc := NewUnifiedServiceWithConfig(nil)
+	defer svc.Shutdown()
+	req := QueryRequest{Query: `port="443"`, Engines: []string{"fofa", "hunter"}, PageSize: 10}
+	key := svc.buildQueryCacheKey(req)
+	assets := []model.UnifiedAsset{{IP: "192.0.2.10", Source: "fofa"}}
+	svc.cache.Set(key, assets, time.Minute)
+	metadataCache, ok := svc.cache.(utils.QueryCacheMetadataCache)
+	if !ok {
+		t.Fatal("query cache does not support metadata")
+	}
+	metadataCache.SetQueryMetadata(key, utils.QueryCacheMetadata{
+		EngineStats: map[string]int{"fofa": 1, "hunter": 0},
+		Errors:      []string{"hunter unavailable"},
+	}, time.Minute)
+
+	response, hit := svc.handleCachedQueryResult(context.Background(), req, key)
+	if !hit || response.EngineStats["fofa"] != 1 || len(response.Errors) != 1 {
+		t.Fatalf("cache hit changed response semantics: hit=%v response=%+v", hit, response)
 	}
 }
 

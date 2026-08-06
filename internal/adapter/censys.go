@@ -16,13 +16,13 @@ import (
 
 // CensysAdapter Censys引擎适配器
 type CensysAdapter struct {
-	client     *resty.Client
-	baseURL    string
-	apiID      string
-	apiSecret  string
-	useBearer  bool // true when using new-format personal API key (Bearer auth)
-	qps        int
-	timeout    time.Duration
+	client    *resty.Client
+	baseURL   string
+	apiID     string
+	apiSecret string
+	useBearer bool // true when using new-format personal API key (Bearer auth)
+	qps       int
+	timeout   time.Duration
 }
 
 // --- Censys v3 API response structs ---
@@ -113,16 +113,19 @@ type CensysV3HostResponse struct {
 // Each entry merges one service with host-level metadata (location, AS, DNS).
 // When a host has no services, a single entry is created with just host metadata.
 type CensysRawEntry struct {
-	IP               string          `json:"ip"`
-	Port             float64         `json:"port"`
-	ServiceName      string          `json:"service_name"`
-	HTTP             *CensysHTTP     `json:"http,omitempty"`
-	TLS              *CensysTLS      `json:"tls,omitempty"`
+	IP               string           `json:"ip"`
+	Port             float64          `json:"port"`
+	ServiceName      string           `json:"service_name"`
+	HTTP             *CensysHTTP      `json:"http,omitempty"`
+	TLS              *CensysTLS       `json:"tls,omitempty"`
 	Software         []CensysSoftware `json:"software,omitempty"`
-	Location         *CensysLocation `json:"location,omitempty"`
-	AutonomousSystem *CensysAS       `json:"autonomous_system,omitempty"`
-	DNS              *CensysDNS      `json:"dns,omitempty"`
-	LastUpdatedAt    string          `json:"last_updated_at,omitempty"`
+	Location         *CensysLocation  `json:"location,omitempty"`
+	AutonomousSystem *CensysAS        `json:"autonomous_system,omitempty"`
+	DNS              *CensysDNS       `json:"dns,omitempty"`
+	LastUpdatedAt    string           `json:"last_updated_at,omitempty"`
+	// Extra preserves host-level keys the Censys v3 resource may carry that
+	// CensysHostResource does not declare (e.g. operating_system).
+	Extra map[string]interface{} `json:"-"`
 }
 
 // NewCensysAdapter 创建Censys适配器
@@ -136,13 +139,13 @@ func NewCensysAdapter(baseURL, apiID, apiSecret string, qps int, timeout time.Du
 	useBearer := apiSecret == "" && strings.HasPrefix(apiID, "censys_")
 
 	return &CensysAdapter{
-		client:     client,
-		baseURL:    baseURL,
-		apiID:      apiID,
-		apiSecret:  apiSecret,
-		useBearer:  useBearer,
-		qps:        qps,
-		timeout:    timeout,
+		client:    client,
+		baseURL:   baseURL,
+		apiID:     apiID,
+		apiSecret: apiSecret,
+		useBearer: useBearer,
+		qps:       qps,
+		timeout:   timeout,
 	}
 }
 
@@ -182,26 +185,26 @@ func censysQuote(v string) string {
 // mapField 映射统一字段到Censys字段
 func (c *CensysAdapter) mapField(field string) string {
 	mapping := map[string]string{
-		"body":        "services.http.response.body",
-		"title":       "services.http.response.html_title",
-		"header":      "services.http.response.headers.raw",
-		"port":        "services.port",
-		"protocol":    "services.service_name",
-		"ip":          "ip",
-		"country":     "location.country_code",
-		"region":      "location.province",
-		"city":        "location.city",
-		"asn":         "autonomous_system.asn",
-		"org":         "autonomous_system.name",
-		"isp":         "autonomous_system.name",
-		"domain":      "dns.names",
-		"host":        "dns.names",
-		"server":      "services.http.response.headers.Server",
-		"status_code": "services.http.response.status_code",
-		"os":          "operating_system",
-		"app":         "services.software.product",
-		"cert":        "services.tls.certificates.leaf.subject",
-		"url":         "dns.names",
+		"body":        "host.services.endpoints.http.body",
+		"title":       "host.services.endpoints.http.html_title",
+		"header":      "host.services.endpoints.http.headers",
+		"port":        "host.services.port",
+		"protocol":    "host.services.protocol",
+		"ip":          "host.ip",
+		"country":     "host.location.country_code",
+		"region":      "host.location.province",
+		"city":        "host.location.city",
+		"asn":         "host.autonomous_system.asn",
+		"org":         "host.autonomous_system.name",
+		"isp":         "host.autonomous_system.name",
+		"domain":      "host.dns.names",
+		"host":        "host.dns.names",
+		"server":      "host.services.endpoints.http.headers.value",
+		"status_code": "host.services.endpoints.http.status_code",
+		"os":          "host.operating_system.product",
+		"app":         "host.services.software.product",
+		"cert":        "host.services.cert.names",
+		"url":         "host.dns.names",
 	}
 
 	if mapped, ok := mapping[field]; ok {
@@ -239,20 +242,20 @@ func (c *CensysAdapter) translateNode(node *model.UQLNode) string {
 				values := strings.Split(val, ",")
 				clauses := make([]string, 0, len(values))
 				for _, v := range values {
-					clauses = append(clauses, fmt.Sprintf("%s:%s", mappedField, censysQuote(strings.TrimSpace(v))))
+					clauses = append(clauses, fmt.Sprintf("%s=%s", mappedField, censysQuote(strings.TrimSpace(v))))
 				}
 				return "(" + strings.Join(clauses, " OR ") + ")"
 			}
 
 			if op == "!=" || op == "<>" {
 				// Censys uses NOT field:value (not -field:value)
-				return fmt.Sprintf("NOT %s:%s", mappedField, censysQuote(val))
+				return fmt.Sprintf("NOT %s=%s", mappedField, censysQuote(val))
 			}
 			// Censys 比较操作符: field:>value, field:>=value, field:<value, field:<=value
 			if op == ">" || op == ">=" || op == "<" || op == "<=" {
-				return fmt.Sprintf("%s:%s%s", mappedField, op, censysQuote(val))
+				return fmt.Sprintf("%s%s%s", mappedField, op, censysQuote(val))
 			}
-			return fmt.Sprintf("%s:%s", mappedField, censysQuote(val))
+			return fmt.Sprintf("%s=%s", mappedField, censysQuote(val))
 		}
 
 	case "logical":
@@ -358,6 +361,10 @@ func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName strin
 		return fmt.Errorf("Censys v3 host response missing IP")
 	}
 
+	// Capture host-level keys the typed struct does not declare so no field
+	// returned by the v3 resource is silently dropped.
+	hostExtra := censysHostResourceExtras(body)
+
 	// Build raw data: each service becomes an entry with the host info merged
 	rawData := make([]interface{}, 0, len(resource.Services)+1)
 	for _, svc := range resource.Services {
@@ -372,6 +379,7 @@ func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName strin
 			AutonomousSystem: resource.AutonomousSystem,
 			DNS:              resource.DNS,
 			LastUpdatedAt:    resource.LastUpdatedAt,
+			Extra:            hostExtra,
 		}
 		rawData = append(rawData, entry)
 	}
@@ -383,6 +391,7 @@ func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName strin
 			AutonomousSystem: resource.AutonomousSystem,
 			DNS:              resource.DNS,
 			LastUpdatedAt:    resource.LastUpdatedAt,
+			Extra:            hostExtra,
 		})
 	}
 
@@ -394,13 +403,38 @@ func parseCensysV3HostResponse(body []byte, page, pageSize int, engineName strin
 	return nil
 }
 
+// censysHostResourceExtras extracts top-level keys from the Censys v3 host
+// resource that CensysHostResource does not declare, so they survive
+// persistence instead of being dropped by the typed decode.
+func censysHostResourceExtras(body []byte) map[string]interface{} {
+	var outer struct {
+		Result struct {
+			Resource map[string]interface{} `json:"resource"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &outer); err != nil {
+		return nil
+	}
+	known := jsonFieldNames(CensysHostResource{})
+	extra := make(map[string]interface{})
+	for k, v := range outer.Result.Resource {
+		if !known[k] {
+			extra[k] = v
+		}
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	return extra
+}
+
 // Normalize 标准化Censys结果
 // Censys hosts have nested services[]. Each host can produce multiple UnifiedAssets (one per service).
 func (c *CensysAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
-	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	if raw == nil || len(raw.RawData) == 0 {
-		return assets, nil
+		return []model.UnifiedAsset{}, nil
 	}
+	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	for _, item := range raw.RawData {
 		entry, ok := item.(*CensysRawEntry)
 		if !ok {
@@ -425,10 +459,12 @@ func normalizeCensysEntry(entry *CensysRawEntry, source string) []model.UnifiedA
 
 	asset := model.UnifiedAsset{
 		IP: entry.IP, Source: source, CountryCode: cc, Region: region, City: city,
-		ASN: asn, Org: org, ISP: org, Host: host,
+		ASN: asn, Org: org, ISP: org, Host: host, LastSeen: entry.LastUpdatedAt,
 	}
 
 	applyCensysServiceFields(entry, &asset)
+	// Preserve host-level keys the typed struct does not declare.
+	applyExtras(&asset, entry.Extra)
 	buildCensysURL(&asset)
 	return []model.UnifiedAsset{asset}
 }
@@ -529,7 +565,11 @@ func buildCensysURL(asset *model.UnifiedAsset) {
 		return
 	}
 	if asset.Protocol == "" {
-		if asset.Port == 443 { asset.Protocol = "https" } else { asset.Protocol = "http" }
+		if asset.Port == 443 {
+			asset.Protocol = "https"
+		} else {
+			asset.Protocol = "http"
+		}
 	}
 	u := &url.URL{Scheme: strings.ToLower(asset.Protocol)}
 	if asset.Host != "" {

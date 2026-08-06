@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/config"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 )
 
@@ -332,6 +333,56 @@ func TestHasCookies_AllEmptyNames(t *testing.T) {
 	}
 }
 
+func TestEngineCookiesSupportsEveryBrowserEngine(t *testing.T) {
+	engines := []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"}
+	for _, engine := range engines {
+		t.Run(engine, func(t *testing.T) {
+			cfg := &config.Config{}
+			want := []config.Cookie{{Name: "session", Value: "fixture", Domain: ".example.test", Path: "/"}}
+			setEngineCookies(cfg, engine, want)
+			got := engineCookies(cfg, engine)
+			if len(got) != 1 || got[0].Name != "session" {
+				t.Fatalf("cookies for %s were not stored: %#v", engine, got)
+			}
+		})
+	}
+}
+
+func TestEngineCredentialURLUsesReachableCanonicalOrigins(t *testing.T) {
+	if got := engineCredentialURL("censys"); got != "https://platform.censys.io/" {
+		t.Fatalf("censys credential URL=%q", got)
+	}
+	if got := engineCredentialURL("daydaymap"); got != "https://www.daydaymap.com/home" {
+		t.Fatalf("daydaymap credential URL=%q", got)
+	}
+}
+
+func TestBridgeCookiesFromResultPreservesCookieAttributes(t *testing.T) {
+	result := screenshot.BridgeResult{StructuredCollectedData: &model.BridgeCollectedData{
+		Cookies: []model.BrowserCookie{{
+			Name: "session", Value: "fixture", Domain: ".fofa.info", Path: "/",
+			HTTPOnly: true, Secure: true,
+		}},
+	}}
+
+	cookies, err := bridgeCookiesFromResult("fofa", result)
+	if err != nil {
+		t.Fatalf("bridgeCookiesFromResult: %v", err)
+	}
+	if len(cookies) != 1 || !cookies[0].HTTPOnly || !cookies[0].Secure || cookies[0].Value != "fixture" {
+		t.Fatalf("cookie attributes were not preserved: %#v", cookies)
+	}
+}
+
+func TestBridgeCollectedDataKeepsBrowserStorageTyped(t *testing.T) {
+	data := model.BridgeCollectedData{Storage: &model.BrowserStorage{
+		Local: map[string]string{"token": "fixture"}, Session: map[string]string{"nonce": "one"},
+	}}
+	if data.Storage.Local["token"] != "fixture" || data.Storage.Session["nonce"] != "one" {
+		t.Fatalf("typed browser storage was lost: %#v", data.Storage)
+	}
+}
+
 // ============================================================
 // verifyEngineSession unsupported engine test
 // ============================================================
@@ -339,7 +390,7 @@ func TestHasCookies_AllEmptyNames(t *testing.T) {
 func TestVerifyEngineSession_UnknownEngine(t *testing.T) {
 	cfg := &config.Config{}
 	s := &Server{config: cfg}
-	ok, _, hint, err := s.verifyEngineSession(nil, "cdp", "unknown_engine", "test")
+	ok, _, hint, err := s.verifyEngineSession(context.TODO(), "cdp", "unknown_engine", "test")
 	if ok {
 		t.Fatal("expected false for unknown engine")
 	}
@@ -377,5 +428,57 @@ func TestActiveBridgeLiveTokens_RecentLastSeen_One(t *testing.T) {
 	}
 	if got := s.activeBridgeLiveTokens(); got != 1 {
 		t.Fatalf("expected 1 live token with recent LastSeen, got %d", got)
+	}
+}
+
+// ============================================================
+// handleImportCookieJSON tests
+// ============================================================
+
+func TestHandleImportCookieJSON_MethodNotAllowed(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookie/import", nil)
+	w := httptest.NewRecorder()
+	s.handleImportCookieJSON(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestHandleImportCookieJSON_ConfigNil(t *testing.T) {
+	s := &Server{config: nil}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cookie/import", nil)
+	req.Header.Set("Origin", "http://localhost:8448")
+	w := httptest.NewRecorder()
+	s.handleImportCookieJSON(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", w.Code)
+	}
+}
+
+// ============================================================
+// judgeLoginByCookieNames tests
+// ============================================================
+
+func TestJudgeLoginByCookieNames_Shodan(t *testing.T) {
+	if !judgeLoginByCookieNames("shodan", map[string]string{"dotcom_user": "admin"}) {
+		t.Error("expected logged_in for shodan with dotcom_user cookie")
+	}
+	if judgeLoginByCookieNames("shodan", map[string]string{}) {
+		t.Error("expected not logged_in for shodan with empty cookies")
+	}
+}
+
+func TestJudgeLoginByCookieNames_Censys(t *testing.T) {
+	// Censys is API-key based; no browser session cookie marker.
+	if judgeLoginByCookieNames("censys", map[string]string{"anything": "value"}) {
+		t.Error("expected not logged_in for censys (API-key only)")
+	}
+}
+
+func TestJudgeLoginByCookieNames_DayDayMap(t *testing.T) {
+	// DayDayMap is API-key based; no browser session cookie marker.
+	if judgeLoginByCookieNames("daydaymap", map[string]string{"anything": "value"}) {
+		t.Error("expected not logged_in for daydaymap (API-key only)")
 	}
 }

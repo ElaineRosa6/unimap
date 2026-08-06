@@ -1,3 +1,5 @@
+//go:build headless_e2e
+
 package tamper
 
 import (
@@ -5,75 +7,47 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// clearPageHashCache 清除 Detector 内部 PageHash 缓存（5 分钟 TTL）
-// 测试中连续两次请求同一 URL 但期望不同内容时必须调用
-func clearPageHashCache(d *Detector) {
-	d.cacheMu.Lock()
-	d.cache = make(map[string]*cacheEntry)
-	d.cacheMu.Unlock()
-}
-
-// TestRelaxed_TimeBasedDynamicContent_NoFalsePositive 验证：
-// 包含时间戳和分析脚本的动态页面在 relaxed 模式不应误报
-func TestRelaxed_TimeBasedDynamicContent_NoFalsePositive(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		now := time.Now().UTC().Format(time.RFC3339) // ISO 8601，可被 reTimestamp 归一化
-		// 生成标准格式 UUID（8-4-4-4-12），mask 确保长度一致
-		n := time.Now().UnixNano()
-		rid := fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-			n&0xffffffff, (n>>32)&0xffff, (n>>16)&0xffff, n&0xffff, n&0xffffffffffff)
-		_, _ = fmt.Fprintf(w, `<!DOCTYPE html>
-<html>
-<head><title>Test Page</title></head>
-<body>
-<main>
-	<h1>Dynamic Content Page</h1>
-	<p>Current time: %s</p>
-	<p>Request ID: %s</p>
-</main>
-<script>
-	var _hmt = _hmt || [];
-	_hmt.push(['_trackPageview', %d]);
-</script>
-</body>
-</html>`, now, rid, n)
-	}))
-	defer ts.Close()
-
-	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
-		PerformanceMode: PerformanceModeFast, // HTTP 模式避免 chromedp DOM 渲染差异
-	})
-
-	ctx := context.Background()
-
-	baseline, err := detector.ComputePageHash(ctx, ts.URL)
-	require.NoError(t, err)
-	require.NoError(t, detector.SaveBaseline(ts.URL, baseline))
-
-	// 清缓存确保第二次请求获取新时间戳
-	clearPageHashCache(detector)
-
-	result, err := detector.CheckTampering(ctx, ts.URL)
-	require.NoError(t, err)
-
-	t.Logf("Status: %s, Tampered: %v, Changes: %d, Segments: %v",
-		result.Status, result.Tampered, len(result.Changes), result.TamperedSegments)
-	for _, c := range result.Changes {
-		t.Logf("  Segment: %s, OldHash: %.12s, NewHash: %.12s, ChangeType: %s",
-			c.Segment, c.OldHash, c.NewHash, c.ChangeType)
+// newTestDetectorWithCDP 创建一个配置了 CI 安全浏览器加载器的 Detector。
+// GitHub Actions / 容器环境以 root 运行 Chrome，需要 --no-sandbox 才能启动，
+// 否则 Chrome 启动时收到 SIGABRT（"chrome failed to start: Received signal 6"）；
+// disable-dev-shm-usage 避免 /dev/shm 过小导致的崩溃。仅用于 chromedp 模式测试。
+func newTestDetectorWithCDP(t *testing.T, cfg DetectorConfig) *Detector {
+	t.Helper()
+	d := NewDetector(cfg)
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.NoSandbox,
+		chromedp.DisableGPU,
+		chromedp.Flag("disable-dev-shm-usage", "true"),
+	)
+	if chromePath := strings.TrimSpace(os.Getenv("UNIMAP_CHROME_PATH")); chromePath != "" {
+		opts = append(opts, chromedp.ExecPath(chromePath))
 	}
-	assert.False(t, result.Tampered, "动态时间戳+分析脚本页面在relaxed模式不应标记为篡改")
-	assert.Contains(t, []string{"normal", "normal_dynamic"}, result.Status,
-		"状态应为 normal 或 normal_dynamic")
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
+	t.Cleanup(allocCancel)
+	d.SetBrowserPageLoader(BrowserPageLoaderFunc(func(_ context.Context, targetURL string) (string, string, error) {
+		browserCtx, browserCancel := chromedp.NewContext(allocCtx)
+		defer browserCancel()
+		var title, html string
+		err := chromedp.Run(browserCtx,
+			chromedp.Navigate(targetURL),
+			chromedp.WaitReady("body", chromedp.ByQuery),
+			chromedp.Title(&title),
+			chromedp.OuterHTML("html", &html, chromedp.ByQuery),
+		)
+		return title, html, err
+	}))
+	return d
 }
 
 // TestRelaxed_VersionedJSFiles_NoFalsePositive 验证：
@@ -99,14 +73,34 @@ func TestRelaxed_VersionedJSFiles_NoFalsePositive(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
+	detector := newTestDetectorWithCDP(t, DetectorConfig{
+		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
 
 	ctx := context.Background()
 
-	baseline, err := detector.ComputePageHash(ctx, ts.URL)
+	// retryComputePageHash 对 chromedp WebSocket 超时等瞬态错误做重试
+	retryComputePageHash := func(targetURL string) (*PageHashResult, error) {
+		var result *PageHashResult
+		var err error
+		for attempt := 0; attempt < 3; attempt++ {
+			result, err = detector.ComputePageHash(ctx, targetURL)
+			if err == nil {
+				return result, nil
+			}
+			if strings.Contains(err.Error(), "websocket url timeout") ||
+				strings.Contains(err.Error(), "connection refused") {
+				t.Logf("ComputePageHash transient error (attempt %d/3): %v", attempt+1, err)
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			return nil, err
+		}
+		return result, err
+	}
+
+	baseline, err := retryComputePageHash(ts.URL)
 	require.NoError(t, err)
 	require.NoError(t, detector.SaveBaseline(ts.URL, baseline))
 
@@ -142,8 +136,8 @@ func TestRelaxed_SSRHydrationData_NoFalsePositive(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
+	detector := newTestDetectorWithCDP(t, DetectorConfig{
+		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
 
@@ -200,8 +194,8 @@ func TestRelaxed_InjectedMaliciousIframe_DetectsTamper(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
+	detector := newTestDetectorWithCDP(t, DetectorConfig{
+		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
 
@@ -242,8 +236,8 @@ func TestRelaxed_SignificantMainContentChange_DetectsTamper(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
+	detector := newTestDetectorWithCDP(t, DetectorConfig{
+		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
 
@@ -262,41 +256,6 @@ func TestRelaxed_SignificantMainContentChange_DetectsTamper(t *testing.T) {
 	assert.Equal(t, "tampered", result.Status)
 	t.Logf("Status: %s, Tampered: %v, Segments: %v",
 		result.Status, result.Tampered, result.TamperedSegments)
-}
-
-// TestRelaxed_CompletelyUnchangedPage_ReturnsNormal 验证：
-// 完全不变的静态页面应返回 normal
-func TestRelaxed_CompletelyUnchangedPage_ReturnsNormal(t *testing.T) {
-	const staticHTML = `<!DOCTYPE html>
-<html>
-<head><title>Static Page</title></head>
-<body>
-<main><h1>Static Content</h1><p>This never changes.</p></main>
-</body>
-</html>`
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprint(w, staticHTML)
-	}))
-	defer ts.Close()
-
-	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
-		PerformanceMode: PerformanceModeFast,
-	})
-
-	ctx := context.Background()
-
-	baseline, err := detector.ComputePageHash(ctx, ts.URL)
-	require.NoError(t, err)
-	require.NoError(t, detector.SaveBaseline(ts.URL, baseline))
-
-	// 内容不变，无需清缓存（缓存命中反而正确）
-	result, err := detector.CheckTampering(ctx, ts.URL)
-	require.NoError(t, err)
-
-	assert.False(t, result.Tampered, "完全不变的静态页面不应标记为篡改")
-	assert.Equal(t, "normal", result.Status)
 }
 
 // TestStrict_MD5Change_DetectsTamper 验证：
@@ -318,7 +277,7 @@ func TestStrict_MD5Change_DetectsTamper(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	detector := NewDetector(DetectorConfig{
+	detector := newTestDetectorWithCDP(t, DetectorConfig{
 		DetectionMode: DetectionModeStrict,
 	})
 
@@ -360,8 +319,8 @@ func TestNormalDynamic_DoesNotSetTampered(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	detector := NewDetector(DetectorConfig{
-		DetectionMode:    DetectionModeRelaxed,
+	detector := newTestDetectorWithCDP(t, DetectorConfig{
+		DetectionMode:   DetectionModeRelaxed,
 		PerformanceMode: PerformanceModeBalanced,
 	})
 

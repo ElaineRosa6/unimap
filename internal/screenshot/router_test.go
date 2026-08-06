@@ -55,6 +55,43 @@ func TestNewScreenshotRouter_WithCDPProvider(t *testing.T) {
 	}
 }
 
+func TestScreenshotRouterReadyRespectsForcedModeAndFallback(t *testing.T) {
+	tests := []struct {
+		name      string
+		mode      ScreenshotMode
+		fallback  bool
+		cdpOK     bool
+		extOK     bool
+		wantReady bool
+	}{
+		{name: "forced extension is not ready without a live extension", mode: ModeExtension, cdpOK: true, extOK: false, wantReady: false},
+		{name: "forced extension may fall back to healthy CDP", mode: ModeExtension, fallback: true, cdpOK: true, extOK: false, wantReady: true},
+		{name: "forced CDP is not ready when only extension is healthy", mode: ModeCDP, cdpOK: false, extOK: true, wantReady: false},
+		{name: "auto is ready with either backend", mode: ModeAuto, cdpOK: true, extOK: false, wantReady: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cdp Provider
+			if tt.cdpOK {
+				cdp = &mockProvider{}
+			}
+			var bridge *BridgeService
+			if tt.extOK {
+				bridge = NewBridgeService(&mockBridgeClient{}, 1, time.Second)
+			}
+			r := NewScreenshotRouter(RouterConfig{Mode: tt.mode, Priority: ModeCDP, Fallback: tt.fallback}, cdp, bridge, nil)
+			r.SetMode(tt.mode)
+			r.cdpHealthy.Store(tt.cdpOK)
+			r.extHealthy.Store(tt.extOK)
+
+			if got := r.Ready(); got != tt.wantReady {
+				t.Fatalf("Ready() = %v, want %v", got, tt.wantReady)
+			}
+		})
+	}
+}
+
 func TestRouterDetermineBestMode_CDPUnhealthy_FallbackToExt(t *testing.T) {
 	r := &ScreenshotRouter{cfg: RouterConfig{Fallback: true}}
 	best := r.determineBestMode(ModeCDP, false, true)
@@ -139,6 +176,25 @@ func TestRouterStartStop_NoGoroutineLeak(t *testing.T) {
 	}
 }
 
+func TestRouterStartDoesNotProbeChromeWithoutCDPProvider(t *testing.T) {
+	router := NewScreenshotRouter(RouterConfig{Mode: ModeExtension, Priority: ModeExtension}, nil, nil, nil)
+	checker, ok := router.cdpChecker.(*CDPHealthChecker)
+	if !ok {
+		t.Fatalf("unexpected CDP checker type %T", router.cdpChecker)
+	}
+	var probeCalls atomic.Int32
+	checker.ChromeProbe = func(context.Context, string) bool {
+		probeCalls.Add(1)
+		return true
+	}
+
+	router.Start(t.Context())
+	router.Stop()
+	if got := probeCalls.Load(); got != 0 {
+		t.Fatalf("Chrome probe called %d times without a CDP provider", got)
+	}
+}
+
 func TestRouterModeSwitch_Tracked(t *testing.T) {
 	var switchCount atomic.Int32
 	cfg := RouterConfig{
@@ -147,7 +203,8 @@ func TestRouterModeSwitch_Tracked(t *testing.T) {
 		ProbeInterval: 100 * time.Millisecond,
 		ProbeTimeout:  50 * time.Millisecond,
 	}
-	r := NewScreenshotRouter(cfg, nil, nil, nil)
+	bridge := NewBridgeService(&mockBridgeClient{}, 1, time.Second)
+	r := NewScreenshotRouter(cfg, &mockProvider{}, bridge, nil)
 	r.onModeSwitch = func(from, to ScreenshotMode) {
 		switchCount.Add(1)
 	}
@@ -194,6 +251,46 @@ func TestRouterHealthCheck_Callback(t *testing.T) {
 	}
 }
 
+func TestRouterCollectAndCapture_ExtensionModeUsesBridgeEvenWithManager(t *testing.T) {
+	client := &mockBridgeClient{
+		awaitResult: BridgeResult{
+			Success:   true,
+			ImagePath: "/tmp/router-combined.png",
+			StructuredCollectedData: &model.BridgeCollectedData{
+				Total: 1,
+				Items: []model.CollectedDataItem{{IP: "1.2.3.4", Port: 443}},
+			},
+		},
+	}
+	svc := NewBridgeService(client, 1, 5*time.Second)
+	svc.Start(context.Background())
+	defer svc.Stop()
+
+	mgr := NewManager(Config{BaseDir: t.TempDir(), Timeout: time.Second})
+	r := NewScreenshotRouter(RouterConfig{Priority: ModeExtension, Fallback: false}, nil, svc, mgr)
+	r.extHealthy.Store(true)
+
+	got, path, err := r.CollectAndCaptureSearchEngineResult(context.Background(), "fofa", "test", "q1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path != "/tmp/router-combined.png" {
+		t.Fatalf("unexpected path: %q", path)
+	}
+	if len(got) != 1 || len(got[0].Assets) != 1 {
+		t.Fatalf("expected bridge collected result, got %#v", got)
+	}
+
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.submitCalls) != 1 {
+		t.Fatalf("expected one bridge task, got %d", len(client.submitCalls))
+	}
+	if client.submitCalls[0].Action != "collect_and_capture" {
+		t.Fatalf("expected collect_and_capture action, got %q", client.submitCalls[0].Action)
+	}
+}
+
 // ===== ExtensionProvider open failure =====
 
 type failOpenBridgeClient struct {
@@ -211,6 +308,7 @@ func (f *failOpenBridgeClient) AwaitResult(ctx context.Context, requestID string
 	return BridgeResult{
 		RequestID: requestID,
 		Success:   false,
+		FinalURL:  "https://fofa.info/result",
 		Error:     "extension tab crashed",
 	}, nil
 }
@@ -248,6 +346,7 @@ func (l *loginWallBridgeClient) AwaitResult(ctx context.Context, requestID strin
 	return BridgeResult{
 		RequestID: requestID,
 		Success:   true,
+		FinalURL:  "https://fofa.info/result",
 		StructuredCollectedData: &model.BridgeCollectedData{
 			Total: 0,
 			Items: []model.CollectedDataItem{},
@@ -287,7 +386,7 @@ func TestExtensionProvider_CollectSearchEngineResult_LoginWall(t *testing.T) {
 // loginWallFailBridgeClient simulates the real extension behavior:
 // success=false + is_login_wall in structured data.
 type loginWallFailBridgeClient struct {
-	mockBridgeClient
+	mockBridgeClient // nolint:unused
 }
 
 func (l *loginWallFailBridgeClient) SubmitTask(ctx context.Context, task BridgeTask) error {
@@ -298,6 +397,7 @@ func (l *loginWallFailBridgeClient) AwaitResult(ctx context.Context, requestID s
 	return BridgeResult{
 		RequestID: requestID,
 		Success:   false,
+		FinalURL:  "https://fofa.info/result",
 		Error:     "login wall detected on https://fofa.info/result",
 		ErrorCode: "login_required",
 		StructuredCollectedData: &model.BridgeCollectedData{
@@ -336,7 +436,7 @@ func TestExtensionProvider_CollectSearchEngineResult_LoginWall_SuccessFalse(t *t
 // loginWallErrorCodeClient simulates extension with success=false + error_code="login_required"
 // but no structured data is_login_wall field (text-marker fallback).
 type loginWallErrorCodeClient struct {
-	mockBridgeClient
+	mockBridgeClient // nolint:unused
 }
 
 func (l *loginWallErrorCodeClient) SubmitTask(ctx context.Context, task BridgeTask) error {
@@ -347,6 +447,7 @@ func (l *loginWallErrorCodeClient) AwaitResult(ctx context.Context, requestID st
 	return BridgeResult{
 		RequestID: requestID,
 		Success:   false,
+		FinalURL:  "https://hunter.qianxin.com/home/list",
 		Error:     "login required for hunter",
 		ErrorCode: "login_required",
 	}, nil
@@ -376,6 +477,47 @@ func TestExtensionProvider_CollectSearchEngineResult_LoginWall_ErrorCodeFallback
 
 // mockProvider is a minimal Provider implementation for testing.
 type mockProvider struct{}
+
+type proxyRecordingProvider struct {
+	mockProvider
+	proxy string
+}
+
+func (p *proxyRecordingProvider) CaptureSearchEngineResultWithProxy(_ context.Context, _, _, _, proxy string) (string, error) {
+	p.proxy = proxy
+	return "/mock/proxy", nil
+}
+
+func (p *proxyRecordingProvider) CaptureTargetWebsiteWithProxy(_ context.Context, _, _, _, _, _, proxy string) (string, error) {
+	p.proxy = proxy
+	return "/mock/proxy", nil
+}
+
+func TestScreenshotRouterForwardsRequestProxyToCDPProvider(t *testing.T) {
+	provider := &proxyRecordingProvider{}
+	router := NewScreenshotRouter(RouterConfig{Mode: ModeCDP, Priority: ModeCDP}, provider, nil, nil)
+	if _, err := router.CaptureSearchEngineResultWithProxy(t.Context(), "fofa", "test", "q1", "http://proxy:8080"); err != nil {
+		t.Fatal(err)
+	}
+	if provider.proxy != "http://proxy:8080" {
+		t.Fatalf("proxy = %q", provider.proxy)
+	}
+}
+
+func TestScreenshotRouterReportsRequestProxySupportForActiveProvider(t *testing.T) {
+	cdp := &proxyRecordingProvider{}
+	cdpRouter := NewScreenshotRouter(RouterConfig{Mode: ModeCDP, Priority: ModeCDP}, cdp, nil, nil)
+	if !cdpRouter.SupportsRequestProxy() {
+		t.Fatal("proxy-aware CDP provider should report request proxy support")
+	}
+
+	bridge := NewBridgeService(&mockBridgeClient{}, 1, time.Second)
+	extRouter := NewScreenshotRouter(RouterConfig{Mode: ModeExtension, Priority: ModeExtension}, nil, bridge, nil)
+	extRouter.extHealthy.Store(true)
+	if extRouter.SupportsRequestProxy() {
+		t.Fatal("extension provider must not report request proxy support")
+	}
+}
 
 func (m *mockProvider) CaptureSearchEngineResult(ctx context.Context, engine, query, queryID string) (string, error) {
 	return "/mock/path", nil

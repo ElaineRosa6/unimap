@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -614,6 +615,39 @@ func TestDayDayMapAdapter_GetQuota(t *testing.T) {
 			t.Error("expected error (quota API not available)")
 		}
 	})
+}
+
+// ===== DayDayMapItem: FlexNumber (port/status_code 字符串或数字) =====
+
+func TestDayDayMapItem_FlexNumberStringFields(t *testing.T) {
+	cases := []struct {
+		name   string
+		raw    string
+		port   int
+		status int
+	}{
+		{"numeric", `{"ip":"1.2.3.4","port":80,"status_code":200}`, 80, 200},
+		{"string", `{"ip":"1.2.3.4","port":"80","status_code":"200"}`, 80, 200},
+		{"empty string port", `{"ip":"1.2.3.4","port":"","status_code":"404"}`, 0, 404},
+		{"masked port", `{"ip":"1.2.3.4","port":"4****","status_code":"200"}`, 0, 200},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var item DayDayMapItem
+			if err := json.Unmarshal([]byte(tc.raw), &item); err != nil {
+				t.Fatalf("unmarshal %s: %v", tc.name, err)
+			}
+			if int(item.Port) != tc.port {
+				t.Errorf("Port = %d, want %d", int(item.Port), tc.port)
+			}
+			if int(item.StatusCode) != tc.status {
+				t.Errorf("StatusCode = %d, want %d", int(item.StatusCode), tc.status)
+			}
+			if item.IP != "1.2.3.4" {
+				t.Errorf("IP = %q, want 1.2.3.4", item.IP)
+			}
+		})
+	}
 }
 
 // ===== DayDayMapAdapterWebOnly =====

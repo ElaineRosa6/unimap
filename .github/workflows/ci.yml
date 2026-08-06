@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CGO_ENABLED: 0
+  CGO_ENABLED: 1
 
 jobs:
   # --- Build ---
@@ -62,9 +62,13 @@ jobs:
           cache: true
 
       - name: Run tests (with race detector)
+        env:
+          CGO_ENABLED: 1
         run: go test -race -v -count=1 ./...
 
       - name: Run tests (coverage)
+        env:
+          CGO_ENABLED: 1
         run: go test -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload coverage
@@ -107,7 +111,13 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # install-mode=goinstall 使用项目工具链（go1.26，由 go-version-file 指定）
+          # 从源码构建 golangci-lint，避免预编译二进制（用 go1.24 构建）无法分析
+          # go1.26 目标代码："the Go language version (go1.24) used to build
+          # golangci-lint is lower than the targeted Go version (1.26)"。
+          # 锁定 v1.64.8 以保持现有 v1 版 .golangci.yml 配置兼容。
+          install-mode: goinstall
+          version: v1.64.8
           args: --timeout=5m
 
   # --- Extension scripts ---
@@ -130,6 +140,34 @@ jobs:
             node --check "$f"
           done
 
+  # --- Real headless browser smoke test (no DISPLAY/Xvfb) ---
+  headless-browser:
+    name: Headless Browser E2E
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Locate preinstalled Chrome
+        run: |
+          chrome_path="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
+          test -n "$chrome_path"
+          echo "UNIMAP_CHROME_PATH=$chrome_path" >> "$GITHUB_ENV"
+
+      - name: Capture and collect without a display server
+        env:
+          DISPLAY: ""
+          UNIMAP_CHROME_USER_DATA_DIR: ${{ runner.temp }}/unimap-chrome-profile
+        run: |
+          go test -tags=headless_e2e -count=1 -run TestHeadlessChromeExecutesJavaScriptAndCapturesPNG ./internal/screenshot
+          go test -tags=headless_e2e -count=1 -run 'TestRelaxed_|TestStrict_MD5Change|TestNormalDynamic' ./internal/tamper
+
   # --- Security ---
   security:
     name: Security Scan
@@ -146,6 +184,8 @@ jobs:
           cache: true
 
       - name: Run govulncheck
+        env:
+          GOTOOLCHAIN: go1.26.5
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
@@ -194,7 +234,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            CGO_ENABLED=0
+            CGO_ENABLED=1
+            UNIMAP_VERSION=${{ github.ref_name }}
+            UNIMAP_GIT_COMMIT=${{ github.sha }}
+            UNIMAP_BUILD_TIME=${{ github.event.head_commit.timestamp }}
 
       - name: Verify image
         run: |

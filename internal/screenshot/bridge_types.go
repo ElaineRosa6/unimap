@@ -19,24 +19,26 @@ var (
 type BridgeTask struct {
 	RequestID      string        `json:"request_id"`
 	URL            string        `json:"url"`
+	Query          string        `json:"query,omitempty"`
 	BatchID        string        `json:"batch_id,omitempty"`
 	ViewportWidth  int           `json:"viewport_width,omitempty"`
 	ViewportHeight int           `json:"viewport_height,omitempty"`
 	WaitStrategy   string        `json:"wait_strategy,omitempty"`
 	Timeout        time.Duration `json:"timeout"`
-	Action         string        `json:"action,omitempty"` // "screenshot" (default), "open", "collect"
+	Action         string        `json:"action,omitempty"` // "screenshot" (default), "open", "collect", "collect_and_capture", "get_browser_credentials"
 }
 
 // BridgeResult is the normalized extension execution result.
 type BridgeResult struct {
-	RequestID               string                    `json:"request_id"`
-	Success                 bool                      `json:"success"`
-	ImagePath               string                    `json:"image_path,omitempty"`
-	CollectedData           string                    `json:"collected_data,omitempty"`
+	RequestID               string                     `json:"request_id"`
+	Success                 bool                       `json:"success"`
+	ImagePath               string                     `json:"image_path,omitempty"`
+	FinalURL                string                     `json:"final_url,omitempty"`
+	CollectedData           string                     `json:"collected_data,omitempty"`
 	StructuredCollectedData *model.BridgeCollectedData `json:"structured_collected_data,omitempty"`
-	ErrorCode               string                    `json:"error_code,omitempty"`
-	Error                   string                    `json:"error,omitempty"`
-	DurationMS              int64                     `json:"duration_ms"`
+	ErrorCode               string                     `json:"error_code,omitempty"`
+	Error                   string                     `json:"error,omitempty"`
+	DurationMS              int64                      `json:"duration_ms"`
 }
 
 // BridgeClient abstracts transport between backend and browser extension.

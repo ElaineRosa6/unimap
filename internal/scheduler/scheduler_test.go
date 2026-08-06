@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -10,6 +11,178 @@ import (
 
 	"github.com/unimap/project/internal/model"
 )
+
+type blockingFailStore struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *blockingFailStore) Load() ([]*ScheduledTask, []ExecutionRecord, error) {
+	return nil, nil, nil
+}
+
+func (s *blockingFailStore) Save([]*ScheduledTask, []ExecutionRecord) error {
+	return s.fail()
+}
+
+func (s *blockingFailStore) SaveTasks([]*ScheduledTask) error {
+	return s.fail()
+}
+
+func (s *blockingFailStore) fail() error {
+	close(s.started)
+	<-s.release
+	return errors.New("forced persistence failure")
+}
+
+func TestAddTaskDoesNotArmBeforePersistenceSucceeds(t *testing.T) {
+	s := NewScheduler("", "", 10)
+	handler := &testHandler{typ: TaskQuery}
+	s.RegisterHandler(handler)
+	store := &blockingFailStore{started: make(chan struct{}), release: make(chan struct{})}
+	s.store = store
+	runAt := time.Now().Add(50 * time.Millisecond)
+	task := &ScheduledTask{
+		Name:         "must-not-fire",
+		Type:         TaskQuery,
+		Enabled:      true,
+		ScheduleType: "once",
+		RunAt:        &runAt,
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- s.AddTask(task) }()
+	<-store.started
+	time.Sleep(100 * time.Millisecond)
+	if got := handler.execCount.Load(); got != 0 {
+		t.Fatalf("task executed %d time(s) before persistence completed", got)
+	}
+	close(store.release)
+	if err := <-done; err == nil {
+		t.Fatal("AddTask succeeded despite persistence failure")
+	}
+}
+
+func TestLoadExposesScheduleErrorWithoutChangingEnabledIntent(t *testing.T) {
+	dir := t.TempDir()
+	taskPath := filepath.Join(dir, "tasks.json")
+	historyPath := filepath.Join(dir, "history.json")
+	store := NewStore(taskPath, historyPath)
+	if err := store.SaveTasks([]*ScheduledTask{{
+		ID: "missing-handler", Name: "missing handler", Type: TaskType("unknown"),
+		Enabled: true, ScheduleType: "cron", CronExpr: "0 * * * * *",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewScheduler(taskPath, historyPath, 10)
+	if err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.GetTask("missing-handler")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !task.Enabled || task.RuntimeStatus != "schedule_error" || task.ScheduleError == "" {
+		t.Fatalf("unexpected runtime diagnostic: %+v", task)
+	}
+}
+
+func TestUpdateTaskDoesNotArmBeforePersistenceSucceeds(t *testing.T) {
+	s := NewScheduler("", "", 10)
+	handler := &testHandler{typ: TaskQuery}
+	s.RegisterHandler(handler)
+	store := &blockingFailStore{started: make(chan struct{}), release: make(chan struct{})}
+	s.store = store
+	s.tasks["task-1"] = &ScheduledTask{ID: "task-1", Name: "disabled", Type: TaskQuery, ScheduleType: "once", Enabled: false}
+	runAt := time.Now().Add(50 * time.Millisecond)
+	updated := &ScheduledTask{ID: "task-1", Name: "enabled", Type: TaskQuery, ScheduleType: "once", RunAt: &runAt, Enabled: true}
+
+	done := make(chan error, 1)
+	go func() { done <- s.UpdateTask(updated) }()
+	<-store.started
+	time.Sleep(100 * time.Millisecond)
+	if got := handler.execCount.Load(); got != 0 {
+		t.Fatalf("updated task executed %d time(s) before persistence completed", got)
+	}
+	close(store.release)
+	if err := <-done; err == nil {
+		t.Fatal("UpdateTask succeeded despite persistence failure")
+	}
+}
+
+func TestEnableTaskDoesNotArmBeforePersistenceSucceeds(t *testing.T) {
+	s := NewScheduler("", "", 10)
+	handler := &testHandler{typ: TaskQuery}
+	s.RegisterHandler(handler)
+	store := &blockingFailStore{started: make(chan struct{}), release: make(chan struct{})}
+	s.store = store
+	runAt := time.Now().Add(50 * time.Millisecond)
+	s.tasks["task-1"] = &ScheduledTask{
+		ID: "task-1", Name: "disabled", Type: TaskQuery,
+		ScheduleType: "once", RunAt: &runAt, Enabled: false,
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- s.EnableTask("task-1") }()
+	<-store.started
+	time.Sleep(100 * time.Millisecond)
+	if got := handler.execCount.Load(); got != 0 {
+		t.Fatalf("enabled task executed %d time(s) before persistence completed", got)
+	}
+	close(store.release)
+	if err := <-done; err == nil {
+		t.Fatal("EnableTask succeeded despite persistence failure")
+	}
+}
+
+func TestAddTaskRollsBackWhenPersistenceFails(t *testing.T) {
+	dir := t.TempDir()
+	blockedParent := filepath.Join(dir, "not-a-directory")
+	if err := os.WriteFile(blockedParent, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewScheduler(filepath.Join(blockedParent, "tasks.json"), filepath.Join(blockedParent, "history.json"), 10)
+	s.RegisterHandler(&testHandler{typ: TaskQuery})
+	task := &ScheduledTask{Name: "must-not-survive", Type: TaskQuery, Enabled: true, CronExpr: "0 0 * * * *"}
+
+	if err := s.AddTask(task); err == nil {
+		t.Fatal("AddTask reported success when persistence failed")
+	}
+	if _, err := s.GetTask(task.ID); err == nil {
+		t.Fatal("task remained in memory after persistence failure")
+	}
+}
+
+func TestUpdateTaskRollsBackWhenPersistenceFails(t *testing.T) {
+	dir := t.TempDir()
+	taskPath := filepath.Join(dir, "tasks.json")
+	historyPath := filepath.Join(dir, "history.json")
+	s := NewScheduler(taskPath, historyPath, 10)
+	s.RegisterHandler(&testHandler{typ: TaskQuery})
+	original := &ScheduledTask{Name: "original", Type: TaskQuery, Enabled: false, CronExpr: "0 0 * * * *"}
+	if err := s.AddTask(original); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(taskPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(taskPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	updated := &ScheduledTask{ID: original.ID, Name: "changed", Type: TaskQuery, Enabled: false, CronExpr: "0 1 * * * *"}
+	if err := s.UpdateTask(updated); err == nil {
+		t.Fatal("UpdateTask reported success when persistence failed")
+	}
+	got, err := s.GetTask(original.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "original" || got.CronExpr != "0 0 * * * *" {
+		t.Fatalf("task was not rolled back: %#v", got)
+	}
+}
 
 func TestNewScheduler(t *testing.T) {
 	s := NewScheduler("", "", 100)
@@ -116,6 +289,55 @@ func TestListTasks(t *testing.T) {
 	tasks := s.ListTasks()
 	if len(tasks) != 2 {
 		t.Fatalf("expected 2 tasks, got %d", len(tasks))
+	}
+}
+
+func TestListTasksUsesLiveNextRun(t *testing.T) {
+	s := NewScheduler("", "", 100)
+	s.Start()
+	defer s.Stop()
+
+	s.RegisterHandler(&testHandler{typ: TaskQuery})
+
+	task := &ScheduledTask{Name: "live-next", Type: TaskQuery, Enabled: true, CronExpr: "*/1 * * * *"}
+	s.AddTask(task)
+	// Let the cron goroutine process the add and compute the entry's Next.
+	time.Sleep(150 * time.Millisecond)
+
+	// Simulate a stale NextRunAt persisted from before a restart: the live
+	// cron entry already knows the next fire time, so ListTasks/GetTask must
+	// return that instead of the stale value.
+	s.mu.Lock()
+	stale := time.Now().Add(-time.Hour)
+	s.tasks[task.ID].NextRunAt = &stale
+	s.mu.Unlock()
+
+	s.mu.RLock()
+	live := s.getNextRunTime(task.ID)
+	s.mu.RUnlock()
+	if live.IsZero() {
+		t.Fatal("expected a live next-run time for a running cron task")
+	}
+
+	got, err := s.GetTask(task.ID)
+	if err != nil {
+		t.Fatalf("GetTask failed: %v", err)
+	}
+	if got.NextRunAt == nil || !got.NextRunAt.Equal(live) {
+		t.Fatalf("GetTask: expected live next run %v, got %v", live, got.NextRunAt)
+	}
+
+	var listed *ScheduledTask
+	for _, t := range s.ListTasks() {
+		if t.ID == task.ID {
+			listed = t
+		}
+	}
+	if listed == nil {
+		t.Fatal("ListTasks: task not returned")
+	}
+	if listed.NextRunAt == nil || !listed.NextRunAt.Equal(live) {
+		t.Fatalf("ListTasks: expected live next run %v, got %v", live, listed.NextRunAt)
 	}
 }
 
@@ -254,6 +476,19 @@ func TestGetHistoryFilter(t *testing.T) {
 	}
 }
 
+func TestGetHistoryFiltersTaskBeforeApplyingLimit(t *testing.T) {
+	s := NewScheduler("", "", 1000)
+	s.history = append(s.history, ExecutionRecord{TaskID: "target", Status: "success"})
+	for i := 0; i < 600; i++ {
+		s.history = append(s.history, ExecutionRecord{TaskID: "noise", Status: "success"})
+	}
+
+	history := s.GetHistory(1, "", "", "target")
+	if len(history) != 1 || history[0].TaskID != "target" {
+		t.Fatalf("task filter was applied after the global window: %#v", history)
+	}
+}
+
 func TestStorePersist(t *testing.T) {
 	dir := t.TempDir()
 	taskPath := filepath.Join(dir, "tasks.json")
@@ -302,6 +537,43 @@ func TestStorePersist(t *testing.T) {
 	}
 
 	s2.Stop()
+}
+
+func TestExecutionHistoryPersistsImmediatelyAfterRun(t *testing.T) {
+	dir := t.TempDir()
+	taskPath := filepath.Join(dir, "tasks.json")
+	historyPath := filepath.Join(dir, "history.json")
+
+	s1 := NewScheduler(taskPath, historyPath, 100)
+	s1.RegisterHandler(&testHandler{typ: TaskQuery})
+	task := &ScheduledTask{
+		Name: "persist execution immediately", Type: TaskQuery, Enabled: false,
+		ScheduleType: "cron", CronExpr: "0 0 * * *", TimeoutSec: 30,
+	}
+	if err := s1.AddTask(task); err != nil {
+		t.Fatalf("AddTask: %v", err)
+	}
+	if err := s1.RunTaskNow(task.ID); err != nil {
+		t.Fatalf("RunTaskNow: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for len(s1.GetHistory(1, "", "")) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(s1.GetHistory(1, "", "")) == 0 {
+		t.Fatal("execution did not finish")
+	}
+	s1.Stop()
+
+	s2 := NewScheduler(taskPath, historyPath, 100)
+	s2.RegisterHandler(&testHandler{typ: TaskQuery})
+	if err := s2.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer s2.Stop()
+	if history := s2.GetHistory(10, "", ""); len(history) != 1 || history[0].TaskID != task.ID {
+		t.Fatalf("reloaded execution history = %#v, want task %s", history, task.ID)
+	}
 }
 
 func TestStoreNonExistentFile(t *testing.T) {

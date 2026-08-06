@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,15 +15,20 @@ import (
 )
 
 type bridgeJob struct {
-	task    BridgeTask
-	timeout time.Duration
-	respCh  chan bridgeJobResult
+	task   BridgeTask
+	ctx    context.Context
+	respCh chan bridgeJobResult
 }
 
 type bridgeJobResult struct {
 	result BridgeResult
 	err    error
 }
+
+const (
+	collectBridgeTaskTimeout           = 90 * time.Second
+	collectAndCaptureBridgeTaskTimeout = 120 * time.Second
+)
 
 // BridgeService provides a task queue + worker execution model for extension bridge calls.
 type BridgeService struct {
@@ -30,10 +37,12 @@ type BridgeService struct {
 	maxConcurrency int
 	retry          int
 	taskTimeout    time.Duration
+	urlValidator   browserURLValidator
 	inFlight       atomic.Int64
 
-	started atomic.Bool
-	stopCh  chan struct{}
+	started       atomic.Bool
+	stopCh        chan struct{}
+	serviceCancel context.CancelFunc
 
 	wg sync.WaitGroup
 }
@@ -52,6 +61,7 @@ func NewBridgeService(client BridgeClient, maxConcurrency int, taskTimeout time.
 		maxConcurrency: maxConcurrency,
 		retry:          1,
 		taskTimeout:    taskTimeout,
+		urlValidator:   ValidateBrowserURLLive,
 		stopCh:         make(chan struct{}),
 	}
 }
@@ -73,9 +83,11 @@ func (s *BridgeService) Start(ctx context.Context) {
 		return
 	}
 
+	serviceCtx, serviceCancel := context.WithCancel(ctx)
+	s.serviceCancel = serviceCancel
 	for i := 0; i < s.maxConcurrency; i++ {
 		s.wg.Add(1)
-		go s.worker(ctx)
+		go s.worker(serviceCtx)
 	}
 }
 
@@ -91,6 +103,9 @@ func (s *BridgeService) Stop() {
 	case <-s.stopCh:
 	default:
 		close(s.stopCh)
+	}
+	if s.serviceCancel != nil {
+		s.serviceCancel()
 	}
 	s.wg.Wait()
 	s.started.Store(false)
@@ -113,12 +128,25 @@ func (s *BridgeService) Submit(ctx context.Context, task BridgeTask) (BridgeResu
 
 	effectiveTimeout := task.Timeout
 	if effectiveTimeout <= 0 {
-		effectiveTimeout = s.taskTimeout
+		effectiveTimeout = s.defaultTimeoutForAction(task.Action)
 	}
 	workerCtx, cancel := context.WithTimeout(ctx, effectiveTimeout)
 	defer cancel()
+	validator := s.urlValidator
+	if validator == nil {
+		validator = ValidateBrowserURLLive
+	}
+	// Extension cannot enforce redirects itself, but its submission boundary
+	// still fails closed on live DNS before a task can enter the queue.
+	validationURL := task.URL
+	if strings.EqualFold(strings.TrimSpace(task.Action), "get_cookies") && !strings.Contains(validationURL, "://") {
+		validationURL = "https://" + strings.TrimSpace(validationURL)
+	}
+	if err := validator(workerCtx, validationURL); err != nil {
+		return BridgeResult{}, fmt.Errorf("%w: %v", ErrBridgeSubmitFailed, err)
+	}
 
-	job := bridgeJob{task: task, timeout: effectiveTimeout, respCh: make(chan bridgeJobResult, 1)}
+	job := bridgeJob{task: task, ctx: workerCtx, respCh: make(chan bridgeJobResult, 1)}
 	select {
 	case s.queue <- job:
 	case <-workerCtx.Done():
@@ -139,6 +167,21 @@ func (s *BridgeService) Submit(ctx context.Context, task BridgeTask) (BridgeResu
 	}
 }
 
+func (s *BridgeService) defaultTimeoutForAction(action string) time.Duration {
+	timeout := s.taskTimeout
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "collect_and_capture":
+		if timeout < collectAndCaptureBridgeTaskTimeout {
+			return collectAndCaptureBridgeTaskTimeout
+		}
+	case "collect":
+		if timeout < collectBridgeTaskTimeout {
+			return collectBridgeTaskTimeout
+		}
+	}
+	return timeout
+}
+
 func (s *BridgeService) worker(ctx context.Context) {
 	defer s.wg.Done()
 	for {
@@ -148,18 +191,34 @@ func (s *BridgeService) worker(ctx context.Context) {
 		case <-s.stopCh:
 			return
 		case job := <-s.queue:
-			s.inFlight.Add(1)
-			taskTimeout := job.timeout
-			if taskTimeout <= 0 {
-				taskTimeout = s.taskTimeout
+			if err := job.ctx.Err(); err != nil {
+				s.deliverJobResult(job, bridgeJobResult{err: bridgeContextError(err, "queued task")})
+				continue
 			}
-			taskCtx, cancel := context.WithTimeout(context.Background(), taskTimeout)
+			s.inFlight.Add(1)
+			taskCtx, cancel := context.WithCancel(job.ctx)
+			stopServiceCancel := context.AfterFunc(ctx, cancel)
 			result, err := s.executeJobSafely(taskCtx, job.task)
 			cancel()
+			stopServiceCancel()
 			s.inFlight.Add(-1)
-			job.respCh <- bridgeJobResult{result: result, err: err}
+			s.deliverJobResult(job, bridgeJobResult{result: result, err: err})
 		}
 	}
+}
+
+func (s *BridgeService) deliverJobResult(job bridgeJob, result bridgeJobResult) {
+	select {
+	case job.respCh <- result:
+	default:
+	}
+}
+
+func bridgeContextError(err error, stage string) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("%w: %s timeout", ErrBridgeTimeout, stage)
+	}
+	return fmt.Errorf("%w: %s canceled", ErrBridgeTaskCanceled, stage)
 }
 
 // executeJobSafely wraps executeWithRetry with panic recovery so that a single
@@ -219,7 +278,13 @@ func (s *BridgeService) executeWithRetry(ctx context.Context, task BridgeTask) (
 			break
 		}
 		metrics.IncBridgeRetry()
-		time.Sleep(200 * time.Millisecond)
+		timer := time.NewTimer(200 * time.Millisecond)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return BridgeResult{}, bridgeContextError(ctx.Err(), "retry")
+		}
 	}
 
 	if lastErr == nil {
@@ -255,7 +320,69 @@ func (s *BridgeService) executeOnce(ctx context.Context, task BridgeTask) (Bridg
 	if strings.TrimSpace(result.RequestID) == "" {
 		result.RequestID = task.RequestID
 	}
+	if bridgeActionNavigates(task.Action) && (result.Success || strings.TrimSpace(result.FinalURL) != "") {
+		if err := s.validateFinalURL(ctx, task.URL, result.FinalURL); err != nil {
+			return BridgeResult{}, fmt.Errorf("%w: invalid extension final URL: %v", ErrBridgeInternalError, err)
+		}
+	}
 	return result, nil
+}
+
+func bridgeActionNavigates(action string) bool {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "", "screenshot", "open", "collect", "collect_and_capture", "get_browser_credentials":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *BridgeService) validateFinalURL(ctx context.Context, requestedURL, finalURL string) error {
+	finalURL = strings.TrimSpace(finalURL)
+	if finalURL == "" {
+		return fmt.Errorf("ssrf: extension result did not report final URL")
+	}
+	validator := s.urlValidator
+	if validator == nil {
+		validator = ValidateBrowserURLLive
+	}
+	if err := validator(ctx, finalURL); err != nil {
+		return err
+	}
+	requested, err := url.Parse(strings.TrimSpace(requestedURL))
+	if err != nil {
+		return fmt.Errorf("ssrf: parse requested extension URL: %w", err)
+	}
+	final, err := url.Parse(finalURL)
+	if err != nil {
+		return fmt.Errorf("ssrf: parse final extension URL: %w", err)
+	}
+	requestedOrigin := browserOrigin(requested)
+	finalOrigin := browserOrigin(final)
+	if requestedOrigin == "" || requestedOrigin != finalOrigin {
+		return fmt.Errorf("ssrf: extension navigation left the approved origin (%s -> %s)", requestedOrigin, finalOrigin)
+	}
+	return nil
+}
+
+func browserOrigin(parsed *url.URL) string {
+	if parsed == nil {
+		return ""
+	}
+	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if host == "" || (scheme != "http" && scheme != "https") {
+		return ""
+	}
+	port := parsed.Port()
+	if port == "" {
+		if scheme == "http" {
+			port = "80"
+		} else {
+			port = "443"
+		}
+	}
+	return scheme + "://" + net.JoinHostPort(host, port)
 }
 
 func isRetryableBridgeError(err error) bool {

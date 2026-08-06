@@ -18,15 +18,19 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	cookieHunter := ""
 	cookieZoomeye := ""
 	cookieQuake := ""
+	cookieShodan := ""
+	cookieCensys := ""
+	cookieDayDayMap := ""
 	proxyServer := ""
-	if s.config != nil {
-		s.configMutex.Lock()
-		cookieFofa = cookiesToHeader(s.config.Engines.Fofa.Cookies)
-		cookieHunter = cookiesToHeader(s.config.Engines.Hunter.Cookies)
-		cookieZoomeye = cookiesToHeader(s.config.Engines.Zoomeye.Cookies)
-		cookieQuake = cookiesToHeader(s.config.Engines.Quake.Cookies)
-		proxyServer = s.config.Screenshot.ProxyServer
-		s.configMutex.Unlock()
+	if cfg := s.currentConfig(); cfg != nil {
+		cookieFofa = cookiesToHeader(cfg.Engines.Fofa.Cookies)
+		cookieHunter = cookiesToHeader(cfg.Engines.Hunter.Cookies)
+		cookieZoomeye = cookiesToHeader(cfg.Engines.Zoomeye.Cookies)
+		cookieQuake = cookiesToHeader(cfg.Engines.Quake.Cookies)
+		cookieShodan = cookiesToHeader(cfg.Engines.Shodan.Cookies)
+		cookieCensys = cookiesToHeader(cfg.Engines.Censys.Cookies)
+		cookieDayDayMap = cookiesToHeader(cfg.Engines.Daydaymap.Cookies)
+		proxyServer = cfg.Screenshot.ProxyServer
 	}
 
 	// ICP type enumeration for the ICP panel.
@@ -39,13 +43,16 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !s.renderTemplateWithNonce(r, w, http.StatusInternalServerError, "settings.html", map[string]interface{}{
-		"cookieFofa":    cookieFofa,
-		"cookieHunter":  cookieHunter,
-		"cookieZoomeye": cookieZoomeye,
-		"cookieQuake":   cookieQuake,
-		"proxyServer":   proxyServer,
-		"icpTypes":      icpTypes,
-		"staticVersion": s.staticVersion,
+		"cookieFofa":      cookieFofa,
+		"cookieHunter":    cookieHunter,
+		"cookieZoomeye":   cookieZoomeye,
+		"cookieQuake":     cookieQuake,
+		"cookieShodan":    cookieShodan,
+		"cookieCensys":    cookieCensys,
+		"cookieDayDayMap": cookieDayDayMap,
+		"proxyServer":     proxyServer,
+		"icpTypes":        icpTypes,
+		"staticVersion":   s.staticVersion,
 	}) {
 		return
 	}

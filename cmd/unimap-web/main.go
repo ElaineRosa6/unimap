@@ -15,10 +15,10 @@ import (
 	"github.com/unimap/project/web"
 )
 
-const configPath = "configs/config.yaml"
+var configPath = utils.DefaultConfigPath()
 
 func main() {
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	// 初始化日志系统
 	logger.Init(logger.Config{
@@ -98,44 +98,45 @@ func main() {
 // registerEngines 注册引擎适配器
 func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 	type engineEntry struct {
-		enabled  bool
-		hasCreds bool
-		regAPI   func()
-		regWeb   func()
-		name     string
+		enabled     bool
+		hasCreds    bool
+		supportsWeb bool
+		regAPI      func()
+		regWeb      func()
+		name        string
 	}
 	engines := []engineEntry{
-		{cfg.Engines.Fofa.Enabled, cfg.Engines.Fofa.APIKey != "",
+		{cfg.Engines.Fofa.Enabled, cfg.Engines.Fofa.APIKey != "", true,
 			func() {
 				svc.RegisterAdapter(adapter.NewFofaAdapter(cfg.Engines.Fofa.APIBaseURL, cfg.Engines.Fofa.APIKey, cfg.Engines.Fofa.Email, cfg.Engines.Fofa.QPS, time.Duration(cfg.Engines.Fofa.Timeout)*time.Second))
 			},
 			func() { svc.RegisterAdapter(adapter.NewFofaAdapterWebOnly()) }, "FOFA"},
-		{cfg.Engines.Hunter.Enabled, cfg.Engines.Hunter.APIKey != "",
+		{cfg.Engines.Hunter.Enabled, cfg.Engines.Hunter.APIKey != "", true,
 			func() {
-				svc.RegisterAdapter(adapter.NewHunterAdapter(cfg.Engines.Hunter.BaseURL, cfg.Engines.Hunter.APIKey, cfg.Engines.Hunter.QPS, time.Duration(cfg.Engines.Hunter.Timeout)*time.Second))
+				svc.RegisterAdapter(adapter.NewHunterAdapter(cfg.Engines.Hunter.BaseURL, cfg.Engines.Hunter.APIKey, cfg.Engines.Hunter.BackupAPIKey, cfg.Engines.Hunter.QPS, time.Duration(cfg.Engines.Hunter.Timeout)*time.Second))
 			},
 			func() { svc.RegisterAdapter(adapter.NewHunterAdapterWebOnly()) }, "Hunter"},
-		{cfg.Engines.Zoomeye.Enabled, cfg.Engines.Zoomeye.APIKey != "",
+		{cfg.Engines.Zoomeye.Enabled, cfg.Engines.Zoomeye.APIKey != "", true,
 			func() {
 				svc.RegisterAdapter(adapter.NewZoomEyeAdapter(cfg.Engines.Zoomeye.BaseURL, cfg.Engines.Zoomeye.APIKey, cfg.Engines.Zoomeye.QPS, time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second))
 			},
 			func() { svc.RegisterAdapter(adapter.NewZoomEyeAdapterWebOnly()) }, "ZoomEye"},
-		{cfg.Engines.Quake.Enabled, cfg.Engines.Quake.APIKey != "",
+		{cfg.Engines.Quake.Enabled, cfg.Engines.Quake.APIKey != "", true,
 			func() {
 				svc.RegisterAdapter(adapter.NewQuakeAdapter(cfg.Engines.Quake.BaseURL, cfg.Engines.Quake.APIKey, cfg.Engines.Quake.QPS, time.Duration(cfg.Engines.Quake.Timeout)*time.Second))
 			},
 			func() { svc.RegisterAdapter(adapter.NewQuakeAdapterWebOnly()) }, "Quake"},
-		{cfg.Engines.Shodan.Enabled, cfg.Engines.Shodan.APIKey != "",
+		{cfg.Engines.Shodan.Enabled, cfg.Engines.Shodan.APIKey != "", true,
 			func() {
 				svc.RegisterAdapter(adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second))
 			},
 			func() { svc.RegisterAdapter(adapter.NewShodanAdapterWebOnly()) }, "Shodan"},
-		{cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID != "",
+		{cfg.Engines.Censys.Enabled, cfg.Engines.Censys.APIID != "" && cfg.Engines.Censys.APISecret != "", true,
 			func() {
 				svc.RegisterAdapter(adapter.NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second))
 			},
 			func() { svc.RegisterAdapter(adapter.NewCensysAdapterWebOnly()) }, "Censys"},
-		{cfg.Engines.Daydaymap.Enabled, cfg.Engines.Daydaymap.APIKey != "",
+		{cfg.Engines.Daydaymap.Enabled, cfg.Engines.Daydaymap.APIKey != "", true,
 			func() {
 				svc.RegisterAdapter(adapter.NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second))
 			},
@@ -148,9 +149,11 @@ func registerEngines(svc *service.UnifiedService, cfg *config.Config) {
 		if e.hasCreds {
 			e.regAPI()
 			logger.Infof("%s engine registered (API mode)", e.name)
-		} else {
+		} else if e.supportsWeb {
 			e.regWeb()
 			logger.Infof("%s engine registered (Web-only mode)", e.name)
+		} else {
+			logger.Warnf("%s engine is enabled but requires complete API credentials; registration skipped", e.name)
 		}
 	}
 }

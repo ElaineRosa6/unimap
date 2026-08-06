@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -21,8 +22,10 @@ type HunterAdapter struct {
 	client  *resty.Client
 	baseURL string
 	apiKey  string
-	qps     int
-	timeout time.Duration
+	// backupAPIKey 备用 key：主 key 遇到鉴权/限流/欠费失败时自动切换重试
+	backupAPIKey string
+	qps          int
+	timeout      time.Duration
 
 	// 请求节流：保证相邻请求间隔 >= 1/qps，避免并发查询对 Hunter 造成
 	// 突发流量触发"请求太多啦"。qps<=0 时不限流。
@@ -32,37 +35,119 @@ type HunterAdapter struct {
 
 // HunterItem is a single result item from the Hunter API.
 type HunterItem struct {
-	IP           string                 `json:"ip"`
-	Port         float64                `json:"port"` // float64 in JSON
-	Protocol     string                 `json:"protocol"`
-	Domain       string                 `json:"domain"`
-	WebTitle     string                 `json:"web_title"`
-	HeaderServer string                 `json:"header_server"`
-	StatusCode   float64                `json:"status_code"`
-	Country      string                 `json:"country"`
-	Province     string                 `json:"province"`
-	City         string                 `json:"city"`
-	ISP          string                 `json:"isp"`
-	Org          string                 `json:"as_org"`
-	URL          string                 `json:"url"`
+	IP           string  `json:"ip"`
+	Port         float64 `json:"port"` // float64 in JSON
+	Protocol     string  `json:"protocol"`
+	Domain       string  `json:"domain"`
+	WebTitle     string  `json:"web_title"`
+	HeaderServer string  `json:"header_server"`
+	StatusCode   float64 `json:"status_code"`
+	Country      string  `json:"country"`
+	Province     string  `json:"province"`
+	City         string  `json:"city"`
+	ISP          string  `json:"isp"`
+	Org          string  `json:"as_org"`
+	URL          string  `json:"url"`
 	// Legacy nested fields for fallback
 	Web      map[string]interface{} `json:"web"`
 	Location map[string]interface{} `json:"location"`
+	// Extra preserves any top-level keys Hunter returns that this struct does
+	// not declare (e.g. updated_at), so they are not silently dropped.
+	Extra map[string]interface{} `json:"-"`
+}
+
+// UnmarshalJSON captures unknown top-level keys into Extra instead of
+// dropping them, while decoding declared fields as usual.
+func (m *HunterItem) UnmarshalJSON(data []byte) error {
+	type alias HunterItem
+	var aux alias
+	extra, err := rawUnknown(data, &aux)
+	if err != nil {
+		return err
+	}
+	*m = HunterItem(aux)
+	m.Extra = extra
+	return nil
 }
 
 // NewHunterAdapter 创建Hunter适配器
-func NewHunterAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *HunterAdapter {
+func NewHunterAdapter(baseURL, apiKey, backupAPIKey string, qps int, timeout time.Duration) *HunterAdapter {
 	client := resty.New().
 		SetTimeout(timeout).
 		SetHeader("User-Agent", "unimap/1.0")
 
 	return &HunterAdapter{
-		client:  client,
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		qps:     qps,
-		timeout: timeout,
+		client:       client,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		backupAPIKey: backupAPIKey,
+		qps:          qps,
+		timeout:      timeout,
 	}
+}
+
+// activeAPIKeys 返回依次尝试的 API key 列表（主 key + 备用 key）。
+// 备用 key 为空或与主 key 相同时不重复。
+func (h *HunterAdapter) activeAPIKeys() []string {
+	keys := []string{h.apiKey}
+	if h.backupAPIKey != "" && h.backupAPIKey != h.apiKey {
+		keys = append(keys, h.backupAPIKey)
+	}
+	return keys
+}
+
+// hunterKeyError 表示与特定 API key 相关的失败（401 鉴权 / 402 欠费 / 429 限流）。
+// 这类失败换用备用 key 可能成功，用于驱动主/备用 key 自动切换。
+type hunterKeyError struct {
+	code int
+	msg  string
+}
+
+func (e *hunterKeyError) Error() string {
+	return fmt.Sprintf("hunter key error %d: %s", e.code, e.msg)
+}
+
+// isHunterKeyError 判断错误是否为 key 级失败。
+func isHunterKeyError(err error) bool {
+	var keyErr *hunterKeyError
+	return errors.As(err, &keyErr)
+}
+
+// classifyHunterStatus 将 HTTP/业务状态码归类为 key 级失败，触发备用 key 切换。
+// HTTP 状态码：401 鉴权 / 402 欠费 / 429 限流。
+// Hunter 业务码用 4-5 位编码表达同类失败：401xx 鉴权、402xx 积分耗尽/欠费
+// （如 40204 "积分用完了"）、429xx 限流。其余状态码返回 nil，按普通错误处理。
+func classifyHunterStatus(code int, body string) *hunterKeyError {
+	switch {
+	case code == 401 || code == 402 || code == 429:
+		return &hunterKeyError{code: code, msg: body}
+	case code >= 40100 && code <= 40199:
+		return &hunterKeyError{code: code, msg: body}
+	case code >= 40200 && code <= 40299:
+		return &hunterKeyError{code: code, msg: body}
+	case code >= 42900 && code <= 42999:
+		return &hunterKeyError{code: code, msg: body}
+	default:
+		return nil
+	}
+}
+
+// withKeyFailover 依次用主/备用 key 执行 fn，仅在 fn 返回 key 级失败时切换 key；
+// 网络等瞬时错误由 fn 内部重试处理，不在此处切换。
+func (h *HunterAdapter) withKeyFailover(fn func(key string) error) error {
+	keys := h.activeAPIKeys()
+	for i, key := range keys {
+		err := fn(key)
+		if err == nil {
+			return nil
+		}
+		if isHunterKeyError(err) && i < len(keys)-1 {
+			logger.Warnf("Hunter API key #%d failed (%v); trying backup key", i+1, err)
+			continue
+		}
+		return err
+	}
+	return fmt.Errorf("hunter: all api keys exhausted")
 }
 
 // waitForRate 在发起请求前等待，确保相邻请求间隔满足 qps 限制。
@@ -207,11 +292,13 @@ func (h *HunterAdapter) Search(ctx context.Context, query string, page, pageSize
 		return &model.EngineResult{EngineName: h.Name(), Error: "Hunter API key not configured"}, nil
 	}
 	var engineResult *model.EngineResult
-	err := utils.Retry(h.searchRetryConfig(), func() error {
-		if rateErr := h.waitForRate(ctx); rateErr != nil {
-			return fmt.Errorf("hunter rate wait cancelled: %w", rateErr)
-		}
-		return h.executeHunterSearch(query, page, pageSize, &engineResult)
+	err := h.withKeyFailover(func(key string) error {
+		return utils.Retry(h.searchRetryConfig(), func() error {
+			if rateErr := h.waitForRate(ctx); rateErr != nil {
+				return fmt.Errorf("hunter rate wait cancelled: %w", rateErr)
+			}
+			return h.executeHunterSearch(query, page, pageSize, key, &engineResult)
+		})
 	})
 	if err != nil {
 		return &model.EngineResult{EngineName: h.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
@@ -223,22 +310,32 @@ func (h *HunterAdapter) searchRetryConfig() utils.RetryConfig {
 	return utils.RetryConfig{
 		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
 		Exponential: true, Jitter: true,
+		// key 级失败（鉴权/限流/欠费）不重试当前 key，交给 withKeyFailover 切换备用 key
+		RetryableFunc: func(err error) bool {
+			if isHunterKeyError(err) {
+				return false
+			}
+			return utils.IsRetryableError(err)
+		},
 	}
 }
 
 // executeHunterSearch 执行单次 Hunter API 调用
-func (h *HunterAdapter) executeHunterSearch(query string, page, pageSize int, result **model.EngineResult) error {
+func (h *HunterAdapter) executeHunterSearch(query string, page, pageSize int, apiKey string, result **model.EngineResult) error {
 	baseURL := strings.TrimRight(h.baseURL, "/")
 	encodedQuery := base64.URLEncoding.EncodeToString([]byte(query))
 	resp, err := h.client.R().SetQueryParams(map[string]string{
-		"api-key": h.apiKey, "search": encodedQuery,
+		"api-key": apiKey, "search": encodedQuery,
 		"page": fmt.Sprintf("%d", page), "page_size": fmt.Sprintf("%d", pageSize), "is_web": "0",
 	}).Get(fmt.Sprintf("%s/openApi/search", baseURL))
 	if err != nil {
 		return fmt.Errorf("hunter request error: %w", err)
 	}
 	if resp.StatusCode() != 200 {
-		return fmt.Errorf("hunter HTTP error %d: %s", resp.StatusCode(), resp.String())
+		if keyErr := classifyHunterStatus(resp.StatusCode(), sanitizeBody(resp.String())); keyErr != nil {
+			return keyErr
+		}
+		return fmt.Errorf("hunter HTTP error %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
 	}
 	return parseHunterSearchResponse(resp.Body(), page, pageSize, h.Name(), result)
 }
@@ -257,16 +354,10 @@ func parseHunterSearchResponse(body []byte, page, pageSize int, engineName strin
 		return fmt.Errorf("hunter response parse error: %w", err)
 	}
 	if resp.Code != 200 {
-		switch resp.Code {
-		case 401:
-			return fmt.Errorf("hunter authentication error: %s", resp.Message)
-		case 429:
-			return fmt.Errorf("hunter rate limit exceeded: %s", resp.Message)
-		case 402:
-			return fmt.Errorf("hunter payment required: %s", resp.Message)
-		default:
-			return fmt.Errorf("hunter API error: %s", resp.Message)
+		if keyErr := classifyHunterStatus(resp.Code, resp.Message); keyErr != nil {
+			return keyErr
 		}
+		return fmt.Errorf("hunter API error: %s", resp.Message)
 	}
 	rawData := make([]interface{}, len(resp.Data.Items))
 	for i := range resp.Data.Items {
@@ -281,10 +372,10 @@ func parseHunterSearchResponse(body []byte, page, pageSize int, engineName strin
 
 // Normalize 标准化Hunter结果
 func (h *HunterAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
-	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	if raw == nil || len(raw.RawData) == 0 {
-		return assets, nil
+		return []model.UnifiedAsset{}, nil
 	}
+	assets := make([]model.UnifiedAsset, 0, len(raw.RawData))
 	for _, item := range raw.RawData {
 		m, ok := item.(*HunterItem)
 		if !ok {
@@ -313,6 +404,17 @@ func normalizeHunterMatch(m *HunterItem) *model.UnifiedAsset {
 	if asset.IP == "" {
 		parseHunterLegacyFields(m, asset)
 	}
+	// Preserve raw nested structures (legacy web/location objects) so any keys
+	// not extracted above still survive persistence.
+	if m.Web != nil {
+		mergeAssetExtra(asset, map[string]interface{}{"web": m.Web})
+	}
+	if m.Location != nil {
+		mergeAssetExtra(asset, map[string]interface{}{"location": m.Location})
+	}
+	// Capture unknown top-level fields (e.g. updated_at) and promote any
+	// timestamp key to LastSeen.
+	applyExtras(asset, m.Extra)
 
 	ensureHunterURL(asset)
 	if asset.IP != "" || asset.Host != "" {
@@ -325,20 +427,32 @@ func normalizeHunterMatch(m *HunterItem) *model.UnifiedAsset {
 func parseHunterLegacyFields(m *HunterItem, asset *model.UnifiedAsset) {
 	if m.Web != nil {
 		setStr := func(key string, target *string) {
-			if v, ok := m.Web[key].(string); ok { *target = v }
+			if v, ok := m.Web[key].(string); ok {
+				*target = v
+			}
 		}
 		setStr("ip", &asset.IP)
 		setStr("protocol", &asset.Protocol)
 		setStr("domain", &asset.Host)
 		setStr("title", &asset.Title)
 		setStr("server", &asset.Server)
-		if v, ok := m.Web["port"].(float64); ok { asset.Port = int(v) }
-		if v, ok := m.Web["status_code"].(float64); ok { asset.StatusCode = int(v) }
+		if v, ok := m.Web["port"].(float64); ok {
+			asset.Port = int(v)
+		}
+		if v, ok := m.Web["status_code"].(float64); ok {
+			asset.StatusCode = int(v)
+		}
 	}
 	if m.Location != nil {
-		if v, ok := m.Location["country_cn"].(string); ok { asset.CountryCode = v }
-		if v, ok := m.Location["province_cn"].(string); ok { asset.Region = v }
-		if v, ok := m.Location["city_cn"].(string); ok { asset.City = v }
+		if v, ok := m.Location["country_cn"].(string); ok {
+			asset.CountryCode = v
+		}
+		if v, ok := m.Location["province_cn"].(string); ok {
+			asset.Region = v
+		}
+		if v, ok := m.Location["city_cn"].(string); ok {
+			asset.City = v
+		}
 	}
 }
 
@@ -349,12 +463,20 @@ func ensureHunterURL(asset *model.UnifiedAsset) {
 	}
 	proto := asset.Protocol
 	if proto == "" {
-		if asset.Port == 443 { proto = "https" } else { proto = "http" }
+		if asset.Port == 443 {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
 	}
 	host := asset.IP
-	if asset.Host != "" { host = asset.Host }
+	if asset.Host != "" {
+		host = asset.Host
+	}
 	scheme := "http"
-	if strings.HasPrefix(proto, "https") || asset.Port == 443 { scheme = "https" }
+	if strings.HasPrefix(proto, "https") || asset.Port == 443 {
+		scheme = "https"
+	}
 	u := &url.URL{Scheme: scheme, Host: fmt.Sprintf("%s:%d", host, asset.Port)}
 	asset.URL = u.String()
 }
@@ -364,14 +486,30 @@ func (h *HunterAdapter) GetQuota() (*model.QuotaInfo, error) {
 	if h.apiKey == "" {
 		return nil, fmt.Errorf("Hunter API key not configured")
 	}
+	var quota *model.QuotaInfo
+	err := h.withKeyFailover(func(key string) error {
+		q, qErr := h.getQuotaWithKey(key)
+		if qErr != nil {
+			return qErr
+		}
+		quota = q
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return quota, nil
+}
 
+// getQuotaWithKey 用指定 key 查询配额
+func (h *HunterAdapter) getQuotaWithKey(apiKey string) (*model.QuotaInfo, error) {
 	// Hunter API endpoint for quota info
 	baseURL := strings.TrimRight(h.baseURL, "/")
 	// NOTE: Hunter uses camelCase path: /openApi/userInfo
 	url := fmt.Sprintf("%s/openApi/userInfo", baseURL)
 
 	resp, err := h.client.R().
-		SetQueryParam("api-key", h.apiKey).
+		SetQueryParam("api-key", apiKey).
 		Get(url)
 
 	if err != nil {
@@ -379,6 +517,9 @@ func (h *HunterAdapter) GetQuota() (*model.QuotaInfo, error) {
 	}
 
 	if resp.StatusCode() != 200 {
+		if keyErr := classifyHunterStatus(resp.StatusCode(), sanitizeBody(resp.String())); keyErr != nil {
+			return nil, keyErr
+		}
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
 	}
 
@@ -401,6 +542,9 @@ func (h *HunterAdapter) GetQuota() (*model.QuotaInfo, error) {
 	}
 
 	if result.Code != 200 {
+		if keyErr := classifyHunterStatus(result.Code, result.Message); keyErr != nil {
+			return nil, keyErr
+		}
 		return nil, fmt.Errorf("%s", result.Message)
 	}
 
@@ -453,7 +597,7 @@ type HunterAdapterWebOnly struct {
 
 // NewHunterAdapterWebOnly 创建Hunter Web-only适配器
 func NewHunterAdapterWebOnly() *HunterAdapterWebOnly {
-	baseAdapter := NewHunterAdapter("", "", 3, 30*time.Second)
+	baseAdapter := NewHunterAdapter("", "", "", 3, 30*time.Second)
 	return &HunterAdapterWebOnly{
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "hunter"),
 	}

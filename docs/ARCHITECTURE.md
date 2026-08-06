@@ -1,302 +1,78 @@
-# UniMap 项目架构文档
+# UniMap 架构
 
-## 1. 架构概述
+> 最后按代码核对：2026-07-29。Go 版本为 1.26.5；路由事实来源为 `web/router.go`。
 
-UniMap 是一个多引擎统一查询与监控系统，采用分层架构设计，确保系统的可扩展性、可维护性和可测试性。
+## 分层
 
-### 1.1 核心设计原则
-
-- **分层架构**：清晰的层次分离，遵循依赖倒置原则
-- **模块化**：功能模块独立，低耦合高内聚
-- **接口驱动**：通过接口定义行为，实现可插拔性
-- **配置驱动**：支持多环境配置，便于部署和维护
-
-## 2. 架构分层
-
-### 2.1 分层结构图
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                   Presentation Layer                    │
-│   ┌─────────────────┐  ┌─────────────────┐             │
-│   │     Web API     │  │      GUI        │             │
-│   └─────────────────┘  └─────────────────┘             │
-└─────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────────────────────────────────┐
-│                  Application Layer                      │
-│   ┌─────────────────┐  ┌─────────────────┐             │
-│   │  Query Service  │  │ Tamper Service  │             │
-│   ├─────────────────┤  ├─────────────────┤             │
-│   │Monitor Service  │  │Screenshot Service│            │
-│   └─────────────────┘  └─────────────────┘             │
-└─────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────────────────────────────────┐
-│                     Domain Layer                        │
-│   ┌─────────────────┐  ┌─────────────────┐             │
-│   │   Adapters      │  │    Core Logic   │             │
-│   ├─────────────────┤  ├─────────────────┤             │
-│   │  Orchestrator   │  │    Models       │             │
-│   └─────────────────┘  └─────────────────┘             │
-└─────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────────────────────────────────┐
-│                  Infrastructure Layer                   │
-│   ┌─────────────────┐  ┌─────────────────┐             │
-│   │    Config       │  │    Storage      │             │
-│   ├─────────────────┤  ├─────────────────┤             │
-│   │     Logger      │  │    Network      │             │
-│   └─────────────────┘  └─────────────────┘             │
-└─────────────────────────────────────────────────────────┘
+```text
+Web / CLI / GUI / Extension
+            │
+web handlers ── internal/service 应用服务
+            │                 │
+            ├── adapter + core/unimap + model
+            ├── screenshot + tamper + scheduler
+            └── config + auth + history + alerting + backup
+                         │
+                  SQLite / YAML / file store / Redis(optional)
 ```
 
-### 2.2 分层职责说明
+- `cmd/unimap-web`、`cmd/unimap-cli`、`cmd/unimap-gui` 是入口；GUI 受 `gui` build tag 保护。
+- `web/` 负责 HTTP 路由、认证、中间件、模板和静态资源。
+- `internal/service/` 协调查询、截图、巡检等应用用例，不直接成为仓库外部 SDK。
+- `internal/adapter/`、`internal/core/unimap/` 和 `internal/model/` 构成查询核心。
+- `internal/screenshot/` 负责 CDP、Bridge、ScreenshotRouter 与批次持久化；`internal/tamper/` 负责基线与巡检记录。
 
-#### 2.2.1 Presentation Layer（表现层）
-- **位置**：`web/`, `cmd/unimap-gui/`, `cmd/unimap-cli/`
-- **职责**：处理用户交互，展示数据，接收用户输入
-- **组件**：
-  - Web API：HTTP接口，WebSocket连接
-  - GUI：桌面应用界面
-  - CLI：命令行工具
+## 查询与引擎
 
-#### 2.2.2 Application Layer（应用层）
-- **位置**：`internal/service/`
-- **职责**：协调领域对象完成业务功能，处理业务规则
-- **组件**：
-  - `UnifiedService`：统一服务入口
-  - `QueryAppService`：查询业务逻辑
-  - `TamperAppService`：篡改检测业务逻辑
-  - `MonitorAppService`：监控业务逻辑
-  - `ScreenshotAppService`：截图业务逻辑
-
-#### 2.2.3 Domain Layer（领域层）
-- **位置**：`internal/adapter/`, `internal/core/`, `internal/model/`
-- **职责**：核心业务逻辑，领域模型，业务规则
-- **组件**：
-  - `EngineAdapter`：多引擎适配器接口
-  - `EngineOrchestrator`：引擎编排器
-  - `UQLParser`：统一查询语言解析器
-  - `ResultMerger`：结果合并器
-
-#### 2.2.4 Infrastructure Layer（基础设施层）
-- **位置**：`internal/config/`, `internal/logger/`, `internal/utils/`
-- **职责**：提供技术支持，实现技术细节
-- **组件**：
-  - `Config`：配置管理
-  - `Logger`：日志系统
-  - `Cache`：缓存实现
-  - `WorkerPool`：工作池
-  - `ProxyPool`：代理池
-
-## 3. 核心模块
-
-### 3.1 多引擎查询模块
+稳定 Web UI 提供 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap。七引擎均有 API 或 Web-only adapter、搜索 URL、L1 Network 与 L3 DOM 采集路径；2026-08-02 七引擎 Bridge 均取得真实非空结构化资产。DayDayMap 的 Bridge→CDP Web Storage 交接已取得 10 条资产；Censys CDP 交接后识别 Cloudflare 挑战并在 `auto` 模式回退 Bridge。
 
 ```go
-// EngineAdapter 接口定义
 type EngineAdapter interface {
     Name() string
     Translate(ast *model.UQLAST) (string, error)
-    Search(query string, page, pageSize int) (*model.EngineResult, error)
+    Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error)
     Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error)
     GetQuota() (*model.QuotaInfo, error)
     IsWebOnly() bool
 }
 ```
 
-**支持的引擎**：
-- FOFA
-- Hunter
-- ZoomEye
-- Quake
-- Shodan
+请求流：`UQL → Parser → EngineOrchestrator → Adapter → EngineResult → Normalize → ResultMerger → cache/export`。
 
-### 3.2 篡改检测模块
+Hunter 适配器支持主/备用 API Key 自动故障切换：主 key 返回鉴权（HTTP 401 或业务码 401xx）、积分耗尽/欠费（HTTP 402 或业务码 402xx，如 40204「积分用完了」）、限流（HTTP 429 或业务码 429xx）时自动改用备用 key（`engines.hunter.backup_api_key`），搜索与配额查询均走该切换；两类 key 都失败才返回错误。Hunter 业务码为 4-5 位，需按区间识别而非仅精确匹配 401/402/429。
 
-**核心功能**：
-- 网页内容哈希计算
-- 恶意内容检测（挂马、黄色网站）
-- 历史记录管理
-- 结果比对分析
+## 截图与巡检
 
-### 3.3 截图模块
+- 截图、浏览器查询、调度截图与巡检共用 ScreenshotRouter；`cdp`、`extension`、`auto` 的配置模式和实际活动模式分离，仅在允许 fallback 时切换后端。
+- CDP 使用 Chrome/Chromium 新版 headless，不依赖图形会话。可执行文件按显式配置、`UNIMAP_CHROME_PATH`、平台探测顺序解析；显式路径错误会立即暴露。Windows readiness 使用无进程的 PE 静态验证，缺少 CDP provider 时不探测浏览器。浏览器 allocator 共享有界会话槽，固定 user-data-dir 时因 Chromium profile 锁自动串行。
+- Extension Bridge 的配对、任务和回调仅允许 loopback 请求，使用短期 token；可选 HMAC 签名和 nonce 防重放。
+- 七引擎的真实结构化采集 E2E 使用 Bridge。Quake、Hunter、DayDayMap 已有真实 CDP 非空结构化证据；Quake L1 Network 已按当前 endpoint/数组响应重新实测通过。FOFA、ZoomEye、Shodan 的 CDP 定级仍未执行；Censys CDP 被站点挑战阻断并已验证单任务 Extension fallback。
+- Bridge `get_browser_credentials` 只在目标引擎同源标签页读取 Cookie、localStorage 与 sessionStorage；Cookie 持久化到受保护配置，Web Storage 仅驻留内存并在 CDP 导航后注入、刷新。
+- CDP 业务入口统一通过 guarded browser session：提交前 URL/实时 DNS 校验、CDP Fetch 全资源逐跳拦截，以及在实际拨号时重新解析并固定公网 IP 的 loopback 出口代理。可选上游仅接受 literal-loopback SOCKS5，且只收到经复核的固定公网 IP；HTTP/外部上游代理和远程 Chrome 失败关闭。
+- Extension 搜索引擎任务要求回调 `final_url` 且不得离开批准主机；未提供受控出口证明时，Extension 任意 URL 与批量截图保持禁用。
+- 巡检模式为 `strict`、`relaxed`、`security`、`balanced`、`precise`。巡检与截图入口对公网目标进行 SSRF 防护。
+- `TamperAppService` 在每次检查/设基线时读取最新已提交的端口扫描、TLS 和超时配置；手动巡检、定时巡检与基线刷新复用 Screenshot Manager 的受保护页面加载接口。
+- 端口扫描采用两阶段模块：先并发解析目标并执行 SSRF、CDN 与可选授权 IPv4/CIDR 判断，再构造全局去重并随机化的 `唯一 IP × 端口` 计划。有界工作池可对每个组合执行 connect、Telnet、FIN/NULL/Xmas 与 UDP 探测及随机抖动，随后按解析关系把确定开放和 `open_filtered` 结果回填给原始目标；原始 TCP 方法强制要求显式授权范围。
+- Cookie 与登录状态 API 是 `GET /api/v1/cookies/login-status`，不是旧 `/api/cookies/...`。
 
-**支持模式**：
-- CDP模式：使用 Chrome DevTools Protocol
-- Extension模式：使用浏览器扩展
-- ScreenshotRouter：双模式共存 + 健康探测 + 自动降级
+## 调度与分布式
 
-**Cookie/登录状态管理**：
-- CDP 已连接或 Extension 已配对时，自动复用浏览器登录会话，无需手动填写 Cookie
-- 前端自动检测各引擎登录状态，已登录时折叠 Cookie 输入区
-- 未登录时展开并显示 "点击登录" 跳转链接
-- 无浏览器会话（headless 模式）时，Cookie 输入区展开供填备用 Cookie
-- 后端 API: `GET /api/cookies/login-status` 返回 CDP/Extension 状态及各引擎登录检测结果
+调度器负责 cron、一次性和延迟任务。当前工作区定义 23 种已提交任务类型，包含备份任务。
 
-### 3.4 监控模块
+分布式节点由 HTTP 协议注册、心跳、领取和回传任务，没有独立的 `unimap-node` 命令。接口仅在 `distributed.enabled=true` 下可用，节点令牌和分布式管理令牌职责不同。
 
-**功能**：
-- URL可达性检测
-- 端口扫描
-- 定时任务调度
+## API 与安全边界
 
-## 4. 数据流向
+- 所有业务 API 使用 `/api/v1/...`；路由总数随当前注册表变化，不应在架构文档中写死。
+- `/health`、`/health/ready`、`/health/live`、`/metrics` 不使用 API 前缀。
+- `web/router.go` 给路由应用可选 API Key；handler 根据资源再要求管理员、节点令牌、CSRF/可信 Origin 或 loopback。
+- 错误响应通过 `writeAPIError` 统一为 `{success:false,error:{code,message,details}}`；成功响应按 handler 定义，不存在强制统一成功信封。
+- 配置中的 `$VAR`/`${VAR}` 为显式环境变量解析；直接 YAML 值不会被同名环境变量覆盖。
 
-### 4.1 查询流程
+## 可观测性与存储
 
-```
-用户请求 → Web API → QueryAppService → EngineOrchestrator → EngineAdapter → 外部API
-                                                               ↓
-                                                         结果合并 → 缓存 → 返回结果
-```
+- Prometheus 指标在 `/metrics`，受部署认证与 loopback 约束。
+- SQLite 用于用户、历史、任务与部分批次/巡检索引；YAML 用于配置；文件系统保存截图和基线；Redis 为可选缓存。
+- 日志经 zap 输出，错误对外返回前通过 `sanitizeError` 处理。
 
-### 4.2 篡改检测流程
-
-```
-启动检测 → TamperAppService → 获取网页内容 → 计算哈希 → 检测恶意内容 → 比对历史 → 保存结果
-```
-
-## 5. 关键设计决策
-
-### 5.1 缓存策略
-
-- **多级缓存**：内存缓存 + Redis缓存
-- **TTL管理**：按引擎配置不同的缓存时间
-- **缓存键生成**：`md5(engineName + ":" + query + ":" + page + ":" + pageSize)`
-
-### 5.2 并发控制
-
-- **工作池模式**：使用 `WorkerPool` 管理并发任务
-- **速率限制**：按引擎配置 QPS 限制
-- **资源隔离**：避免单个任务影响整体系统
-
-### 5.3 错误处理
-
-- **统一错误类型**：`UnimapError` 封装错误信息
-- **错误分类**：网络、API、配置、运行时、业务、验证
-- **堆栈跟踪**：完整的错误调用链
-
-### 5.4 配置管理
-
-- **YAML配置**：支持多环境配置
-- **环境变量**：支持敏感信息注入
-- **默认值**：提供合理的默认配置
-- **配置验证**：启动时验证配置有效性
-
-## 6. 部署架构
-
-### 6.1 单机部署
-
-```
-┌─────────────────────────┐
-│    UniMap Web Server    │
-│  ┌───────────────────┐  │
-│  │   HTTP/WebSocket  │  │
-│  └───────────────────┘  │
-│  ┌───────────────────┐  │
-│  │   Services Layer  │  │
-│  └───────────────────┘  │
-│  ┌───────────────────┐  │
-│  │  Storage (Local)  │  │
-│  └───────────────────┘  │
-└─────────────────────────┘
-```
-
-### 6.2 分布式部署
-
-```
-┌─────────────────────────────────┐
-│          Load Balancer         │
-└───────────────┬─────────────────┘
-                │
-┌───────────────┼─────────────────┐
-│               │                 │
-▼               ▼                 ▼
-┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│  Node 1     │ │  Node 2     │ │  Node 3     │
-│ ┌─────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │
-│ │ Service │ │ │ │ Service │ │ │ │ Service │ │
-│ └─────────┘ │ │ └─────────┘ │ │ └─────────┘ │
-└─────────────┘ └─────────────┘ └─────────────┘
-                │
-                ▼
-        ┌─────────────────┐
-        │   Redis Cache   │
-        └─────────────────┘
-```
-
-## 7. 技术栈
-
-- **语言**：Go 1.20+
-- **Web框架**：标准库 `net/http`
-- **配置**：YAML
-- **缓存**：内存 + Redis
-- **浏览器自动化**：chromedp
-- **日志**：自定义日志系统
-- **监控**：Prometheus metrics
-
-## 8. 扩展点
-
-### 8.1 新增引擎适配器
-
-```go
-// 1. 实现 EngineAdapter 接口
-type CustomEngineAdapter struct {
-    // 字段定义
-}
-
-func (c *CustomEngineAdapter) Name() string {
-    return "custom"
-}
-
-// 实现其他方法...
-
-// 2. 注册到 Orchestrator
-orchestrator.RegisterAdapter("custom", &CustomEngineAdapter{})
-```
-
-### 8.2 新增插件
-
-```go
-// 实现 Plugin 接口
-type CustomPlugin struct{}
-
-func (p *CustomPlugin) Name() string {
-    return "custom"
-}
-
-// 实现其他方法...
-
-// 注册插件
-pluginManager.Register(&CustomPlugin{})
-```
-
-## 9. 性能优化
-
-- **缓存策略**：动态缓存时间，热点数据优先
-- **并发控制**：工作池限制并发数
-- **资源复用**：HTTP连接池，浏览器实例复用
-- **延迟加载**：按需初始化组件
-
-## 10. 安全性考虑
-
-- **输入验证**：所有用户输入严格验证
-- **认证授权**：API密钥验证，Token认证
-- **加密传输**：HTTPS支持
-- **敏感信息保护**：环境变量注入，避免硬编码
-
-## 11. 维护建议
-
-- **定期更新依赖**：保持安全补丁更新
-- **监控系统健康**：定期检查日志和指标
-- **性能监控**：关注缓存命中率，查询响应时间
-- **备份策略**：定期备份配置和数据
-
-## 12. 演进路线
-
-- **微服务化**：拆分核心服务为独立微服务
-- **容器化**：Docker/Kubernetes部署
-- **云原生**：适配云平台特性
-- **AI增强**：引入机器学习优化查询和检测
+路由详情见 [API.md](API.md)，故障处理见 [RUNBOOK.md](RUNBOOK.md)，插件边界见 [PLUGIN_ARCHITECTURE.md](PLUGIN_ARCHITECTURE.md)。

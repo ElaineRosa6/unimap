@@ -76,6 +76,53 @@ func TestSaveAndGetJob(t *testing.T) {
 	}
 }
 
+func TestBatchJobPersistsAfterDatabaseReopen(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "batch.db")
+	firstDB, err := NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("open first database: %v", err)
+	}
+	if initErr := firstDB.InitSchema(); initErr != nil {
+		_ = firstDB.Close()
+		t.Fatalf("initialize first database: %v", initErr)
+	}
+	firstRepo := NewRepository(firstDB.DB())
+	job := &BatchJobRecord{
+		ID:        "batch_reopen",
+		Status:    "completed",
+		Total:     1,
+		Completed: 1,
+		Success:   1,
+		Results: []screenshot.BatchScreenshotResult{{
+			URL: "https://example.test", Success: true, FilePath: "/screenshots/batch_reopen/example.png",
+		}},
+		StartedAt: time.Now(),
+	}
+	if saveErr := firstRepo.SaveJob(job); saveErr != nil {
+		_ = firstDB.Close()
+		t.Fatalf("save batch job: %v", saveErr)
+	}
+	if closeErr := firstDB.Close(); closeErr != nil {
+		t.Fatalf("close first database: %v", closeErr)
+	}
+
+	secondDB, err := NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("reopen database: %v", err)
+	}
+	defer secondDB.Close()
+	if initErr := secondDB.InitSchema(); initErr != nil {
+		t.Fatalf("initialize reopened database: %v", initErr)
+	}
+	persisted, err := NewRepository(secondDB.DB()).GetJob(job.ID)
+	if err != nil {
+		t.Fatalf("get persisted batch job: %v", err)
+	}
+	if persisted == nil || persisted.Status != "completed" || len(persisted.Results) != 1 || persisted.Results[0].FilePath != "/screenshots/batch_reopen/example.png" {
+		t.Fatalf("unexpected persisted batch job: %#v", persisted)
+	}
+}
+
 func TestSaveJob_Upsert(t *testing.T) {
 	repo := setupTestDB(t)
 
@@ -106,6 +153,42 @@ func TestSaveJob_Upsert(t *testing.T) {
 	}
 	if jobs[0].Status != "completed" {
 		t.Fatalf("expected status=completed after upsert, got %q", jobs[0].Status)
+	}
+}
+
+func TestCreateJob_DuplicatePreservesExistingRecord(t *testing.T) {
+	repo := setupTestDB(t)
+	original := &BatchJobRecord{
+		ID:        "stable-batch",
+		Status:    "completed",
+		Total:     1,
+		Completed: 1,
+		Success:   1,
+		StartedAt: time.Now().Add(-time.Hour),
+	}
+	if err := repo.SaveJob(original); err != nil {
+		t.Fatalf("seed existing job: %v", err)
+	}
+
+	created, err := repo.CreateJob(&BatchJobRecord{
+		ID:        original.ID,
+		Status:    "running",
+		Total:     99,
+		StartedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("CreateJob duplicate: %v", err)
+	}
+	if created {
+		t.Fatal("duplicate CreateJob reported a new record")
+	}
+
+	got, err := repo.GetJob(original.ID)
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if got == nil || got.Status != original.Status || got.Total != original.Total || got.Success != original.Success {
+		t.Fatalf("duplicate create replaced persisted history: %#v", got)
 	}
 }
 

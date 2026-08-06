@@ -185,8 +185,10 @@ func (s *ScreenshotAppService) captureTargetWithBridge(ctx context.Context, targ
 }
 
 func (s *ScreenshotAppService) resolveProvider(mgr *screenshot.Manager) (screenshot.Provider, error) {
-	if s != nil && s.provider != nil {
-		return s.provider, nil
+	if s != nil {
+		if provider := s.configSnapshot().provider; provider != nil {
+			return provider, nil
+		}
 	}
 	if mgr != nil {
 		return screenshot.NewCDPProvider(mgr), nil

@@ -406,14 +406,14 @@ type failingProcessor struct {
 	name string
 }
 
-func (f *failingProcessor) Name() string                            { return f.name }
-func (f *failingProcessor) Version() string                         { return "0.1.0" }
-func (f *failingProcessor) Description() string                     { return "failing" }
-func (f *failingProcessor) Author() string                          { return "test" }
-func (f *failingProcessor) Type() PluginType                        { return PluginTypeProcessor }
+func (f *failingProcessor) Name() string                         { return f.name }
+func (f *failingProcessor) Version() string                      { return "0.1.0" }
+func (f *failingProcessor) Description() string                  { return "failing" }
+func (f *failingProcessor) Author() string                       { return "test" }
+func (f *failingProcessor) Type() PluginType                     { return PluginTypeProcessor }
 func (f *failingProcessor) Initialize(*model.PluginConfig) error { return nil }
-func (f *failingProcessor) Start(context.Context) error             { return nil }
-func (f *failingProcessor) Stop() error                             { return nil }
+func (f *failingProcessor) Start(context.Context) error          { return nil }
+func (f *failingProcessor) Stop() error                          { return nil }
 func (f *failingProcessor) Health() HealthStatus {
 	return HealthStatus{Healthy: true, Message: "ok"}
 }

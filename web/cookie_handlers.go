@@ -18,23 +18,13 @@ func (s *Server) handleImportCookieJSON(w http.ResponseWriter, r *http.Request) 
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
-	if s.config == nil {
+	if s.currentConfig() == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "config_not_loaded", "config not loaded", nil)
 		return
 	}
-	if s.currentScreenshotEngine() == "extension" {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"success":      true,
-			"cookieHeader": "",
-			"engine":       "extension",
-			"message":      "extension mode uses browser session; cookie import is optional",
-		})
-		return
-	}
-
 	engine := strings.TrimSpace(r.FormValue("engine"))
 	jsonStr := r.FormValue("cookie_json")
 	if engine == "" || strings.TrimSpace(jsonStr) == "" {
@@ -44,7 +34,7 @@ func (s *Server) handleImportCookieJSON(w http.ResponseWriter, r *http.Request) 
 
 	cookies, err := config.ParseCookieJSON(jsonStr, config.DefaultCookieDomain(engine))
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "invalid_cookie_json", "invalid cookie json", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "invalid_cookie_json", "invalid cookie json", nil)
 		return
 	}
 	if len(cookies) == 0 {
@@ -52,36 +42,32 @@ func (s *Server) handleImportCookieJSON(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.configMutex.Lock()
-	switch strings.ToLower(engine) {
-	case "fofa":
-		s.config.Engines.Fofa.Cookies = cookies
-	case "hunter":
-		s.config.Engines.Hunter.Cookies = cookies
-	case "quake":
-		s.config.Engines.Quake.Cookies = cookies
-	case "zoomeye":
-		s.config.Engines.Zoomeye.Cookies = cookies
-	default:
-		s.configMutex.Unlock()
+	engine = strings.ToLower(engine)
+	if !isBrowserEngine(engine) {
 		writeAPIError(w, http.StatusBadRequest, "unsupported_engine", "unsupported engine", map[string]string{"engine": engine})
+		return
+	}
+	if _, err := s.updateConfig(func(cfg *config.Config) error {
+		setEngineCookies(cfg, engine, cookies)
+		return nil
+	}); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "save_failed", "failed to persist cookies", nil)
 		return
 	}
 	if s.screenshotMgr != nil {
 		s.screenshotMgr.SetCookies(engine, convertConfigCookies(cookies))
 	}
-	if s.configManager != nil {
-		if err := s.configManager.Save(); err != nil {
-			logger.Warnf("Failed to persist cookies: %v", err)
-		}
-	}
-	s.configMutex.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	payload := map[string]interface{}{
 		"success":      true,
 		"cookieHeader": cookiesToHeader(cookies),
-	})
+	}
+	if s.currentScreenshotEngine() == "extension" {
+		payload["engine"] = "extension"
+		payload["message"] = "cookie stored for CDP fallback; extension session remains primary"
+	}
+	json.NewEncoder(w).Encode(payload) //nolint:errcheck
 }
 
 // handleVerifyCookies 验证Cookie是否可访问搜索结果页
@@ -124,7 +110,7 @@ func (s *Server) handleVerifyCookies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 		"query":   query,
 		"results": results,
 	})
@@ -135,7 +121,7 @@ func (s *Server) handleSaveCookies(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -143,146 +129,127 @@ func (s *Server) handleSaveCookies(w http.ResponseWriter, r *http.Request) {
 	engineMode := s.currentScreenshotEngine()
 	if engineMode == "extension" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"engine":  "extension",
-			"message": "extension mode uses browser session; cookie injection is skipped",
+			"message": "cookies stored for CDP fallback; extension session remains primary",
 		})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"engine":  engineMode,
 	})
 }
 
 func (s *Server) applyCookiesFromRequest(r *http.Request) {
-	if s.config == nil {
+	if s.currentConfig() == nil {
 		return
 	}
 	_ = r.ParseForm()
 
-	s.configMutex.Lock()
-	defer s.configMutex.Unlock()
-
-	if s.currentScreenshotEngine() == "extension" {
-		s.applyCookiesExtensionMode(r)
+	clear := strings.EqualFold(strings.TrimSpace(r.FormValue("clear_cookies")), "true")
+	proxy, proxyPresent := r.Form["proxy_server"]
+	committed, err := s.updateConfig(func(cfg *config.Config) error {
+		if clear {
+			clearEngineCookies(cfg)
+		}
+		if !clear {
+			for _, engine := range browserEngines() {
+				value := strings.TrimSpace(r.FormValue("cookie_" + engine))
+				if value == "" {
+					continue
+				}
+				cookies := config.ParseCookieHeader(value, config.DefaultCookieDomain(engine))
+				if len(cookies) > 0 {
+					setEngineCookies(cfg, engine, cookies)
+				}
+			}
+		}
+		if proxyPresent {
+			cfg.Screenshot.ProxyServer = strings.TrimSpace(proxy[0])
+		}
+		return nil
+	})
+	if err != nil {
+		logger.Warnf("Failed to persist cookies: %v", err)
 		return
 	}
-
-	s.applyCDPCookiesFromForm(r)
-}
-
-// applyCookiesExtensionMode handles cookie/proxy updates when using extension engine.
-// Must be called with configMutex held.
-func (s *Server) applyCookiesExtensionMode(r *http.Request) {
-	changed := false
-	if _, present := r.Form["proxy_server"]; present {
-		proxy := strings.TrimSpace(r.FormValue("proxy_server"))
-		if s.config.Screenshot.ProxyServer != proxy {
-			s.config.Screenshot.ProxyServer = proxy
-			changed = true
-			if s.screenshotMgr != nil {
-				s.screenshotMgr.SetProxyServer(proxy)
-			}
-		}
-	}
-
-	if changed && s.configManager != nil {
-		if err := s.configManager.Save(); err != nil {
-			logger.Warnf("Failed to persist extension proxy config: %v", err)
-		}
-	}
-	logger.Infof("Cookie apply mode=extension_session: skipped cookie injection, proxy update only")
-}
-
-// applyCDPCookiesFromForm applies cookies and proxy from form values for CDP engine mode.
-// Must be called with configMutex held.
-func (s *Server) applyCDPCookiesFromForm(r *http.Request) {
-	changed := false
-	clear := strings.EqualFold(strings.TrimSpace(r.FormValue("clear_cookies")), "true")
-	if clear {
-		s.clearAllEngineCookies()
-		changed = true
-	}
-
-	for _, engine := range []string{"fofa", "hunter", "zoomeye", "quake"} {
-		if !clear {
-			changed = s.applySingleEngineCookie(engine, r.FormValue("cookie_"+engine)) || changed
-		}
-	}
-
-	if _, present := r.Form["proxy_server"]; present {
-		proxy := strings.TrimSpace(r.FormValue("proxy_server"))
-		if s.config.Screenshot.ProxyServer != proxy {
-			s.config.Screenshot.ProxyServer = proxy
-			changed = true
-			if s.screenshotMgr != nil {
-				s.screenshotMgr.SetProxyServer(proxy)
-			}
-		}
-	}
-
-	if changed && s.configManager != nil {
-		if err := s.configManager.Save(); err != nil {
-			logger.Warnf("Failed to persist cookies: %v", err)
-		}
-	}
-	logger.Infof("Cookie apply mode=cdp_cookie_injection: cookie/proxy updates applied")
-}
-
-// clearAllEngineCookies resets all engine cookies and the screenshot manager.
-func (s *Server) clearAllEngineCookies() {
-	s.config.Engines.Fofa.Cookies = nil
-	s.config.Engines.Hunter.Cookies = nil
-	s.config.Engines.Quake.Cookies = nil
-	s.config.Engines.Zoomeye.Cookies = nil
 	if s.screenshotMgr != nil {
-		s.screenshotMgr.SetCookies("fofa", nil)
-		s.screenshotMgr.SetCookies("hunter", nil)
-		s.screenshotMgr.SetCookies("quake", nil)
-		s.screenshotMgr.SetCookies("zoomeye", nil)
+		for _, engine := range browserEngines() {
+			s.screenshotMgr.SetCookies(engine, convertConfigCookies(engineCookies(committed, engine)))
+		}
+		s.screenshotMgr.SetProxyServer(committed.Screenshot.ProxyServer)
 	}
 }
 
-// applySingleEngineCookie parses and applies a cookie header string for one engine.
-// Returns true if the config was changed.
-func (s *Server) applySingleEngineCookie(engine, value string) bool {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return false
-	}
-	cookies := config.ParseCookieHeader(value, config.DefaultCookieDomain(engine))
-	if len(cookies) == 0 {
-		return false
-	}
-
-	switch strings.ToLower(engine) {
+func setEngineCookies(cfg *config.Config, engine string, cookies []config.Cookie) {
+	switch engine {
 	case "fofa":
-		s.config.Engines.Fofa.Cookies = cookies
+		cfg.Engines.Fofa.Cookies = cookies
 	case "hunter":
-		s.config.Engines.Hunter.Cookies = cookies
+		cfg.Engines.Hunter.Cookies = cookies
 	case "quake":
-		s.config.Engines.Quake.Cookies = cookies
+		cfg.Engines.Quake.Cookies = cookies
 	case "zoomeye":
-		s.config.Engines.Zoomeye.Cookies = cookies
-	default:
-		return false
+		cfg.Engines.Zoomeye.Cookies = cookies
+	case "shodan":
+		cfg.Engines.Shodan.Cookies = cookies
+	case "censys":
+		cfg.Engines.Censys.Cookies = cookies
+	case "daydaymap":
+		cfg.Engines.Daydaymap.Cookies = cookies
 	}
+}
+func engineCookies(cfg *config.Config, engine string) []config.Cookie {
+	switch engine {
+	case "fofa":
+		return cfg.Engines.Fofa.Cookies
+	case "hunter":
+		return cfg.Engines.Hunter.Cookies
+	case "quake":
+		return cfg.Engines.Quake.Cookies
+	case "zoomeye":
+		return cfg.Engines.Zoomeye.Cookies
+	case "shodan":
+		return cfg.Engines.Shodan.Cookies
+	case "censys":
+		return cfg.Engines.Censys.Cookies
+	case "daydaymap":
+		return cfg.Engines.Daydaymap.Cookies
+	}
+	return nil
+}
+func clearEngineCookies(cfg *config.Config) {
+	for _, engine := range browserEngines() {
+		setEngineCookies(cfg, engine, nil)
+	}
+}
 
-	if s.screenshotMgr != nil {
-		s.screenshotMgr.SetCookies(engine, convertConfigCookies(cookies))
+func browserEngines() []string {
+	return []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"}
+}
+
+func isBrowserEngine(engine string) bool {
+	for _, candidate := range browserEngines() {
+		if engine == candidate {
+			return true
+		}
 	}
-	return true
+	return false
 }
 
 func (s *Server) currentScreenshotEngine() string {
-	if s == nil || s.config == nil {
+	if s == nil {
 		return "cdp"
 	}
-	engine := strings.ToLower(strings.TrimSpace(s.config.Screenshot.Engine))
+	cfg := s.currentConfig()
+	if cfg == nil {
+		return "cdp"
+	}
+	engine := strings.ToLower(strings.TrimSpace(cfg.Screenshot.Engine))
 	if engine == "extension" {
 		return "extension"
 	}
@@ -341,6 +308,9 @@ func (s *Server) verifyEngineSession(ctx context.Context, engineMode, engine, qu
 }
 
 func titleFromBridgeResult(result screenshot.BridgeResult) string {
+	if result.StructuredCollectedData != nil && strings.TrimSpace(result.StructuredCollectedData.Title) != "" {
+		return strings.TrimSpace(result.StructuredCollectedData.Title)
+	}
 	if result.StructuredCollectedData != nil && result.StructuredCollectedData.Extra != nil {
 		if title, ok := result.StructuredCollectedData.Extra["title"].(string); ok {
 			return strings.TrimSpace(title)
@@ -357,12 +327,18 @@ func hasCollectedAssets(result screenshot.BridgeResult) bool {
 }
 
 func loginRequiredFromBridgeResult(result screenshot.BridgeResult) bool {
+	if result.StructuredCollectedData != nil && (result.StructuredCollectedData.IsLoginWall || result.StructuredCollectedData.LoginRequired) {
+		return true
+	}
 	if result.StructuredCollectedData != nil && result.StructuredCollectedData.Extra != nil {
 		if required, ok := result.StructuredCollectedData.Extra["login_required"].(bool); ok && required {
 			return true
 		}
 	}
 	textParts := []string{titleFromBridgeResult(result), strings.TrimSpace(result.Error), strings.TrimSpace(result.ErrorCode)}
+	if result.StructuredCollectedData != nil {
+		textParts = append(textParts, result.StructuredCollectedData.ExtractionError)
+	}
 	if result.StructuredCollectedData != nil && result.StructuredCollectedData.Extra != nil {
 		if v, ok := result.StructuredCollectedData.Extra["extraction_error"].(string); ok {
 			textParts = append(textParts, v)
@@ -390,6 +366,12 @@ func engineDomain(engine string) string {
 		return "quake.360.net"
 	case "zoomeye":
 		return "zoomeye.org"
+	case "shodan":
+		return "shodan.io"
+	case "censys":
+		return "censys.io"
+	case "daydaymap":
+		return "daydaymap.com"
 	default:
 		return ""
 	}
@@ -415,6 +397,14 @@ func judgeLoginByCookieNames(engine string, byName map[string]string) bool {
 	case "zoomeye":
 		// ZoomEye login cookie
 		return strings.TrimSpace(byName["_xsrf"]) != "" || strings.TrimSpace(byName["session"]) != ""
+	case "shodan":
+		return strings.TrimSpace(byName["dotcom_user"]) != ""
+	case "censys":
+		// Censys is API-key based; no browser session cookie marker.
+		return false
+	case "daydaymap":
+		// DayDayMap is API-key based; no browser session cookie marker.
+		return false
 	default:
 		return false
 	}
@@ -481,7 +471,7 @@ func (s *Server) detectLoginViaExtension(ctx context.Context, engine string, coo
 		URL:       domain,
 		BatchID:   "cookie_read",
 		Action:    "get_cookies",
-		Timeout:   8 * time.Second,
+		Timeout:   20 * time.Second,
 	})
 	if err != nil {
 		logger.Warnf("extension cookie read failed for %s: %v", engine, err)
@@ -497,22 +487,13 @@ func (s *Server) detectLoginViaExtension(ctx context.Context, engine string, coo
 		return false, "extension_paired_session_unverified"
 	}
 
-	byName := make(map[string]string)
-	if result.StructuredCollectedData != nil && result.StructuredCollectedData.Extra != nil {
-		if data, ok := result.StructuredCollectedData.Extra["cookies"].([]interface{}); ok {
-			for _, item := range data {
-				m, ok := item.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				name, _ := m["name"].(string)
-				value, _ := m["value"].(string)
-				if name == "" {
-					continue
-				}
-				byName[name] = value
-			}
-		}
+	cookies, cookieErr := bridgeCookiesFromResult(engine, result)
+	if cookieErr != nil {
+		return false, "extension_paired_session_unverified"
+	}
+	byName := make(map[string]string, len(cookies))
+	for _, cookie := range cookies {
+		byName[cookie.Name] = cookie.Value
 	}
 
 	if judgeLoginByCookieNames(engine, byName) {
@@ -522,6 +503,130 @@ func (s *Server) detectLoginViaExtension(ctx context.Context, engine string, coo
 		return false, "cookie_configured"
 	}
 	return false, "extension_paired_session_unverified"
+}
+
+func bridgeCookiesFromResult(engine string, result screenshot.BridgeResult) ([]config.Cookie, error) {
+	if result.StructuredCollectedData == nil || len(result.StructuredCollectedData.Cookies) == 0 {
+		return nil, fmt.Errorf("extension returned no cookies for %s", engine)
+	}
+	expectedDomain := strings.ToLower(strings.TrimPrefix(engineDomain(engine), "."))
+	if expectedDomain == "" {
+		return nil, fmt.Errorf("unsupported browser engine: %s", engine)
+	}
+	cookies := make([]config.Cookie, 0, len(result.StructuredCollectedData.Cookies))
+	for _, raw := range result.StructuredCollectedData.Cookies {
+		name := strings.TrimSpace(raw.Name)
+		if name == "" || raw.Value == "" {
+			continue
+		}
+		domain := strings.ToLower(strings.TrimSpace(raw.Domain))
+		if domain == "" {
+			domain = "." + expectedDomain
+		}
+		normalizedDomain := strings.TrimPrefix(domain, ".")
+		if normalizedDomain != expectedDomain && !strings.HasSuffix(normalizedDomain, "."+expectedDomain) {
+			continue
+		}
+		path := strings.TrimSpace(raw.Path)
+		if path == "" {
+			path = "/"
+		}
+		cookies = append(cookies, config.Cookie{
+			Name: name, Value: raw.Value, Domain: domain, Path: path,
+			HTTPOnly: raw.HTTPOnly, Secure: raw.Secure,
+		})
+	}
+	if len(cookies) == 0 {
+		return nil, fmt.Errorf("extension returned no usable cookies for %s", engine)
+	}
+	return cookies, nil
+}
+
+// syncExtensionCookiesToCDP copies credentials from the logged-in Extension
+// profile into CDP. Cookies follow the existing config-secret boundary;
+// origin Web Storage stays in memory only.
+func (s *Server) syncExtensionCookiesToCDP(ctx context.Context, engine string) (int, error) {
+	if s == nil || s.bridge == nil || s.bridge.Service == nil || s.screenshotMgr == nil {
+		return 0, fmt.Errorf("browser credential handoff is unavailable")
+	}
+	domain := engineDomain(engine)
+	if domain == "" {
+		return 0, fmt.Errorf("unsupported browser engine: %s", engine)
+	}
+	result, err := s.bridge.Service.Submit(ctx, screenshot.BridgeTask{
+		RequestID: fmt.Sprintf("cookie_sync_%s_%d", engine, time.Now().UnixNano()),
+		URL:       engineCredentialURL(engine),
+		BatchID:   "cookie_sync",
+		Action:    "get_browser_credentials",
+		Timeout:   8 * time.Second,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("read extension cookies for %s: %w", engine, err)
+	}
+	if !result.Success {
+		return 0, fmt.Errorf("read extension credentials for %s failed: code=%s detail=%s", engine, strings.TrimSpace(result.ErrorCode), strings.TrimSpace(result.Error))
+	}
+	cookies, cookieErr := bridgeCookiesFromResult(engine, result)
+	if cookieErr == nil {
+		// Read-only credential sync must not rewrite config.yaml on every poll.
+		// Persist only when the synced cookies actually differ from the current ones.
+		cfg := s.currentConfig()
+		if cfg == nil || !cookiesEqual(engineCookies(cfg, engine), cookies) {
+			committed, updateErr := s.updateConfig(func(cfg *config.Config) error {
+				setEngineCookies(cfg, engine, cookies)
+				return nil
+			})
+			if updateErr != nil {
+				return 0, fmt.Errorf("persist extension cookies for %s: %w", engine, updateErr)
+			}
+			s.screenshotMgr.SetCookies(engine, convertConfigCookies(engineCookies(committed, engine)))
+		}
+	}
+	storageCount := 0
+	if data := result.StructuredCollectedData; data != nil && data.Storage != nil {
+		storage := screenshot.BrowserStorage{Local: data.Storage.Local, Session: data.Storage.Session}
+		storageCount = len(storage.Local) + len(storage.Session)
+		s.screenshotMgr.SetBrowserStorage(engine, storage)
+	}
+	if cookieErr != nil && storageCount == 0 {
+		return 0, cookieErr
+	}
+	return len(cookies), nil
+}
+
+// cookiesEqual reports whether two cookie lists are identical, so read-only
+// credential sync does not rewrite config.yaml when nothing changed.
+func cookiesEqual(left, right []config.Cookie) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func engineCredentialURL(engine string) string {
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case "fofa":
+		return "https://fofa.info/"
+	case "hunter":
+		return "https://hunter.qianxin.com/"
+	case "zoomeye":
+		return "https://www.zoomeye.org/"
+	case "quake":
+		return "https://quake.360.net/"
+	case "shodan":
+		return "https://www.shodan.io/"
+	case "censys":
+		return "https://platform.censys.io/"
+	case "daydaymap":
+		return "https://www.daydaymap.com/home"
+	default:
+		return ""
+	}
 }
 
 func cookiesToHeader(cookies []config.Cookie) string {
@@ -556,11 +661,11 @@ func (s *Server) handleCookieLoginStatus(w http.ResponseWriter, r *http.Request)
 	}
 
 	cdpConnected, extPaired := s.detectSessionChannels(r.Context())
-	engines := []string{"fofa", "hunter", "zoomeye", "quake", "shodan"} // 核心 5 引擎，新引擎待 API Key 后补充
+	engines := []string{"fofa", "hunter", "zoomeye", "quake", "shodan", "censys", "daydaymap"} // 全部引擎
 	results := s.checkEngineLoginStatuses(r.Context(), engines, cdpConnected, extPaired)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":       true,
 		"cdp_connected": cdpConnected,
 		"ext_paired":    extPaired,
@@ -582,9 +687,20 @@ func (s *Server) detectSessionChannels(ctx context.Context) (cdpConnected, extPa
 	return
 }
 
+// EngineLoginStatus is the typed response for engine login status check.
+type EngineLoginStatus struct {
+	Engine       string `json:"engine"`
+	LoggedIn     bool   `json:"logged_in"`
+	Reason       string `json:"reason"`
+	Title        string `json:"title,omitempty"`
+	LoginURL     string `json:"login_url,omitempty"`
+	CDPConnected bool   `json:"cdp_connected"`
+	ExtPaired    bool   `json:"ext_paired"`
+}
+
 // checkEngineLoginStatuses checks login status for each engine.
-func (s *Server) checkEngineLoginStatuses(ctx context.Context, engines []string, cdpConnected, extPaired bool) []map[string]interface{} {
-	results := make([]map[string]interface{}, 0, len(engines))
+func (s *Server) checkEngineLoginStatuses(ctx context.Context, engines []string, cdpConnected, extPaired bool) []EngineLoginStatus {
+	results := make([]EngineLoginStatus, 0, len(engines))
 	for _, engine := range engines {
 		results = append(results, s.checkSingleEngineLogin(ctx, engine, cdpConnected, extPaired))
 	}
@@ -592,19 +708,24 @@ func (s *Server) checkEngineLoginStatuses(ctx context.Context, engines []string,
 }
 
 // checkSingleEngineLogin checks login status for a single engine.
-func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpConnected, extPaired bool) map[string]interface{} {
+func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpConnected, extPaired bool) EngineLoginStatus {
 	loginURL := ""
 	if s.screenshotMgr != nil {
 		loginURL = s.screenshotMgr.EngineLoginURL(engine)
 	}
 	cookieSet := s.engineCookieConfigured(engine)
 
-	// API Key 引擎（如 Shodan）：有 Key 即视为已就绪，无需浏览器登录
-	if engine == "shodan" && cookieSet {
-		return map[string]interface{}{
-			"engine": engine, "logged_in": true, "reason": "api_key_configured",
-			"login_url": loginURL, "cdp_connected": cdpConnected, "ext_paired": extPaired,
-		}
+	base := EngineLoginStatus{
+		Engine:       engine,
+		LoginURL:     loginURL,
+		CDPConnected: cdpConnected,
+		ExtPaired:    extPaired,
+	}
+
+	// A configured browser cookie set is a handoff candidate, not proof that
+	// the page is authenticated; the channel checks below still verify it.
+	if cookieSet {
+		base.Reason = "cookie_configured"
 	}
 
 	if !cdpConnected && !extPaired {
@@ -612,10 +733,8 @@ func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpC
 		if cookieSet {
 			reason = "cookie_configured"
 		}
-		return map[string]interface{}{
-			"engine": engine, "logged_in": false, "reason": reason,
-			"login_url": loginURL, "cdp_connected": cdpConnected, "ext_paired": extPaired,
-		}
+		base.Reason = reason
+		return base
 	}
 
 	loggedIn, reason := false, "no_session"
@@ -623,7 +742,20 @@ func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpC
 		cdpCtx, cdpCancel := context.WithTimeout(ctx, 8*time.Second)
 		loggedIn, reason = s.detectLoginViaCDP(cdpCtx, engine, cookieSet)
 		cdpCancel()
-	} else if extPaired {
+	}
+	if !loggedIn && extPaired {
+		if cdpConnected {
+			syncCtx, syncCancel := context.WithTimeout(ctx, 10*time.Second)
+			_, syncErr := s.syncExtensionCookiesToCDP(syncCtx, engine)
+			syncCancel()
+			if syncErr == nil {
+				cdpCtx, cdpCancel := context.WithTimeout(ctx, 8*time.Second)
+				loggedIn, reason = s.detectLoginViaCDP(cdpCtx, engine, true)
+				cdpCancel()
+			}
+		}
+	}
+	if !loggedIn && extPaired {
 		extCtx, extCancel := context.WithTimeout(ctx, 8*time.Second)
 		loggedIn, reason = s.detectLoginViaExtension(extCtx, engine, cookieSet)
 		extCancel()
@@ -638,30 +770,32 @@ func (s *Server) checkSingleEngineLogin(ctx context.Context, engine string, cdpC
 		reason = "cdp_connected"
 	}
 
-	return map[string]interface{}{
-		"engine": engine, "logged_in": loggedIn, "reason": reason, "title": "",
-		"login_url": loginURL, "cdp_connected": cdpConnected, "ext_paired": extPaired,
-	}
+	base.LoggedIn = loggedIn
+	base.Reason = reason
+	return base
 }
 
 // engineCookieConfigured checks if cookies are configured for the given engine.
 func (s *Server) engineCookieConfigured(engine string) bool {
-	if s.config == nil {
+	cfg := s.currentConfig()
+	if cfg == nil {
 		return false
 	}
-	s.configMutex.Lock()
-	defer s.configMutex.Unlock()
 	switch engine {
 	case "fofa":
-		return hasCookies(s.config.Engines.Fofa.Cookies)
+		return hasCookies(cfg.Engines.Fofa.Cookies)
 	case "hunter":
-		return hasCookies(s.config.Engines.Hunter.Cookies)
+		return hasCookies(cfg.Engines.Hunter.Cookies)
 	case "quake":
-		return hasCookies(s.config.Engines.Quake.Cookies)
+		return hasCookies(cfg.Engines.Quake.Cookies)
 	case "zoomeye":
-		return hasCookies(s.config.Engines.Zoomeye.Cookies)
+		return hasCookies(cfg.Engines.Zoomeye.Cookies)
 	case "shodan":
-		return strings.TrimSpace(s.config.Engines.Shodan.APIKey) != ""
+		return hasCookies(cfg.Engines.Shodan.Cookies)
+	case "censys":
+		return hasCookies(cfg.Engines.Censys.Cookies)
+	case "daydaymap":
+		return hasCookies(cfg.Engines.Daydaymap.Cookies)
 	}
 	return false
 }

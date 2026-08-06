@@ -36,8 +36,32 @@ func initNotifyPepper() {
 	logger.Warnf("UNIMAP_NOTIFY_PEPPER not set, using legacy pepper — set the env var for production deployments")
 }
 
+// initNotifyPepperStrict 在生产环境（非回环绑定）中建议设置 UNIMAP_NOTIFY_PEPPER，
+// 否则使用源码中公开的 legacy pepper 加密通知渠道密钥。
+// 2026-07-12: 降级为 warn，允许直接在 config.yaml 中配置明文凭据。
+func initNotifyPepperStrict(bindAddr string) {
+	if env := os.Getenv(pepperEnvVar); env != "" {
+		notifyPepper = env
+		return
+	}
+	notifyPepper = legacyNotifyPepper
+	if !isLoopbackBind(bindAddr) {
+		logger.Warnf("生产环境 (bind=%s) 未设置 %s，使用 legacy pepper 保护通知渠道密钥；"+
+			"建议设置该环境变量以增强安全性", bindAddr, pepperEnvVar)
+	} else {
+		logger.Warnf("UNIMAP_NOTIFY_PEPPER not set, using legacy pepper — set the env var for production deployments")
+	}
+}
+
 func getNotifyPepper() string {
 	notifyPepperOnce.Do(initNotifyPepper)
+	return notifyPepper
+}
+
+// getNotifyPepperStrict 在生产环境中强制要求 UNIMAP_NOTIFY_PEPPER 环境变量。
+// 仅在 DecryptNotifySecrets 中使用，确保解密时使用安全 pepper。
+func getNotifyPepperStrict(bindAddr string) string {
+	notifyPepperOnce.Do(func() { initNotifyPepperStrict(bindAddr) })
 	return notifyPepper
 }
 
@@ -179,10 +203,13 @@ func EncryptNotifySecrets(cfg *Config) {
 }
 
 // DecryptNotifySecrets decrypts the Secret field for every notification channel.
+// In production (non-loopback bind), it requires UNIMAP_NOTIFY_PEPPER to be set.
 func DecryptNotifySecrets(cfg *Config) {
 	if cfg == nil {
 		return
 	}
+	// 生产环境强制使用严格 pepper 初始化
+	getNotifyPepperStrict(cfg.Web.BindAddress)
 	for i := range cfg.Notifications.Channels {
 		ch := &cfg.Notifications.Channels[i]
 		if ch.Secret == "" || !strings.HasPrefix(ch.Secret, notifySecretPrefix) {

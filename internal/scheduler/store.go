@@ -32,6 +32,7 @@ func NewStore(taskPath, historyPath string) *Store {
 	}
 }
 
+// nolint:unused
 type persistedData struct {
 	Tasks   []*ScheduledTask  `json:"tasks"`
 	History []ExecutionRecord `json:"history"`
@@ -65,6 +66,17 @@ func (s *Store) Save(tasks []*ScheduledTask, history []ExecutionRecord) error {
 	}
 	if err := s.saveHistory(history); err != nil {
 		return fmt.Errorf("save history: %w", err)
+	}
+	return nil
+}
+
+// SaveTasks persists only task configuration. Task mutations use this path so
+// an unrelated history-file failure cannot create a half-committed rollback.
+func (s *Store) SaveTasks(tasks []*ScheduledTask) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.saveTasks(tasks); err != nil {
+		return fmt.Errorf("save tasks: %w", err)
 	}
 	return nil
 }

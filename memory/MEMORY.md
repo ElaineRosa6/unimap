@@ -1,20 +1,72 @@
+> **Claude Code 项目记忆同步说明**
+> 
+> 本项目的完整 Claude Code 会话记忆同时保存在 C 盘客户端目录：
+> 
+> ```
+> C:\Users\ljw\.claude\projects\D--Project-Go-project-unimap\memory
+> ```
+
 # Project Memory Index
 
-## 项目知识（从 C 盘记忆合并，2026-06-15）
+## 当前事实快照（2026-08-02）
+- [工作与提交记录文档 2026-08-04](project_worklog_doc_2026-08-04.md) — docs/WORK_LOG_2026-07-15_to_2026-08-04.md 及同名 Word 版已生成（纯黑白样式），均未提交。
+- [urlive.py MD5 FIPS 兼容性修复 2026-08-04](project_urlive_md5_fips_2026-08-04.md) — 全目录审查：MD5 指纹加 usedforsecurity=False（含旧版回退）；unimap 其余 P0 核实为误报/已修复，详见记忆文件。
+- [工作日志入库与推送 2026-08-05](project_worklog_push_2026-08-05.md) — WORK_LOG 入库（d6cce6d）+ develop 推送同步
+- [安全审计 4 项修复 2026-08-06](project_security_audit_fix_2026-08-06.md) — ✅ 路径穿越×2（sanitizeImportPattern + url_import/icp_import admin 门槛）+ WaitGroup TOCTOU + 截图数据竞争（channel 传值）全部闭环（13cef0a）
+- [定时查询→企业微信闭环 2026-08-06](project_local_wecom_closure_2026-08-06.md) — ✅ WFP 拦截重启消解；WeCom 40058 截断修复（8142549）；9 定时任务（fofa×1+hunter×8，cron 15 10 * * *）实测 FOFA 100 条 / Hunter 3 条推送成功
+- [企业微信表格+quake启用 2026-08-06](project_wecom_format_quake_2026-08-06.md) — ✅ 推送改紧凑表格（7f86376，单次约70行/3754B）；quake 补 key 启用 + quake_ynmobile_daily（13 favicon 合并，55条实测）；任务 9→10，detail_limit→100
+- [腾讯云部署暂停+last_seen缺口 2026-08-06](project_tencent_cloud_pause_lastseen_2026-08-06.md) — ⏸ 云部署暂停先本地；七引擎 key 核验（zoomeye积分/shodan membership/censys api_secret）；云部署分析(55d8023)+任务清单(5ac6687)；last_seen 因 fofa/quake/hunter 适配器未映射全空（API 实测有 lastupdatetime/time/updated_at）
 
-- [浏览器采集架构知识](project_browser_collection_knowledge.md) — 4 引擎采集验证状态 + DOM 选择器 + 技术细节（Chrome MV3/service worker/port 提取等）
+- [七引擎、云端发布与飞书闭环 2026-08-02](project_seven_engine_cloud_feishu_closeout_2026-08-02.md) — 当前七引擎、CDP/fallback、云端发布、通知与外部 fixture 状态。
+- 当前稳定 Web UI 已接入 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap；七引擎 Bridge 真实结构化采集均非空。
+- Quake/Hunter/DayDayMap 原生 CDP 已通过；Censys challenge 被结构化识别且自动 Bridge fallback 通过；FOFA/ZoomEye/Shodan 原生 CDP 待非空校准。
+- Censys、DayDayMap 的服务端/CLI API、Web-only adapter、L1/L3、Bridge、设置页、截图、调度和 SQLite 单历史闭环均已接通。
+- 云端最终 CGO/SQLite 镜像已通过健康、重启、旧镜像回滚与重新发布；飞书应用通知两次真实发送 HTTP 200，配置回滚与重应用通过。
+- 自动“发现变化 → 证据截图 → 图片通知”尚未启用。调用前 URL 校验不能覆盖浏览器跨主机重定向
+  和 DNS rebinding，浏览器层 SSRF 防护已实现（2026-07-29），自动证据截图需云端验收后启用。
+- 本地 22 个提交已于 2026-08-04 推送到 `origin/develop`，与远端同步。
+- 云端安全验收 fixture 已构建（`tools/acceptance-fixture/`）：DNS rebinding 控制 API、
+  可变页面、私网 sink、Cloudflare DNS 翻转、Caddy HTTPS、Docker Compose。
+  静态 fixture 已进入 staging；取得受控域名、DNS 编辑参数和控制/目标 URL 后运行 `live_dns_e2e` 与 `live_tamper_e2e`。
+- 七引擎（FOFA/Hunter/ZoomEye/Quake/Shodan/Censys/DayDayMap）均已有 L1 Network 解析器
+  和 L3 DOM ExtractJS（2026-08-01），单元测试全部通过。Censys/DayDayMap 新增 L1 解析器、
+  DOM 选择器、搜索 URL 构造、Extension 登录 Cookie 检测和设置页配置。
+- GUI 入口 (cmd/unimap-gui) 已于 2026-08-01 删除，Fyne 依赖已清除；项目入口精简为
+  unimap-web（主服务）+ unimap-cli（Agent 友好脚本工具）。
+- CLI Agent 友好化已完成（2026-08-01）：JSON 信封、语义退出码、分页、全子命令 --format json、
+  quota/config show 子命令、--fields 列选择、12 个 UNIMAP_* 环境变量、help --json 自描述。
+  详见 docs/CLI_AGENT_GUIDE.md。
+
+> 本索引后续的日期条目是历史知识，不覆盖上述当前事实。当前实施状态以
+> [`docs/REMAINING_WORK_2026-07-23.md`](../docs/REMAINING_WORK_2026-07-23.md) 和
+> [`docs/IMPLEMENTATION_PLAN_2026-07-23.md`](../docs/IMPLEMENTATION_PLAN_2026-07-23.md) 为准。
+
+## 项目知识（历史合并与专题记录）
+
+- [B-01 CGO/SQLite 修复 2026-07-20](project_b01_cgo_sqlite_fix_2026-07-20.md) — Dockerfile builder 安装 build-base + CGO_ENABLED=1；CI 同步；容器内 SQLite 可用；QA security audit 16 扫描器未发现新增漏洞
+- [B-02 生产 Compose 定型 2026-07-20](project_b02_prod_compose_2026-07-20.md) — 新增 docker-compose.prod.yaml（loopback 端口、移除 dev mount、backups 卷、日志轮转、资源限制、强制 admin token）
+- [功能审计修复复核 2026-07-16](project_functional_audit_reverification_2026-07-16.md) — 12 项整改补修：11 FIXED、0 PARTIAL、1 MITIGATED；批次唯一性、调度提交边界、readiness 与截图 ID HTTP 契约已闭合
+- [审计补修闭环 2026-07-07](project_audit_fix_closeout_2026-07-07.md) — ✅ 代码补修闭环；外部凭证已于 2026-07-13 确认完成轮换，记录仅保留为历史背景
+- [浏览器采集架构知识](project_browser_collection_knowledge.md) — 历史 Bridge 采集验证与 DOM
+  选择器知识；不能作为 CDP 真实闭环证据，当前状态以前述事实快照为准
+- [Extension 桥接截图超时问题 2026-07-20](project_extension_bridge_screenshot_timeout_2026-07-20.md) — 批量截图 2/3 失败根因：ensureTab 不等待导航导致 waitForPageReady 监听器竞态 + 扩展端(最长33s)与Go后端(30s)超时不一致 + 固定15s渲染等待对普通网站过度
+- [端口扫描全端口无结果 2026-07-20](project_port_scan_full_mode_no_results_2026-07-20.md) — 全端口(1-65535)+telnet扫描132.232.231.41无结果：65535端口即使256并发也要3.4分钟，默认5分钟超时；scan_failed状态不显示开放端口；历史保存为fire-and-forget，scan失败时不保存
 
 ## 核心架构决策
 
-- **Extension 模式是截图/采集的主力模式**：CDP headless 指纹暴露，Extension 使用真实浏览器会话
+- **端口扫描随机化与多方法探测（2026-07-15）**：公网目标解析、SSRF/CDN/授权范围校验后，对全局去重的 `唯一 IP × 端口` 笛卡尔积随机打乱；每个组合可执行 connect、Telnet、UDP、FIN、NULL、Xmas 和 0-5000ms 随机抖动。确定响应使用 `open`，UDP/原始 TCP 无响应使用 `open_filtered`，不得合并进确定开放端口。FIN/NULL/Xmas 必须提供 `authorized_targets`，进程还需原始套接字权限。
+- **2026-07-07 审计补修闭环**：`probe-web`/batch 已加 `urlguard` + 内网目标拦截，底层探测使用 `SafeHTTPClient` 防 DNS rebinding；`operation_history` 列表查询改为显式 SQL 分支；WebSocket 重连后会查询 `/api/v1/query/status` 恢复当前查询基础状态。外部平台密钥/admin token 已于 2026-07-13 确认轮换完成；不得再把该项列为未完成事项。
+- **运行模式按环境选择**：桌面环境可用 Extension 复用真实浏览器会话；无图形 Linux/容器默认使用
+  CDP headless。所有浏览器业务统一经过 ScreenshotRouter，不能把历史 Bridge 主力模式外推为
+  云端默认模式。
 - **ScreenshotRouter 双模式自动降级**：CDP↔Extension 自动切换
-- **三层采集架构（L1/L2/L3）**：L1 Network + L3 DOM 覆盖 5 引擎；L2 Hook 设计冻结
+- **三层采集架构（L1/L2/L3）**：L1 Network + L3 DOM 覆盖 7 引擎；L2 Hook 设计冻结
 - **SPA 引擎截图统一15秒等待**：collect/screenshot/collect_and_capture 三种 action 统一等待 15 秒 + 滚动触发懒加载 + 2 秒稳定等待。不同引擎差异化等待不可靠，统一最长等待更简单（2026-06-18 从 4/6 秒统一为 15 秒）
 - **`collect_and_capture` 一次导航完成采集+截图**：避免分步调用导致页面重载丢失搜索结果
 - **CSP `unsafe-inline` 完全移除**：21 静态 style→CSS 类，28 JS inline style→CSS 类，动态颜色用 CSS 变量
 - **所有管理端点应启用限流**：即使有 admin auth 保护
 - **操作历史持久化**：通用 SQLite 表，支持多类型操作
-- **Web API 统一包 model.APIResponse**
+- **错误响应统一包 model.APIResponse**：成功响应仍按 handler 定义，不能假设所有 API 使用统一成功信封。
 - **handleScreenshot 统一走 Router**：不再直接创建 chromedp allocator
 - **server.go 拆分完成**：1335→1128 行（middleware_security.go + server_helpers.go）
 
@@ -42,14 +94,16 @@
 
 ## 剩余长期项
 
-> 在册引擎 7 个：核心 5（FOFA/Hunter/ZoomEye/Quake/Shodan，已验证）+ 新引擎 2（Censys/DayDayMap，✅ API 验证已通过 2026-06-23）。BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除。
+> 在册七引擎均已接入稳定 Web UI 且 Bridge 非空实测通过。Quake/Hunter/DayDayMap 原生 CDP 通过；
+> Censys challenge 识别与自动 fallback 通过；FOFA/ZoomEye/Shodan 原生 CDP 仍待非空定级。
+> BinaryEdge/Onyphe/GreyNoise 已于 2026-06-20 移除。
 
 1. **L2 Hook** — 设计冻结，仅当 L1/L3 telemetry 证明收益时启动
 2. ~~`map[string]interface{}` 强类型迁移~~ ✅ **Phase 7 完结**（799→~170，adapter 层 ~100→18，-82%）。7 引擎全部完成，剩余为 Web 响应/配额解析/变量嵌套
 3. ~~**新增引擎（Censys/DayDayMap）API 查询端到端验证**~~ ✅ DayDayMap curl 200 OK + Censys v3 单 IP 200 OK（2026-06-23）
 4. ~~**ZoomEye `cleanZoomEyeTitle`**~~ ✅ 已修（commit 7e619f8），title 中的元数据前缀已清理
 5. ~~**Shodan `timestamp` 选择器为空** — 需真机调试（commit 50dc187 已修复 timestamp 字段流，待真机验证）~~ ✅ 已修复（`9debb8f`：`capture.js` `div.heading div.timestamp` 选择器 + `dom_selectors.go` 同步 + Go `LastSeen` 字段映射）
-6. ~~**Extension 版本号待升**~~ ✅ 已升至 0.4.1
+6. ~~**Extension 版本号待升**~~ ✅ 当前为 0.4.15（2026-08-02）
 7. ~~**审计项 FINDING-002~008**~~ ✅ 6 项全部闭环（2026-06-22）
 
 ### 运维项（2026-06-23 核实）
@@ -57,7 +111,7 @@
 | 项 | 核实状态 |
 |----|----------|
 | 优雅关闭 | ✅ 已实现（main.go ShutdownManager + server.go Shutdown） |
-| Extension 版本号 | ✅ 已升至 0.4.1 |
+| Extension 版本号 | ✅ 当前为 0.4.15（2026-08-02） |
 | `*.log` gitignore | ✅ 已加 |
 | `*.exe` gitignore | ✅ 已加（`.gitignore` 第 2 行，无 exe 被 git 跟踪） |
 
@@ -179,20 +233,26 @@
 
 ## 当前活跃
 
+- [项目当前状态与后续行动 2026-07-24](project_current_state_2026-07-24.md) — 本地基线已提交，
+  下一主线是浏览器层 SSRF、云端巡检闭环和真实 CDP 引擎验收
+- [CI 全绿 + GUI 构建修复 2026-06-29](project_ci_green_2026-06-29.md) — ✅ CI 全绿：build/vet/gofmt/race/govulncheck/Extension JS 全部通过；修复 `monitor_native.go` 类型名 `apiTamperHistoryItem` → `guiTamperHistoryRecord`
+- [CI 收尾执行清单 2026-06-26](project_ci_closeout_checklist_2026-06-26.md) — ✅ 已闭环：CGO_ENABLED=1、依赖升级、LF 行尾治理、govulncheck 0 漏洞
 - [巡检功能增强计划 2026-06-25](project_monitoring_enhancement_plan_2026-06-25.md) — ✅ 全部完成（5 Phase）：误报修复 + 指纹引擎(107规则) + HTTP指纹 + UA池 + 端口联动；+28 测试；页面"监控"→"巡检"
 - [截图等待时间统一15秒 + 飞书应用图片推送修复 2026-06-18](project_screenshot_wait_timing_fix_2026-06-18.md) — ✅ 5引擎截图完整+飞书推送正常；collect_and_capture 统一15秒等待+滚动触发懒加载；extractImagePaths 双格式识别
 - [Extension 模式问题 2026-05-09](project_extension_mode_issues_2026-05-09.md) — ✅P0已修复(Shodan补齐+翻译路径验证)、✅P1进度已实现、P1登录状态部分解决
 - [Bridge 认证修复 2026-06-03](project_bridge_auth_fix_2026-06-03.md) — ✅截图超时根因(重启丢token→401)修复：admin token loopback 兜底+签名/pairing联动+5测试+真机curl E2E全绿
 - [定时任务优化进度 2026-06-02](project_scheduler_optimization_2026-06-02.md) — P3-P6完成详情+修复记录+后续计划
-- [Quake采集验证 2026-06-07](project_quake_antiscraping_not_permission_2026-06-07.md) — ✅URL格式修正后采集成功（10 items, card_fallback方法）
+- [引擎集成与采集状态](project_engine_integration_2026-06-17.md) — 历史引擎集成与真机验证记录；当前选择器以扩展源码为准
 
 ## 当前文档（docs/）
 
-- [巡检功能增强计划 2026-06-25](../docs/MONITORING_ENHANCEMENT_PLAN.md) — ✅ 全部完成：5 Phase，+28 测试，35/35 包通过
-- [E2E采集验证 2026-06-04](../docs/E2E_COLLECTION_VERIFICATION_2026-06-04.md) — ✅ 截图✅ Shodan 6/6 + Quake 2/2；采集✅ 5引擎全部打通（2026-06-07验证）：FOFA/ZoomEye/Shodan/Hunter/Quake均成功；Quake URL格式修正后采集成功（10 items, card_fallback方法）
-- [问题修复报告 2026-06-01](../docs/FIX_REPORT_2026-06-01.md) — Phase 1-4 全量修复 + Hunter 限流根因
-- [项目审查报告 2026-06-01](../docs/PROJECT_REVIEW_2026-06-01.md) — 第二轮全量审查：7 维度深度分析，18 项新发现
-- [定时任务下一步计划](../docs/SCHEDULER_NEXT_STEPS.md) — 🟡 P1 CDP 4/5通过(Quake反爬) + P2 capture.js已修复 + 飞书路径泄露已修复；下一步Extension E2E
+- [安全审计发现登记 2026-08-05](../docs/SECURITY_AUDIT_FINDINGS_2026-08-05.md) — qa-security-audit 确认 3 漏洞 + 1 补充；✅ 2026-08-06 已修复（路径穿越×2 / WaitGroup TOCTOU / 截图数据竞争，提交 13cef0a，全量 `go test -race ./...` 通过）
+- [CI 全绿 + GUI 构建修复 2026-06-29](../docs/archive/CI_CLOSEOUT_CHECKLIST_2026-06-26.md) — 历史 CI 收尾资料
+- [巡检功能增强计划 2026-06-25](../docs/archive/MONITORING_ENHANCEMENT_PLAN.md) — 历史计划与验收资料
+- [E2E采集验证 2026-06-04](../docs/archive/E2E_COLLECTION_VERIFICATION_2026-06-04.md) — 历史采集验证资料
+- [问题修复报告 2026-06-01](../docs/archive/FIX_REPORT_2026-06-01.md) — 历史修复报告
+- [项目审查报告 2026-06-01](../docs/archive/PROJECT_REVIEW_2026-06-01.md) — 历史审查报告
+- [定时任务下一步计划](../docs/archive/SCHEDULER_NEXT_STEPS.md) — 历史计划
 
 ## 已归档（docs/archive/）
 
@@ -214,6 +274,10 @@
 | [测试覆盖率进度 2026-04-21](archive/project_test_coverage_phase1_2026-04-21.md) | Phase 1-3 进度，整体约 75% |
 | [实施指南完成 2026-04-16](archive/project_implementation_guide_progress_2026-04-16.md) | 10步全部完成 |
 | [跨平台适配 2026-04-13](archive/project_crossplatform_2026-04-13.md) | macOS/Linux 6 项适配 |
+
+## 历史归档
+
+- [CLAUDE.md 历史修复记录归档 2026-07](project_claude_md_history_archive_2026-07.md) — CLAUDE.md 超过 40k 字符限制后移出的详细历史修复记录（2026-06-10 至 2026-07-20），包含安全审计、巡检修复、引擎适配器强类型迁移、前端交互修复等完整历史
 
 ## 核心文档（docs/）
 

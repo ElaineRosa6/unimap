@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -10,12 +11,19 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/utils/urlguard"
 	"github.com/xuri/excelize/v2"
 )
 
 // 预编译正则表达式，避免每次调用时重新编译
 var reURLPattern = regexp.MustCompile(`^(https?://)?([\w.-]+)(:\d+)?(/.*)?$`)
+
+func parsePortScanPortSpec(spec string) ([]int, error) {
+	return service.ParsePortSpec(spec)
+}
 
 // allowedUploadMIME maps file extensions to their expected MIME types
 var allowedUploadMIME = map[string][]string{
@@ -86,14 +94,14 @@ func (s *Server) handleImportURLs(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
 	// 解析multipart表单
 	maxMultipartMemory := int64(10 << 20)
-	if s.config != nil && s.config.Web.RequestLimits.MaxMultipartMemory > 0 {
-		maxMultipartMemory = s.config.Web.RequestLimits.MaxMultipartMemory
+	if cfg := s.currentConfig(); cfg != nil && cfg.Web.RequestLimits.MaxMultipartMemory > 0 {
+		maxMultipartMemory = cfg.Web.RequestLimits.MaxMultipartMemory
 	}
 	err := r.ParseMultipartForm(maxMultipartMemory)
 	if err != nil {
@@ -114,8 +122,8 @@ func (s *Server) handleImportURLs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validateUploadMIME(safeName, header.Header.Get("Content-Type")); err != nil {
-		writeAPIError(w, http.StatusBadRequest, "mime_mismatch", err.Error(), nil)
+	if validateErr := validateUploadMIME(safeName, header.Header.Get("Content-Type")); validateErr != nil {
+		writeAPIError(w, http.StatusBadRequest, "mime_mismatch", validateErr.Error(), nil)
 		return
 	}
 
@@ -145,7 +153,7 @@ func (s *Server) handleImportURLs(w http.ResponseWriter, r *http.Request) {
 	validUrls := filterValidURLs(urls)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"total":    len(urls),
 		"valid":    len(validUrls),
 		"urls":     validUrls,
@@ -157,7 +165,7 @@ func (s *Server) handleURLReachability(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
@@ -199,7 +207,7 @@ func (s *Server) handleURLReachability(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"summary": response.Summary,
 		"results": response.Results,
@@ -214,27 +222,82 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusServiceUnavailable, "monitor_not_available", "monitor service not available", nil)
 		return
 	}
-	if !requireTrustedRequest(w, r, allowedOriginsFromConfig(s.config)) {
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
 		return
 	}
 
 	var req struct {
-		URLs        []string `json:"urls"`
-		Ports       []int    `json:"ports"`
-		Concurrency int      `json:"concurrency"`
+		URLs               []string `json:"urls"`
+		Targets            []string `json:"targets"`
+		AuthorizedTargets  []string `json:"authorized_targets"`
+		Ports              []int    `json:"ports"`
+		PortSpec           string   `json:"port_spec"`
+		ScanMode           string   `json:"scan_mode"`
+		ProbeMethods       []string `json:"probe_methods"`
+		Concurrency        int      `json:"concurrency"`
+		PortConcurrency    int      `json:"port_concurrency"`
+		ConnectTimeoutMS   int      `json:"connect_timeout_ms"`
+		ScanTimeoutSeconds int      `json:"scan_timeout_seconds"`
+		JitterMinMS        int      `json:"jitter_min_ms"`
+		JitterMaxMS        int      `json:"jitter_max_ms"`
 	}
 
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 
-	if len(req.URLs) == 0 {
-		writeAPIError(w, http.StatusBadRequest, "no_urls_provided", "no URLs provided", nil)
+	scanTargets := req.Targets
+	if len(scanTargets) == 0 {
+		scanTargets = req.URLs
+	}
+	if len(scanTargets) == 0 {
+		writeAPIError(w, http.StatusBadRequest, "no_urls_provided", "no scan targets provided", nil)
 		return
+	}
+	if err := service.ValidateAuthorizedTargets(req.AuthorizedTargets); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_authorized_scope", "authorized_targets must contain IPv4 addresses or CIDRs", sanitizeError(err.Error()))
+		return
+	}
+	if err := service.ValidatePortScanMethods(req.ProbeMethods); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_probe_methods", "probe_methods may contain connect, telnet, fin, null, xmas, or udp", sanitizeError(err.Error()))
+		return
+	}
+	if service.PortScanMethodsRequireAuthorizedScope(req.ProbeMethods) && len(req.AuthorizedTargets) == 0 {
+		writeAPIError(w, http.StatusBadRequest, "authorized_scope_required", "FIN/NULL/Xmas scans require authorized_targets", nil)
+		return
+	}
+	probeMethods := make([]service.PortScanMethod, len(req.ProbeMethods))
+	for i := range req.ProbeMethods {
+		probeMethods[i] = service.PortScanMethod(req.ProbeMethods[i])
+	}
+
+	ports := req.Ports
+	portSpec := strings.TrimSpace(req.PortSpec)
+	scanMode := strings.ToLower(strings.TrimSpace(req.ScanMode))
+	switch scanMode {
+	case "", "common", "custom", "full":
+	default:
+		writeAPIError(w, http.StatusBadRequest, "invalid_scan_mode", "scan_mode must be common, custom, or full", nil)
+		return
+	}
+	if scanMode == "full" {
+		portSpec = "all"
+	}
+	if scanMode == "custom" && portSpec == "" && len(ports) == 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_port_spec", "custom scan requires port_spec", nil)
+		return
+	}
+	if portSpec != "" {
+		parsedPorts, err := parsePortScanPortSpec(portSpec)
+		if err != nil {
+			writeAPIError(w, http.StatusBadRequest, "invalid_port_spec", "invalid port specification", sanitizeError(err.Error()))
+			return
+		}
+		ports = parsedPorts
 	}
 
 	// 检查所有URL是否指向内网地址
-	for _, urlStr := range req.URLs {
+	for _, urlStr := range scanTargets {
 		parsed, err := url.Parse(urlStr)
 		if err != nil {
 			continue
@@ -245,19 +308,157 @@ func (s *Server) handleURLPortScan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	response, err := s.monitorApp.ScanURLPorts(r.Context(), req.URLs, req.Ports, req.Concurrency)
+	scanTimeout := time.Duration(req.ScanTimeoutSeconds) * time.Second
+	if scanTimeout <= 0 {
+		scanTimeout = time.Minute
+		if len(ports) > 1024 {
+			scanTimeout = 5 * time.Minute
+		}
+	}
+	if scanTimeout > 15*time.Minute {
+		scanTimeout = 15 * time.Minute
+	}
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(scanTimeout + 30*time.Second))
+	response, err := s.monitorApp.ScanURLPortsWithOptions(r.Context(), scanTargets, ports, service.PortScanOptions{
+		TargetConcurrency: req.Concurrency,
+		PortConcurrency:   req.PortConcurrency,
+		ConnectTimeout:    time.Duration(req.ConnectTimeoutMS) * time.Millisecond,
+		ScanTimeout:       scanTimeout,
+		AuthorizedTargets: req.AuthorizedTargets,
+		ProbeMethods:      probeMethods,
+		JitterMin:         time.Duration(req.JitterMinMS) * time.Millisecond,
+		JitterMax:         time.Duration(req.JitterMaxMS) * time.Millisecond,
+	})
 	if err != nil {
 		writeAPIError(w, http.StatusInternalServerError, "url_port_scan_failed", "url port scan failed", sanitizeError(err.Error()))
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"summary": response.Summary,
-		"ports":   response.Ports,
-		"results": response.Results,
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":                 true,
+		"summary":                 response.Summary,
+		"ports":                   response.Ports,
+		"port_count":              response.PortCount,
+		"unique_ip_count":         response.UniqueIPCount,
+		"duplicate_ip_references": response.DuplicateIPReferences,
+		"planned_connections":     response.PlannedConnections,
+		"attempted_connections":   response.AttemptedConnections,
+		"authorized_scope_used":   response.AuthorizedScopeUsed,
+		"duration_ms":             response.DurationMS,
+		"results":                 response.Results,
 	})
+}
+
+// handleProbeWebService sends a lightweight HTTP HEAD request to the target
+// URL and returns whether it behaves like a real web service.
+func (s *Server) handleProbeWebService(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
+		return
+	}
+
+	var req struct {
+		URL string `json:"url"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		writeAPIError(w, http.StatusBadRequest, "invalid_url", "url is required", nil)
+		return
+	}
+
+	parsed, err := url.Parse(req.URL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"is_web": false})
+		return
+	}
+	if probeURLBlocked(r.Context(), parsed) {
+		writeAPIError(w, http.StatusForbidden, "blocked_url", "target url resolves to private/internal address", nil)
+		return
+	}
+
+	isWeb := probeWebService(r.Context(), req.URL)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"is_web": isWeb})
+}
+
+// handleProbeWebServiceBatch probes multiple URLs concurrently and returns a
+// map of url→is_web. This is called once when query results arrive so the
+// "跳转" button can use cached results without per-click latency.
+func (s *Server) handleProbeWebServiceBatch(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !requireTrustedRequest(w, r, s.allowedOrigins()) {
+		return
+	}
+
+	var req struct {
+		URLs []string `json:"urls"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+
+	results := make(map[string]bool, len(req.URLs))
+	for _, u := range req.URLs {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		parsed, err := url.Parse(u)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			results[u] = false
+			continue
+		}
+		if probeURLBlocked(r.Context(), parsed) {
+			results[u] = false
+			continue
+		}
+		results[u] = probeWebService(r.Context(), u)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"results": results})
+}
+
+func probeURLBlocked(ctx context.Context, parsed *url.URL) bool {
+	if parsed == nil {
+		return true
+	}
+	if _, err := urlguard.Check(parsed.String(), urlguard.CheckOptions{}); err != nil {
+		return true
+	}
+	return isPrivateOrInternalHost(ctx, parsed.Hostname())
+}
+
+// probeWebService returns true if the URL responds to an HTTP HEAD request
+// within the timeout. The HTTP client enforces URL guard checks at dial time so
+// DNS rebinding cannot turn an initially public host into an internal target.
+func probeWebService(ctx context.Context, targetURL string) bool {
+	parsed, err := url.Parse(targetURL)
+	if err != nil || probeURLBlocked(ctx, parsed) {
+		return false
+	}
+	client := urlguard.SafeHTTPClient(urlguard.CheckOptions{}, 3*time.Second)
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, targetURL, nil)
+	if err != nil {
+		return false
+	}
+	// Prevent the request from following redirects — we only care whether the
+	// server speaks HTTP at all.
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	// Any HTTP status code (even 4xx/5xx) means the port serves HTTP.
+	return resp.StatusCode > 0
 }
 
 // parseExcelFile 解析Excel文件

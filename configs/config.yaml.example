@@ -14,6 +14,7 @@ engines:
     hunter:
         enabled: true
         api_key: "${HUNTER_API_KEY}"
+        backup_api_key: "${HUNTER_BACKUP_API_KEY}"   # 备用 key：主 key 限流/鉴权/欠费失败时自动切换
         base_url: https://hunter.qianxin.com
         qps: 5
         timeout: 30
@@ -64,16 +65,25 @@ query:
 # Web 截图与 CDP 配置
 screenshot:
     enabled: true
-    # cdp | extension
+    # 兼容字段；新配置优先使用 mode / priority / fallback
     engine: cdp
+    mode: auto
+    priority: cdp
+    fallback: true
     base_dir: ./screenshots
     chrome_path: ""
-    # 浏览器代理，例如: http://127.0.0.1:7890 或 socks5://127.0.0.1:7891
+    # 可选受控上游：只接受 literal-loopback SOCKS5；解析、私网拒绝与公网 IP 固定仍由 UniMap 执行
+    # 例如 socks5://127.0.0.1:7891；HTTP、主机名 loopback 和外部代理会失败关闭
     proxy_server: ""
     chrome_user_data_dir: ""
     chrome_profile_dir: "Default"
-    chrome_remote_debug_url: "http://127.0.0.1:9222"
+    # guarded browser session 不接收远程 Chrome；保持为空
+    chrome_remote_debug_url: ""
     headless: true
+    # 仅容器/受限运行环境在确认需要时开启；普通主机保持 false 以保留 Chrome sandbox
+    no_sandbox: false
+    # 单机同时运行的 Chrome/CDP 会话上限；持久化 profile 会自动限制为 1
+    max_sessions: 1
     timeout: 30
     window_width: 1365
     window_height: 768
@@ -97,6 +107,13 @@ screenshot:
         enabled: false
         capture_search_results: true
         capture_targets: false
+
+# 篡改巡检。自动证据截图在完成受控公网页面变化与 SSRF 云端验收前必须保持关闭。
+tamper:
+    port_scan_enabled: false
+    port_scan_timeout_ms: 800
+    insecure_skip_verify: false
+    evidence_screenshot_enabled: false
 
 # Day11 profile templates (copy to screenshot section as needed):
 #
@@ -146,6 +163,8 @@ web:
         enabled: true
         requests_per_window: 60
         window_seconds: 60
+        # 仅这些反向代理来源可提供 X-Forwarded-For/X-Real-IP；直连部署保持为空。
+        trusted_proxy_cidrs: []
     request_limits:
         max_body_bytes: 10485760
         max_multipart_memory_bytes: 10485760
@@ -233,7 +252,8 @@ cache:
 # 定时任务通知配置
 notifications:
     enabled: true
-    send_timeout_sec: 10
+    send_timeout_sec: 60
+    max_retries: 2
     channels:
         - id: "team-dingtalk"
           type: "dingtalk"
@@ -249,6 +269,12 @@ notifications:
           type: "wecom"
           enabled: true
           webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+          # 消息类型：markdown（默认）、markdown_v2（支持表格）、text、image、file。
+          # markdown_v2 可正确渲染定时查询的紧凑表格，推荐定时推送使用。
+          wecom_msgtype: "markdown_v2"
+          # 以下仅在 type=text 时生效（@ 指定成员 / 手机号；"@all" 表示全体）。
+          # wecom_mentioned_list: ["zhangsan", "@all"]
+          # wecom_mentioned_mobile_list: ["13800000000"]
         - id: "slack-generic"
           type: "webhook"
           enabled: false

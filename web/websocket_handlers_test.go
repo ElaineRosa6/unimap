@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
@@ -50,7 +51,7 @@ func TestHandleWebSocketQuery_WithEngines_SendsQueryStart(t *testing.T) {
 		return nil
 	}
 
-	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
+	s.handleWebSocketQuery(context.TODO(), "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
 
 	mu.Lock()
 	msgs := make([]map[string]interface{}, len(messages))
@@ -88,7 +89,7 @@ func TestHandleWebSocketQuery_SendsQueryID(t *testing.T) {
 		return nil
 	}
 
-	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
+	s.handleWebSocketQuery(context.TODO(), "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
 
 	mu.Lock()
 	msgs := make([]map[string]interface{}, len(messages))
@@ -127,7 +128,7 @@ func TestHandleWebSocketQuery_QueryIDTracked(t *testing.T) {
 		return nil
 	}
 
-	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
+	s.handleWebSocketQuery(context.TODO(), "test-conn", map[string]interface{}{"query": "test", "engines": "quake"}, writeJSON)
 
 	mu.Lock()
 	msgs := make([]map[string]interface{}, len(messages))
@@ -154,6 +155,37 @@ func TestHandleWebSocketQuery_QueryIDTracked(t *testing.T) {
 
 	if !exists {
 		t.Fatalf("expected query %s to be tracked in queryStatus", queryID)
+	}
+}
+
+func TestExecuteWSQueryAsync_NilQueryServiceReturnsError(t *testing.T) {
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+	defer shutdownCancel()
+	s := &Server{
+		queryStatus: map[string]*QueryStatus{
+			"q1": {ID: "q1", Query: "test", Engines: []string{"quake"}, Status: "running"},
+		},
+		shutdownCtx: shutdownCtx,
+		connManager: &ConnectionManager{connections: make(map[string]*managedConn)},
+	}
+	var complete map[string]interface{}
+
+	s.executeWSQueryAsync(context.Background(), "test-conn", "q1", "test", []string{"quake"}, []string{"quake"}, 50, false, "", func(v interface{}) error {
+		if message, ok := v.(map[string]interface{}); ok {
+			complete = message
+		}
+		return nil
+	})
+
+	if complete == nil || complete["type"] != "query_complete" {
+		t.Fatalf("expected query_complete message, got %#v", complete)
+	}
+	status, ok := complete["status"].(QueryStatus)
+	if !ok {
+		t.Fatalf("expected QueryStatus, got %T", complete["status"])
+	}
+	if status.Status != "error" || len(status.Errors) == 0 || !strings.Contains(status.Errors[0], "query service not initialized") {
+		t.Fatalf("expected initialization error status, got %#v", status)
 	}
 }
 
@@ -271,7 +303,7 @@ func TestHandleWebSocketQuery_PingPongMessages(t *testing.T) {
 		orchestrator: orch,
 		queryStatus:  make(map[string]*QueryStatus),
 	}
-	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "ping"}, writeJSON)
+	s.handleWebSocketQuery(context.TODO(), "test-conn", map[string]interface{}{"query": "ping"}, writeJSON)
 
 	// 由于没有引擎，应该返回 query_error
 	if len(messages) != 1 {
@@ -427,7 +459,7 @@ func TestHandleWebSocketQuery_EmptyQuery_ReturnsError(t *testing.T) {
 	}
 
 	s := &Server{}
-	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": ""}, writeJSON)
+	s.handleWebSocketQuery(context.TODO(), "test-conn", map[string]interface{}{"query": ""}, writeJSON)
 
 	if len(messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(messages))
@@ -449,7 +481,7 @@ func TestHandleWebSocketQuery_NoEngines_ReturnsError(t *testing.T) {
 	s := &Server{
 		orchestrator: adapter.NewEngineOrchestrator(),
 	}
-	s.handleWebSocketQuery(nil, "test-conn", map[string]interface{}{"query": "country=\"CN\""}, writeJSON)
+	s.handleWebSocketQuery(context.TODO(), "test-conn", map[string]interface{}{"query": "country=\"CN\""}, writeJSON)
 
 	if len(messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(messages))

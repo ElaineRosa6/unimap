@@ -85,7 +85,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80"},
 				},
 			}},
-			want: `services.port:80`,
+			want: `host.services.port=80`,
 		},
 		{
 			name: "not equal uses NOT prefix",
@@ -97,7 +97,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "CN"},
 				},
 			}},
-			want: `NOT location.country_code:CN`,
+			want: `NOT host.location.country_code=CN`,
 		},
 		{
 			name: "AND logical with parentheses",
@@ -115,7 +115,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					}},
 				},
 			}},
-			want: `(services.port:80 AND ip:1.2.3.4)`,
+			want: `(host.services.port=80 AND host.ip=1.2.3.4)`,
 		},
 		{
 			name: "OR logical native support",
@@ -133,7 +133,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					}},
 				},
 			}},
-			want: `(services.port:80 OR services.port:443)`,
+			want: `(host.services.port=80 OR host.services.port=443)`,
 		},
 		{
 			name: "IN operator expands to OR",
@@ -145,7 +145,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80,443,8080"},
 				},
 			}},
-			want: `(services.port:80 OR services.port:443 OR services.port:8080)`,
+			want: `(host.services.port=80 OR host.services.port=443 OR host.services.port=8080)`,
 		},
 		{
 			name: "greater than",
@@ -157,7 +157,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "80"},
 				},
 			}},
-			want: `services.port:>80`,
+			want: `host.services.port>80`,
 		},
 		{
 			name: "less than or equal",
@@ -169,7 +169,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "443"},
 				},
 			}},
-			want: `services.port:<=443`,
+			want: `host.services.port<=443`,
 		},
 		{
 			name: "field mapping body",
@@ -181,7 +181,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "login"},
 				},
 			}},
-			want: `services.http.response.body:login`,
+			want: `host.services.endpoints.http.body=login`,
 		},
 		{
 			name: "field mapping title",
@@ -193,7 +193,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "nginx"},
 				},
 			}},
-			want: `services.http.response.html_title:nginx`,
+			want: `host.services.endpoints.http.html_title=nginx`,
 		},
 		{
 			name: "field mapping server",
@@ -205,7 +205,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "nginx"},
 				},
 			}},
-			want: `services.http.response.headers.Server:nginx`,
+			want: `host.services.endpoints.http.headers.value=nginx`,
 		},
 		{
 			name: "field mapping protocol",
@@ -217,7 +217,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "HTTP"},
 				},
 			}},
-			want: `services.service_name:HTTP`,
+			want: `host.services.protocol=HTTP`,
 		},
 		{
 			name: "field mapping asn",
@@ -229,7 +229,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "136800"},
 				},
 			}},
-			want: `autonomous_system.asn:136800`,
+			want: `host.autonomous_system.asn=136800`,
 		},
 		{
 			name: "field mapping org",
@@ -241,7 +241,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "Google"},
 				},
 			}},
-			want: `autonomous_system.name:Google`,
+			want: `host.autonomous_system.name=Google`,
 		},
 		{
 			name: "field mapping isp maps to autonomous_system.name",
@@ -253,7 +253,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "Cloudflare"},
 				},
 			}},
-			want: `autonomous_system.name:Cloudflare`,
+			want: `host.autonomous_system.name=Cloudflare`,
 		},
 		{
 			name: "field mapping domain",
@@ -265,7 +265,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "example.com"},
 				},
 			}},
-			want: `dns.names:example.com`,
+			want: `host.dns.names=example.com`,
 		},
 		{
 			name: "field mapping status_code",
@@ -277,7 +277,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "200"},
 				},
 			}},
-			want: `services.http.response.status_code:200`,
+			want: `host.services.endpoints.http.status_code=200`,
 		},
 		{
 			name: "field mapping os",
@@ -289,7 +289,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "Linux"},
 				},
 			}},
-			want: `operating_system:Linux`,
+			want: `host.operating_system.product=Linux`,
 		},
 		{
 			name: "field mapping app",
@@ -301,7 +301,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "Apache"},
 				},
 			}},
-			want: `services.software.product:Apache`,
+			want: `host.services.software.product=Apache`,
 		},
 		{
 			name: "field mapping cert",
@@ -313,7 +313,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "baidu.com"},
 				},
 			}},
-			want: `services.tls.certificates.leaf.subject:baidu.com`,
+			want: `host.services.cert.names=baidu.com`,
 		},
 		{
 			name: "unknown field passthrough",
@@ -325,7 +325,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "test"},
 				},
 			}},
-			want: `custom_field:test`,
+			want: `custom_field=test`,
 		},
 		{
 			name: "value with space gets quoted",
@@ -337,7 +337,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					{Type: "value", Value: "Beijing University"},
 				},
 			}},
-			want: `autonomous_system.name:"Beijing University"`,
+			want: `host.autonomous_system.name="Beijing University"`,
 		},
 		{
 			name: "nested logical",
@@ -361,7 +361,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 					}},
 				},
 			}},
-			want: `((services.port:80 OR services.port:443) AND location.country_code:CN)`,
+			want: `((host.services.port=80 OR host.services.port=443) AND host.location.country_code=CN)`,
 		},
 	}
 	for _, tt := range tests {
@@ -532,7 +532,7 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 				IP: "1.2.3.4", Port: 80, ServiceName: "HTTP",
 				HTTP: &CensysHTTP{Response: CensysHTTPResponseBody{
 					HTMLTitle: "Example", StatusCode: 200,
-					Body: strings.Repeat("x", 500),
+					Body:    strings.Repeat("x", 500),
 					Headers: CensysHTTPHeaders{Server: "nginx"},
 				}},
 				Location: loc, AutonomousSystem: asn, DNS: dns,

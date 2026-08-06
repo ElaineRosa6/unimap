@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/metrics"
@@ -38,19 +38,26 @@ type EngineWebURL struct {
 
 // Manager 截图管理器
 type Manager struct {
-	baseDir        string
-	chromePath     string
-	proxyServer    string
-	userDataDir    string
-	profileDir     string
-	remoteDebugURL string
-	headless       bool
-	cookies        map[string][]Cookie // 各引擎的Cookie
-	cookiesMutex   sync.RWMutex
-	timeout        time.Duration
-	windowWidth    int
-	windowHeight   int
-	waitTime       time.Duration // 页面加载后等待时间
+	baseDir            string
+	chromePath         string
+	proxyServer        string
+	userDataDir        string
+	profileDir         string
+	remoteDebugURL     string
+	headless           bool
+	noSandbox          bool
+	cookies            map[string][]Cookie // 各引擎的Cookie
+	cookiesMutex       sync.RWMutex
+	storage            map[string]BrowserStorage
+	storageMutex       sync.RWMutex
+	timeout            time.Duration
+	windowWidth        int
+	windowHeight       int
+	waitTime           time.Duration // 页面加载后等待时间
+	sessionSlots       chan struct{}
+	urlValidator       browserURLValidator
+	egressProxyFactory func(context.Context) (*browserEgressProxy, error)
+	allowRemoteDebug   bool
 }
 
 // Cookie Cookie信息
@@ -63,6 +70,13 @@ type Cookie struct {
 	Secure   bool
 }
 
+// BrowserStorage is transient same-origin state handed off by the loopback
+// Extension Bridge. It is never persisted or logged.
+type BrowserStorage struct {
+	Local   map[string]string
+	Session map[string]string
+}
+
 // Config 截图管理器配置
 type Config struct {
 	BaseDir        string
@@ -72,10 +86,12 @@ type Config struct {
 	ProfileDir     string
 	RemoteDebugURL string
 	Headless       bool
+	NoSandbox      bool
 	Timeout        time.Duration
 	WindowWidth    int
 	WindowHeight   int
 	WaitTime       time.Duration
+	MaxSessions    int
 }
 
 // NewManager 创建截图管理器
@@ -92,6 +108,18 @@ func NewManager(cfg Config) *Manager {
 	if cfg.WaitTime == 0 {
 		cfg.WaitTime = 500 * time.Millisecond
 	}
+	if cfg.MaxSessions <= 0 {
+		cfg.MaxSessions = 2
+	}
+	// Chromium takes an exclusive lock on a user-data directory. Multiple
+	// processes sharing a persistent profile are therefore serialized.
+	if cfg.UserDataDir == "" {
+		cfg.UserDataDir = strings.TrimSpace(os.Getenv("UNIMAP_CHROME_USER_DATA_DIR"))
+	}
+	if cfg.UserDataDir != "" && cfg.MaxSessions > 1 {
+		logger.Warnf("Chrome user data directory is shared; limiting browser sessions to 1")
+		cfg.MaxSessions = 1
+	}
 
 	return &Manager{
 		baseDir:        cfg.BaseDir,
@@ -101,12 +129,62 @@ func NewManager(cfg Config) *Manager {
 		profileDir:     cfg.ProfileDir,
 		remoteDebugURL: cfg.RemoteDebugURL,
 		headless:       cfg.Headless,
+		noSandbox:      cfg.NoSandbox,
 		cookies:        make(map[string][]Cookie),
+		storage:        make(map[string]BrowserStorage),
 		timeout:        cfg.Timeout,
 		windowWidth:    cfg.WindowWidth,
 		windowHeight:   cfg.WindowHeight,
 		waitTime:       cfg.WaitTime,
+		sessionSlots:   make(chan struct{}, cfg.MaxSessions),
+		urlValidator:   ValidateBrowserURLLive,
+		egressProxyFactory: func(ctx context.Context) (*browserEgressProxy, error) {
+			return newBrowserEgressProxy(ctx, net.DefaultResolver)
+		},
 	}
+}
+
+// SetAllowRemoteDebug authorizes browser sessions to attach to the configured
+// remote Chrome debugger even though its egress path cannot be verified by the
+// loopback egress proxy. The CDP-level SSRF interceptor still validates every
+// request; only the egress-proxy guarantee is relaxed. Intended for explicit,
+// trusted local diagnostics only — never enabled by default.
+func (m *Manager) SetAllowRemoteDebug(allowed bool) {
+	if m != nil {
+		m.allowRemoteDebug = allowed
+	}
+}
+
+// SetBrowserStorage replaces the transient Web Storage for an engine.
+func (m *Manager) SetBrowserStorage(engine string, storage BrowserStorage) {
+	m.storageMutex.Lock()
+	defer m.storageMutex.Unlock()
+	m.storage[strings.ToLower(strings.TrimSpace(engine))] = cloneBrowserStorage(storage)
+}
+
+// GetBrowserStorage returns an isolated copy of transient Web Storage.
+func (m *Manager) GetBrowserStorage(engine string) BrowserStorage {
+	m.storageMutex.RLock()
+	defer m.storageMutex.RUnlock()
+	return cloneBrowserStorage(m.storage[strings.ToLower(strings.TrimSpace(engine))])
+}
+
+func cloneBrowserStorage(storage BrowserStorage) BrowserStorage {
+	clone := BrowserStorage{Local: make(map[string]string, len(storage.Local)), Session: make(map[string]string, len(storage.Session))}
+	for key, value := range storage.Local {
+		clone.Local[key] = value
+	}
+	for key, value := range storage.Session {
+		clone.Session[key] = value
+	}
+	return clone
+}
+
+func (m *Manager) validateBrowserURL(ctx context.Context, rawURL string) error {
+	if m == nil || m.urlValidator == nil {
+		return ValidateBrowserURLLive(ctx, rawURL)
+	}
+	return m.urlValidator(ctx, rawURL)
 }
 
 // SetCookies 设置指定引擎的Cookie
@@ -126,11 +204,17 @@ func (m *Manager) GetCookies(engine string) []Cookie {
 // CreateQueryDirectory 创建查询目录结构
 // 返回: 查询目录路径, 搜索引擎截图目录, 目标网站截图目录, 错误
 func (m *Manager) CreateQueryDirectory(queryID string) (string, string, string, error) {
+	if err := ValidateIdentifier(queryID); err != nil {
+		return "", "", "", fmt.Errorf("invalid query ID: %w", err)
+	}
 	// 生成目录名: YYYY-MM-DD-{queryID}
 	dateStr := time.Now().Format("2006-01-02")
 	dirName := fmt.Sprintf("%s-%s", dateStr, queryID)
 
 	queryDir := filepath.Join(m.baseDir, dirName)
+	if err := validatePath(m.baseDir, queryDir); err != nil {
+		return "", "", "", fmt.Errorf("query directory escapes screenshot root: %w", err)
+	}
 	searchEngineDir := filepath.Join(queryDir, string(ScreenshotTypeSearchEngine))
 	targetWebsiteDir := filepath.Join(queryDir, string(ScreenshotTypeTargetWebsite))
 
@@ -148,11 +232,17 @@ func (m *Manager) CreateQueryDirectory(queryID string) (string, string, string, 
 // CreateBatchUploadDirectory 创建批量上传截图目录
 // 返回: 批量上传目录路径, 错误
 func (m *Manager) CreateBatchUploadDirectory(batchID string) (string, error) {
+	if err := ValidateIdentifier(batchID); err != nil {
+		return "", fmt.Errorf("invalid batch ID: %w", err)
+	}
 	// 生成目录名: batch-YYYY-MM-DD-{batchID}
 	dateStr := time.Now().Format("2006-01-02")
 	dirName := fmt.Sprintf("batch-%s-%s", dateStr, batchID)
 
 	batchDir := filepath.Join(m.baseDir, dirName)
+	if err := validatePath(m.baseDir, batchDir); err != nil {
+		return "", fmt.Errorf("batch directory escapes screenshot root: %w", err)
+	}
 
 	// 创建目录
 	if err := os.MkdirAll(batchDir, 0755); err != nil {
@@ -171,46 +261,27 @@ func (m *Manager) CaptureScreenshotWithProxy(ctx context.Context, targetURL stri
 	ctx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel()
 
-	allocCtx, allocCancel, err := m.newAllocatorWithProxy(ctx, proxy)
+	session, err := m.newGuardedBrowserSession(ctx, targetURL, proxy)
 	if err != nil {
 		return nil, err
 	}
-	defer allocCancel()
-
-	ctx, taskCancel := chromedp.NewContext(allocCtx)
-	defer taskCancel()
+	defer session.Close()
 
 	var buf []byte
 
 	// 构建ChromeDP动作列表
 	actions := []chromedp.Action{}
 
-	// 只有在非CDP模式且提供了Cookie时才设置Cookie
-	// CDP模式下浏览器已保持登录状态，无需设置Cookie
-	if len(cookies) > 0 && !m.isCDPMode() {
+	// 无论是本地还是 attached CDP，都应用显式传入的 Cookie。
+	// Bridge 凭据交接依赖这一路径，不能假设 attached 会话已登录。
+	if len(cookies) > 0 {
 		// 需要先导航到目标域名才能设置Cookie，设置后再重新加载页面
 		actions = append(actions,
 			chromedp.Navigate(targetURL),
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				for _, cookie := range cookies {
-					err := network.SetCookie(cookie.Name, cookie.Value).
-						WithDomain(cookie.Domain).
-						WithPath(cookie.Path).
-						WithHTTPOnly(cookie.HTTPOnly).
-						WithSecure(cookie.Secure).
-						Do(ctx)
-					if err != nil {
-						logger.Warnf("Failed to set cookie %s: %v", cookie.Name, err)
-					}
-				}
-				return nil
-			}),
-			chromedp.Navigate(targetURL),
 		)
+		actions = append(actions, setCookieActions(cookies, targetURL)...)
+		actions = append(actions, chromedp.Navigate(targetURL))
 	} else {
-		if m.isCDPMode() && len(cookies) > 0 {
-			logger.Infof("Using CDP mode, skipping cookie setup (browser already logged in)")
-		}
 		actions = append(actions, chromedp.Navigate(targetURL))
 	}
 
@@ -219,11 +290,17 @@ func (m *Manager) CaptureScreenshotWithProxy(ctx context.Context, targetURL stri
 		chromedp.Sleep(m.waitTime),
 	)
 
-	// 添加截图动作
-	actions = append(actions, chromedp.CaptureScreenshot(&buf))
+	// Run navigation and wait actions first.
+	if err := session.Run(actions...); err != nil {
+		return nil, fmt.Errorf("screenshot navigation failed: %w", err)
+	}
 
-	if err := chromedp.Run(ctx, actions...); err != nil {
+	// Capture screenshot with PNG -> JPEG fallback.
+	if err := captureScreenshotWithFallback(session.Context(), &buf); err != nil {
 		return nil, fmt.Errorf("screenshot failed: %w", err)
+	}
+	if err := session.interceptor.Err(); err != nil {
+		return nil, err
 	}
 
 	return buf, nil
@@ -244,45 +321,26 @@ func (m *Manager) OpenSearchEngineResult(ctx context.Context, engine, query stri
 	ctx, cancel := context.WithTimeout(ctx, openTimeout)
 	defer cancel()
 
-	allocCtx, allocCancel, err := m.newAllocator(ctx)
+	session, err := m.newGuardedBrowserSession(ctx, searchURL, "")
 	if err != nil {
 		return "", err
 	}
-	defer allocCancel()
-
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	defer browserCancel()
+	defer session.Close()
 
 	cookies := m.GetCookies(engine)
 	actions := []chromedp.Action{}
-	if len(cookies) > 0 && !m.isCDPMode() {
+	if len(cookies) > 0 {
 		actions = append(actions,
 			chromedp.Navigate(searchURL),
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				for _, cookie := range cookies {
-					err := network.SetCookie(cookie.Name, cookie.Value).
-						WithDomain(cookie.Domain).
-						WithPath(cookie.Path).
-						WithHTTPOnly(cookie.HTTPOnly).
-						WithSecure(cookie.Secure).
-						Do(ctx)
-					if err != nil {
-						logger.Warnf("Failed to set cookie %s: %v", cookie.Name, err)
-					}
-				}
-				return nil
-			}),
-			chromedp.Navigate(searchURL),
 		)
+		actions = append(actions, setCookieActions(cookies, searchURL)...)
+		actions = append(actions, chromedp.Navigate(searchURL))
 	} else {
-		if m.isCDPMode() && len(cookies) > 0 {
-			logger.Infof("Using CDP mode, skipping cookie setup (browser already logged in)")
-		}
 		actions = append(actions, chromedp.Navigate(searchURL))
 	}
 
 	actions = append(actions, chromedp.Sleep(m.waitTime))
-	if err := chromedp.Run(browserCtx, actions...); err != nil {
+	if err := session.Run(actions...); err != nil {
 		return "", fmt.Errorf("open search engine result failed: %w", err)
 	}
 
@@ -360,21 +418,12 @@ func (m *Manager) CheckEngineLoginStatus(ctx context.Context, engine, query stri
 
 	if m.isCDPMode() {
 		// CDP connected → open page in the same browser session, check for login wall
-		ctx, cancel := context.WithTimeout(ctx, m.timeout)
+		loginCtx, cancel := context.WithTimeout(ctx, m.timeout)
 		defer cancel()
-
-		allocCtx, allocCancel, err := m.newAllocator(ctx)
-		if err != nil {
-			return &EngineLoginStatus{Engine: engine, LoggedIn: false, Reason: "no_session", LoginURL: loginURL, Error: err.Error()}, nil
-		}
-		defer allocCancel()
-
-		ctx, taskCancel := chromedp.NewContext(allocCtx)
-		defer taskCancel()
 
 		title := ""
 		html := ""
-		if err := m.loadPageContent(ctx, searchURL, nil, &title, &html); err != nil {
+		if err := m.loadPageContent(loginCtx, searchURL, nil, &title, &html); err != nil {
 			return &EngineLoginStatus{Engine: engine, LoggedIn: false, Reason: "load_failed", LoginURL: loginURL, Title: title, Error: err.Error()}, nil
 		}
 
@@ -409,6 +458,12 @@ func (m *Manager) EngineLoginURL(engine string) string {
 		return "https://quake.360.net/"
 	case "zoomeye":
 		return "https://www.zoomeye.org/"
+	case "shodan":
+		return "https://www.shodan.io/"
+	case "censys":
+		return "https://platform.censys.io/"
+	case "daydaymap":
+		return "https://www.daydaymap.com/home"
 	default:
 		return ""
 	}
@@ -526,6 +581,10 @@ func (m *Manager) BuildSearchEngineURL(engine, query string) string {
 		return fmt.Sprintf("https://www.zoomeye.org/searchResult?q=%s", encodedQuery)
 	case "shodan":
 		return fmt.Sprintf("https://www.shodan.io/search?query=%s", encodedQuery)
+	case "censys":
+		return fmt.Sprintf("https://platform.censys.io/search?resource=hosts&sort=RELEVANCE&per_page=25&virtual_hosts=EXCLUDE&q=%s", encodedQuery)
+	case "daydaymap":
+		return fmt.Sprintf("https://www.daydaymap.com/searchResult?keyword=%s", url.QueryEscape(query))
 	default:
 		return ""
 	}
@@ -604,6 +663,9 @@ func (m *Manager) CaptureBatchURLsWithTamper(ctx context.Context, urls []string,
 func (m *Manager) captureBatchURLsWithTamper(ctx context.Context, urls []string, batchID string, concurrency int, enableTamper bool, tamperDetector interface{}, onResult func(BatchScreenshotResult)) ([]BatchScreenshotResult, error) {
 	if len(urls) == 0 {
 		return nil, fmt.Errorf("no URLs provided")
+	}
+	if enableTamper {
+		return nil, fmt.Errorf("tamper evidence capture is disabled pending controlled page-change security acceptance")
 	}
 
 	if concurrency <= 0 {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +34,7 @@ import (
 	"github.com/unimap/project/internal/screenshot"
 	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
+	"github.com/unimap/project/internal/utils"
 )
 
 // 查询状态
@@ -76,45 +78,48 @@ type ConnectionManager struct {
 
 // Server Web服务器
 type Server struct {
-	port             int
-	httpServer       *http.Server
-	templates        *template.Template
-	service          *service.UnifiedService
-	queryApp         *service.QueryAppService
-	monitorApp       *service.MonitorAppService
-	tamperApp        *service.TamperAppService
-	screenshotApp    *service.ScreenshotAppService
-	orchestrator     *adapter.EngineOrchestrator
-	upgrader         websocket.Upgrader
-	connManager      *ConnectionManager
-	queryStatus      map[string]*QueryStatus
-	queryMutex       sync.RWMutex
-	configMutex      sync.Mutex
-	webRoot          string
-	staticVersion    string
-	screenshotMgr    *screenshot.Manager
-	screenshotRouter *screenshot.ScreenshotRouter
-	batchJobs        *batchJobStore
-	batchDB          *batchdb.Database
-	config           *config.Config
-	configManager    *config.Manager
-	chromeCmd        *os.Process
-	chromeCmdMu      sync.Mutex
-	bridge           *BridgeState
-	proxyPool        *proxypool.Pool
-	distributed      *DistributedState
-	scheduler        *scheduler.Scheduler
-	icpDB            *icpdb.Database
-	icpRepo          icpdb.ICPResultRepository
-	notifyRegistry   *notify.Registry
-	apiAuth          *auth.AuthMiddleware
-	userDB           *auth.UserDB
-	userRepo         auth.UserRepository
-	historyDB        *historydb.Database
-	historyRepo      *historydb.Repository
-	shutdownCtx      context.Context
-	shutdownCancel   context.CancelFunc
-	revocationStore  *sessionRevocationStore
+	port                int
+	httpServer          *http.Server
+	templates           *template.Template
+	service             *service.UnifiedService
+	queryApp            *service.QueryAppService
+	monitorApp          *service.MonitorAppService
+	tamperApp           *service.TamperAppService
+	screenshotApp       *service.ScreenshotAppService
+	orchestrator        *adapter.EngineOrchestrator
+	upgrader            websocket.Upgrader
+	connManager         *ConnectionManager
+	queryStatus         map[string]*QueryStatus
+	queryMutex          sync.RWMutex
+	configMutex         sync.Mutex
+	webRoot             string
+	staticVersion       string
+	screenshotMgr       *screenshot.Manager
+	screenshotRouter    *screenshot.ScreenshotRouter
+	batchJobs           *batchJobStore
+	batchDB             *batchdb.Database
+	config              *config.Config
+	configManager       *config.Manager
+	ephemeralAdminToken string
+	chromeCmd           *os.Process
+	chromeCmdMu         sync.Mutex
+	bridge              *BridgeState
+	proxyPool           *proxypool.Pool
+	distributed         *DistributedState
+	scheduler           *scheduler.Scheduler
+	icpDB               *icpdb.Database
+	icpRepo             icpdb.ICPResultRepository
+	notifyRegistry      *notify.Registry
+	apiAuth             *auth.AuthMiddleware
+	permissionManager   *auth.PermissionManager
+	userDB              *auth.UserDB
+	userRepo            auth.UserRepository
+	registrationMutex   sync.Mutex
+	historyDB           *historydb.Database
+	historyRepo         *historydb.Repository
+	shutdownCtx         context.Context
+	shutdownCancel      context.CancelFunc
+	revocationStore     *sessionRevocationStore
 }
 
 // NewServer 创建Web服务器
@@ -146,15 +151,18 @@ func NewServer(port int, unifiedSvc *service.UnifiedService, orchestrator *adapt
 	initUserDatabase(srv)
 	initScreenshotBatchDB(srv)
 
+	// Initialize the final screenshot/Bridge router before constructing task
+	// runners. QueryRunner must receive the combined collect+capture provider,
+	// not the temporary CDP-only fallback returned during early startup.
+	initScreenshotMode(srv, cfg, screenshotCDPProvider(screenshotMgr), screenshotMgr, screenshotApp, shutdownCtx)
+	wireBrowserBackend(srv, cfg, unifiedSvc)
+
 	sched := initScheduler(srv, cfg, screenshotApp, screenshotMgr, alertManager, orchestrator, unifiedSvc, nodeTaskQueue)
 	srv.notifyRegistry = initNotifySystem(cfg, cfgManager, sched)
 
 	// 所有 handler 注册完毕且数据加载完成后再启动 cron
 	sched.Start()
 	srv.scheduler = sched
-
-	initScreenshotMode(srv, cfg, screenshotCDPProvider(screenshotMgr), screenshotMgr, screenshotApp, shutdownCtx)
-	wireBrowserBackend(srv, cfg, unifiedSvc)
 
 	return srv, nil
 }
@@ -221,13 +229,12 @@ func newServerStruct(port int, webRoot string, templates *template.Template,
 	nodeTaskQueue *distributed.TaskQueue, alertManager *alerting.Manager,
 	shutdownCtx context.Context, shutdownCancel context.CancelFunc) *Server {
 
-	return &Server{
+	srv := &Server{
 		port:          port,
 		templates:     templates,
 		service:       unifiedSvc,
 		queryApp:      service.NewQueryAppService(unifiedSvc, orchestrator),
 		monitorApp:    service.NewMonitorAppService(proxyPool),
-		tamperApp:     service.NewTamperAppService("./hash_store", alertManager),
 		screenshotApp: screenshotApp,
 		orchestrator:  orchestrator,
 		upgrader:      upgrader,
@@ -249,11 +256,14 @@ func newServerStruct(port int, webRoot string, templates *template.Template,
 			NodeRegistry:  nodeRegistry,
 			NodeTaskQueue: nodeTaskQueue,
 		},
-		apiAuth:         auth.NewAuthMiddleware(auth.NewAPIKeyManager("./data/api_keys.json")),
-		shutdownCtx:     shutdownCtx,
-		shutdownCancel:  shutdownCancel,
-		revocationStore: newSessionRevocationStore(),
+		apiAuth:           auth.NewAuthMiddleware(auth.NewAPIKeyManager(filepath.Join(utils.AppDataDir(), "api_keys.json"))),
+		permissionManager: auth.NewPermissionManager(),
+		shutdownCtx:       shutdownCtx,
+		shutdownCancel:    shutdownCancel,
+		revocationStore:   newSessionRevocationStore(),
 	}
+	srv.tamperApp = service.NewTamperAppService(utils.HashStoreDir(), alertManager, srv.tamperRuntimeConfig)
+	return srv
 }
 
 // newWebSocketUpgrader creates a WebSocket upgrader with origin checking from config.
@@ -290,10 +300,12 @@ func initScreenshotManager(cfg *config.Config) *screenshot.Manager {
 		ProfileDir:     cfg.Screenshot.ChromeProfileDir,
 		RemoteDebugURL: remoteDebugURL,
 		Headless:       headless,
+		NoSandbox:      cfg.Screenshot.NoSandbox,
 		Timeout:        time.Duration(cfg.Screenshot.Timeout) * time.Second,
 		WindowWidth:    cfg.Screenshot.WindowWidth,
 		WindowHeight:   cfg.Screenshot.WindowHeight,
 		WaitTime:       time.Duration(cfg.Screenshot.WaitTime) * time.Millisecond,
+		MaxSessions:    cfg.Screenshot.MaxSessions,
 	}
 	mgr := screenshot.NewManager(screenshotCfg)
 
@@ -305,23 +317,17 @@ func initScreenshotManager(cfg *config.Config) *screenshot.Manager {
 
 // loadEngineCookies loads per-engine cookies from config into the screenshot manager.
 func loadEngineCookies(mgr *screenshot.Manager, cfg *config.Config) {
-	if cfg.Engines.Fofa.Enabled && len(cfg.Engines.Fofa.Cookies) > 0 {
-		mgr.SetCookies("fofa", convertConfigCookies(cfg.Engines.Fofa.Cookies))
-	}
-	if cfg.Engines.Hunter.Enabled && len(cfg.Engines.Hunter.Cookies) > 0 {
-		mgr.SetCookies("hunter", convertConfigCookies(cfg.Engines.Hunter.Cookies))
-	}
-	if cfg.Engines.Quake.Enabled && len(cfg.Engines.Quake.Cookies) > 0 {
-		mgr.SetCookies("quake", convertConfigCookies(cfg.Engines.Quake.Cookies))
-	}
-	if cfg.Engines.Zoomeye.Enabled && len(cfg.Engines.Zoomeye.Cookies) > 0 {
-		mgr.SetCookies("zoomeye", convertConfigCookies(cfg.Engines.Zoomeye.Cookies))
+	for _, engine := range browserEngines() {
+		cookies := engineCookies(cfg, engine)
+		if len(cookies) > 0 {
+			mgr.SetCookies(engine, convertConfigCookies(cookies))
+		}
 	}
 }
 
 // initScreenshotAppService creates the screenshot app service from config and manager.
 func initScreenshotAppService(cfg *config.Config, screenshotMgr *screenshot.Manager) *service.ScreenshotAppService {
-	screenshotBaseDir := "./screenshots"
+	screenshotBaseDir := utils.ScreenshotsDir()
 	if cfg != nil && strings.TrimSpace(cfg.Screenshot.BaseDir) != "" {
 		screenshotBaseDir = strings.TrimSpace(cfg.Screenshot.BaseDir)
 	}
@@ -370,7 +376,7 @@ func initDistributedNodes(cfg *config.Config) (*distributed.Registry, *distribut
 	}
 
 	registry := distributed.NewRegistry(heartbeatTimeout)
-	taskQueue := distributed.NewTaskQueueWithPath("./data/distributed_tasks.json")
+	taskQueue := distributed.NewTaskQueueWithPath(filepath.Join(utils.AppDataDir(), "distributed_tasks.json"))
 	registry.SetTaskQueue(taskQueue)
 	taskQueue.SetDefaultMaxReassign(maxReassign)
 
@@ -386,6 +392,9 @@ func initDistributedNodes(cfg *config.Config) (*distributed.Registry, *distribut
 // initAlertManager creates the alert manager and registers configured channels.
 func initAlertManager(cfg *config.Config) *alerting.Manager {
 	mgr := alerting.NewManager()
+	if err := mgr.SetPersistencePath(filepath.Join(utils.AppDataDir(), "alerts.json")); err != nil {
+		logger.Warnf("alert persistence unavailable: %v", err)
+	}
 
 	logChannel := alerting.NewLogChannel(true)
 	mgr.RegisterChannel(logChannel)
@@ -448,12 +457,13 @@ func initHistoryDatabase(srv *Server, cfg *config.Config) {
 	}
 	srv.historyDB = db
 	srv.historyRepo = historydb.NewRepository(db.DB())
+	srv.queryApp.SetHistoryRepository(srv.historyRepo)
 }
 
 // initScreenshotBatchDB initializes the screenshot batch job metadata database.
 // On failure it logs a warning and leaves batchJobs as memory-only (graceful degradation).
 func initScreenshotBatchDB(srv *Server) {
-	dbPath := "./data/screenshot_batches.db"
+	dbPath := filepath.Join(utils.AppDataDir(), "screenshot_batches.db")
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		logger.Warnf("screenshot batch DB dir create failed (%s): %v", dbPath, err)
 		return
@@ -475,7 +485,7 @@ func initScreenshotBatchDB(srv *Server) {
 
 // initUserDatabase initializes the user database on the server.
 func initUserDatabase(srv *Server) {
-	userDBPath := "./data/users.db"
+	userDBPath := filepath.Join(utils.AppDataDir(), "users.db")
 	if err := os.MkdirAll(filepath.Dir(userDBPath), 0o755); err != nil {
 		logger.Warnf("user DB dir create failed (%s): %v", userDBPath, err)
 		return
@@ -506,37 +516,91 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 		maxHistory = cfg.Scheduler.MaxHistory
 	}
 
-	sched := scheduler.NewScheduler("./data/scheduler_tasks.json", "./data/scheduler_history.json", maxHistory)
+	sched := scheduler.NewScheduler(
+		filepath.Join(utils.AppDataDir(), "scheduler_tasks.json"),
+		filepath.Join(utils.AppDataDir(), "scheduler_history.json"),
+		maxHistory)
+
+	// Shared session health tracker: enables per-engine circuit breaking across
+	// LoginStatusCheckRunner (records success/failure) and QueryRunner (skips
+	// browser tasks for circuit-open engines).
+	sessionHealth := scheduler.NewSessionHealthTracker()
 
 	// 高优先级 Runner (ST-01 ~ ST-08)
-	sched.RegisterHandler(scheduler.NewQueryRunner(srv.queryApp))
+	sched.RegisterHandler(scheduler.NewQueryRunnerWithBrowser(srv.queryApp, screenshotApp, screenshotMgr, srv.browserQueryProvider(), sessionHealth).WithExportDir(utils.AppDataDir("exports")))
 	sched.RegisterHandler(scheduler.NewSearchScreenshotRunner(screenshotApp, screenshotMgr))
-	sched.RegisterHandler(scheduler.NewBatchScreenshotRunner(screenshotApp, screenshotMgr))
-	sched.RegisterHandler(scheduler.NewTamperCheckRunner(srv.tamperApp, nil))
-	sched.RegisterHandler(scheduler.NewURLReachabilityRunner(srv.monitorApp))
+	var batchRepo *batchdb.Repository
+	if srv.batchDB != nil {
+		batchRepo = batchdb.NewRepository(srv.batchDB.DB())
+	}
+	sched.RegisterHandler(scheduler.NewBatchScreenshotRunner(screenshotApp, screenshotMgr, batchRepo))
+
+	// TamperCheckRunner: inject a browser allocator from the screenshot manager
+	// so scheduled tamper patrols can render JS-heavy/SPA pages. Without an
+	// allocator the detector falls back to HTTP/Fast mode and may produce empty
+	// hashes for SPA targets, causing false "tampered" or "unreachable" results.
+	// When screenshotMgr is unavailable we keep the historical nil behavior.
+	var tamperPageLoader service.TamperPageLoader
+	if screenshotMgr != nil {
+		tamperPageLoader = screenshotMgr
+	}
+	sched.RegisterHandler(scheduler.NewTamperCheckRunnerWithEvidence(
+		srv.tamperApp,
+		tamperPageLoader,
+		screenshotApp,
+		screenshotMgr,
+		func() bool {
+			current := srv.currentConfig()
+			return current != nil && current.Tamper.EvidenceScreenshotEnabled
+		},
+	))
+	sched.RegisterHandler(scheduler.NewURLReachabilityRunner(srv.monitorApp, alertManager))
 	sched.RegisterHandler(scheduler.NewCookieVerifyRunner(screenshotApp, screenshotMgr))
-	sched.RegisterHandler(scheduler.NewLoginStatusCheckRunner(screenshotMgr))
+	sched.RegisterHandler(scheduler.NewLoginStatusCheckRunner(screenshotMgr, sessionHealth))
 	sched.RegisterHandler(scheduler.NewDistributedSubmitRunner(nodeTaskQueue))
 
 	// 中优先级 Runner (ST-09 ~ ST-16)
-	sched.RegisterHandler(scheduler.NewExportRunner(srv.queryApp, orchestrator, "./data/exports"))
-	sched.RegisterHandler(scheduler.NewPortScanRunner(srv.monitorApp))
+	sched.RegisterHandler(scheduler.NewExportRunner(srv.queryApp, orchestrator, utils.AppDataDir("exports")))
+	sched.RegisterHandler(scheduler.NewPortScanRunner(srv.monitorApp, alertManager))
 	sched.RegisterHandler(scheduler.NewScreenshotCleanupRunner(screenshotApp, 30))
 	sched.RegisterHandler(scheduler.NewTamperCleanupRunner(srv.tamperApp, 90))
 	sched.RegisterHandler(scheduler.NewQuotaMonitorRunner(orchestrator, 10))
 	sched.RegisterHandler(scheduler.NewAlertSummaryRunner(alertManager))
-	sched.RegisterHandler(scheduler.NewBaselineRefreshRunner(srv.tamperApp))
-	sched.RegisterHandler(scheduler.NewURLImportRunner("./data/imports"))
+	sched.RegisterHandler(scheduler.NewBaselineRefreshRunner(srv.tamperApp, tamperPageLoader))
+	sched.RegisterHandler(scheduler.NewURLImportRunner(utils.AppDataDir("imports")))
+	sched.RegisterHandler(scheduler.NewBackupRunner())
 
 	// 低优先级 Runner (ST-17 ~ ST-20)
 	sched.RegisterHandler(scheduler.NewPluginHealthRunner(unifiedSvc))
-	sched.RegisterHandler(scheduler.NewBridgeTokenRotateRunner(nil)) // bridge service may be nil
+	sched.RegisterHandler(scheduler.NewBridgeHealthCheckRunnerWithProvider(func() *screenshot.BridgeService {
+		if srv == nil || srv.bridge == nil {
+			return nil
+		}
+		return srv.bridge.service()
+	}))
 	sched.RegisterHandler(scheduler.NewAlertSilenceRunner(alertManager))
 	sched.RegisterHandler(scheduler.NewCacheWarmupRunner())
 
 	// ICP Runner (ST-21 ~ ST-22)
 	sched.RegisterHandler(scheduler.NewICPQueryRunner(srv.icpConfigProvider, srv.icpRepo, alertManager))
-	sched.RegisterHandler(scheduler.NewICPImportRunner("./data/icp_imports", sched))
+	sched.RegisterHandler(scheduler.NewICPImportRunner(utils.AppDataDir("icp_imports"), sched))
+
+	// 持久化推送审计：每次通知推送追加到 history 库的 notification_push_log，
+	// 与仅作 only_new 去重状态的 notify_push_state 区分（这是 append-only 推送事件日志）。
+	if srv != nil && srv.historyRepo != nil {
+		repo := srv.historyRepo
+		sched.SetNotificationLogRecorder(func(rec scheduler.PushLogRecord) error {
+			return repo.RecordNotificationLog(historydb.NotificationPushLog{
+				TaskID:        rec.TaskID,
+				TaskName:      rec.TaskName,
+				ChannelIDs:    rec.ChannelIDs,
+				Status:        rec.Status,
+				ResultCount:   rec.ResultCount,
+				ResultSummary: rec.ResultSummary,
+				Error:         rec.Error,
+			})
+		})
+	}
 
 	if err := sched.Load(); err != nil {
 		logger.Warnf("Failed to load scheduled tasks: %v", err)
@@ -550,9 +614,7 @@ func initNotifySystem(cfg *config.Config, cfgManager *config.Manager,
 	sched *scheduler.Scheduler) *notify.Registry {
 
 	reg := notify.NewRegistry()
-	reg.Register(notify.NewLogChannel("builtin-log", true))
-
-	registerFeishuAppChannel(reg, cfg)
+	reg.Register(notify.NewLogChannel("builtin-log", true)) //nolint:errcheck
 
 	sched.SetNotifyRegistry(reg)
 
@@ -562,9 +624,11 @@ func initNotifySystem(cfg *config.Config, cfgManager *config.Manager,
 			return &notify.NotifyGlobalCfg{
 				Enabled:        c.Notifications.Enabled,
 				SendTimeoutSec: c.Notifications.SendTimeoutSec,
+				MaxRetries:     c.Notifications.MaxRetries,
 			}
 		})
 		reloadNotifyChannelConfigs(reg, cfg)
+		registerFeishuAppChannel(reg, cfg)
 	}
 
 	return reg
@@ -585,6 +649,7 @@ func registerFeishuAppChannel(reg *notify.Registry, cfg *config.Config) {
 		feishuApp.ChatID,
 		cfg.Notifications.Enabled,
 	)
+	reg.Remove("feishu_app")
 	if err := reg.Register(ch); err != nil {
 		logger.Warnf("Failed to register feishu app channel: %v", err)
 		return
@@ -598,22 +663,25 @@ func reloadNotifyChannelConfigs(reg *notify.Registry, cfg *config.Config) {
 	var chanCfgs []notify.ChannelConfig
 	for _, cc := range cfg.Notifications.Channels {
 		chanCfgs = append(chanCfgs, notify.ChannelConfig{
-			ID:             cc.ID,
-			Type:           cc.Type,
-			Enabled:        cc.Enabled,
-			WebhookURL:     cc.WebhookURL,
-			Secret:         cc.Secret,
-			AppID:          cc.AppID,
-			AppSecret:      cc.AppSecret,
-			ChatID:         cc.ChatID,
-			Headers:        cc.Headers,
-			AllowPrivateIP: cc.AllowPrivateIP,
+			ID:                       cc.ID,
+			Type:                     cc.Type,
+			Enabled:                  cc.Enabled,
+			WebhookURL:               cc.WebhookURL,
+			Secret:                   cc.Secret,
+			AppID:                    cc.AppID,
+			AppSecret:                cc.AppSecret,
+			ChatID:                   cc.ChatID,
+			Headers:                  cc.Headers,
+			AllowPrivateIP:           cc.AllowPrivateIP,
+			WeComMsgType:             cc.WeComMsgType,
+			WeComMentionedList:       cc.WeComMentionedList,
+			WeComMentionedMobileList: cc.WeComMentionedMobileList,
 		})
 	}
 	reg.Reload(chanCfgs)
 }
 
-// initScreenshotMode initializes the screenshot router or extension bridge based on config mode.
+// initScreenshotMode initializes one unified router for every screenshot mode.
 func initScreenshotMode(srv *Server, cfg *config.Config, screenshotProvider screenshot.Provider,
 	screenshotMgr *screenshot.Manager, screenshotApp *service.ScreenshotAppService,
 	shutdownCtx context.Context) {
@@ -626,10 +694,11 @@ func initScreenshotMode(srv *Server, cfg *config.Config, screenshotProvider scre
 		}
 	}
 
-	if screenshotMode == "auto" {
-		initScreenshotRouter(srv, cfg, screenshotProvider, screenshotMgr, screenshotApp, shutdownCtx)
-	} else if cfg != nil && (screenshotMode == "extension" || strings.EqualFold(strings.TrimSpace(cfg.Screenshot.Engine), "extension")) {
-		initExtensionBridge(srv, cfg, screenshotApp, shutdownCtx)
+	initScreenshotRouter(srv, cfg, screenshotProvider, screenshotMgr, screenshotApp, shutdownCtx)
+	if srv.screenshotRouter != nil {
+		srv.screenshotRouter.SetMode(screenshot.ScreenshotMode(screenshotMode))
+		screenshotApp.SetProvider(srv.screenshotRouter)
+		screenshotApp.SetEngine("auto")
 	}
 }
 
@@ -664,12 +733,12 @@ func initScreenshotRouter(srv *Server, cfg *config.Config, screenshotProvider sc
 	}
 
 	bsr := createBridgeService(cfg, shutdownCtx)
-	srv.bridge.Mock = bsr.mock
-	srv.bridge.Service = bsr.service
+	srv.bridge.setService(bsr.mock, bsr.service)
 	screenshotApp.SetBridgeService(bsr.service)
 
 	fallback := true
 	priority := screenshot.ScreenshotMode("cdp")
+	mode := screenshot.ModeCDP
 	if cfg != nil {
 		if cfg.Screenshot.Fallback != nil {
 			fallback = *cfg.Screenshot.Fallback
@@ -678,9 +747,14 @@ func initScreenshotRouter(srv *Server, cfg *config.Config, screenshotProvider sc
 		if priority == "" {
 			priority = screenshot.ModeCDP
 		}
+		mode = screenshot.ScreenshotMode(strings.ToLower(strings.TrimSpace(cfg.Screenshot.Mode)))
+		if mode == "" {
+			mode = screenshot.ModeCDP
+		}
 	}
 
 	routerCfg := screenshot.RouterConfig{
+		Mode:          mode,
 		Priority:      priority,
 		Fallback:      fallback,
 		ProbeInterval: 30 * time.Second,
@@ -698,19 +772,7 @@ func initScreenshotRouter(srv *Server, cfg *config.Config, screenshotProvider sc
 	router.Start(shutdownCtx)
 	srv.screenshotRouter = router
 
-	logger.Infof("Screenshot router initialized: mode=auto, priority=%s, fallback=%v", priority, fallback)
-}
-
-// initExtensionBridge sets up the extension-only bridge mode.
-func initExtensionBridge(srv *Server, cfg *config.Config,
-	screenshotApp *service.ScreenshotAppService, shutdownCtx context.Context) {
-
-	mockClient := newBridgeMockClient()
-	bridgeSvc := screenshot.NewBridgeService(mockClient, cfg.Screenshot.Extension.MaxConcurrency, time.Duration(cfg.Screenshot.Extension.TaskTimeoutSeconds)*time.Second)
-	bridgeSvc.Start(shutdownCtx)
-	srv.bridge.Mock = mockClient
-	srv.bridge.Service = bridgeSvc
-	screenshotApp.SetBridgeService(bridgeSvc)
+	logger.Infof("Screenshot router initialized: mode=%s, priority=%s, fallback=%v", mode, priority, fallback)
 }
 
 // setExtensionHealthSignals injects extension health signal callbacks into the router.
@@ -820,20 +882,18 @@ func isWebRoot(dir string) bool {
 	return true
 }
 
-
 // icpConfigProvider returns a snapshot of the current ICP config for the scheduler runner.
 func (s *Server) icpConfigProvider() adapter.ICPConfig {
-	s.configMutex.Lock()
-	defer s.configMutex.Unlock()
-	if s.config == nil {
+	cfg := s.currentConfig()
+	if cfg == nil {
 		return adapter.ICPConfig{}
 	}
 	return adapter.ICPConfig{
-		Enabled:     s.config.ICP.Enabled,
-		BaseURL:     s.config.ICP.BaseURL,
-		APIKey:      s.config.ICP.APIKey,
-		Timeout:     s.config.ICP.Timeout,
-		DefaultType: s.config.ICP.DefaultType,
+		Enabled:     cfg.ICP.Enabled,
+		BaseURL:     cfg.ICP.BaseURL,
+		APIKey:      cfg.ICP.APIKey,
+		Timeout:     cfg.ICP.Timeout,
+		DefaultType: cfg.ICP.DefaultType,
 	}
 }
 
@@ -855,6 +915,9 @@ func (s *Server) Start() error {
 	logger.Infof("Web server started at http://%s:%d", s.bindAddr(), s.port)
 	logger.Infof("Registered %d routes", len(router.GetRoutes()))
 	logger.Infof("Web security config loaded: cors_origins=%d rate_limit_enabled=%t max_body_bytes=%d", len(allowedOrigins), rateLimitEnabled, maxBodyBytes)
+	if bindAddr := s.bindAddr(); bindAddr != "127.0.0.1" && bindAddr != "localhost" {
+		logger.Warnf("⚠️  Server bound to %s (non-loopback). Ensure a reverse proxy with TLS terminates HTTPS in front of this server.", bindAddr)
+	}
 	return s.httpServer.ListenAndServe()
 }
 
@@ -866,6 +929,11 @@ func (s *Server) configureServerLimits() (rateLimitEnabled bool, maxBodyBytes in
 	SetRateLimitEnabled(rateLimitEnabled)
 	if rateLimitEnabled && s.config != nil {
 		SetRateLimitConfig(s.config.Web.RateLimit.RequestsPerWindow, time.Duration(s.config.Web.RateLimit.WindowSeconds)*time.Second)
+		if err := SetTrustedProxyCIDRs(s.config.Web.RateLimit.TrustedProxyCIDRs); err != nil {
+			logger.Warnf("invalid trusted proxy configuration: %v", err)
+		}
+	} else {
+		_ = SetTrustedProxyCIDRs(nil)
 	}
 	maxBodyBytes = int64(10 * 1024 * 1024)
 	if s.config != nil && s.config.Web.RequestLimits.MaxBodyBytes > 0 {
@@ -916,7 +984,7 @@ func (s *Server) buildServerMiddlewareChain(mux http.Handler, rateLimitEnabled b
 		handler = s.adminAuthMiddleware()(handler)
 		logger.Infof("Web auth enabled: admin token authentication active")
 	} else if bindAddr := s.bindAddr(); bindAddr != "127.0.0.1" && bindAddr != "localhost" {
-		logger.Warnf("⚠️  WARNING: Admin auth is DISABLED and server is bound to %s (non-loopback). All API endpoints are publicly accessible!", bindAddr)
+		logger.Fatalf("FATAL: Admin auth is DISABLED and server is bound to %s (non-loopback). Refusing to start to prevent unauthenticated access. Set web.auth.enabled=true or bind to loopback.", bindAddr)
 	}
 	handler = metricsMiddleware(handler)
 	handler = auditMiddleware(handler)
@@ -1094,7 +1162,9 @@ func (s *Server) bindAddr() string {
 func (s *Server) cleanupStaleQueries() {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("panic in cleanupStaleQueries: %v", r)
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			logger.Errorf("panic in cleanupStaleQueries: %v\n%s", r, buf[:n])
 		}
 	}()
 	ticker := time.NewTicker(10 * time.Minute)
@@ -1121,7 +1191,9 @@ func (s *Server) cleanupStaleQueries() {
 func (s *Server) cleanupStaleBridgeTokens() {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("panic in cleanupStaleBridgeTokens: %v", r)
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			logger.Errorf("panic in cleanupStaleBridgeTokens: %v\n%s", r, buf[:n])
 		}
 	}()
 	ticker := time.NewTicker(5 * time.Minute)
@@ -1157,7 +1229,9 @@ func (s *Server) cleanupStaleBridgeTokens() {
 func (s *Server) cleanupStaleBatchJobs() {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Errorf("panic in cleanupStaleBatchJobs: %v", r)
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			logger.Errorf("panic in cleanupStaleBatchJobs: %v\n%s", r, buf[:n])
 		}
 	}()
 	ticker := time.NewTicker(15 * time.Minute)

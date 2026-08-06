@@ -159,6 +159,7 @@
 				</div>
 			</details>
 
+			<div class="scheduler-table-scroll">
 			<table>
 				<thead>
 					<tr>
@@ -174,6 +175,7 @@
 				</thead>
 				<tbody id="task-list"></tbody>
 			</table>
+			</div>
 		</div>
 
 		<!-- 执行历史 -->
@@ -200,6 +202,7 @@
 					<input type="number" id="history-limit" value="50" class="form-control" placeholder="Limit">
 				</div>
 			</div>
+			<div class="scheduler-table-scroll">
 			<table>
 				<thead>
 					<tr>
@@ -214,16 +217,18 @@
 				</thead>
 				<tbody id="history-list"></tbody>
 			</table>
+			</div>
 		</div>
 
 		<!-- 任务类型说明 -->
 			<div class="tab-content" id="tab-help">
+				<div class="scheduler-table-scroll">
 				<table>
 					<thead>
 						<tr><th>任务类型</th><th>说明</th><th>参数示例</th></tr>
 					</thead>
 					<tbody>
-						<tr><td>UQL 查询</td><td>执行统一查询语言搜索</td><td><code>{"query": "port=\"80\"", "engines": ["fofa"], "page_size": 100}</code></td></tr>
+						<tr><td>UQL 查询</td><td>执行查询；可选通过 Bridge 同时采集、截图、持久化并附图通知</td><td><code>{"query": "port=\"80\"", "engines": ["fofa"], "page_size": 100, "browser_query": true, "browser_action": "collect_and_capture"}</code></td></tr>
 						<tr><td>搜索引擎截图</td><td>打开搜索引擎结果页截图</td><td><code>{"engine": "fofa", "query": "port=80"}</code></td></tr>
 						<tr><td>批量截图</td><td>批量对URL列表截图</td><td><code>{"urls": ["https://a.com"], "concurrency": 5}</code></td></tr>
 						<tr><td>篡改检测</td><td>对指定URL做篡改对比</td><td><code>{"urls": ["https://example.com"], "concurrency": 5}</code></td></tr>
@@ -232,7 +237,7 @@
 						<tr><td>登录状态检测</td><td>检测搜索引擎是否已登录</td><td><code>{"engines": ["fofa"], "test_query": "test"}</code></td></tr>
 						<tr><td>分布式任务提交</td><td>向分布式队列提交任务</td><td><code>{"task_type": "screenshot", "priority": 0}</code></td></tr>
 						<tr><td>数据导出</td><td>执行查询并导出JSON</td><td><code>{"query": "port=80", "engines": ["fofa"], "format": "json"}</code></td></tr>
-						<tr><td>端口扫描</td><td>对URL做端口扫描检测</td><td><code>{"urls": ["https://example.com"], "ports": ["80","443"]}</code></td></tr>
+						<tr><td>端口扫描</td><td>对授权公网 URL/IP 去重后扫描</td><td><code>{"urls": ["https://example.com"], "authorized_targets": ["203.0.113.0/24"], "port_spec": "22,80,443,8000-8100"}</code></td></tr>
 						<tr><td>截图清理</td><td>清理过期的截图批次</td><td><code>{"max_age_days": 30}</code></td></tr>
 						<tr><td>篡改记录清理</td><td>清理过期的篡改记录</td><td><code>{"max_age_days": 90}</code></td></tr>
 						<tr><td>配额监控</td><td>监控各引擎API配额</td><td><code>{"low_threshold": 10}</code></td></tr>
@@ -240,11 +245,13 @@
 						<tr><td>基线刷新</td><td>刷新篡改检测基线</td><td><code>{"urls": ["https://example.com"]}</code></td></tr>
 						<tr><td>URL 导入</td><td>从文件导入URL列表</td><td><code>{"file_pattern": "*.txt"}</code></td></tr>
 						<tr><td>插件健康检查</td><td>检查插件健康状态</td><td><code>{}</code></td></tr>
-						<tr><td>Bridge 令牌轮换</td><td>检查Bridge服务状态</td><td><code>{}</code></td></tr>
+						<tr><td>Bridge 健康检查</td><td>检查Bridge服务状态</td><td><code>{}</code></td></tr>
 						<tr><td>告警静默窗口</td><td>设置告警静默或清理旧记录</td><td><code>{"alert_type": "tamper", "duration_minutes": 60}</code></td></tr>
 						<tr><td>缓存预热</td><td>预热常用URL缓存</td><td><code>{"warmup_urls": ["https://example.com"]}</code></td></tr>
+						<tr><td>数据备份</td><td>将指定文件或目录归档到备份目录</td><td><code>{"sources": ["configs", "data"], "output_dir": "backups", "prefix": "unimap", "max_backups": 7}</code></td></tr>
 					</tbody>
 				</table>
+				</div>
 			</div>
 	</div>
 	</main>
@@ -337,6 +344,8 @@
 	.schedule-cron { background: #e8f4fd; color: #1a73e8; }
 	.schedule-once { background: #fef3e0; color: #e65100; }
 	.schedule-delay { background: #e8f5e9; color: #2e7d32; }
+	.scheduler-table-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+	.scheduler-table-scroll table { min-width: 760px; }
 	</style>
 	<script nonce="{{.CSPNonce}}">
 	// Tab switching
@@ -367,6 +376,21 @@
 		return '未知错误';
 	}
 
+	function formatDateTime(value) {
+		if (!value) return '-';
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return String(value);
+		return date.toLocaleString('zh-CN', {
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit',
+			hour12: false
+		}).replace(/\//g, '-');
+	}
+
 	async function loadTasks() {
 		try {
 			const res = await fetch('/api/v1/scheduler/tasks' );
@@ -391,40 +415,47 @@
 				if (t.enabled) enabled++; else disabled++;
 
 				const tr = document.createElement('tr');
-				const nextRun = t.next_run_at ? new Date(t.next_run_at).toLocaleString() : '-';
-				const lastRun = t.last_run_at ? new Date(t.last_run_at).toLocaleString() : '-';
+				const nextRun = formatDateTime(t.next_run_at);
+				const lastRun = formatDateTime(t.last_run_at);
 				const payloadStr = t.payload ? JSON.stringify(t.payload).substring(0, 60) : '';
 
 				// Schedule display
-				const schedType = t.schedule_type || 'cron';
-				const schedLabels = {cron: 'Cron', once: '一次性', delay: '延迟'};
+				const requestedScheduleType = t.schedule_type || 'cron';
+				const schedType = ['cron', 'once', 'delay'].includes(requestedScheduleType) ? requestedScheduleType : 'unknown';
+				const schedLabels = {cron: 'Cron', once: '一次性', delay: '延迟', unknown: '未知'};
 				let schedInfo = schedLabels[schedType] || schedType;
 				if (schedType === 'cron') {
 					schedInfo += ': ' + escHtml(t.cron_expr || '');
 				} else if (schedType === 'once' && t.run_at) {
-					schedInfo += ': ' + new Date(t.run_at).toLocaleString();
+					schedInfo += ': ' + escHtml(formatDateTime(t.run_at));
 				} else if (schedType === 'delay' && t.delay_seconds) {
 					const m = Math.floor(t.delay_seconds / 60);
 					const s = t.delay_seconds % 60;
 					schedInfo += ': ' + (m > 0 ? m + '分' : '') + (s > 0 ? s + '秒' : '');
 				}
+				const taskID = escHtml(t.id);
+				const runtimeStatus = t.runtime_status || (t.enabled ? 'scheduled' : 'disabled');
+				const runtimeLabels = {scheduled: '已调度', disabled: '已禁用', running: '执行中', schedule_error: '启用异常'};
+				const runtimeLabel = runtimeLabels[runtimeStatus] || runtimeStatus;
+				const runtimeClass = runtimeStatus === 'schedule_error' ? 'status-failed' : (runtimeStatus === 'disabled' ? 'status-disabled' : 'status-enabled');
+				const runtimeTitle = t.schedule_error ? ` title="${escHtml(t.schedule_error)}"` : '';
 
 				tr.innerHTML = `
 					<td>${escHtml(t.name)}</td>
 					<td>${escHtml(t.type)}</td>
 					<td><span class="schedule-badge schedule-${schedType}">${schedInfo}</span></td>
-					<td><span class="status-badge ${t.enabled ? 'status-enabled' : 'status-disabled'}">${t.enabled ? '启用' : '禁用'}</span></td>
+					<td><span class="status-badge ${runtimeClass}"${runtimeTitle}>${escHtml(runtimeLabel)}</span></td>
 					<td>${escHtml(lastRun)}</td>
 					<td>${escHtml(nextRun)}</td>
 					<td><span class="payload-preview" title="${escHtml(JSON.stringify(t.payload || {}))}">${escHtml(payloadStr)}</span></td>
 					<td>
-						<button class="btn-sm btn-outline-primary" data-action="edit" data-task-id="${t.id}" title="编辑">编辑</button>
-						<button class="btn-sm btn-outline-success" data-action="run" data-task-id="${t.id}" title="立即执行">执行</button>
+						<button class="btn-sm btn-outline-primary" data-action="edit" data-task-id="${taskID}" title="编辑">编辑</button>
+						<button class="btn-sm btn-outline-success" data-action="run" data-task-id="${taskID}" title="立即执行">执行</button>
 						${t.enabled
-							? `<button class="btn-sm btn-outline-secondary" data-action="toggle" data-task-id="${t.id}" data-enable="false" title="禁用">禁用</button>`
-							: `<button class="btn-sm btn-outline-secondary" data-action="toggle" data-task-id="${t.id}" data-enable="true" title="启用">启用</button>`
+							? `<button class="btn-sm btn-outline-secondary" data-action="toggle" data-task-id="${taskID}" data-enable="false" title="禁用">禁用</button>`
+							: `<button class="btn-sm btn-outline-secondary" data-action="toggle" data-task-id="${taskID}" data-enable="true" title="启用">启用</button>`
 						}
-						<button class="btn-sm btn-outline-danger" data-action="delete" data-task-id="${t.id}" title="删除">删除</button>
+						<button class="btn-sm btn-outline-danger" data-action="delete" data-task-id="${taskID}" title="删除">删除</button>
 					</td>
 				`;
 				tbody.appendChild(tr);
@@ -453,17 +484,27 @@
 			const records = await res.json();
 			const tbody = document.getElementById('history-list');
 			tbody.innerHTML = '';
+			if (!res.ok) {
+				tbody.innerHTML = '<tr><td colspan="7" class="empty-state">加载失败: ' + escHtml(extractErr(records)) + '</td></tr>';
+				return;
+			}
+			if (!Array.isArray(records)) {
+				tbody.innerHTML = '<tr><td colspan="7" class="empty-state">加载失败: 响应格式错误</td></tr>';
+				return;
+			}
 
 			records.forEach(r => {
 				const tr = document.createElement('tr');
-				const duration = r.duration_ms ? (r.duration_ms / 1000).toFixed(1) + 's' : '-';
-				const statusClass = 'status-' + r.status;
-				const statusLabel = {success:'成功', failed:'失败', timeout:'超时', skipped:'跳过'}[r.status] || r.status;
+				const durationMS = Number(r.duration_ms);
+				const duration = Number.isFinite(durationMS) && durationMS > 0 ? (durationMS / 1000).toFixed(1) + 's' : '-';
+				const statusKey = ['success', 'failed', 'timeout', 'skipped'].includes(r.status) ? r.status : 'unknown';
+				const statusClass = 'status-' + statusKey;
+				const statusLabel = {success:'成功', failed:'失败', timeout:'超时', skipped:'跳过'}[statusKey] || escHtml(r.status || '未知');
 
 				tr.innerHTML = `
 					<td>${escHtml(r.task_name)}</td>
 					<td>${escHtml(r.task_type)}</td>
-					<td>${escHtml(r.started_at)}</td>
+					<td>${escHtml(formatDateTime(r.started_at))}</td>
 					<td>${duration}</td>
 					<td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
 					<td>${escHtml(r.result || '-')}</td>
@@ -590,7 +631,7 @@
 	}
 
 	function escHtml(s) {
-		if (!s) return '';
+		if (s === null || s === undefined) return '';
 		const d = document.createElement('div');
 		d.textContent = s;
 		return d.innerHTML;
@@ -629,7 +670,7 @@
 					sel.appendChild(opt);
 				});
 			});
-		} catch(e) {}
+		} catch(e) { console.warn('Failed to load notification channels:', e); }
 	}
 
 	function getSelectedChannels(selectId) {
@@ -781,7 +822,7 @@ document.getElementById('edit-modal-overlay').addEventListener('click', closeEdi
 	// Pre-filled payloads for high-frequency task types. Uses precise queries
 	// (single IP + port) to keep API consumption minimal.
 	const TASK_TEMPLATES = {
-		query:             {name: '单 IP 资产扫描',    payload: {query: 'ip="47.95.120.1" && port="80"', engines: ['fofa'], page_size: 5}},
+		query:             {name: 'Bridge 查询采集与截图', payload: {query: 'port="443"', engines: ['fofa'], page_size: 10, notification_detail_limit: 50, browser_query: true, browser_action: 'collect_and_capture'}},
 		search_screenshot: {name: 'FOFA 搜索结果截图', payload: {engine: 'fofa', query: 'ip="47.95.120.1" && port="80"'}},
 		batch_screenshot:  {name: '官网截图巡检',      payload: {urls: ['https://www.baidu.com'], concurrency: 2}},
 		tamper_check:      {name: '首页篡改监控',      payload: {urls: ['https://www.baidu.com'], detection_mode: 'relaxed'}},
@@ -792,16 +833,16 @@ document.getElementById('edit-modal-overlay').addEventListener('click', closeEdi
 
 	// Concise parameter hints for every task type.
 	const PARAM_HINTS = {
-		query: 'query: UQL 查询语句；engines: 引擎列表；page_size: 每页结果数',
+		query: 'query: UQL；engines: 引擎列表；page_size: 每页结果数；notification_detail_limit: 通知展开明细数（默认 50，最大 100）；browser_query=true + browser_action=collect_and_capture 可完成 Bridge 采集、截图、持久化和明细附图通知',
 		search_screenshot: 'engine: 单个引擎；query: 搜索语句（打开结果页截图）',
 		batch_screenshot: 'urls: URL 列表；concurrency: 并发数',
-		tamper_check: 'urls: URL 列表；detection_mode: strict/relaxed/malicious/performance/full',
+		tamper_check: 'urls: URL 列表；detection_mode: strict/relaxed/security/balanced/precise',
 		url_reachability: 'urls: 待检测 URL 列表；concurrency: 并发数（可选）',
 		cookie_verify: 'engines: 待验证 Cookie 的引擎列表',
 		login_status_check: 'engines: 引擎列表（留空检测全部）；test_query: 探测查询（可选）',
 		distributed_submit: 'task_type: 子任务类型；priority: 优先级；timeout_seconds: 超时',
 		export: 'query/engines: 同 UQL 查询；format: json/csv/excel',
-		port_scan: 'urls: URL 列表；ports: 端口列表（可选）',
+		port_scan: 'urls: URL/IP 列表；authorized_targets: 授权 IPv4/CIDR（FIN/NULL/Xmas 必填）；port_spec: 端口/范围或 all；probe_methods: connect/telnet/udp/fin/null/xmas；可选 jitter_min_ms/jitter_max_ms、port_concurrency/connect_timeout_ms/scan_timeout_seconds',
 		screenshot_cleanup: 'max_age_days: 保留天数，超过则清理',
 		tamper_cleanup: 'max_age_days: 保留天数，超过则清理',
 		quota_monitor: 'low_threshold: 低配额告警阈值',
@@ -813,7 +854,8 @@ document.getElementById('edit-modal-overlay').addEventListener('click', closeEdi
 		alert_silence: 'alert_type: 告警类型；duration_minutes: 静默时长（分钟）',
 		cache_warmup: 'warmup_urls: 预热的 URL 列表（内网地址会被拦截）',
 		icp_query: 'queries: 域名/单位列表；type: web/app；page/page_size: 分页',
-		icp_import: 'CSV 导入，需先在 import 目录放置文件'
+		icp_import: 'CSV 导入，需先在 import 目录放置文件',
+		backup: 'sources: 备份源文件/目录；output_dir: 输出目录；prefix: 文件名前缀；max_backups: 保留份数'
 	};
 
 	function onTaskTypeChange() {

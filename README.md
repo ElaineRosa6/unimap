@@ -1,73 +1,75 @@
-# UniMap 🌍
+# UniMap
 
-> **多引擎网络空间资产查询与网页监控工具**
+多引擎网络空间资产查询与网页巡检工具，提供 Web 和 CLI 入口。
 
-UniMap 是一个功能强大的统一查询与资产监控平台，专为网络安全研究、资产测绘、红蓝对抗和企业安全监控设计。系统目前已深度集成并支持 **FOFA、Hunter、ZoomEye、Quake、Shodan** 五大主流空间测绘搜索引擎，并提供 **Web端、CLI命令行端、GUI桌面端** 三端独立运行能力。
+## 能力概览
 
-## 🚀 核心特性
+- UQL 统一查询、结果归并与 CSV/Excel/JSON 导出。
+- 稳定 Web UI 支持 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap 七个引擎；缺少 API 凭据时使用 Web-only adapter，经统一 ScreenshotRouter 执行浏览器采集。
+- CDP 与 Chrome Extension 双截图引擎，可在 `cdp`、`extension`、`auto` 间切换。
+- Linux/容器可直接使用无 `DISPLAY` 的 Chromium headless；统一路由覆盖截图、浏览器采集、调度与巡检，并限制浏览器会话避免云主机 OOM。
+- 2026-08-02 七引擎 Extension Bridge 均取得真实非空结构化资产；DayDayMap 的 Bridge→CDP 凭据交接取得 10 条资产和截图。Censys CDP 在交接 1 个 Cookie 与 16 项 Web Storage 后被 Cloudflare 挑战拦截，`auto` 路由已实测识别挑战并回退 Bridge，取得 9 条资产和截图。
+- CDP 浏览器任务采用 URL/DNS 校验、全请求 Fetch 拦截和连接级 loopback 出口代理；可选上游只接受 literal-loopback SOCKS5，并且只向它传递经实时 DNS 复核的固定公网 IP。外部/HTTP 上游代理、远程 Chrome 和未证明受控出口的 Extension 任意 URL 截图失败关闭。
+- 网页巡检：`strict`、`relaxed`、`security`、`balanced`、`precise` 五种模式。
+- 巡检历史：支持 URL、类型、模式、关键词过滤，以及受限的 `limit` / `offset` 分页；详见 [API 文档](docs/API.md)。
+- 调度、通知、分布式节点、备份、Prometheus 指标与操作历史。
 
-- 🔍 **多引擎统一查询 (UQL)**
-  采用独立统一的查询语法设计，底层自动翻译适配各引擎查询语言。支持跨引擎结果归并去重，多规格（CSV / Excel / JSON）快速数据导出。
-- 📸 **截图路由容灾高可用**
-  采用原生 `CDP` 与 `Chrome Extension` 双模式探针。实时探测引擎健康状态进行自动容灾和降级备份切换，无惧防反爬机制。
-- 🛡️ **智能网页篡改监控**
-  原生支持 5 种监控模式机制（strict / relaxed / malicious / performance / full），对被监控页面进行基于渲染对比与恶意代码检测的高效防护。
-- ⏱️ **高可用定时任务调度 (Scheduler)**
-  内置 20+ 种 Runner，提供高、中、低多级优先级队列分发机制和异常记录持久化系统，保障任务调度的高稳定性。
-- 🌐 **分布式任务节点集群支持**
-  内置轻量级的分布式管理框架：支持独立节点动态注册、心跳保活、任务自动领取及脱机故障转移（Failover）。
-- 📢 **全链路状态与告警**
-  提供 Webhook 及 Log 多通知渠道。配备完善的监控阀值设定、去重机制、静默时间管理以及触发频率精细控制。
+当前明确未完成项和优先级见 [本地剩余工作清单](docs/REMAINING_WORK_2026-07-23.md)；2026-08-02 起的具体实施顺序见 [后续实施清单](docs/NEXT_STEPS_20260802.md)。
 
-## 🛠️ 技术底座 / Tech Stack
+## 与 UniMap v2 的关系
 
-* **运行时**: `Go 1.26` 
-* **应用程序端**:
-  * `Web`: `net/http` + gorillas + go-resty 
-  * `CLI`: Cobra
-  * `GUI`: Fyne v2
-* **引擎及监控**: pterm (chromedp) / goquery / html sanitizer
-* **存储及缓存**: SQLite + LRU 内存缓存 + Redis (go-redis/v9)
-* **监控生态**: Prometheus 客户端
-* **配置**: 基于 YAML 及 Viper 的热生效体系
+[UniMap v2](../unimap-v2/) 是面向 AI Agent 的轻量侦察 Skill（MCP Server + PDTools），与本项目是**分层互补**关系：
 
-## 🧩 快速启动
+- **本项目（v1）**：人操作平台 — Web UI、截图、巡检、调度、Bridge/CDP 浏览器自动化
+- **UniMap v2**：AI Agent 工具 — MCP 协议、PDTools 工具链、轻量引擎执行、工作流编排
 
-1. **环境准备及配置**
-   复制示例配置并补充相关的 API Key 与 Webhook 配置：
-   ```bash
-   cp configs/config.yaml.example configs/config.yaml
-   ```
+两者共享统一资产模型（`UnifiedAsset`），独立演进。需要浏览器结构化采集、截图、持续监控的场景使用本项目；需要 AI Agent 自动化侦察、红队信息收集的场景使用 v2。
 
-2. **选择适合的端启动**
-   
-   **(A) Web UI 前后置模式 (默认端口 8448)**
-   ```bash
-   go run ./cmd/unimap-web
-   ```
-   > 访问浏览器进入 `http://localhost:8448`
-   
-   **(B) CLI 命令行并发模式**
-   ```bash
-   # 联合查询 FOFA 与 Hunter 示例
-   go run ./cmd/unimap-cli -q 'country="CN" && port="80"' -e fofa,hunter -l 100
-   ```
-   
-   **(C) GUI 图形交互桌面端模式**
-   ```bash
-   go run -tags gui ./cmd/unimap-gui
-   ```
+## 技术栈
 
-## 📚 详细文档体系
+- Go 1.26.5
+- Web：`net/http`、`gorilla/websocket`、`go-resty`
+- CLI：Go 标准库 `flag`
+- 浏览器自动化：chromedp；解析：goquery；存储：SQLite/YAML；缓存：内存/Redis
 
-在项目的 `docs/` 目录下存放了完善的开发部署文档记录，可供查阅指引：
-- **`QUICKSTART.md`** - 新手快速开始指南与入门指引
-- **`ARCHITECTURE.md`** - 项目架构与结构设计拆解
-- **`UQL_GUIDE.md`** - 联合查询语法 UQL 详解词典
-- **`RUNBOOK.md`** - 故障定位查修与运维保障手册
-- **`PRODUCTION_READINESS_PLAN.md`** - 上线前的生产高可用就绪清单
-- **`PLUGIN_DEVELOPMENT_GUIDE.md`** - 开发者插件生态拓展指南与 API 文档
+## 快速开始
 
-## 🛡️ License
+```bash
+cp configs/config.yaml.example configs/config.yaml
+# 编辑 configs/config.yaml，使用 ${ENV_VAR} 占位符或受控的本地直接值配置凭证
 
-请遵循对应开源协议以及各类引擎厂商接口的合规性保护条款。使用时应仅限于授权及合法的技术用途范围，严禁用于任何恶意网络攻击中。
+go run ./cmd/unimap-web
+# 打开 http://localhost:8448
+```
+
+CLI 示例：
+
+```bash
+go run ./cmd/unimap-cli -q 'country="CN" && port="80"' -e fofa,hunter -l 100
+
+# API 子命令（默认认证开启时推荐 token 文件）
+go run ./cmd/unimap-cli query --admin-token-file ./.secrets/unimap-admin-token -q 'port="443"' -e fofa
+go run ./cmd/unimap-cli scheduler --admin-token-file ./.secrets/unimap-admin-token list
+go run ./cmd/unimap-cli screenshot-batch --admin-token-file ./.secrets/unimap-admin-token --urls https://example.com
+```
+
+
+```bash
+```
+
+完整命令见 [快速开始](docs/QUICKSTART.md)，接口见 [API 文档](docs/API.md)，运维见 [Runbook](docs/RUNBOOK.md)。2026-07-17 的逻辑、API 与前后端交互修复状态见[问题报告](docs/CODE_LOGIC_API_UX_REVIEW_2026-07-17.md)和[修复/回滚指南](docs/REMEDIATION_GUIDE_2026-07-17.md)。
+
+无图形界面云主机的容器和原生部署要求、readiness 判断与最终验收清单见 [Runbook 的 headless 章节](docs/RUNBOOK.md#无图形界面的-linux--云主机)。
+
+## 验证
+
+```bash
+go test -race ./...
+
+# 显式真实浏览器测试（默认测试不会启动 Chrome）
+UNIMAP_CHROME_PATH=/path/to/chrome go test -tags=headless_e2e ./internal/screenshot ./internal/tamper
+```
+
+## 合规与安全
+
+仅对拥有授权的目标、账户和数据执行查询、截图或巡检。凭证必须通过部署环境或受控配置提供，禁止提交、记录或共享真实 API Key、管理令牌、Bridge token 和 Cookie。

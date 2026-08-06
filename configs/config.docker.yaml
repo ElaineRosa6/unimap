@@ -1,0 +1,50 @@
+# Container-safe baseline. Mount /app/configs/config.yaml to add API keys and
+# production credentials; never bake those secrets into an image.
+web:
+  # 镜像单独运行时保持 loopback；Compose 通过显式容器环境变量改为 0.0.0.0。
+  bind_address: 127.0.0.1
+  port: 8448
+  auth:
+    enabled: true
+    admin_token: ""
+    username: admin
+    password_hash: ""
+
+engines:
+  # 开发容器保留五个已接入浏览器链路的引擎；未填写 Key 时使用 Web-only。
+  fofa:
+    enabled: true
+  hunter:
+    enabled: true
+  zoomeye:
+    enabled: true
+  quake:
+    enabled: true
+  shodan:
+    enabled: true
+  # 当前仅支持 API，不能在缺少凭据时报告成 Web-only。
+  censys:
+    enabled: false
+  daydaymap:
+    enabled: false
+
+screenshot:
+  enabled: true
+  mode: cdp
+  priority: cdp
+  fallback: false
+  base_dir: /app/screenshots
+  chrome_path: /usr/bin/chromium
+  chrome_user_data_dir: /app/chrome-profile
+  headless: true
+  no_sandbox: true
+  max_sessions: 1
+  timeout: 30
+  window_width: 1365
+  window_height: 768
+  wait_time: 500
+
+log:
+  level: info
+  encoding: console
+  file: /app/logs/unimap.log

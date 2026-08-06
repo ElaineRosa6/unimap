@@ -24,6 +24,25 @@ func TestNewMemoryCache(t *testing.T) {
 	}
 }
 
+func TestMemoryCacheQueryMetadataLifecycle(t *testing.T) {
+	cache := NewMemoryCache(10, 0)
+	defer cache.Close()
+	cache.Set("query", []model.UnifiedAsset{{IP: "192.0.2.1"}}, time.Minute)
+	cache.SetQueryMetadata("query", QueryCacheMetadata{
+		EngineStats: map[string]int{"fofa": 1},
+		Errors:      []string{"hunter unavailable"},
+	}, time.Minute)
+
+	metadata, ok := cache.GetQueryMetadata("query")
+	if !ok || metadata.EngineStats["fofa"] != 1 || len(metadata.Errors) != 1 {
+		t.Fatalf("metadata was not preserved: %+v ok=%v", metadata, ok)
+	}
+	cache.Delete("query")
+	if _, ok := cache.GetQueryMetadata("query"); ok {
+		t.Fatal("deleting query assets must also delete metadata")
+	}
+}
+
 func TestMemoryCache_Get_Set(t *testing.T) {
 	cache := NewMemoryCache(10, 0) // No cleanup for test
 	defer cache.Close()

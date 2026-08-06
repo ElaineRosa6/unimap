@@ -43,8 +43,8 @@ func (s *Server) handleScreenshotBridgeHealth(w http.ResponseWriter, r *http.Req
 		return
 	}
 	snap := s.buildBridgeDiagnosticSnapshot()
-	snap["success"] = true
-	snap["message"] = "bridge diagnostic ready"
+	snap.Success = true
+	snap.Message = "bridge diagnostic ready"
 	writeJSON(w, http.StatusOK, snap)
 }
 
@@ -57,7 +57,7 @@ func (s *Server) handleScreenshotBridgeStatus(w http.ResponseWriter, r *http.Req
 		return
 	}
 	snap := s.buildBridgeDiagnosticSnapshot()
-	snap["success"] = true
+	snap.Success = true
 	writeJSON(w, http.StatusOK, snap)
 }
 
@@ -86,8 +86,9 @@ func (s *Server) handleScreenshotBridgePair(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if s.config != nil && s.config.Screenshot.Extension.PairCode != "" {
-		if subtle.ConstantTimeCompare([]byte(s.config.Screenshot.Extension.PairCode), []byte(req.PairCode)) != 1 {
+	cfg := s.currentConfig()
+	if cfg != nil && cfg.Screenshot.Extension.PairCode != "" {
+		if subtle.ConstantTimeCompare([]byte(cfg.Screenshot.Extension.PairCode), []byte(req.PairCode)) != 1 {
 			s.setBridgeLastError("invalid_pair_code: pair_code mismatch")
 			writeAPIError(w, http.StatusForbidden, "invalid_pair_code", "pair_code mismatch", nil)
 			return
@@ -95,8 +96,8 @@ func (s *Server) handleScreenshotBridgePair(w http.ResponseWriter, r *http.Reque
 	}
 
 	ttl := 600
-	if s.config != nil && s.config.Screenshot.Extension.TokenTTLSeconds > 0 {
-		ttl = s.config.Screenshot.Extension.TokenTTLSeconds
+	if cfg != nil && cfg.Screenshot.Extension.TokenTTLSeconds > 0 {
+		ttl = cfg.Screenshot.Extension.TokenTTLSeconds
 	}
 	token, expireAt, err := s.issueBridgeToken(ttl)
 	if err != nil {
@@ -145,8 +146,8 @@ func (s *Server) handleScreenshotBridgeRotateToken(w http.ResponseWriter, r *htt
 	}
 
 	ttl := 600
-	if s.config != nil && s.config.Screenshot.Extension.TokenTTLSeconds > 0 {
-		ttl = s.config.Screenshot.Extension.TokenTTLSeconds
+	if cfg := s.currentConfig(); cfg != nil && cfg.Screenshot.Extension.TokenTTLSeconds > 0 {
+		ttl = cfg.Screenshot.Extension.TokenTTLSeconds
 	}
 	newToken, expireAt, err := s.issueBridgeToken(ttl)
 	if err != nil {
@@ -196,7 +197,7 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 	if token != "" {
 		if err := s.validateBridgeCallbackSignatureIfRequired(r, rawBody, token); err != nil {
 			s.setBridgeLastError("unauthorized_bridge: invalid callback signature")
-			writeAPIError(w, http.StatusUnauthorized, "unauthorized_bridge", "invalid callback signature", err.Error())
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized_bridge", "invalid callback signature", nil)
 			return
 		}
 		s.touchBridgeToken(token)
@@ -209,6 +210,7 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		ImageData               string                 `json:"image_data"`
 		BatchID                 string                 `json:"batch_id"`
 		URL                     string                 `json:"url"`
+		FinalURL                string                 `json:"final_url"`
 		CollectedData           string                 `json:"collected_data"`
 		StructuredCollectedData map[string]interface{} `json:"structured_collected_data"`
 		Error                   string                 `json:"error"`
@@ -217,7 +219,7 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 	}
 	if err := json.Unmarshal(rawBody, &req); err != nil {
 		s.setBridgeLastError("invalid_bridge_result: invalid bridge result payload")
-		writeAPIError(w, http.StatusBadRequest, "invalid_bridge_result", "invalid bridge result payload", err.Error())
+		writeAPIError(w, http.StatusBadRequest, "invalid_bridge_result", "invalid bridge result payload", nil)
 		return
 	}
 	if strings.TrimSpace(req.RequestID) == "" {
@@ -248,6 +250,7 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 		RequestID:               strings.TrimSpace(req.RequestID),
 		Success:                 req.Success,
 		ImagePath:               resolvedPath,
+		FinalURL:                strings.TrimSpace(req.FinalURL),
 		CollectedData:           strings.TrimSpace(req.CollectedData),
 		StructuredCollectedData: structuredData,
 		ErrorCode:               strings.TrimSpace(req.ErrorCode),
@@ -272,8 +275,8 @@ func (s *Server) handleScreenshotBridgeMockResult(w http.ResponseWriter, r *http
 // readAndValidateBridgeBody reads and size-limits the request body.
 func (s *Server) readAndValidateBridgeBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 	maxBodyBytes := int64(10 * 1024 * 1024)
-	if s.config != nil && s.config.Web.RequestLimits.MaxBodyBytes > 0 {
-		maxBodyBytes = s.config.Web.RequestLimits.MaxBodyBytes
+	if cfg := s.currentConfig(); cfg != nil && cfg.Web.RequestLimits.MaxBodyBytes > 0 {
+		maxBodyBytes = cfg.Web.RequestLimits.MaxBodyBytes
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
@@ -295,6 +298,7 @@ func (s *Server) resolveBridgeImagePath(w http.ResponseWriter, req *struct {
 	ImageData               string                 `json:"image_data"`
 	BatchID                 string                 `json:"batch_id"`
 	URL                     string                 `json:"url"`
+	FinalURL                string                 `json:"final_url"`
 	CollectedData           string                 `json:"collected_data"`
 	StructuredCollectedData map[string]interface{} `json:"structured_collected_data"`
 	Error                   string                 `json:"error"`
@@ -389,6 +393,7 @@ func (s *Server) handleScreenshotBridgeTaskNext(w http.ResponseWriter, r *http.R
 			"request_id":      task.RequestID,
 			"batch_id":        task.BatchID,
 			"url":             task.URL,
+			"query":           task.Query,
 			"wait_strategy":   task.WaitStrategy,
 			"timeout_ms":      timeoutMS,
 			"viewport_width":  task.ViewportWidth,
@@ -401,8 +406,8 @@ func (s *Server) handleScreenshotBridgeTaskNext(w http.ResponseWriter, r *http.R
 
 func (s *Server) validateBridgeAuthIfRequired(w http.ResponseWriter, r *http.Request) (string, bool) {
 	required := true
-	if s.config != nil {
-		required = s.config.Screenshot.Extension.PairingRequired
+	if cfg := s.currentConfig(); cfg != nil {
+		required = cfg.Screenshot.Extension.PairingRequired
 	}
 	if !required {
 		return "", true
@@ -439,14 +444,14 @@ func (s *Server) validateBridgeCallbackSignatureIfRequired(r *http.Request, body
 	pairingRequired := true
 	skewSeconds := 300
 	nonceTTLSeconds := 600
-	if s.config != nil {
-		required = s.config.Screenshot.Extension.CallbackSignatureRequired
-		pairingRequired = s.config.Screenshot.Extension.PairingRequired
-		if s.config.Screenshot.Extension.CallbackSignatureSkewSeconds > 0 {
-			skewSeconds = s.config.Screenshot.Extension.CallbackSignatureSkewSeconds
+	if cfg := s.currentConfig(); cfg != nil {
+		required = cfg.Screenshot.Extension.CallbackSignatureRequired
+		pairingRequired = cfg.Screenshot.Extension.PairingRequired
+		if cfg.Screenshot.Extension.CallbackSignatureSkewSeconds > 0 {
+			skewSeconds = cfg.Screenshot.Extension.CallbackSignatureSkewSeconds
 		}
-		if s.config.Screenshot.Extension.CallbackNonceTTLSeconds > 0 {
-			nonceTTLSeconds = s.config.Screenshot.Extension.CallbackNonceTTLSeconds
+		if cfg.Screenshot.Extension.CallbackNonceTTLSeconds > 0 {
+			nonceTTLSeconds = cfg.Screenshot.Extension.CallbackNonceTTLSeconds
 		}
 	}
 	// Callback signature requires a pairing token; skip if pairing is disabled.
@@ -887,19 +892,47 @@ func activeBridgeLiveTokenCount(bridge *BridgeState) int {
 	return count
 }
 
-func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
+// BridgeDiagnosticSnapshot is the typed response for bridge diagnostic status.
+type BridgeDiagnosticSnapshot struct {
+	Success          bool   `json:"success"`
+	Message          string `json:"message,omitempty"`
+	Engine           string `json:"engine"`
+	ExtensionEnabled bool   `json:"extension_enabled"`
+	PairingRequired  bool   `json:"pairing_required"`
+	ListenAddr       string `json:"listen_addr"`
+	Ready            bool   `json:"ready"`
+	BridgeConnected  bool   `json:"bridge_connected"`
+	ExtensionOnline  bool   `json:"extension_online"`
+	PairedClients    int    `json:"paired_clients"`
+	LiveClients      int    `json:"live_clients"`
+	PendingTasks     int    `json:"pending_tasks"`
+	AwaitingResults  int    `json:"awaiting_results"`
+	InFlightTasks    int    `json:"in_flight_tasks"`
+	QueueLen         int    `json:"queue_len"`
+	WorkerCount      int    `json:"worker_count"`
+	LastError        string `json:"last_error,omitempty"`
+	LastErrorAt      int64  `json:"last_error_at,omitempty"`
+	LastPairAt       int64  `json:"last_pair_at,omitempty"`
+	LastTaskPullAt   int64  `json:"last_task_pull_at,omitempty"`
+	LastCallbackAt   int64  `json:"last_callback_at,omitempty"`
+	RouterMode       string `json:"router_mode"`
+	RouterCDPHealthy bool   `json:"router_cdp_healthy"`
+	RouterExtHealthy bool   `json:"router_ext_healthy"`
+}
+
+func (s *Server) buildBridgeDiagnosticSnapshot() BridgeDiagnosticSnapshot {
 	engine := "cdp"
 	enabled := false
 	pairingRequired := true
 	listenAddr := ""
-	if s.config != nil {
-		engine = strings.TrimSpace(s.config.Screenshot.Engine)
+	if cfg := s.currentConfig(); cfg != nil {
+		engine = strings.TrimSpace(cfg.Screenshot.Engine)
 		if engine == "" {
 			engine = "cdp"
 		}
-		enabled = s.config.Screenshot.Extension.Enabled
-		pairingRequired = s.config.Screenshot.Extension.PairingRequired
-		listenAddr = strings.TrimSpace(s.config.Screenshot.Extension.ListenAddr)
+		enabled = cfg.Screenshot.Extension.Enabled
+		pairingRequired = cfg.Screenshot.Extension.PairingRequired
+		listenAddr = strings.TrimSpace(cfg.Screenshot.Extension.ListenAddr)
 	}
 
 	inFlight := 0
@@ -931,29 +964,29 @@ func (s *Server) buildBridgeDiagnosticSnapshot() map[string]interface{} {
 	lastCallbackAt := s.bridge.LastCallbackAt
 	s.bridge.mu.Unlock()
 
-	return map[string]interface{}{
-		"engine":             engine,
-		"extension_enabled":  enabled,
-		"pairing_required":   pairingRequired,
-		"listen_addr":        listenAddr,
-		"ready":              ready,
-		"bridge_connected":   bridgeConnected,
-		"extension_online":   extensionOnline,
-		"paired_clients":     pairedClients,
-		"live_clients":       liveClients,
-		"pending_tasks":      pending,
-		"awaiting_results":   waiters,
-		"in_flight_tasks":    inFlight,
-		"queue_len":          queueLen,
-		"worker_count":       workers,
-		"last_error":         lastErr,
-		"last_error_at":      lastAt,
-		"last_pair_at":       lastPairAt,
-		"last_task_pull_at":  lastTaskPullAt,
-		"last_callback_at":   lastCallbackAt,
-		"router_mode":        s.screenshotRouterMode(),
-		"router_cdp_healthy": s.screenshotRouterCDPHealthy(),
-		"router_ext_healthy": routerExtHealthy,
+	return BridgeDiagnosticSnapshot{
+		Engine:           engine,
+		ExtensionEnabled: enabled,
+		PairingRequired:  pairingRequired,
+		ListenAddr:       listenAddr,
+		Ready:            ready,
+		BridgeConnected:  bridgeConnected,
+		ExtensionOnline:  extensionOnline,
+		PairedClients:    pairedClients,
+		LiveClients:      liveClients,
+		PendingTasks:     pending,
+		AwaitingResults:  waiters,
+		InFlightTasks:    inFlight,
+		QueueLen:         queueLen,
+		WorkerCount:      workers,
+		LastError:        lastErr,
+		LastErrorAt:      lastAt,
+		LastPairAt:       lastPairAt,
+		LastTaskPullAt:   lastTaskPullAt,
+		LastCallbackAt:   lastCallbackAt,
+		RouterMode:       s.screenshotRouterMode(),
+		RouterCDPHealthy: s.screenshotRouterCDPHealthy(),
+		RouterExtHealthy: routerExtHealthy,
 	}
 }
 
