@@ -37,7 +37,7 @@ WORKDIR /app
 
 # 安装依赖（HTTPS + chromedp 截图需要 Chromium）；Alpine 官方源在国内不稳定，改用阿里云镜像
 RUN sed -i 's#dl-cdn.alpinelinux.org#mirrors.aliyun.com#g' /etc/apk/repositories \
-    && apk add --no-cache ca-certificates chromium font-noto-cjk ttf-freefont
+    && apk add --no-cache ca-certificates chromium font-noto-cjk ttf-freefont tzdata
 
 # 复制构建结果
 COPY --from=builder /app/unimap-web /app/
@@ -64,7 +64,9 @@ RUN mkdir -p /app/data /app/screenshots /app/chrome-profile /app/logs /app/backu
 
 ENV UNIMAP_CHROME_PATH=/usr/bin/chromium \
     UNIMAP_CHROME_USER_DATA_DIR=/app/chrome-profile \
-    UNIMAP_DATA_DIR=/app/data
+    UNIMAP_DATA_DIR=/app/data \
+    # 调度 cron 需要 Asia/Shanghai zoneinfo（tzdata 已在运行镜像安装）
+    TZ=Asia/Shanghai
 
 # 切换到非root用户
 USER unimap:unimap
