@@ -23,6 +23,7 @@ import (
 	"github.com/unimap/project/internal/screenshot/batchdb"
 	"github.com/unimap/project/internal/service"
 	"github.com/unimap/project/internal/tamper"
+	"github.com/unimap/project/internal/utils"
 )
 
 // --- QueryRunner (ST-01) ---
@@ -45,6 +46,7 @@ type QueryRunner struct {
 	mgr           *screenshot.Manager
 	browserRouter service.BrowserRouter
 	health        *SessionHealthTracker // shared session health tracker for circuit breaking
+	exportDir     string                // directory for format=excel workbooks (default AppDataDir("exports"))
 }
 
 // NewQueryRunner creates a QueryRunner.
@@ -177,6 +179,20 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 		onlyNewKeys = freshKeys
 	}
 
+	// Optional Excel export: when format is excel/xlsx and assets remain after
+	// the incremental filter, export the (deduplicated) assets to a workbook and
+	// embed its path so the notification layer delivers it as a file message.
+	// No assets means no workbook is produced (the "no new assets" message still
+	// goes out as text).
+	var excelPath string
+	if strings.EqualFold(payload.Format, "excel") || strings.EqualFold(payload.Format, "xlsx") {
+		if len(resp.Assets) > 0 {
+			if excelPath, err = r.exportAssetsExcel(ctx, resp.Assets); err != nil {
+				return "", fmt.Errorf("export query assets to excel: %w", err)
+			}
+		}
+	}
+
 	var b strings.Builder
 	// Compact header: engine + total. The raw UQL is intentionally not replayed
 	// here — the scheduled task name already identifies the query, and dumping a
@@ -219,7 +235,45 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 			return "", fmt.Errorf("record pushed asset keys for %s: %w", onlyNewTaskID, err)
 		}
 	}
+	if excelPath != "" {
+		fmt.Fprintf(&b, "✅ Excel 文件保存: %s\n", excelPath)
+	}
 	return sanitizeUTF8(b.String()), nil
+}
+
+// WithExportDir sets the directory where format=excel query tasks write their
+// workbooks. When empty, the default AppDataDir("exports") is used.
+func (r *QueryRunner) WithExportDir(dir string) *QueryRunner {
+	r.exportDir = dir
+	return r
+}
+
+// exportAssetsExcel exports the given assets to a timestamped xlsx workbook
+// named after the task (task names are scheduler identifiers; sanitized for use
+// as a file name). Returns the written path.
+func (r *QueryRunner) exportAssetsExcel(ctx context.Context, assets []model.UnifiedAsset) (string, error) {
+	dir := strings.TrimSpace(r.exportDir)
+	if dir == "" {
+		dir = utils.AppDataDir("exports")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	name := "query"
+	if taskName := taskNameFromContext(ctx); taskName != "" {
+		name = safeFileName(taskName)
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%s_%d.xlsx", name, time.Now().Unix()))
+	if err := exporter.NewExcelExporter().ExportFull(assets, path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// safeFileName strips characters unsafe for a file name component from a task
+// name (path separators, whitespace, punctuation).
+func safeFileName(name string) string {
+	return regexp.MustCompile(`[^A-Za-z0-9._-]+`).ReplaceAllString(strings.TrimSpace(name), "_")
 }
 
 func queryNotificationDetailLimit(payload *model.TaskPayload) int {

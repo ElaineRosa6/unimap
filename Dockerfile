@@ -11,11 +11,15 @@ WORKDIR /app
 # 复制go.mod和go.sum文件
 COPY go.mod go.sum ./
 
+# 国内网络使用 goproxy.cn，境外 fallback 官方源
+ENV GOPROXY=https://goproxy.cn,direct
+
 # 下载依赖
 RUN go mod download
 
-# 安装 C 工具链（go-sqlite3 需要 CGO）
-RUN apk add --no-cache build-base
+# 安装 C 工具链（go-sqlite3 需要 CGO）；Alpine 官方源在国内不稳定，改用阿里云镜像
+RUN sed -i 's#dl-cdn.alpinelinux.org#mirrors.aliyun.com#g' /etc/apk/repositories \
+    && apk add --no-cache build-base
 
 # 复制源代码
 COPY . .
@@ -31,8 +35,9 @@ FROM alpine:3.21
 # 设置工作目录
 WORKDIR /app
 
-# 安装依赖（HTTPS + chromedp 截图需要 Chromium）
-RUN apk add --no-cache ca-certificates chromium font-noto-cjk ttf-freefont
+# 安装依赖（HTTPS + chromedp 截图需要 Chromium）；Alpine 官方源在国内不稳定，改用阿里云镜像
+RUN sed -i 's#dl-cdn.alpinelinux.org#mirrors.aliyun.com#g' /etc/apk/repositories \
+    && apk add --no-cache ca-certificates chromium font-noto-cjk ttf-freefont
 
 # 复制构建结果
 COPY --from=builder /app/unimap-web /app/

@@ -527,7 +527,7 @@ func initScheduler(srv *Server, cfg *config.Config, screenshotApp *service.Scree
 	sessionHealth := scheduler.NewSessionHealthTracker()
 
 	// 高优先级 Runner (ST-01 ~ ST-08)
-	sched.RegisterHandler(scheduler.NewQueryRunnerWithBrowser(srv.queryApp, screenshotApp, screenshotMgr, srv.browserQueryProvider(), sessionHealth))
+	sched.RegisterHandler(scheduler.NewQueryRunnerWithBrowser(srv.queryApp, screenshotApp, screenshotMgr, srv.browserQueryProvider(), sessionHealth).WithExportDir(utils.AppDataDir("exports")))
 	sched.RegisterHandler(scheduler.NewSearchScreenshotRunner(screenshotApp, screenshotMgr))
 	var batchRepo *batchdb.Repository
 	if srv.batchDB != nil {
