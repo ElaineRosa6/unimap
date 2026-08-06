@@ -89,7 +89,11 @@ type QueryAPIPayload struct {
 	AutoCaptureErrors    []string                   `json:"autoCaptureErrors"`
 }
 
-func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string, explicitErrors ...string) QueryAPIPayload {
+// buildQueryAPIPayload 组装查询 API 响应。browserAssetsInResp 为 true 时表示
+// resp.Assets 已由 service 层 merge 了浏览器采集资产（HTTP API 走
+// ExecuteQueryWithBrowserWorkflow），此处不再追加，避免重复计数；WebSocket
+// 路径独立并行，resp 不含浏览器资产，需在本函数内追加。
+func buildQueryAPIPayload(query string, engines []string, resp *service.QueryResponse, browserOutcome browserQueryOutcome, browserAction string, browserAssetsInResp bool, explicitErrors ...string) QueryAPIPayload {
 	for i := range browserOutcome.CollectedResults {
 		collection.NormalizeAssets(browserOutcome.CollectedResults[i].Engine, browserOutcome.CollectedResults[i].Assets)
 	}
@@ -136,15 +140,17 @@ func buildQueryAPIPayload(query string, engines []string, resp *service.QueryRes
 		}
 		persistence = resp.Persistence
 	}
-	for _, collected := range browserOutcome.CollectedResults {
-		assets = append(assets, collected.Assets...)
-		if collected.Total > 0 {
-			totalCount += collected.Total
-		} else {
-			totalCount += len(collected.Assets)
-		}
-		if len(collected.Assets) > 0 {
-			engineStats[collected.Engine] += len(collected.Assets)
+	if !browserAssetsInResp {
+		for _, collected := range browserOutcome.CollectedResults {
+			assets = append(assets, collected.Assets...)
+			if collected.Total > 0 {
+				totalCount += collected.Total
+			} else {
+				totalCount += len(collected.Assets)
+			}
+			if len(collected.Assets) > 0 {
+				engineStats[collected.Engine] += len(collected.Assets)
+			}
 		}
 	}
 
@@ -245,7 +251,7 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 		resp, err = s.queryApp.ExecuteQuery(r.Context(), query, engines, pageSize)
 	}
 	if err != nil {
-		payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, fmt.Sprintf("API query failed: %v", err))
+		payload := buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, true, fmt.Sprintf("API query failed: %v", err))
 		if payload.Status == "partial" {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(payload)
@@ -263,7 +269,7 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 
 	// 返回JSON结果
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction))
+	_ = json.NewEncoder(w).Encode(buildQueryAPIPayload(query, engines, resp, browserOutcome, browserAction, true))
 }
 
 // handleIndex 处理首页请求

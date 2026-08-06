@@ -101,8 +101,8 @@ func validateQueryInput(query string) error {
 	if strings.TrimSpace(query) == "" {
 		return fmt.Errorf("query cannot be empty")
 	}
-	if len(query) > 1000 {
-		return fmt.Errorf("query is too long (maximum 1000 characters)")
+	if len(query) > 20000 {
+		return fmt.Errorf("query is too long (maximum 20000 characters)")
 	}
 	for _, r := range query {
 		if r < 32 && r != '\t' && r != '\n' && r != '\r' {
