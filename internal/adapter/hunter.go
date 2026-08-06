@@ -113,11 +113,19 @@ func isHunterKeyError(err error) bool {
 	return errors.As(err, &keyErr)
 }
 
-// classifyHunterStatus 将 HTTP/业务状态码归类为 key 级失败（401/402/429）。
-// 其他状态码返回 nil，由调用方按普通错误处理。
+// classifyHunterStatus 将 HTTP/业务状态码归类为 key 级失败，触发备用 key 切换。
+// HTTP 状态码：401 鉴权 / 402 欠费 / 429 限流。
+// Hunter 业务码用 4-5 位编码表达同类失败：401xx 鉴权、402xx 积分耗尽/欠费
+// （如 40204 "积分用完了"）、429xx 限流。其余状态码返回 nil，按普通错误处理。
 func classifyHunterStatus(code int, body string) *hunterKeyError {
-	switch code {
-	case 401, 402, 429:
+	switch {
+	case code == 401 || code == 402 || code == 429:
+		return &hunterKeyError{code: code, msg: body}
+	case code >= 40100 && code <= 40199:
+		return &hunterKeyError{code: code, msg: body}
+	case code >= 40200 && code <= 40299:
+		return &hunterKeyError{code: code, msg: body}
+	case code >= 42900 && code <= 42999:
 		return &hunterKeyError{code: code, msg: body}
 	default:
 		return nil

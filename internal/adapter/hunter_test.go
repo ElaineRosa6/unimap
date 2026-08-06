@@ -99,6 +99,80 @@ func TestHunterSearch_FailoverToBackupOnRateLimit(t *testing.T) {
 	}
 }
 
+// TestHunterSearch_FailoverToBackupOnQuotaExhausted verifies that when the
+// primary key is out of points (Hunter business code 40204 "积分用完了"),
+// Search fails over to the backup key and returns its results.
+func TestHunterSearch_FailoverToBackupOnQuotaExhausted(t *testing.T) {
+	var mu sync.Mutex
+	var keysHit []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		keysHit = append(keysHit, r.URL.Query().Get("api-key"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("api-key") {
+		case "primary":
+			_, _ = w.Write([]byte(`{"code":40204,"message":"大牛，您的积分用完了，明天再试试","data":null}`))
+		case "backup":
+			_, _ = w.Write([]byte(`{"code":200,"message":"ok","data":{"total":1,"arr":[{"ip":"7.7.7.7","port":443,"domain":"backup.example","web_title":"backup","status_code":200}]}}`))
+		default:
+			t.Errorf("unexpected api-key: %q", r.URL.Query().Get("api-key"))
+		}
+	}))
+	defer server.Close()
+
+	h := NewHunterAdapter(server.URL, "primary", "backup", 0, 5*time.Second)
+	res, err := h.Search(context.Background(), "port=443", 1, 10)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if res == nil || res.Error != "" {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	if res.Total != 1 || len(res.RawData) != 1 {
+		t.Fatalf("expected 1 result, got total=%d raw=%d", res.Total, len(res.RawData))
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(keysHit) != 2 || keysHit[0] != "primary" || keysHit[1] != "backup" {
+		t.Fatalf("expected primary then backup key, got %v", keysHit)
+	}
+}
+
+// TestClassifyHunterStatus verifies which status codes are treated as key-level
+// failures (triggering backup-key failover) vs ordinary errors.
+func TestClassifyHunterStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		code int
+		want bool
+	}{
+		{"http 401", 401, true},
+		{"http 402", 402, true},
+		{"http 429", 429, true},
+		{"business 40103 auth", 40103, true},
+		{"business 40204 quota exhausted", 40204, true},
+		{"business 42900 rate limit", 42900, true},
+		{"business 40299 quota family", 40299, true},
+		{"business 40199 auth family", 40199, true},
+		{"success", 200, false},
+		{"business generic error 500", 500, false},
+		{"business 400 bad request", 400, false},
+		{"http 404", 404, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyHunterStatus(tc.code, "msg")
+			if tc.want && got == nil {
+				t.Errorf("code %d: expected key error, got nil", tc.code)
+			}
+			if !tc.want && got != nil {
+				t.Errorf("code %d: expected nil, got %v", tc.code, got)
+			}
+		})
+	}
+}
+
 // TestHunterSearch_NoFailoverWhenPrimarySucceeds verifies the backup key is not
 // touched when the primary key succeeds.
 func TestHunterSearch_NoFailoverWhenPrimarySucceeds(t *testing.T) {
