@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -269,6 +270,108 @@ func TestQueryRunner_Execute_QueryNotificationCapsDetailBodySize(t *testing.T) {
 	}
 	if !strings.Contains(result, "条结果已持久化，通知中未展开") {
 		t.Fatalf("query notification omits byte-cap remainder notice:\n%s", result)
+	}
+}
+
+func TestQueryRunner_Execute_ExcelExport(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: []model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443, URL: "https://first.example.test"},
+		{IP: "192.0.2.11", Port: 8443, URL: "https://second.example.test"},
+	}})
+	exportDir := t.TempDir()
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator())).WithExportDir(exportDir)
+
+	result, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10, Format: "excel",
+	})
+	if err != nil {
+		t.Fatalf("execute API query: %v", err)
+	}
+
+	// The message embeds the workbook path for the notification layer to forward
+	// as a file message.
+	if !strings.Contains(result, "✅ Excel 文件保存:") {
+		t.Fatalf("query notification omits Excel file line:\n%s", result)
+	}
+	var xlsxPath string
+	for _, ln := range strings.Split(result, "\n") {
+		if i := strings.Index(ln, "保存:"); i >= 0 {
+			xlsxPath = strings.TrimSpace(ln[i+len("保存:"):])
+			break
+		}
+	}
+	if xlsxPath == "" {
+		t.Fatalf("no excel path embedded in:\n%s", result)
+	}
+	if !filepath.IsAbs(xlsxPath) || !strings.HasPrefix(xlsxPath, exportDir) {
+		t.Fatalf("exported workbook outside configured export dir: %s", xlsxPath)
+	}
+	if !strings.HasSuffix(strings.ToLower(xlsxPath), ".xlsx") {
+		t.Fatalf("exported path is not an xlsx: %s", xlsxPath)
+	}
+	if _, err := os.Stat(xlsxPath); err != nil {
+		t.Fatalf("exported workbook not written at %s: %v", xlsxPath, err)
+	}
+
+	// An xlsx is a zip container; validate it opens as one.
+	zf, err := zip.OpenReader(xlsxPath)
+	if err != nil {
+		t.Fatalf("exported xlsx is not a valid workbook zip: %v", err)
+	}
+	defer zf.Close()
+	if len(zf.File) == 0 {
+		t.Fatal("exported workbook has no zip parts")
+	}
+}
+
+func TestQueryRunner_Execute_ExcelExport_NoAssetsProducesNoFile(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa"})
+	exportDir := t.TempDir()
+
+	// only_new dedups every asset against an already-pushed set, so the fresh
+	// slice is empty: format=excel must not create an empty workbook.
+	run := func() string {
+		db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
+		if err != nil {
+			t.Fatalf("open history database: %v", err)
+		}
+		defer db.Close()
+		if err := db.InitSchema(); err != nil {
+			t.Fatalf("init history schema: %v", err)
+		}
+		repo := history.NewRepository(db.DB())
+		if err := repo.RecordPushedAssets("excel_none", []string{"192.0.2.10:443"}); err != nil {
+			t.Fatalf("record pushed assets: %v", err)
+		}
+		qapp := service.NewQueryAppService(svc, svc.GetOrchestrator())
+		qapp.SetHistoryRepository(repo)
+		r := NewQueryRunner(qapp).WithExportDir(exportDir)
+		ctx := context.WithValue(context.Background(), ctxKeyTaskName{}, "excel_none")
+		out, err := r.Execute(ctx, &model.TaskPayload{
+			Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10,
+			Format: "excel", OnlyNew: true,
+		})
+		if err != nil {
+			t.Fatalf("execute only_new query: %v", err)
+		}
+		return out
+	}
+
+	result := run()
+	if !strings.Contains(result, "无新增资产") {
+		t.Fatalf("expected no-new-assets message, got:\n%s", result)
+	}
+	if strings.Contains(result, "Excel 文件保存:") {
+		t.Fatalf("empty fresh set must not produce a workbook:\n%s", result)
+	}
+	entries, err := os.ReadDir(exportDir)
+	if err != nil {
+		t.Fatalf("read export dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("export dir not empty for empty fresh set: %v", entries)
 	}
 }
 
@@ -1222,6 +1325,22 @@ func TestExtractImagePaths_NoImages(t *testing.T) {
 	paths := extractImagePaths(result)
 	if len(paths) != 0 {
 		t.Errorf("expected 0 paths, got %d: %v", len(paths), paths)
+	}
+}
+
+func TestExtractImagePaths_ExcelWorkbook(t *testing.T) {
+	result := "查询完成\n\n✅ Excel 文件保存: /tmp/ynmobile_20260806.xlsx\n"
+	paths := extractImagePaths(result)
+	if len(paths) != 1 || paths[0] != "/tmp/ynmobile_20260806.xlsx" {
+		t.Fatalf("extractImagePaths = %#v, want the workbook path", paths)
+	}
+}
+
+func TestExtractImagePaths_IgnoresUnknownExtensions(t *testing.T) {
+	result := "✅ Excel 文件保存: /tmp/out.csv\n✅ 日志: /tmp/run.log\n"
+	paths := extractImagePaths(result)
+	if len(paths) != 0 {
+		t.Fatalf("csv/log paths must not be treated as deliverable files, got %#v", paths)
 	}
 }
 

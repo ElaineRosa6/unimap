@@ -223,7 +223,7 @@ func extractImagePaths(result string) []string {
 			parts := strings.SplitN(line, "→", 2)
 			if len(parts) == 2 {
 				path := strings.TrimSpace(parts[1])
-				if isImageFile(path) {
+				if isDeliverableFile(path) {
 					paths = append(paths, path)
 					continue
 				}
@@ -234,7 +234,7 @@ func extractImagePaths(result string) []string {
 			parts := strings.SplitN(line, "保存:", 2)
 			if len(parts) == 2 {
 				path := strings.TrimSpace(parts[1])
-				if isImageFile(path) {
+				if isDeliverableFile(path) {
 					paths = append(paths, path)
 					continue
 				}
@@ -245,7 +245,7 @@ func extractImagePaths(result string) []string {
 			continue
 		}
 
-		if isImageFile(line) {
+		if isDeliverableFile(line) {
 			paths = append(paths, line)
 		}
 	}
@@ -260,6 +260,19 @@ func isImageFile(path string) bool {
 		strings.HasSuffix(lower, ".jpeg") ||
 		strings.HasSuffix(lower, ".gif") ||
 		strings.HasSuffix(lower, ".webp")
+}
+
+// isSpreadsheetFile reports whether path is an Excel workbook (.xlsx/.xls),
+// which the notification layer can deliver as a WeCom file message.
+func isSpreadsheetFile(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".xlsx") || strings.HasSuffix(lower, ".xls")
+}
+
+// isDeliverableFile reports whether a path embedded in a runner message should
+// be forwarded as a notification attachment (screenshot or workbook).
+func isDeliverableFile(path string) bool {
+	return isImageFile(path) || isSpreadsheetFile(path)
 }
 
 // redactImagePaths strips full server paths from notification text, keeping only filenames.
