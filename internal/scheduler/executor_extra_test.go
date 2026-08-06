@@ -1360,3 +1360,186 @@ func TestDistributedTaskIDMonotonic(t *testing.T) {
 		ids[id] = true
 	}
 }
+
+// ===== QueryRunner incremental push (only_new) =====
+
+func TestQueryRunner_Execute_OnlyNewRequiresTaskName(t *testing.T) {
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa"})
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	_, err := runner.Execute(context.Background(), &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10, OnlyNew: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "task name") {
+		t.Fatalf("only_new without a task name in ctx should fail, got %v", err)
+	}
+}
+
+func TestQueryRunner_Execute_OnlyNewDeduplicatesAcrossRuns(t *testing.T) {
+	db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("open history database: %v", err)
+	}
+	defer db.Close()
+	if err := db.InitSchema(); err != nil {
+		t.Fatalf("init history schema: %v", err)
+	}
+	repo := history.NewRepository(db.DB())
+
+	ctx := context.WithValue(context.Background(), ctxKeyTaskName{}, "fofa_ynmobile_daily")
+	payload := &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10, OnlyNew: true,
+	}
+
+	newRunner := func(assets []model.UnifiedAsset) *QueryRunner {
+		svc := service.NewUnifiedService()
+		svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: assets})
+		queryApp := service.NewQueryAppService(svc, svc.GetOrchestrator())
+		queryApp.SetHistoryRepository(repo)
+		return NewQueryRunner(queryApp)
+	}
+
+	// Run 1: both assets are new.
+	result, err := newRunner([]model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443},
+		{IP: "192.0.2.11", Port: 8443},
+	}).Execute(ctx, payload)
+	if err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if !strings.Contains(result, "新增 2 条") {
+		t.Fatalf("first run should report 2 new:\n%s", result)
+	}
+	if !strings.Contains(result, "192.0.2.10:443") || !strings.Contains(result, "192.0.2.11:8443") {
+		t.Fatalf("first run should include both assets:\n%s", result)
+	}
+
+	// Run 2: same assets, nothing new.
+	result, err = newRunner([]model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443},
+		{IP: "192.0.2.11", Port: 8443},
+	}).Execute(ctx, payload)
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if !strings.Contains(result, "无新增资产") {
+		t.Fatalf("second run should report no new assets:\n%s", result)
+	}
+	if strings.Contains(result, "192.0.2.10:443") || strings.Contains(result, "192.0.2.11:8443") {
+		t.Fatalf("second run must not re-push already pushed assets:\n%s", result)
+	}
+
+	// Run 3: one genuinely new asset joins the same two.
+	result, err = newRunner([]model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443},
+		{IP: "192.0.2.11", Port: 8443},
+		{IP: "192.0.2.12", Port: 443},
+	}).Execute(ctx, payload)
+	if err != nil {
+		t.Fatalf("third run: %v", err)
+	}
+	if !strings.Contains(result, "新增 1 条") {
+		t.Fatalf("third run should report exactly 1 new:\n%s", result)
+	}
+	if !strings.Contains(result, "192.0.2.12:443") {
+		t.Fatalf("third run should include the new asset:\n%s", result)
+	}
+	if strings.Contains(result, "192.0.2.10:443") || strings.Contains(result, "192.0.2.11:8443") {
+		t.Fatalf("third run must not re-push already pushed assets:\n%s", result)
+	}
+}
+
+func TestQueryRunner_Execute_OnlyNewIsIsolatedByTaskName(t *testing.T) {
+	db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("open history database: %v", err)
+	}
+	defer db.Close()
+	if err := db.InitSchema(); err != nil {
+		t.Fatalf("init history schema: %v", err)
+	}
+	repo := history.NewRepository(db.DB())
+
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: []model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443},
+	}})
+	queryApp := service.NewQueryAppService(svc, svc.GetOrchestrator())
+	queryApp.SetHistoryRepository(repo)
+	runner := NewQueryRunner(queryApp)
+	payload := &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10, OnlyNew: true,
+	}
+
+	// Push under task A.
+	ctxA := context.WithValue(context.Background(), ctxKeyTaskName{}, "task_a")
+	if _, err := runner.Execute(ctxA, payload); err != nil {
+		t.Fatalf("task_a first run: %v", err)
+	}
+	// task_a second run: nothing new.
+	result, err := runner.Execute(ctxA, payload)
+	if err != nil {
+		t.Fatalf("task_a second run: %v", err)
+	}
+	if !strings.Contains(result, "无新增资产") {
+		t.Fatalf("task_a should deduplicate after its own push:\n%s", result)
+	}
+
+	// Task B sees the same asset as new.
+	ctxB := context.WithValue(context.Background(), ctxKeyTaskName{}, "task_b")
+	result, err = runner.Execute(ctxB, payload)
+	if err != nil {
+		t.Fatalf("task_b run: %v", err)
+	}
+	if !strings.Contains(result, "新增 1 条") {
+		t.Fatalf("task_b should treat the asset as new:\n%s", result)
+	}
+}
+
+func TestQueryRunner_Execute_OnlyNewKeepsIPLessAssets(t *testing.T) {
+	db, err := history.NewDatabase(filepath.Join(t.TempDir(), "history.db"))
+	if err != nil {
+		t.Fatalf("open history database: %v", err)
+	}
+	defer db.Close()
+	if err := db.InitSchema(); err != nil {
+		t.Fatalf("init history schema: %v", err)
+	}
+	repo := history.NewRepository(db.DB())
+
+	ctx := context.WithValue(context.Background(), ctxKeyTaskName{}, "assetless_task")
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: []model.UnifiedAsset{
+		{IP: "192.0.2.10", Port: 443},
+		{URL: "https://no-ip.example.test", Title: "no ip asset"},
+	}})
+	queryApp := service.NewQueryAppService(svc, svc.GetOrchestrator())
+	queryApp.SetHistoryRepository(repo)
+	runner := NewQueryRunner(queryApp)
+	payload := &model.TaskPayload{
+		Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 10, OnlyNew: true,
+	}
+
+	// First run pushes both; the keyless asset has no fingerprint to record.
+	result, err := runner.Execute(ctx, payload)
+	if err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if !strings.Contains(result, "no ip asset") {
+		t.Fatalf("first run should include the keyless asset:\n%s", result)
+	}
+
+	// Second run: the keyed asset is deduplicated, but the keyless asset is
+	// always delivered (it cannot be tracked).
+	result, err = runner.Execute(ctx, payload)
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if strings.Contains(result, "192.0.2.10:443") {
+		t.Fatalf("second run must not re-push the keyed asset:\n%s", result)
+	}
+	if !strings.Contains(result, "no ip asset") {
+		t.Fatalf("second run should still deliver the keyless asset:\n%s", result)
+	}
+}
