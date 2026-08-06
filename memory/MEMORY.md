@@ -14,6 +14,7 @@
 - [工作日志入库与推送 2026-08-05](project_worklog_push_2026-08-05.md) — WORK_LOG 入库（d6cce6d）+ develop 推送同步
 - [安全审计 4 项修复 2026-08-06](project_security_audit_fix_2026-08-06.md) — ✅ 路径穿越×2（sanitizeImportPattern + url_import/icp_import admin 门槛）+ WaitGroup TOCTOU + 截图数据竞争（channel 传值）全部闭环（13cef0a）
 - [定时查询→企业微信闭环 2026-08-06](project_local_wecom_closure_2026-08-06.md) — ✅ WFP 拦截重启消解；WeCom 40058 截断修复（8142549）；9 定时任务（fofa×1+hunter×8，cron 15 10 * * *）实测 FOFA 100 条 / Hunter 3 条推送成功
+- [企业微信表格+quake启用 2026-08-06](project_wecom_format_quake_2026-08-06.md) — ✅ 推送改紧凑表格（7f86376，单次约70行/3754B）；quake 补 key 启用 + quake_ynmobile_daily（13 favicon 合并，55条实测）；任务 9→10，detail_limit→100
 
 - [七引擎、云端发布与飞书闭环 2026-08-02](project_seven_engine_cloud_feishu_closeout_2026-08-02.md) — 当前七引擎、CDP/fallback、云端发布、通知与外部 fixture 状态。
 - 当前稳定 Web UI 已接入 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap；七引擎 Bridge 真实结构化采集均非空。
