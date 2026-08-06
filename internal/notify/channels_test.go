@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // webhookNotification is the typed payload received by test webhook servers.
@@ -69,6 +70,36 @@ func TestLogChannel_Disabled(t *testing.T) {
 	_ = ch.Send(context.Background(), n)
 	if called {
 		t.Fatal("should not send when disabled")
+	}
+}
+
+func TestTruncateUTF8(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    string
+		maxBytes int
+		want     string
+	}{
+		{"short stays", "hello", 4096, "hello"},
+		{"exact fits", "abc", 3, "abc"},
+		{"ascii truncated", "abcdef", 3, "abc"},
+		{"cjk boundary not split", "中文测试", 4, "中"},
+		{"cjk with room", "中文测试", 7, "中文"},
+		{"mixed boundary", "a中文", 5, "a中"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := truncateUTF8(tc.input, tc.maxBytes)
+			if got != tc.want {
+				t.Fatalf("truncateUTF8(%q, %d) = %q, want %q", tc.input, tc.maxBytes, got, tc.want)
+			}
+			if !utf8.ValidString(got) {
+				t.Fatalf("truncateUTF8(%q, %d) produced invalid UTF-8: %q", tc.input, tc.maxBytes, got)
+			}
+			if len(got) > tc.maxBytes {
+				t.Fatalf("truncateUTF8(%q, %d) = %q exceeds %d bytes", tc.input, tc.maxBytes, got, tc.maxBytes)
+			}
+		})
 	}
 }
 
