@@ -70,7 +70,7 @@ var realVerifyEngines = []realVerifyEngine{
 		enabled:  func(cfg *config.Config) bool { return cfg.Engines.Hunter.Enabled },
 		hasCreds: func(cfg *config.Config) bool { return cfg.Engines.Hunter.APIKey != "" },
 		build: func(cfg *config.Config) EngineAdapter {
-			return NewHunterAdapter(cfg.Engines.Hunter.BaseURL, cfg.Engines.Hunter.APIKey, cfg.Engines.Hunter.QPS, time.Duration(cfg.Engines.Hunter.Timeout)*time.Second)
+			return NewHunterAdapter(cfg.Engines.Hunter.BaseURL, cfg.Engines.Hunter.APIKey, cfg.Engines.Hunter.BackupAPIKey, cfg.Engines.Hunter.QPS, time.Duration(cfg.Engines.Hunter.Timeout)*time.Second)
 		},
 	},
 	{

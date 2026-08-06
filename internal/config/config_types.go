@@ -20,12 +20,13 @@ type Config struct {
 			Cookies []Cookie `yaml:"cookies"`
 		} `yaml:"zoomeye"`
 		Hunter struct {
-			Enabled bool     `yaml:"enabled"`
-			APIKey  string   `yaml:"api_key"`
-			BaseURL string   `yaml:"base_url"`
-			QPS     int      `yaml:"qps"`
-			Timeout int      `yaml:"timeout"`
-			Cookies []Cookie `yaml:"cookies"`
+			Enabled      bool     `yaml:"enabled"`
+			APIKey       string   `yaml:"api_key"`
+			BackupAPIKey string   `yaml:"backup_api_key"` // 主 key 限流/鉴权/欠费失败时自动切换
+			BaseURL      string   `yaml:"base_url"`
+			QPS          int      `yaml:"qps"`
+			Timeout      int      `yaml:"timeout"`
+			Cookies      []Cookie `yaml:"cookies"`
 		} `yaml:"hunter"`
 		Fofa struct {
 			Enabled         bool     `yaml:"enabled"`

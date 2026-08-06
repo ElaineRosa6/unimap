@@ -59,7 +59,7 @@ func runQuotaCommand(args []string) {
 			return q.Remaining, q.Total, q.Unit, nil
 		}},
 		{"hunter", cfg.Engines.Hunter.Enabled, func() (int, int, string, error) {
-			a := adapter.NewHunterAdapter(cfg.Engines.Hunter.BaseURL, cfg.Engines.Hunter.APIKey, cfg.Engines.Hunter.QPS, time.Duration(cfg.Engines.Hunter.Timeout)*time.Second)
+			a := adapter.NewHunterAdapter(cfg.Engines.Hunter.BaseURL, cfg.Engines.Hunter.APIKey, cfg.Engines.Hunter.BackupAPIKey, cfg.Engines.Hunter.QPS, time.Duration(cfg.Engines.Hunter.Timeout)*time.Second)
 			q, err := a.GetQuota()
 			if err != nil {
 				return -1, -1, "", err
