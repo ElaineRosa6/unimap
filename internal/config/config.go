@@ -53,6 +53,7 @@ func (m *Manager) applyDefaults(config *Config) {
 	m.applyMiscDefaults(config)
 }
 
+
 // IsValid 检查配置是否有效
 func (m *Manager) IsValid() bool {
 	return m.config != nil

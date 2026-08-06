@@ -68,7 +68,7 @@ func (s *Server) handleNodeTaskClaim(w http.ResponseWriter, r *http.Request) {
 				writeAPIError(w, http.StatusBadRequest, "node_task_claim_failed", "node task claim failed", err.Error())
 				return
 			}
-			if rec == nil {
+		if rec == nil {
 				writeJSON(w, http.StatusOK, model.APIResponse{Success: true, Message: "no task available"})
 				return
 			}

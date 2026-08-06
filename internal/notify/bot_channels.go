@@ -169,11 +169,7 @@ func (c *FeishuChannel) buildFeishuBody(n TaskNotification) map[string]interface
 	statusEmoji := map[string]string{"success": "✅", "failed": "❌", "timeout": "⏰"}
 	emoji := statusEmoji[n.Status]
 	template := "blue"
-	if n.Status == "failed" {
-		template = "red"
-	} else if n.Status == "timeout" {
-		template = "orange"
-	}
+	if n.Status == "failed" { template = "red" } else if n.Status == "timeout" { template = "orange" }
 	title := fmt.Sprintf("%s **[UniMap]** 定时任务 **[%s]** %s", emoji, n.TaskName, statusLabel(n.Status))
 
 	elements := buildFeishuPayloadElements(n)
@@ -231,30 +227,19 @@ func (c *FeishuChannel) sendFeishuRequest(ctx context.Context, body map[string]i
 		}
 		ts := TimestampNow() / 1000
 		sign, err := FeishuSign(c.secret, ts)
-		if err != nil {
-			return fmt.Errorf("feishu sign error: %w", err)
-		}
+		if err != nil { return fmt.Errorf("feishu sign error: %w", err) }
 		body["timestamp"] = fmt.Sprintf("%d", ts)
 		body["sign"] = sign
 	}
 	data, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewBuffer(data))
-	if err != nil {
-		return fmt.Errorf("create feishu request: %w", err)
-	}
+	if err != nil { return fmt.Errorf("create feishu request: %w", err) }
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	resp, err := c.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("send feishu: %w", err)
-	}
+	if err != nil { return fmt.Errorf("send feishu: %w", err) }
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("feishu returned status %d", resp.StatusCode)
-	}
-	var feishuResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 { return fmt.Errorf("feishu returned status %d", resp.StatusCode) }
+	var feishuResp struct { Code int `json:"code"`; Msg string `json:"msg"` }
 	if err := json.NewDecoder(resp.Body).Decode(&feishuResp); err == nil && feishuResp.Code != 0 {
 		return fmt.Errorf("feishu api error: code=%d msg=%s", feishuResp.Code, feishuResp.Msg)
 	}
@@ -378,10 +363,10 @@ func NewFeishuAppChannel(appID, appSecret, chatID string, enabled bool) *FeishuA
 			return dialer.DialContext(ctx, "tcp4", addr)
 		},
 		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 15 * time.Second,
-		MaxIdleConns:          10,
-		MaxIdleConnsPerHost:   5,
-		IdleConnTimeout:       90 * time.Second,
+		ResponseHeaderTimeout:  15 * time.Second,
+		MaxIdleConns:           10,
+		MaxIdleConnsPerHost:    5,
+		IdleConnTimeout:        90 * time.Second,
 	}
 	return &FeishuAppChannel{
 		appID:     appID,
@@ -545,11 +530,7 @@ func (c *FeishuAppChannel) Send(ctx context.Context, n TaskNotification) error {
 	elements := buildFeishuAppPayloadElements(ctx, c, n)
 	title := buildFeishuAppTitle(n)
 	template := "blue"
-	if n.Status == "failed" {
-		template = "red"
-	} else if n.Status == "timeout" {
-		template = "orange"
-	}
+	if n.Status == "failed" { template = "red" } else if n.Status == "timeout" { template = "orange" }
 	card := map[string]interface{}{
 		"header":   map[string]interface{}{"title": map[string]interface{}{"tag": "plain_text", "content": title}, "template": template},
 		"elements": elements,
@@ -571,13 +552,9 @@ func buildFeishuAppPayloadElements(ctx context.Context, c *FeishuAppChannel, n T
 		fields := []string{"urls", "query", "queries", "engines", "engine", "detection_mode", "low_threshold", "format", "ports", "max_age_days", "alert_type", "duration_minutes", "task_type", "type", "file_pattern"}
 		var lines []string
 		for _, f := range fields {
-			if v, ok := n.Payload[f]; ok {
-				lines = append(lines, fmt.Sprintf("**%s**: %v", f, v))
-			}
+			if v, ok := n.Payload[f]; ok { lines = append(lines, fmt.Sprintf("**%s**: %v", f, v)) }
 		}
-		if len(lines) > 0 {
-			elements = append(elements, map[string]interface{}{"tag": "markdown", "content": strings.Join(lines, "\n")})
-		}
+		if len(lines) > 0 { elements = append(elements, map[string]interface{}{"tag": "markdown", "content": strings.Join(lines, "\n")}) }
 	}
 	elements = append(elements, map[string]interface{}{"tag": "markdown", "content": fmt.Sprintf("**耗时**: %.1fs", n.Duration/1000.0)})
 	if len(n.ImagePaths) > 0 {

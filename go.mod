@@ -11,7 +11,7 @@ require (
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/websocket v1.5.3
 	github.com/prometheus/client_golang v1.23.2
-	github.com/redis/go-redis/v9 v9.6.3
+	github.com/redis/go-redis/v9 v9.0.5
 	github.com/stretchr/testify v1.11.1
 	github.com/xuri/excelize/v2 v2.8.0
 	go.uber.org/zap v1.27.1
@@ -73,3 +73,4 @@ require (
 	google.golang.org/protobuf v1.36.8 // indirect
 	honnef.co/go/js/dom v0.0.0-20210725211120-f030747120f2 // indirect
 )
+

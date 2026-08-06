@@ -820,6 +820,7 @@ func isWebRoot(dir string) bool {
 	return true
 }
 
+
 // icpConfigProvider returns a snapshot of the current ICP config for the scheduler runner.
 func (s *Server) icpConfigProvider() adapter.ICPConfig {
 	s.configMutex.Lock()

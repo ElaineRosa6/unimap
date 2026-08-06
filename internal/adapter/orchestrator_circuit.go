@@ -99,6 +99,7 @@ func (cb *CircuitBreaker) GetStats() (state CircuitState, failures int, threshol
 	return cb.State, cb.Failures, cb.Threshold, cb.LastFailure, cb.ResetDuration
 }
 
+
 // SetCircuitBreakerConfig 设置熔断器配置
 func (o *EngineOrchestrator) SetCircuitBreakerConfig(engineName string, threshold int, resetDuration time.Duration) {
 	o.mutex.Lock()
@@ -188,3 +189,4 @@ func (o *EngineOrchestrator) GetCircuitBreakerStats() map[string]map[string]inte
 	}
 	return stats
 }
+
