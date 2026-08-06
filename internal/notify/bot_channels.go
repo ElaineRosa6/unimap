@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/unimap/project/internal/utils/urlguard"
 )
@@ -299,6 +300,23 @@ func (c *WeComChannel) Type() string    { return "wecom" }
 func (c *WeComChannel) IsEnabled() bool { return c.enabled }
 func (c *WeComChannel) Close() error    { return nil }
 
+// wecomMarkdownMaxBytes is the WeCom webhook markdown content limit
+// (errcode 40058: "markdown.content exceed max length 4096").
+const wecomMarkdownMaxBytes = 4096
+
+// truncateUTF8 truncates s to at most maxBytes bytes without splitting a
+// multi-byte UTF-8 rune, so CJK content is never corrupted mid-character.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := s[:maxBytes]
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut
+}
+
 func (c *WeComChannel) Send(ctx context.Context, n TaskNotification) error {
 	if !c.enabled {
 		return nil
@@ -312,6 +330,9 @@ func (c *WeComChannel) Send(ctx context.Context, n TaskNotification) error {
 	if n.Error != "" {
 		markdown += fmt.Sprintf("\n> 错误: %s", n.Error)
 	}
+	// WeCom rejects markdown content over its byte limit; truncate the tail
+	// (the newest result items) rather than failing the whole push.
+	markdown = truncateUTF8(markdown, wecomMarkdownMaxBytes)
 
 	body := WeComMarkdownBody{
 		MsgType:  "markdown",
