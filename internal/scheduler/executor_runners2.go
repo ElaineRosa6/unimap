@@ -485,6 +485,12 @@ func (r *URLHealthChecker) Execute(ctx context.Context, payload *model.TaskPaylo
 const icpMaxQueries = 100
 const icpMaxPageSize = 100
 
+// icpRetryDefaultCount / icpRetryDefaultBackoffMs 控制单次 ICP 查询失败后的重试。
+// sidecar 对 ICP 官方接口有速率限制，瞬时 429/5xx 会造成 "ICP API error"；
+// 重试（短退避）可自愈，最终失败才计入通知的错误行。
+const icpRetryDefaultCount = 2
+const icpRetryDefaultBackoffMs = 1500
+
 // ICPResultStore is the subset of the repository interface used by ICPQueryRunner.
 type ICPResultStore interface {
 	SaveRun(run *icpdb.ICPQueryRun) (int64, error)
@@ -514,7 +520,6 @@ type icpQueryResult struct {
 	query   string
 	qtype   string
 	total   int
-	domains []string
 	results []adapter.ICPResult
 }
 
@@ -543,6 +548,9 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload *model.TaskPayload
 	companyIntervalMax := extractInt(payload, "request_interval_max", 90)
 	typeIntervalMin := extractInt(payload, "type_interval_min", 3)
 	typeIntervalMax := extractInt(payload, "type_interval_max", 8)
+	// 单查询失败重试（sidecar 速率限制自愈）
+	retryCount := extractInt(payload, "retry_count", icpRetryDefaultCount)
+	retryBackoffMs := extractInt(payload, "retry_backoff_ms", icpRetryDefaultBackoffMs)
 
 	baseURL := strings.TrimSpace(cfg.BaseURL)
 	apiKey := cfg.APIKey
@@ -551,6 +559,7 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload *model.TaskPayload
 	execRes := r.executeICPQueries(
 		ctx, queries, types, baseURL, apiKey, page, pageSize, failFast, taskID, startedAt,
 		companyIntervalMin, companyIntervalMax, typeIntervalMin, typeIntervalMax,
+		retryCount, retryBackoffMs,
 	)
 	if execRes.ctxErr != nil {
 		return "", execRes.ctxErr
@@ -642,7 +651,8 @@ type icpExecResult struct {
 func (r *ICPQueryRunner) executeICPQueries(
 	ctx context.Context, queries, types []string, baseURL, apiKey string,
 	page, pageSize int, failFast bool, taskID string, startedAt time.Time,
-	companyIntervalMin, companyIntervalMax, typeIntervalMin, typeIntervalMax int,
+	companyIntervalMin, companyIntervalMax, typeIntervalMin, typeIntervalMax,
+	retryCount, retryBackoffMs int,
 ) icpExecResult {
 	var res icpExecResult
 	for i, q := range queries {
@@ -654,12 +664,7 @@ func (r *ICPQueryRunner) executeICPQueries(
 			default:
 			}
 
-			results, total, err := adapter.ICPSearchWithContext(ctx, baseURL, apiKey, adapter.ICPSearchRequest{
-				Query:    q,
-				Type:     queryType,
-				Page:     page,
-				PageSize: pageSize,
-			})
+			results, total, err := icpSearchWithRetry(ctx, baseURL, apiKey, q, queryType, page, pageSize, retryCount, retryBackoffMs)
 			if err != nil {
 				res.errs = append(res.errs, fmt.Sprintf("%q [type=%s]: %s", q, queryType, err.Error()))
 				if failFast {
@@ -669,13 +674,7 @@ func (r *ICPQueryRunner) executeICPQueries(
 				res.succeeded++
 				res.totalRecords += total
 
-				var domains []string
-				for _, item := range results {
-					if item.Domain != "" {
-						domains = append(domains, item.Domain)
-					}
-				}
-				res.queryResults = append(res.queryResults, icpQueryResult{query: q, qtype: queryType, total: total, domains: domains, results: results})
+				res.queryResults = append(res.queryResults, icpQueryResult{query: q, qtype: queryType, total: total, results: results})
 
 				r.persistRun(taskID, q, queryType, page, pageSize, total, results, startedAt)
 			}
@@ -718,61 +717,72 @@ func randInt(min, max int) int {
 	return min + rand.Intn(max-min+1)
 }
 
+// icpSearchWithRetry performs a single ICP sidecar query, retrying transient
+// failures (rate limits / 5xx) with a short random backoff. A permanent error
+// or the final attempt returns the error unchanged. Context cancellation
+// aborts the retry loop and surfaces ctx.Err().
+func icpSearchWithRetry(ctx context.Context, baseURL, apiKey, query, queryType string, page, pageSize, retryCount, backoffMs int) ([]adapter.ICPResult, int, error) {
+	var results []adapter.ICPResult
+	var total int
+	var lastErr error
+	for attempt := 0; attempt <= retryCount; attempt++ {
+		results, total, lastErr = adapter.ICPSearchWithContext(ctx, baseURL, apiKey, adapter.ICPSearchRequest{
+			Query:    query,
+			Type:     queryType,
+			Page:     page,
+			PageSize: pageSize,
+		})
+		if lastErr == nil {
+			return results, total, nil
+		}
+		if attempt == retryCount {
+			break
+		}
+		// 短退避：1000–2000ms 随机，避免再次撞上速率限制窗口
+		delay := time.Duration(backoffMs/2+randInt(0, backoffMs/2)) * time.Millisecond
+		logger.Warnf("[scheduler] ICP: query %q type=%s attempt %d/%d failed (%v), retrying in %v", query, queryType, attempt+1, retryCount+1, lastErr, delay)
+		select {
+		case <-ctx.Done():
+			return nil, 0, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return results, total, lastErr
+}
+
 func formatICPResults(types, queries []string, succeeded, totalRecords int, queryResults []icpQueryResult, errs []string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "ICP 备案查询完成（类型: %s）\n\n", strings.Join(types, ","))
-	fmt.Fprintf(&b, "📊 成功: %d/%d，共 %d 条记录\n\n", succeeded, len(queries)*len(types), totalRecords)
+	fmt.Fprintf(&b, "ICP 备案查询完成（%s）\n\n", strings.Join(types, ","))
+	fmt.Fprintf(&b, "📊 成功: %d/%d，共 %d 条记录\n", succeeded, len(queries)*len(types), totalRecords)
 	for _, qr := range queryResults {
-		fmt.Fprintf(&b, "✅ %s [%s]: %d 条", qr.query, qr.qtype, qr.total)
-		if len(qr.domains) > 0 {
-			fmt.Fprintf(&b, " — %s", strings.Join(qr.domains, ", "))
+		if qr.total <= 0 {
+			continue // 无备案记录，不刷屏
 		}
-		b.WriteString("\n")
-		// 列出每条记录的详情（域名 / 许可证号 / 主办单位）
-		if len(qr.results) > 0 {
-			b.WriteString("📋 明细:\n")
-			for _, r := range qr.results {
-				domain := r.Domain
-				if domain == "" {
-					domain = r.ServiceName
-				}
-				// 镜像 adapter.ICPResult.licence() 的 fallback 逻辑
-				licence := r.Licence
-				if licence == "" {
-					licence = r.MainLicWeb
-				}
-				if licence == "" {
-					licence = r.MainLicence
-				}
-				// 网站名称（web 类型有 ContentName，app 类型用 ServiceName）
-				siteName := r.ContentName
-				if siteName == "" {
-					siteName = r.ServiceName
-				}
-				fmt.Fprintf(&b, "  • %s\n", domain)
-				fmt.Fprintf(&b, "    许可证: %s\n", licence)
-				fmt.Fprintf(&b, "    网站名称: %s\n", siteName)
-				fmt.Fprintf(&b, "    主办单位: %s\n", r.UnitName)
-				if r.NatureName != "" {
-					fmt.Fprintf(&b, "    单位性质: %s\n", r.NatureName)
-				}
-				if r.CityName != "" {
-					fmt.Fprintf(&b, "    城市: %s\n", r.CityName)
-				}
-				if r.UpdateRecTime != "" {
-					fmt.Fprintf(&b, "    审核日期: %s\n", r.UpdateRecTime)
-				}
-				if r.UpdateRecord != "" {
-					fmt.Fprintf(&b, "    更新记录: %s\n", r.UpdateRecord)
-				}
-				if r.LimitAccess != "" {
-					fmt.Fprintf(&b, "    访问限制: %s\n", r.LimitAccess)
-				}
+		fmt.Fprintf(&b, "\n✅ %s [%s]: %d 条\n", qr.query, qr.qtype, qr.total)
+		for _, r := range qr.results {
+			name := r.Domain
+			if name == "" {
+				name = r.ServiceName
 			}
+			if name == "" {
+				name = r.ContentName
+			}
+			if name == "" {
+				name = "(无名称)"
+			}
+			// licence fallback：Licence → MainLicWeb → MainLicence（adapter 内同名方法未导出）
+			licence := r.Licence
+			if licence == "" {
+				licence = r.MainLicWeb
+			}
+			if licence == "" {
+				licence = r.MainLicence
+			}
+			fmt.Fprintf(&b, "  • %s｜%s\n", name, licence)
 		}
 	}
 	for _, e := range errs {
-		fmt.Fprintf(&b, "❌ %s\n", e)
+		fmt.Fprintf(&b, "\n❌ %s", e)
 	}
 	return sanitizeUTF8(b.String())
 }

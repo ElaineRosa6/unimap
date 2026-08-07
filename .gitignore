@@ -26,12 +26,19 @@ smtp-relay/setup_admin_token.py
 smtp-relay/update_channel_header.py
 smtp-relay/probe_tasks.py
 smtp-relay/bind_email_agent.py
+smtp-relay/unbind_wecom.py
+smtp-relay/list_channels.py
+smtp-relay/dump_queries.py
 smtp-relay/trigger_verify.py
+# 探测 ICP sidecar 的公司名清单脚本（真实目标指纹）— 不入库
+smtp-relay/probe_icp_companies.py
 # cloud ops scripts with server task UUIDs / container paths
 scripts/cloud_quake_stagger.py
 
 # Live monitoring target queries (target intel — local/server only, never commit)
 tools/cloud-config-gen/ynmobile_targets.json
+# Cloud scheduler task queries with real target fingerprints — local ops reference only
+docs/CLOUD_SCHEDULER_TASKS_*.local.md
 # Server-side ops scripts that embed target queries, server task UUIDs, or
 # container paths — deployed via scp, kept out of the public repo
 tools/cloud-config-gen/update_tasks_v2.py
@@ -88,6 +95,8 @@ cookie.txt
 unimap_session_cookie.txt
 # Audit output (may contain generated secrets, e.g. first-admin password)
 .audit-results/
+# Incremental audit output (may capture live config secrets) — never commit
+.audit-results-incremental/
 
 # Browser "Save Page As" snapshots (html + paired _files/ dir)
 132.232.231.41.html

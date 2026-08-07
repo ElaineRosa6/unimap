@@ -27,10 +27,12 @@ HTTP endpoints:
 
 import json
 import logging
+import mimetypes
 import os
 import re
 import smtplib
 import sys
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr, formatdate
@@ -123,6 +125,48 @@ def _md_to_html(text):
 
 # --- message construction ------------------------------------------------------
 
+_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+_ATTACH_EXT = {".xlsx", ".xls", ".csv", ".pdf", ".png", ".jpg", ".jpeg", ".gif"}
+
+
+def _collect_attachments(paths):
+    """Read UniMap `image_paths` that exist on disk into MIME attachments.
+
+    The relay container shares the `unimap_data` volume at /app/data, so Excel
+    exports written by query tasks (e.g. /app/data/exports/*.xlsx) are readable
+    here. Missing / oversized / unexpected files are skipped with a log line so
+    one bad path never breaks the whole email.
+    """
+    parts = []
+    for path in paths or []:
+        path = str(path).strip()
+        if not path:
+            continue
+        if not os.path.isfile(path):
+            LOG.warning("attachment missing, skipping: %s", path)
+            continue
+        if os.path.getsize(path) > _MAX_ATTACHMENT_BYTES:
+            LOG.warning("attachment too large, skipping: %s", path)
+            continue
+        if os.path.splitext(path)[1].lower() not in _ATTACH_EXT:
+            LOG.info("attachment type not allowed, skipping: %s", path)
+            continue
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read()
+        except OSError as exc:
+            LOG.warning("cannot read attachment %s: %s", path, exc)
+            continue
+        ctype, _ = mimetypes.guess_type(path)
+        if ctype is None:
+            ctype = "application/octet-stream"
+        part = MIMEApplication(data)
+        part.set_type(ctype)
+        part.add_header("Content-Disposition", "attachment", filename=os.path.basename(path))
+        parts.append((path, part))
+    return parts
+
+
 def _build_message(cfg, n):
     status = n.get("status", "?")
     status_zh = STATUS_ZH.get(status, status)
@@ -141,6 +185,8 @@ def _build_message(cfg, n):
     else:
         engines = str(engines)
 
+    attachments = _collect_attachments(n.get("image_paths") or [])
+
     plain = [
         "任务: %s (%s)" % (task_name, n.get("task_type", "")),
         "状态: %s (%s)" % (status_zh, status),
@@ -153,6 +199,10 @@ def _build_message(cfg, n):
         "<p><b>时间:</b> %s</p>" % escape(ts),
         "<p><b>耗时:</b> %s</p>" % escape(dur),
     ]
+    if attachments:
+        names = ", ".join(os.path.basename(p) for p, _ in attachments)
+        plain.append("附件: %s" % names)
+        html.append('<p><b>附件:</b> %s</p>' % escape(names))
     if query:
         plain.append("查询: %s" % query)
         html.append("<p><b>查询:</b> %s</p>" % escape(query))
@@ -167,14 +217,24 @@ def _build_message(cfg, n):
         plain.append(n["result"])
         html.append(_md_to_html(str(n["result"])))
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = formataddr((cfg["mail_from_name"], cfg["smtp_user"]))
-    msg["To"] = ", ".join(cfg["mail_to"])
-    msg["Date"] = formatdate(localtime=True)
-    msg.attach(MIMEText("\n".join(plain), "plain", "utf-8"))
-    msg.attach(MIMEText("".join(html), "html", "utf-8"))
-    return msg
+    body = MIMEMultipart("alternative")
+    body["Subject"] = subject
+    body["From"] = formataddr((cfg["mail_from_name"], cfg["smtp_user"]))
+    body["To"] = ", ".join(cfg["mail_to"])
+    body["Date"] = formatdate(localtime=True)
+    body.attach(MIMEText("\n".join(plain), "plain", "utf-8"))
+    body.attach(MIMEText("".join(html), "html", "utf-8"))
+
+    if not attachments:
+        return body
+    # 有附件时用 mixed 包裹：alternative 正文 + 各附件，保证邮件客户端正常渲染。
+    outer = MIMEMultipart("mixed")
+    for key in ("Subject", "From", "To", "Date"):
+        outer[key] = body[key]
+    outer.attach(body)
+    for _, part in attachments:
+        outer.attach(part)
+    return outer
 
 
 def _send(cfg, n):

@@ -427,6 +427,20 @@ type ICPSearchRequest struct {
 	PageSize int    `json:"page_size"`
 }
 
+// icpErrorSnippet bounds error detail so a malformed upstream body never
+// balloons a notification. Keeps up to 200 chars, single line.
+func icpErrorSnippet(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "(empty response)"
+	}
+	s = strings.Join(strings.Fields(s), " ") // collapse newlines/tabs
+	if len(s) > 200 {
+		s = s[:200] + "…"
+	}
+	return s
+}
+
 func ICPSearch(baseURL string, apiKey string, req ICPSearchRequest) ([]ICPResult, int, error) {
 	return ICPSearchWithContext(context.Background(), baseURL, apiKey, req)
 }
@@ -457,10 +471,19 @@ func ICPSearchWithContext(ctx context.Context, baseURL string, apiKey string, re
 		return nil, 0, fmt.Errorf("ICP query request failed: %w", err)
 	}
 	if httpResp.StatusCode() != 200 {
-		return nil, 0, fmt.Errorf("ICP API returned HTTP %d: %s", httpResp.StatusCode(), httpResp.String())
+		return nil, 0, fmt.Errorf("ICP API returned HTTP %d: %s", httpResp.StatusCode(), icpErrorSnippet(httpResp.String()))
 	}
 	if resp.Code != 200 {
-		return nil, 0, fmt.Errorf("ICP API error: %s", resp.Msg)
+		// sidecar 对 ICP 官方接口有速率限制；code!=200 时 Msg 常为空，
+		// 用 HTTP 状态码 + 响应片段兜底，避免通知里只剩 "ICP API error:"。
+		msg := strings.TrimSpace(resp.Msg)
+		if msg == "" {
+			msg = strings.TrimSpace(httpResp.String())
+		}
+		if msg == "" {
+			msg = fmt.Sprintf("HTTP %d code=%d", httpResp.StatusCode(), resp.Code)
+		}
+		return nil, 0, fmt.Errorf("ICP API error (HTTP %d, code %d): %s", httpResp.StatusCode(), resp.Code, icpErrorSnippet(msg))
 	}
 
 	// Use params.list if available (new format), fall back to top-level list

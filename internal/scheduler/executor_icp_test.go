@@ -306,6 +306,55 @@ func TestICPQueryRunner_SingleQuerySuccess(t *testing.T) {
 	}
 }
 
+// --- formatICPResults (明细行式) tests ---
+// 测试数据全部为通用占位符，不涉及任何真实目标。
+
+func TestFormatICPResults_SkipsZeroCountAndRendersDetail(t *testing.T) {
+	result := formatICPResults(
+		[]string{"web", "app"},
+		[]string{"公司甲", "公司乙"},
+		3,
+		5,
+		[]icpQueryResult{
+			{query: "公司甲", qtype: "web", total: 3, results: []adapter.ICPResult{
+				{Domain: "web-a.example.com", Licence: "京ICP备12345678号"},
+				{ServiceName: "示例App", MainLicence: "京ICP备99999999号"},
+				{ContentName: "示例服务", MainLicWeb: "京ICP备88888888号"},
+			}},
+			{query: "公司乙", qtype: "web", total: 0, results: nil}, // 无备案，不应刷屏
+			{query: "公司甲", qtype: "app", total: 2, results: []adapter.ICPResult{
+				{Domain: "app.example.com", MainLicence: "京ICP备77777777号"}, // Licence 空 → 回退 MainLicence
+			}},
+		},
+		[]string{"公司乙 [web]: rate limit"},
+	)
+
+	for _, want := range []string{"3/4", "共 5 条记录", "✅ 公司甲 [web]: 3 条", "✅ 公司甲 [app]: 2 条"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("expected %q in result, got: %s", want, result)
+		}
+	}
+	// 明细行式：每条备案一行 name｜licence
+	for _, want := range []string{
+		"• web-a.example.com｜京ICP备12345678号",
+		"• 示例App｜京ICP备99999999号",
+		"• 示例服务｜京ICP备88888888号",
+		"• app.example.com｜京ICP备77777777号",
+	} {
+		if !strings.Contains(result, want) {
+			t.Errorf("expected detail line %q in result, got: %s", want, result)
+		}
+	}
+	// 0 条查询不出现
+	if strings.Contains(result, "0 条") {
+		t.Errorf("zero-count line should be dropped, got: %s", result)
+	}
+	// 错误保留
+	if !strings.Contains(result, "❌") || !strings.Contains(result, "rate limit") {
+		t.Errorf("expected error line, got: %s", result)
+	}
+}
+
 func TestICPQueryRunner_MultiQueryPartialFailure(t *testing.T) {
 	srv := newMockICPErrorServer()
 	defer srv.Close()
@@ -318,7 +367,7 @@ func TestICPQueryRunner_MultiQueryPartialFailure(t *testing.T) {
 	result, err := r.Execute(context.Background(), &model.TaskPayload{
 		Queries: []string{"ok1", "fail_api", "ok2"},
 		Type:    "web",
-		Extra:   map[string]any{"fail_fast": false, "request_interval_min": 0, "request_interval_max": 0, "type_interval_min": 0, "type_interval_max": 0},
+		Extra:   map[string]any{"fail_fast": false, "retry_count": 0, "request_interval_min": 0, "request_interval_max": 0, "type_interval_min": 0, "type_interval_max": 0},
 	})
 	// Partial failure: nil error, result string has errors info
 	if err != nil {
@@ -347,7 +396,7 @@ func TestICPQueryRunner_FailFast(t *testing.T) {
 	result, err := r.Execute(context.Background(), &model.TaskPayload{
 		Queries: []string{"fail500", "ok1", "ok2"},
 		Type:    "web",
-		Extra:   map[string]any{"fail_fast": true, "request_interval_min": 0, "request_interval_max": 0, "type_interval_min": 0, "type_interval_max": 0},
+		Extra:   map[string]any{"fail_fast": true, "retry_count": 0, "request_interval_min": 0, "request_interval_max": 0, "type_interval_min": 0, "type_interval_max": 0},
 	})
 	// All failed (0 succeeded with fail_fast on first query) → error
 	if err == nil {
@@ -369,7 +418,7 @@ func TestICPQueryRunner_AllFail(t *testing.T) {
 
 	result, err := r.Execute(context.Background(), &model.TaskPayload{
 		Queries: []string{"fail500", "fail_api"},
-		Extra:   map[string]any{"request_interval_min": 0, "request_interval_max": 0, "type_interval_min": 0, "type_interval_max": 0},
+		Extra:   map[string]any{"retry_count": 0, "request_interval_min": 0, "request_interval_max": 0, "type_interval_min": 0, "type_interval_max": 0},
 	})
 	if err == nil {
 		t.Fatal("expected error when all queries failed")

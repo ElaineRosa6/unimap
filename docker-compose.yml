@@ -49,6 +49,9 @@ services:
     container_name: unimap-smtp-relay
     restart: unless-stopped
     env_file: ./smtp-relay/.env
+    volumes:
+      # 只读共享查询导出目录，供 webhook 把 Excel 文件作为邮件附件转发
+      - unimap_data:/app/data:ro
     ports:
       # loopback only: for curl verification on the host. Not exposed publicly.
       - "127.0.0.1:8099:8099"

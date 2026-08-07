@@ -242,11 +242,25 @@ SSRF、通知和重启验收。
 ```json
 {
   "queries": ["example.com"],
-  "type": "web",
+  "type": "web,app",
   "page": 1,
-  "page_size": 40
+  "icp_page_size": 50,
+  "fail_fast": false,
+  "request_interval_min": 30,
+  "request_interval_max": 90,
+  "type_interval_min": 3,
+  "type_interval_max": 8,
+  "retry_count": 2,
+  "retry_backoff_ms": 1500
 }
 ```
+
+ICP 备案查询任务：按 `queries` 中的名称逐条查询 `type`（逗号分隔的备案类型，如 `web,app,mapp,kapp`）。
+`request_interval_min/max` 控制公司（查询词）之间的拟人间隔（默认 30–90 秒），`type_interval_min/max`
+控制同一公司内类型之间的间隔（默认 3–8 秒）。sidecar 对 ICP 官方接口存在速率限制，单次查询失败时
+按 `retry_count`（默认 2）重试，退避为 `retry_backoff_ms`（默认 1500）范围内的随机值；重试仍失败则
+错误信息包含 HTTP 状态码与响应片段。通知为明细行式（每条备案一行 `名称｜备案号`），0 条记录的公司行
+不展示，仅在有记录时展开明细；失败行以 `❌` 列出。
 
 #### url_reachability
 ```json
