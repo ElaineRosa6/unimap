@@ -14,6 +14,21 @@ output/
 # Configs with secrets
 configs/config.yaml
 .env
+# SMTP relay local credentials (SMTP authorization code / password)
+smtp-relay/.env
+# QQ mailbox password (source file for SMTP setup) — never commit
+qqemailpasswd.txt
+# smtp-relay deployment/ops scripts (cloud paths, task UUIDs) — deployed via scp
+smtp-relay/profile_*.py
+smtp-relay/test_send*.py
+smtp-relay/fix_admin_token.py
+smtp-relay/setup_admin_token.py
+smtp-relay/update_channel_header.py
+smtp-relay/probe_tasks.py
+smtp-relay/bind_email_agent.py
+smtp-relay/trigger_verify.py
+# cloud ops scripts with server task UUIDs / container paths
+scripts/cloud_quake_stagger.py
 
 # Live monitoring target queries (target intel — local/server only, never commit)
 tools/cloud-config-gen/ynmobile_targets.json

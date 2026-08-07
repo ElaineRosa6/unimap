@@ -40,6 +40,30 @@ services:
       retries: 3
       start_period: 40s
 
+  smtp-relay:
+    # UniMap webhook -> SMTP email relay (independent container, python:3-slim).
+    # Config lives in ./smtp-relay/.env (chmod 600, gitignored) — nothing is
+    # hard-coded. UniMap reaches it over the compose network at
+    # http://smtp-relay:8099/webhook (needs allow_private_ip=true on the channel).
+    build: ./smtp-relay
+    container_name: unimap-smtp-relay
+    restart: unless-stopped
+    env_file: ./smtp-relay/.env
+    ports:
+      # loopback only: for curl verification on the host. Not exposed publicly.
+      - "127.0.0.1:8099:8099"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8099/health', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   # 可选：添加NGINX作为反向代理
   # nginx:
   #   image: nginx:alpine

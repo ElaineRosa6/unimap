@@ -37,6 +37,9 @@ services:
       resources:
         limits:
           # 单机完整功能建议起点：4 vCPU / 4-6 GiB RAM
+          # 低配主机（如 2 核）必须在部署 .env 覆盖 UNIMAP_CPU_LIMIT（须 ≤ 物理核数，否则
+          # `up -d` recreate 会因 "range of CPUs ... only N CPUs available" 失败）和
+          # UNIMAP_MEMORY_LIMIT（须 < 物理内存）。示例：2C/2G 机可设 cpus=1.5、memory=1280M。
           cpus: ${UNIMAP_CPU_LIMIT:-4}
           memory: ${UNIMAP_MEMORY_LIMIT:-6G}
         reservations:
