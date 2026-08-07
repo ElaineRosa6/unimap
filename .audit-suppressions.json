@@ -1,0 +1,29 @@
+{
+  "suppressions": [
+    {
+      "id": "unimap-artifacts-backup-copies",
+      "reason": "artifacts/ (1.9G) holds historical delivery backups, rollback worktrees and vendored copies (delivery-*, rollback-test-worktree, _vendor-*). They re-scan the same source 3-6x and produced 98% of raw findings (172738/176230). Real source lives under cmd/ internal/ web/ tools/.",
+      "match": { "file": "artifacts/*" }
+    },
+    {
+      "id": "unimap-runtime-data-dir",
+      "reason": "data/ (426M) is runtime output: chrome-cdp-profile, WasmTtsEngine bindings, generated artifacts. Not auditable source.",
+      "match": { "file": "data/*" }
+    },
+    {
+      "id": "unimap-docs-archive",
+      "reason": "docs_archive/ is archived documentation snapshots (backup copies of docs/).",
+      "match": { "file": "docs_archive/*" }
+    },
+    {
+      "id": "unimap-reports-and-scratch",
+      "reason": "reports/ and monitoring/ are generated report outputs / runtime scratch, not source.",
+      "match": { "file": "reports/*" }
+    },
+    {
+      "id": "unimap-docs-test-reports",
+      "reason": "docs/test_reports/ is test-report scratch (generated settings_script.js, xlsx/md test results), not production source.",
+      "match": { "file": "docs/test_reports/*" }
+    }
+  ]
+}

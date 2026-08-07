@@ -154,11 +154,11 @@ CDP headless Chromium（持久化 Profile、单会话）
 - 第一阶段继续采用 CDP-only，暂不部署 Bridge。
 
 2026-07-23 本地代码已将生产配置改为可写命名卷：首次启动从镜像内生产模板初始化
-`/app/runtime-config/config.yaml`，随后由 Web 设置页使用原子保存更新。该变更尚需在云机执行
-“保存—重启—回滚—恢复”验收后，才能作为常态化运行证据。API Key 可在首次初始化时由
-服务器环境变量注入；一旦设置页保存配置，解析后的值会写入受限运行卷，后续轮换应通过设置页
-或受控修改运行配置完成，不能假定环境变量永久覆盖。Cookie/Profile 和通知凭据同样保存在仅
-容器运行用户可读的卷中，且不得回显到日志。
+`/app/runtime-config/config.yaml`，随后由 Web 设置页使用原子保存更新。2026-08-07 已随 develop
+`cf47728` 容器重建验证：`/app/runtime-config/config.yaml` 在重启后保留，调度任务与通知渠道持久化不丢。
+API Key 可在首次初始化时由服务器环境变量注入；一旦设置页保存配置，解析后的值会写入受限运行卷，
+后续轮换应通过设置页或受控修改运行配置完成，不能假定环境变量永久覆盖。Cookie/Profile 和通知凭据
+同样保存在仅容器运行用户可读的卷中，且不得回显到日志。
 
 ## 10. 管理登录与凭据录入操作
 
@@ -179,7 +179,7 @@ ssh -i "$HOME\.ssh\aliyun_ubuntu.pem" `
 
 ```powershell
 ssh -i "$HOME\.ssh\aliyun_ubuntu.pem" root@8.160.177.101
-cd /opt/unimap-acceptance
+cd /opt/unimap
 less .env
 ```
 
@@ -215,8 +215,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yaml exec unimap \
 ```
 
 预期配置文件权限为 `600`。输出 Compose 展开结果前必须脱敏。不要把秘密直接写入仓库中的
-`configs/config.prod.yaml`。云机尚未执行保存、容器重启和恢复验证，因此第一次录入仍应在维护
-窗口进行，并先备份 `unimap_config` 卷。
+`configs/config.prod.yaml`。配置保存、容器重启与恢复验证已于 2026-08-07 随 develop `cf47728`
+重建完成（运行时配置卷、调度任务持久化均保留）；后续录入仍建议先备份 `unimap_config` 卷。
 
 录入顺序为：
 

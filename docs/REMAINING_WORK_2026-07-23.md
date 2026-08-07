@@ -187,6 +187,17 @@ Compose 已透传可选 `QUAKE_API_KEY`、`HUNTER_API_KEY`。Key 留空时只表
 - 提供受控恢复命令或恢复 API，而不只提供备份创建/列表；
 - 完成配额趋势与告警后增加长期数据保留策略；
 - ARM64 镜像与 Chromium 验收。
+- 调度任务通知按事件类型区分渠道（**2026-08-07 记录，暂缓实施**）：
+  - 需求：`NotificationConfig` 当前只有单一 `channel_ids`，成功/失败/超时共用同一渠道列表
+    （`internal/scheduler/scheduler_types.go`、`scheduler_notify.go` 对所有事件用 `migrateChannelIDs`）。
+    期望支持 `success_channel_ids` / `failure_channel_ids` / `timeout_channel_ids` 覆盖字段（为空时回退
+    `channel_ids`），`sendNotification` 按 `record.Status` 选择渠道列表；
+  - 云端应用（阿里云 12 个任务）：成功推 `['dijia_01_file','dijia_01']`（Excel 文件 + 文本），失败/超时
+    只推 `dijia_01`（文本告警，失败无结果文件不必发 file 渠道）；
+  - 涉及改动：`internal/scheduler/scheduler_types.go`（字段）、`internal/scheduler/scheduler_notify.go`
+    （按事件选渠道）、`web/scheduler_handlers.go`（create/update 校验新字段渠道存在）、
+    `web/templates/scheduler.html`（任务表单加每事件渠道多选 + JS 收集/回显）、docs/API.md 同步与单元测试；
+  - 状态：已评估改动范围，2026-08-07 用户决定先记录、暂缓实施。
 
 ## 5. 本轮已纠正的记录
 

@@ -1,0 +1,16 @@
+# UniMap .auditignore — consumed by project-profile detection
+# (language/file counting -> adaptive scanner selection) only.
+# NOTE (v1.18.2): individual scanners do NOT exclude these from scanning;
+# use .audit-suppressions.json to filter noise findings from the report.
+#
+# Runtime / backup / vendored-copy trees that are not auditable source:
+artifacts/
+data/
+backups/
+archive/
+docs_archive/
+reports/
+screenshots/
+results/
+monitoring/
+claude-code-memory/
