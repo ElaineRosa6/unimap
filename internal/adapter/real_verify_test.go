@@ -62,7 +62,7 @@ var realVerifyEngines = []realVerifyEngine{
 		enabled:  func(cfg *config.Config) bool { return cfg.Engines.Fofa.Enabled },
 		hasCreds: func(cfg *config.Config) bool { return cfg.Engines.Fofa.APIKey != "" },
 		build: func(cfg *config.Config) EngineAdapter {
-			return NewFofaAdapter(cfg.Engines.Fofa.APIBaseURL, cfg.Engines.Fofa.APIKey, cfg.Engines.Fofa.Email, cfg.Engines.Fofa.QPS, time.Duration(cfg.Engines.Fofa.Timeout)*time.Second)
+			return NewFofaAdapter(cfg.Engines.Fofa.APIBaseURL, cfg.Engines.Fofa.APIKey, cfg.Engines.Fofa.Email, cfg.Engines.Fofa.BackupAPIKey, cfg.Engines.Fofa.BackupEmail, cfg.Engines.Fofa.QPS, time.Duration(cfg.Engines.Fofa.Timeout)*time.Second)
 		},
 	},
 	{
@@ -78,7 +78,7 @@ var realVerifyEngines = []realVerifyEngine{
 		enabled:  func(cfg *config.Config) bool { return cfg.Engines.Zoomeye.Enabled },
 		hasCreds: func(cfg *config.Config) bool { return cfg.Engines.Zoomeye.APIKey != "" },
 		build: func(cfg *config.Config) EngineAdapter {
-			return NewZoomEyeAdapter(cfg.Engines.Zoomeye.BaseURL, cfg.Engines.Zoomeye.APIKey, cfg.Engines.Zoomeye.QPS, time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second)
+			return NewZoomEyeAdapter(cfg.Engines.Zoomeye.BaseURL, cfg.Engines.Zoomeye.APIKey, cfg.Engines.Zoomeye.BackupAPIKey, cfg.Engines.Zoomeye.QPS, time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second)
 		},
 	},
 	{
@@ -86,7 +86,7 @@ var realVerifyEngines = []realVerifyEngine{
 		enabled:  func(cfg *config.Config) bool { return cfg.Engines.Quake.Enabled },
 		hasCreds: func(cfg *config.Config) bool { return cfg.Engines.Quake.APIKey != "" },
 		build: func(cfg *config.Config) EngineAdapter {
-			return NewQuakeAdapter(cfg.Engines.Quake.BaseURL, cfg.Engines.Quake.APIKey, cfg.Engines.Quake.QPS, time.Duration(cfg.Engines.Quake.Timeout)*time.Second)
+			return NewQuakeAdapter(cfg.Engines.Quake.BaseURL, cfg.Engines.Quake.APIKey, cfg.Engines.Quake.BackupAPIKey, cfg.Engines.Quake.QPS, time.Duration(cfg.Engines.Quake.Timeout)*time.Second)
 		},
 	},
 	{
@@ -96,7 +96,7 @@ var realVerifyEngines = []realVerifyEngine{
 			return cfg.Engines.Censys.APIID != "" && cfg.Engines.Censys.APISecret != ""
 		},
 		build: func(cfg *config.Config) EngineAdapter {
-			return NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second)
+			return NewCensysAdapter(cfg.Engines.Censys.BaseURL, cfg.Engines.Censys.APIID, cfg.Engines.Censys.APISecret, cfg.Engines.Censys.BackupAPIID, cfg.Engines.Censys.BackupAPISecret, cfg.Engines.Censys.QPS, time.Duration(cfg.Engines.Censys.Timeout)*time.Second)
 		},
 	},
 	{
@@ -104,7 +104,7 @@ var realVerifyEngines = []realVerifyEngine{
 		enabled:  func(cfg *config.Config) bool { return cfg.Engines.Daydaymap.Enabled },
 		hasCreds: func(cfg *config.Config) bool { return cfg.Engines.Daydaymap.APIKey != "" },
 		build: func(cfg *config.Config) EngineAdapter {
-			return NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second)
+			return NewDayDayMapAdapter(cfg.Engines.Daydaymap.BaseURL, cfg.Engines.Daydaymap.APIKey, cfg.Engines.Daydaymap.BackupAPIKey, cfg.Engines.Daydaymap.QPS, time.Duration(cfg.Engines.Daydaymap.Timeout)*time.Second)
 		},
 	},
 }

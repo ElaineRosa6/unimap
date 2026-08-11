@@ -19,8 +19,10 @@ type ZoomEyeAdapter struct {
 	client  *resty.Client
 	baseURL string
 	apiKey  string
-	qps     int
-	timeout time.Duration
+	// backupAPIKey 备用 key：主 key 遇到鉴权/限流/欠费失败时自动切换重试
+	backupAPIKey string
+	qps          int
+	timeout      time.Duration
 }
 
 // ZoomEyeItem is a single result item from ZoomEye v2 search API.
@@ -96,18 +98,18 @@ type zoomEyeSearchRequest struct {
 }
 
 // NewZoomEyeAdapter 创建ZoomEye适配器
-func NewZoomEyeAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *ZoomEyeAdapter {
+func NewZoomEyeAdapter(baseURL, apiKey, backupAPIKey string, qps int, timeout time.Duration) *ZoomEyeAdapter {
 	client := resty.New().
 		SetTimeout(timeout).
-		SetHeader("User-Agent", "unimap/1.0").
-		SetHeader("API-KEY", apiKey)
+		SetHeader("User-Agent", "unimap/1.0")
 
 	return &ZoomEyeAdapter{
-		client:  client,
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		qps:     qps,
-		timeout: timeout,
+		client:       client,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		backupAPIKey: backupAPIKey,
+		qps:          qps,
+		timeout:      timeout,
 	}
 }
 
@@ -235,8 +237,11 @@ func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
 // Search 执行搜索
 func (z *ZoomEyeAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	var engineResult *model.EngineResult
-	err := utils.Retry(z.searchRetryConfig(), func() error {
-		return z.executeZoomEyeSearch(query, page, pageSize, &engineResult)
+	keys := activeKeys(z.apiKey, z.backupAPIKey)
+	err := withKeyFailover(z.Name(), len(keys), func(idx int) error {
+		return utils.Retry(z.searchRetryConfig(), func() error {
+			return z.executeZoomEyeSearch(query, page, pageSize, keys[idx], &engineResult)
+		})
 	})
 	if err != nil {
 		return &model.EngineResult{EngineName: z.Name(), Error: err.Error()}, nil
@@ -248,15 +253,30 @@ func (z *ZoomEyeAdapter) searchRetryConfig() utils.RetryConfig {
 	return utils.RetryConfig{
 		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
 		Exponential: true, Jitter: true,
+		// key 级失败（鉴权/欠费/限流）不重试当前 key，交给 withKeyFailover 切换备用 key
 		RetryableFunc: func(err error) bool {
-			errMsg := err.Error()
-			return !strings.Contains(errMsg, "402") && !strings.Contains(errMsg, "Payment Required")
+			if isKeyError(err) {
+				return false
+			}
+			return true
 		},
 	}
 }
 
-// executeZoomEyeSearch 执行单次 ZoomEye API 调用
-func (z *ZoomEyeAdapter) executeZoomEyeSearch(query string, page, pageSize int, result **model.EngineResult) error {
+// classifyZoomEyeStatus 将 HTTP 错误归类为 key 级失败，触发备用 key 切换。
+// HTTP 401 鉴权、402 欠费、403 无权限、429 限流；其余返回 nil，按普通错误处理。
+func classifyZoomEyeStatus(code int, body string) *keyError {
+	if code == 401 || code == 403 || code == 429 {
+		return &keyError{engine: "zoomeye", code: code, msg: sanitizeBody(body)}
+	}
+	if code == 402 {
+		return &keyError{engine: "zoomeye", code: code, msg: "Payment Required (402): " + sanitizeBody(body) + ". Please check if your account is mobile-verified or if you have sufficient quota/credits."}
+	}
+	return nil
+}
+
+// executeZoomEyeSearch 执行单次 ZoomEye API 调用（API-KEY 按 key 逐请求设置）
+func (z *ZoomEyeAdapter) executeZoomEyeSearch(query string, page, pageSize int, apiKey string, result **model.EngineResult) error {
 	url := fmt.Sprintf("%s/v2/search", z.baseURL)
 
 	encodedQuery := base64.StdEncoding.EncodeToString([]byte(query))
@@ -273,6 +293,7 @@ func (z *ZoomEyeAdapter) executeZoomEyeSearch(query string, page, pageSize int, 
 	logger.Debugf("ZoomEye search request: URL=%s, Query=%s, EncodedQuery=%s, Page=%d, PageSize=%d", url, query, encodedQuery, page, pageSize)
 
 	resp, err := z.client.R().
+		SetHeader("API-KEY", apiKey).
 		SetHeader("Content-Type", "application/json").
 		SetBody(reqBody).
 		Post(url)
@@ -280,8 +301,8 @@ func (z *ZoomEyeAdapter) executeZoomEyeSearch(query string, page, pageSize int, 
 		return err
 	}
 	if resp.StatusCode() != 200 {
-		if resp.StatusCode() == 402 {
-			return fmt.Errorf("ZoomEye API Payment Required (402): %s. Please check if your account is mobile-verified or if you have sufficient quota/credits.", resp.String())
+		if keyErr := classifyZoomEyeStatus(resp.StatusCode(), resp.String()); keyErr != nil {
+			return keyErr
 		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
 	}
@@ -302,10 +323,11 @@ func parseZoomEyeSearchResponse(body []byte, page, pageSize int, engineName stri
 		return err
 	}
 	if resp.Code != 60000 {
-		errorMsg := fmt.Sprintf("ZoomEye API error (code=%d, error=%s): %s", resp.Code, resp.Error, resp.Message)
+		// 积分不足属于 key 级失败，交给 withKeyFailover 切换备用 key
 		if resp.Code == 50000 && resp.Error == "credits_insufficient" {
-			errorMsg = fmt.Sprintf("ZoomEye API credits insufficient: %s. Please check your account balance or upgrade your plan.", resp.Message)
+			return &keyError{engine: engineName, code: resp.Code, msg: resp.Error + ": " + resp.Message}
 		}
+		errorMsg := fmt.Sprintf("ZoomEye API error (code=%d, error=%s): %s", resp.Code, resp.Error, resp.Message)
 		return fmt.Errorf("%s", errorMsg)
 	}
 	rawData := make([]interface{}, len(resp.Data))
@@ -635,7 +657,7 @@ type ZoomEyeAdapterWebOnly struct {
 
 // NewZoomEyeAdapterWebOnly 创建ZoomEye Web-only适配器
 func NewZoomEyeAdapterWebOnly() *ZoomEyeAdapterWebOnly {
-	baseAdapter := NewZoomEyeAdapter("", "", 3, 30*time.Second)
+	baseAdapter := NewZoomEyeAdapter("", "", "", 3, 30*time.Second)
 	return &ZoomEyeAdapterWebOnly{
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "zoomeye"),
 	}

@@ -2,12 +2,14 @@ engines:
     quake:
         enabled: true
         api_key: "${QUAKE_API_KEY}"
+        backup_api_key: "${QUAKE_BACKUP_API_KEY}"   # 备用 key：主 key 限流/鉴权/欠费失败时自动切换
         base_url: https://quake.360.net/api
         qps: 5
         timeout: 30
     zoomeye:
         enabled: true
         api_key: "${ZOOMEYE_API_KEY}"
+        backup_api_key: "${ZOOMEYE_BACKUP_API_KEY}"   # 备用 key：主 key 限流/鉴权/欠费失败时自动切换
         base_url: https://api.zoomeye.org
         qps: 3
         timeout: 30
@@ -21,6 +23,8 @@ engines:
     fofa:
         enabled: true
         api_key: "${FOFA_API_KEY}"
+        backup_api_key: "${FOFA_BACKUP_API_KEY}"   # 备用 key：主 key 限流/鉴权/欠费失败时自动切换
+        backup_email: "${FOFA_BACKUP_EMAIL}"       # 备用 key 对应的邮箱（官方 API 必需）
         email: "${FOFA_EMAIL}"
         api_base_url: https://fofa.info      # API 模式使用，可改为自建镜像/代理
         web_base_url: https://fofa.info      # Web/截图/扩展模式（本期固定为官方域名）
@@ -31,13 +35,23 @@ engines:
         enabled: true
         api_id: "${CENSYS_API_ID}"
         api_secret: "${CENSYS_API_SECRET}"
+        backup_api_id: "${CENSYS_BACKUP_API_ID}"           # 备用 key ID：主 key 限流/鉴权/欠费失败时自动切换
+        backup_api_secret: "${CENSYS_BACKUP_API_SECRET}"   # 备用 key 的 secret
         base_url: https://search.censys.io
         qps: 2
         timeout: 30
     daydaymap:
         enabled: true
         api_key: "${DAYDAYMAP_API_KEY}"
+        backup_api_key: "${DAYDAYMAP_BACKUP_API_KEY}"   # 备用 key：主 key 限流/鉴权/欠费失败时自动切换
         base_url: https://www.daydaymap.com
+        qps: 3
+        timeout: 30
+    shodan:
+        enabled: true
+        api_key: "${SHODAN_API_KEY}"
+        backup_api_key: "${SHODAN_BACKUP_API_KEY}"   # 备用 key：主 key 限流/鉴权/欠费失败时自动切换
+        base_url: https://api.shodan.io
         qps: 3
         timeout: 30
 system:

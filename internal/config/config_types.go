@@ -4,20 +4,22 @@ package config
 type Config struct {
 	Engines struct {
 		Quake struct {
-			Enabled bool     `yaml:"enabled"`
-			APIKey  string   `yaml:"api_key"`
-			BaseURL string   `yaml:"base_url"`
-			QPS     int      `yaml:"qps"`
-			Timeout int      `yaml:"timeout"`
-			Cookies []Cookie `yaml:"cookies"`
+			Enabled      bool     `yaml:"enabled"`
+			APIKey       string   `yaml:"api_key"`
+			BackupAPIKey string   `yaml:"backup_api_key"` // 备用 key：主 key 限流/鉴权/欠费失败时自动切换
+			BaseURL      string   `yaml:"base_url"`
+			QPS          int      `yaml:"qps"`
+			Timeout      int      `yaml:"timeout"`
+			Cookies      []Cookie `yaml:"cookies"`
 		} `yaml:"quake"`
 		Zoomeye struct {
-			Enabled bool     `yaml:"enabled"`
-			APIKey  string   `yaml:"api_key"`
-			BaseURL string   `yaml:"base_url"`
-			QPS     int      `yaml:"qps"`
-			Timeout int      `yaml:"timeout"`
-			Cookies []Cookie `yaml:"cookies"`
+			Enabled      bool     `yaml:"enabled"`
+			APIKey       string   `yaml:"api_key"`
+			BackupAPIKey string   `yaml:"backup_api_key"` // 备用 key：主 key 限流/鉴权/欠费失败时自动切换
+			BaseURL      string   `yaml:"base_url"`
+			QPS          int      `yaml:"qps"`
+			Timeout      int      `yaml:"timeout"`
+			Cookies      []Cookie `yaml:"cookies"`
 		} `yaml:"zoomeye"`
 		Hunter struct {
 			Enabled      bool     `yaml:"enabled"`
@@ -32,6 +34,8 @@ type Config struct {
 			Enabled         bool     `yaml:"enabled"`
 			APIKey          string   `yaml:"api_key"`
 			Email           string   `yaml:"email"`
+			BackupAPIKey    string   `yaml:"backup_api_key"` // 备用 key：主 key 限流/鉴权/欠费失败时自动切换
+			BackupEmail     string   `yaml:"backup_email"`   // 备用 key 对应的邮箱（官方 API 必需）
 			BaseURL         string   `yaml:"base_url,omitempty"` // 废弃，保留兼容
 			APIBaseURL      string   `yaml:"api_base_url"`       // API 模式使用
 			WebBaseURL      string   `yaml:"web_base_url"`       // Web 模式使用（本期锁死官方域名）
@@ -42,29 +46,33 @@ type Config struct {
 			AllowPrivateAPI bool     `yaml:"allow_private_api"` // 高级配置，仅限内网自建镜像
 		} `yaml:"fofa"`
 		Shodan struct {
-			Enabled bool     `yaml:"enabled"`
-			APIKey  string   `yaml:"api_key"`
-			BaseURL string   `yaml:"base_url"`
-			QPS     int      `yaml:"qps"`
-			Timeout int      `yaml:"timeout"`
-			Cookies []Cookie `yaml:"cookies"`
+			Enabled      bool     `yaml:"enabled"`
+			APIKey       string   `yaml:"api_key"`
+			BackupAPIKey string   `yaml:"backup_api_key"` // 备用 key：主 key 限流/鉴权/欠费失败时自动切换
+			BaseURL      string   `yaml:"base_url"`
+			QPS          int      `yaml:"qps"`
+			Timeout      int      `yaml:"timeout"`
+			Cookies      []Cookie `yaml:"cookies"`
 		} `yaml:"shodan"`
 		Censys struct {
-			Enabled   bool     `yaml:"enabled"`
-			APIID     string   `yaml:"api_id"`
-			APISecret string   `yaml:"api_secret"`
-			BaseURL   string   `yaml:"base_url"`
-			QPS       int      `yaml:"qps"`
-			Timeout   int      `yaml:"timeout"`
-			Cookies   []Cookie `yaml:"cookies"`
+			Enabled          bool     `yaml:"enabled"`
+			APIID            string   `yaml:"api_id"`
+			APISecret        string   `yaml:"api_secret"`
+			BackupAPIID      string   `yaml:"backup_api_id"`     // 备用 key ID：主 key 限流/鉴权/欠费失败时自动切换
+			BackupAPISecret  string   `yaml:"backup_api_secret"` // 备用 key 的 secret
+			BaseURL          string   `yaml:"base_url"`
+			QPS              int      `yaml:"qps"`
+			Timeout          int      `yaml:"timeout"`
+			Cookies          []Cookie `yaml:"cookies"`
 		} `yaml:"censys"`
 		Daydaymap struct {
-			Enabled bool     `yaml:"enabled"`
-			APIKey  string   `yaml:"api_key"`
-			BaseURL string   `yaml:"base_url"`
-			QPS     int      `yaml:"qps"`
-			Timeout int      `yaml:"timeout"`
-			Cookies []Cookie `yaml:"cookies"`
+			Enabled      bool     `yaml:"enabled"`
+			APIKey       string   `yaml:"api_key"`
+			BackupAPIKey string   `yaml:"backup_api_key"` // 备用 key：主 key 限流/鉴权/欠费失败时自动切换
+			BaseURL      string   `yaml:"base_url"`
+			QPS          int      `yaml:"qps"`
+			Timeout      int      `yaml:"timeout"`
+			Cookies      []Cookie `yaml:"cookies"`
 		} `yaml:"daydaymap"`
 	} `yaml:"engines"`
 

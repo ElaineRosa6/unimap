@@ -19,8 +19,10 @@ type QuakeAdapter struct {
 	client  *resty.Client
 	baseURL string
 	apiKey  string
-	qps     int
-	timeout time.Duration
+	// backupAPIKey 备用 key：主 key 遇到鉴权/限流/欠费失败时自动切换重试
+	backupAPIKey string
+	qps          int
+	timeout      time.Duration
 }
 
 // QuakeItem is a single result item from the Quake v3 search API.
@@ -143,18 +145,18 @@ func quakeIsSuccessCode(code interface{}) bool {
 }
 
 // NewQuakeAdapter 创建Quake适配器
-func NewQuakeAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *QuakeAdapter {
+func NewQuakeAdapter(baseURL, apiKey, backupAPIKey string, qps int, timeout time.Duration) *QuakeAdapter {
 	client := resty.New().
 		SetTimeout(timeout).
-		SetHeader("User-Agent", "unimap/1.0").
-		SetHeader("X-QuakeToken", apiKey)
+		SetHeader("User-Agent", "unimap/1.0")
 
 	return &QuakeAdapter{
-		client:  client,
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		qps:     qps,
-		timeout: timeout,
+		client:       client,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		backupAPIKey: backupAPIKey,
+		qps:          qps,
+		timeout:      timeout,
 	}
 }
 
@@ -268,113 +270,151 @@ func (q *QuakeAdapter) buildCondition(field, op, value string) string {
 // Search 执行搜索
 func (q *QuakeAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	var engineResult *model.EngineResult
-
-	retryConfig := utils.RetryConfig{
-		MaxRetries:  3,
-		BaseDelay:   100 * time.Millisecond,
-		MaxDelay:    2 * time.Second,
-		Exponential: true,
-		Jitter:      true,
-		RetryableFunc: func(err error) bool {
-			return true
-		},
-	}
-
-	err := utils.Retry(retryConfig, func() error {
-		url := fmt.Sprintf("%s/v3/search/quake_service", q.baseURL)
-
-		reqBody := quakeSearchRequest{
-			Query: query,
-			Start: (page - 1) * pageSize,
-			Size:  pageSize,
-		}
-
-		resp, err := q.client.R().
-			SetBody(reqBody).
-			Post(url)
-
-		if err != nil {
-			return err
-		}
-
-		if resp.StatusCode() != 200 {
-			return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
-		}
-
-		// Parse Quake response — data can be array or object depending on API version
-		var result struct {
-			Code    interface{}     `json:"code"`
-			Message string          `json:"message"`
-			Data    json.RawMessage `json:"data"`
-			Meta    struct {
-				Pagination struct {
-					Total int `json:"total"`
-					Count int `json:"count"`
-				} `json:"pagination"`
-			} `json:"meta"`
-		}
-
-		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return err
-		}
-
-		if !quakeIsSuccessCode(result.Code) {
-			return fmt.Errorf("quake API error (code=%v): %s", result.Code, result.Message)
-		}
-
-		// Try to unmarshal data as []QuakeItem first
-		var typedAssets []QuakeItem
-		if err := json.Unmarshal(result.Data, &typedAssets); err != nil {
-			// Retry: data might be an object wrapping a list
-			var obj struct {
-				List []QuakeItem `json:"list"`
-			}
-			if err2 := json.Unmarshal(result.Data, &obj); err2 == nil && len(obj.List) > 0 {
-				typedAssets = obj.List
-			} else {
-				// Try other common keys
-				var raw map[string]interface{}
-				if json.Unmarshal(result.Data, &raw) == nil {
-					for _, key := range []string{"list", "service_list", "data", "items", "records", "services"} {
-						if arrJSON, err3 := json.Marshal(raw[key]); err3 == nil {
-							var arr []QuakeItem
-							if json.Unmarshal(arrJSON, &arr) == nil && len(arr) > 0 {
-								typedAssets = arr
-								break
-							}
-						}
-					}
-				}
-				if len(typedAssets) == 0 {
-					logger.Warnf("Quake response data could not be parsed as item array")
-				}
-			}
-		}
-
-		rawData := make([]interface{}, len(typedAssets))
-		for i := range typedAssets {
-			rawData[i] = &typedAssets[i]
-		}
-
-		engineResult = &model.EngineResult{
-			EngineName: q.Name(),
-			RawData:    rawData,
-			Total:      result.Meta.Pagination.Total,
-			Page:       page,
-			HasMore:    (result.Meta.Pagination.Total > page*pageSize),
-		}
-
-		return nil
+	keys := activeKeys(q.apiKey, q.backupAPIKey)
+	err := withKeyFailover(q.Name(), len(keys), func(idx int) error {
+		return utils.Retry(q.searchRetryConfig(), func() error {
+			return q.executeQuakeSearch(query, page, pageSize, keys[idx], &engineResult)
+		})
 	})
-
 	if err != nil {
 		return &model.EngineResult{
 			EngineName: q.Name(),
 			Error:      fmt.Sprintf("search error: %v", err),
 		}, nil
 	}
-
 	return engineResult, nil
+}
+
+func (q *QuakeAdapter) searchRetryConfig() utils.RetryConfig {
+	return utils.RetryConfig{
+		MaxRetries:  3,
+		BaseDelay:   100 * time.Millisecond,
+		MaxDelay:    2 * time.Second,
+		Exponential: true,
+		Jitter:      true,
+		// key 级失败（鉴权/欠费/限流）不重试当前 key，交给 withKeyFailover 切换备用 key
+		RetryableFunc: func(err error) bool {
+			if isKeyError(err) {
+				return false
+			}
+			return true
+		},
+	}
+}
+
+// classifyQuakeStatus 将 HTTP 错误归类为 key 级失败，触发备用 key 切换。
+// HTTP 401/403 鉴权、429 限流；其余返回 nil，按普通错误处理。
+func classifyQuakeStatus(code int, body string) *keyError {
+	switch {
+	case code == 401 || code == 403 || code == 429:
+		return &keyError{engine: "quake", code: code, msg: sanitizeBody(body)}
+	default:
+		return nil
+	}
+}
+
+// classifyQuakeBusinessError 将 Quake 业务错误归类为 key 级失败。
+// q200x 业务码（如 q2001 积分不足）表示额度耗尽，换用备用 key 可能成功。
+func classifyQuakeBusinessError(code, msg string) *keyError {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(code)), "q200") || strings.Contains(msg, "积分") {
+		return &keyError{engine: "quake", code: 0, msg: code + ": " + msg}
+	}
+	return nil
+}
+
+// executeQuakeSearch 执行单次 Quake API 调用（X-QuakeToken 按 key 逐请求设置）
+func (q *QuakeAdapter) executeQuakeSearch(query string, page, pageSize int, apiKey string, result **model.EngineResult) error {
+	url := fmt.Sprintf("%s/v3/search/quake_service", q.baseURL)
+
+	reqBody := quakeSearchRequest{
+		Query: query,
+		Start: (page - 1) * pageSize,
+		Size:  pageSize,
+	}
+
+	resp, err := q.client.R().
+		SetHeader("X-QuakeToken", apiKey).
+		SetBody(reqBody).
+		Post(url)
+
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode() != 200 {
+		if keyErr := classifyQuakeStatus(resp.StatusCode(), resp.String()); keyErr != nil {
+			return keyErr
+		}
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
+	}
+
+	// Parse Quake response — data can be array or object depending on API version
+	var parsed struct {
+		Code    interface{}     `json:"code"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
+		Meta    struct {
+			Pagination struct {
+				Total int `json:"total"`
+				Count int `json:"count"`
+			} `json:"pagination"`
+		} `json:"meta"`
+	}
+
+	if err := json.Unmarshal(resp.Body(), &parsed); err != nil {
+		return err
+	}
+
+	if !quakeIsSuccessCode(parsed.Code) {
+		if keyErr := classifyQuakeBusinessError(fmt.Sprintf("%v", parsed.Code), parsed.Message); keyErr != nil {
+			return keyErr
+		}
+		return fmt.Errorf("quake API error (code=%v): %s", parsed.Code, parsed.Message)
+	}
+
+	// Try to unmarshal data as []QuakeItem first
+	var typedAssets []QuakeItem
+	if err := json.Unmarshal(parsed.Data, &typedAssets); err != nil {
+		// Retry: data might be an object wrapping a list
+		var obj struct {
+			List []QuakeItem `json:"list"`
+		}
+		if err2 := json.Unmarshal(parsed.Data, &obj); err2 == nil && len(obj.List) > 0 {
+			typedAssets = obj.List
+		} else {
+			// Try other common keys
+			var raw map[string]interface{}
+			if json.Unmarshal(parsed.Data, &raw) == nil {
+				for _, key := range []string{"list", "service_list", "data", "items", "records", "services"} {
+					if arrJSON, err3 := json.Marshal(raw[key]); err3 == nil {
+						var arr []QuakeItem
+						if json.Unmarshal(arrJSON, &arr) == nil && len(arr) > 0 {
+							typedAssets = arr
+							break
+						}
+					}
+				}
+			}
+			if len(typedAssets) == 0 {
+				logger.Warnf("Quake response data could not be parsed as item array")
+			}
+		}
+	}
+
+	rawData := make([]interface{}, len(typedAssets))
+	for i := range typedAssets {
+		rawData[i] = &typedAssets[i]
+	}
+
+	*result = &model.EngineResult{
+		EngineName: q.Name(),
+		RawData:    rawData,
+		Total:      parsed.Meta.Pagination.Total,
+		Page:       page,
+		HasMore:    (parsed.Meta.Pagination.Total > page*pageSize),
+	}
+
+	return nil
 }
 
 // Normalize 标准化结果
@@ -583,7 +623,7 @@ type QuakeAdapterWebOnly struct {
 
 // NewQuakeAdapterWebOnly 创建Quake Web-only适配器
 func NewQuakeAdapterWebOnly() *QuakeAdapterWebOnly {
-	baseAdapter := NewQuakeAdapter("", "", 3, 30*time.Second)
+	baseAdapter := NewQuakeAdapter("", "", "", 3, 30*time.Second)
 	return &QuakeAdapterWebOnly{
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "quake"),
 	}

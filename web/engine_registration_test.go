@@ -31,8 +31,8 @@ func TestConfigReloadKeepsAllBrowserEnginesInWebOnlyMode(t *testing.T) {
 func TestConfigReloadRemovesDisabledAPIOnlyAdapters(t *testing.T) {
 	cfg := &config.Config{}
 	orchestrator := adapter.NewEngineOrchestrator()
-	orchestrator.RegisterAdapter(adapter.NewCensysAdapter("https://search.censys.io", "test-id", "test-secret", 1, 0))
-	orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapter("https://www.daydaymap.com", "test-key", 1, 0))
+	orchestrator.RegisterAdapter(adapter.NewCensysAdapter("https://search.censys.io", "test-id", "test-secret", "", "", 1, 0))
+	orchestrator.RegisterAdapter(adapter.NewDayDayMapAdapter("https://www.daydaymap.com", "test-key", "", 1, 0))
 	server := &Server{config: cfg, orchestrator: orchestrator}
 
 	server.reloadEngineAdapters()

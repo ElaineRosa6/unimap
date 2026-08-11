@@ -99,22 +99,25 @@ type DayDayMapAdapter struct {
 	client  *resty.Client
 	baseURL string
 	apiKey  string
-	qps     int
-	timeout time.Duration
+	// backupAPIKey 备用 key：主 key 遇到鉴权/限流/欠费失败时自动切换重试
+	backupAPIKey string
+	qps          int
+	timeout      time.Duration
 }
 
 // NewDayDayMapAdapter 创建DayDayMap适配器
-func NewDayDayMapAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *DayDayMapAdapter {
+func NewDayDayMapAdapter(baseURL, apiKey, backupAPIKey string, qps int, timeout time.Duration) *DayDayMapAdapter {
 	client := resty.New().
 		SetTimeout(timeout).
 		SetHeader("User-Agent", "unimap/1.0")
 
 	return &DayDayMapAdapter{
-		client:  client,
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		qps:     qps,
-		timeout: timeout,
+		client:       client,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		backupAPIKey: backupAPIKey,
+		qps:          qps,
+		timeout:      timeout,
 	}
 }
 
@@ -229,8 +232,11 @@ func (d *DayDayMapAdapter) Search(ctx context.Context, query string, page, pageS
 		return &model.EngineResult{EngineName: d.Name(), Error: "DayDayMap API key not configured"}, nil
 	}
 	var engineResult *model.EngineResult
-	err := utils.Retry(d.searchRetryConfig(), func() error {
-		return d.executeDayDayMapSearch(query, page, pageSize, &engineResult)
+	keys := activeKeys(d.apiKey, d.backupAPIKey)
+	err := withKeyFailover(d.Name(), len(keys), func(idx int) error {
+		return utils.Retry(d.searchRetryConfig(), func() error {
+			return d.executeDayDayMapSearch(query, page, pageSize, keys[idx], &engineResult)
+		})
 	})
 	if err != nil {
 		return &model.EngineResult{EngineName: d.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
@@ -242,14 +248,28 @@ func (d *DayDayMapAdapter) searchRetryConfig() utils.RetryConfig {
 	return utils.RetryConfig{
 		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
 		Exponential: true, Jitter: true,
+		// key 级失败（鉴权/欠费/限流）不重试当前 key，交给 withKeyFailover 切换备用 key
 		RetryableFunc: func(err error) bool {
-			errStr := err.Error()
-			if strings.Contains(errStr, "HTTP 401") || strings.Contains(errStr, "HTTP 403") {
+			if isKeyError(err) {
 				return false
 			}
 			return true
 		},
 	}
+}
+
+// classifyDayDayMapStatus 将 HTTP/业务错误归类为 key 级失败，触发备用 key 切换。
+// HTTP 401 鉴权、403 无权限、429 限流；业务错误消息含积分/额度/余额/试用字样也算。
+func classifyDayDayMapStatus(code int, body string) *keyError {
+	if code == 401 || code == 403 || code == 429 {
+		return &keyError{engine: "daydaymap", code: code, msg: sanitizeBody(body)}
+	}
+	for _, pat := range []string{"积分", "额度", "余额", "试用", "not enough", "quota"} {
+		if strings.Contains(body, pat) {
+			return &keyError{engine: "daydaymap", code: code, msg: sanitizeBody(body)}
+		}
+	}
+	return nil
 }
 
 // dayDayMapSearchRequest is the JSON body for POST /api/v1/raymap/search/all.
@@ -259,14 +279,14 @@ type dayDayMapSearchRequest struct {
 	Keyword  string `json:"keyword"`
 }
 
-// executeDayDayMapSearch 执行单次 DayDayMap API 调用
+// executeDayDayMapSearch 执行单次 DayDayMap API 调用（api-key 按 key 逐请求设置）
 // API: POST /api/v1/raymap/search/all, header api-key, JSON body with base64 keyword
-func (d *DayDayMapAdapter) executeDayDayMapSearch(query string, page, pageSize int, result **model.EngineResult) error {
+func (d *DayDayMapAdapter) executeDayDayMapSearch(query string, page, pageSize int, apiKey string, result **model.EngineResult) error {
 	searchURL := fmt.Sprintf("%s/api/v1/raymap/search/all", d.baseURL)
 	// DayDayMap requires the search keyword to be base64-encoded
 	keyword := base64.StdEncoding.EncodeToString([]byte(query))
 	resp, err := d.client.R().
-		SetHeader("api-key", d.apiKey).
+		SetHeader("api-key", apiKey).
 		SetHeader("Content-Type", "application/json").
 		SetBody(dayDayMapSearchRequest{
 			Page:     page,
@@ -278,6 +298,9 @@ func (d *DayDayMapAdapter) executeDayDayMapSearch(query string, page, pageSize i
 		return err
 	}
 	if resp.StatusCode() != 200 {
+		if keyErr := classifyDayDayMapStatus(resp.StatusCode(), resp.String()); keyErr != nil {
+			return keyErr
+		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
 	}
 	return parseDayDayMapSearchResponse(resp.Body(), page, pageSize, d.Name(), result)
@@ -301,6 +324,9 @@ func parseDayDayMapSearchResponse(body []byte, page, pageSize int, engineName st
 		errMsg := resp.Msg
 		if errMsg == "" {
 			errMsg = "DayDayMap API reported an error (unknown cause)"
+		}
+		if keyErr := classifyDayDayMapStatus(0, errMsg); keyErr != nil {
+			return keyErr
 		}
 		return fmt.Errorf("DayDayMap API error: %s", errMsg)
 	}
@@ -386,7 +412,7 @@ type DayDayMapAdapterWebOnly struct {
 
 // NewDayDayMapAdapterWebOnly 创建DayDayMap Web-only适配器
 func NewDayDayMapAdapterWebOnly() *DayDayMapAdapterWebOnly {
-	baseAdapter := NewDayDayMapAdapter("", "", DayDayMapDefaultQPS, DayDayMapDefaultTimeout)
+	baseAdapter := NewDayDayMapAdapter("", "", "", DayDayMapDefaultQPS, DayDayMapDefaultTimeout)
 	return &DayDayMapAdapterWebOnly{
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "daydaymap"),
 	}

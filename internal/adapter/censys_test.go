@@ -14,14 +14,14 @@ import (
 // ===== CensysAdapter: Constructor, Name, IsWebOnly =====
 
 func TestCensysAdapter_Name(t *testing.T) {
-	a := NewCensysAdapter("https://search.censys.io", "id", "secret", 3, 30*time.Second)
+	a := NewCensysAdapter("https://search.censys.io", "id", "secret", "", "", 3, 30*time.Second)
 	if got := a.Name(); got != "censys" {
 		t.Errorf("Name() = %q, want %q", got, "censys")
 	}
 }
 
 func TestCensysAdapter_IsWebOnly(t *testing.T) {
-	a := NewCensysAdapter("https://search.censys.io", "id", "secret", 3, 30*time.Second)
+	a := NewCensysAdapter("https://search.censys.io", "id", "secret", "", "", 3, 30*time.Second)
 	if a.IsWebOnly() {
 		t.Error("expected IsWebOnly() = false")
 	}
@@ -57,7 +57,7 @@ func TestCensysQuote(t *testing.T) {
 // ===== CensysAdapter: Translate =====
 
 func TestCensysAdapter_Translate(t *testing.T) {
-	a := NewCensysAdapter("https://search.censys.io", "id", "secret", 3, 30*time.Second)
+	a := NewCensysAdapter("https://search.censys.io", "id", "secret", "", "", 3, 30*time.Second)
 
 	tests := []struct {
 		name    string
@@ -387,7 +387,7 @@ func TestCensysAdapter_Translate(t *testing.T) {
 
 func TestCensysAdapter_Search(t *testing.T) {
 	t.Run("empty credentials", func(t *testing.T) {
-		a := NewCensysAdapter("https://search.censys.io", "", "", 3, 30*time.Second)
+		a := NewCensysAdapter("https://search.censys.io", "", "", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -421,7 +421,7 @@ func TestCensysAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewCensysAdapter(server.URL, "testtoken", "", 3, 30*time.Second)
+		a := NewCensysAdapter(server.URL, "testtoken", "", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "1.2.3.4", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -453,7 +453,7 @@ func TestCensysAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewCensysAdapter(server.URL, "testtoken", "", 3, 30*time.Second)
+		a := NewCensysAdapter(server.URL, "testtoken", "", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "1.2.3.4", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -471,7 +471,7 @@ func TestCensysAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewCensysAdapter(server.URL, "testtoken", "", 3, 30*time.Second)
+		a := NewCensysAdapter(server.URL, "testtoken", "", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "8.8.8.8", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -497,7 +497,7 @@ func TestCensysAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewCensysAdapter(server.URL, "testtoken", "", 3, 30*time.Second)
+		a := NewCensysAdapter(server.URL, "testtoken", "", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "5.6.7.8", 2, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -511,7 +511,7 @@ func TestCensysAdapter_Search(t *testing.T) {
 // ===== CensysAdapter: Normalize =====
 
 func TestCensysAdapter_Normalize(t *testing.T) {
-	a := NewCensysAdapter("https://search.censys.io", "id", "secret", 3, 30*time.Second)
+	a := NewCensysAdapter("https://search.censys.io", "id", "secret", "", "", 3, 30*time.Second)
 
 	t.Run("empty result", func(t *testing.T) {
 		results, err := a.Normalize(&model.EngineResult{RawData: []interface{}{}})
@@ -708,7 +708,7 @@ func TestCensysAdapter_Normalize(t *testing.T) {
 
 func TestCensysAdapter_GetQuota(t *testing.T) {
 	t.Run("empty credentials", func(t *testing.T) {
-		a := NewCensysAdapter("https://search.censys.io", "", "", 3, 30*time.Second)
+		a := NewCensysAdapter("https://search.censys.io", "", "", "", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error for empty credentials")
@@ -718,7 +718,7 @@ func TestCensysAdapter_GetQuota(t *testing.T) {
 	t.Run("successful quota", func(t *testing.T) {
 		// v3 free tier: GetQuota returns "not available" — no separate
 		// quota endpoint for free tier users.
-		a := NewCensysAdapter("https://api.platform.censys.io", "testkey", "", 3, 30*time.Second)
+		a := NewCensysAdapter("https://api.platform.censys.io", "testkey", "", "", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error for free tier quota")
@@ -734,7 +734,7 @@ func TestCensysAdapter_GetQuota(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewCensysAdapter(server.URL, "testkey", "", 3, 30*time.Second)
+		a := NewCensysAdapter(server.URL, "testkey", "", "", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error for free tier quota")

@@ -164,7 +164,7 @@ func TestParseFofaSearchResponseExtras(t *testing.T) {
 	body := []byte(`{"error":false,"total":1,"results":[["1.2.3.4","80","http","title","2026-08-06 09:00:00","custom-val"]]}`)
 	fields := "ip,port,protocol,title,lastupdatetime,custom_field"
 	var result *model.EngineResult
-	if err := parseFofaSearchResponse(body, fields, 1, 100, "fofa", &result); err != nil {
+	if err := parseFofaSearchResponse(body, fields, 1, 100, 200, "fofa", &result); err != nil {
 		t.Fatalf("parseFofaSearchResponse error: %v", err)
 	}
 	if len(result.RawData) != 1 {

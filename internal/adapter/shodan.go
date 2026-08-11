@@ -18,8 +18,10 @@ type ShodanAdapter struct {
 	client  *resty.Client
 	baseURL string
 	apiKey  string
-	qps     int
-	timeout time.Duration
+	// backupAPIKey 备用 key：主 key 遇到鉴权/限流/欠费失败时自动切换重试
+	backupAPIKey string
+	qps          int
+	timeout      time.Duration
 }
 
 // ShodanSearchResponse is the Shodan Host Search API response.
@@ -82,17 +84,18 @@ func (m *ShodanMatch) UnmarshalJSON(data []byte) error {
 }
 
 // NewShodanAdapter 创建Shodan适配器
-func NewShodanAdapter(baseURL, apiKey string, qps int, timeout time.Duration) *ShodanAdapter {
+func NewShodanAdapter(baseURL, apiKey, backupAPIKey string, qps int, timeout time.Duration) *ShodanAdapter {
 	client := resty.New().
 		SetTimeout(timeout).
 		SetHeader("User-Agent", "unimap/1.0")
 
 	return &ShodanAdapter{
-		client:  client,
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		qps:     qps,
-		timeout: timeout,
+		client:       client,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		backupAPIKey: backupAPIKey,
+		qps:          qps,
+		timeout:      timeout,
 	}
 }
 
@@ -234,8 +237,11 @@ func (s *ShodanAdapter) Search(ctx context.Context, query string, page, pageSize
 		return &model.EngineResult{EngineName: s.Name(), Error: "Shodan API key not configured"}, nil
 	}
 	var engineResult *model.EngineResult
-	err := utils.Retry(s.searchRetryConfig(), func() error {
-		return s.executeShodanSearch(query, page, pageSize, &engineResult)
+	keys := activeKeys(s.apiKey, s.backupAPIKey)
+	err := withKeyFailover(s.Name(), len(keys), func(idx int) error {
+		return utils.Retry(s.searchRetryConfig(), func() error {
+			return s.executeShodanSearch(query, page, pageSize, keys[idx], &engineResult)
+		})
 	})
 	if err != nil {
 		return &model.EngineResult{EngineName: s.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
@@ -246,19 +252,43 @@ func (s *ShodanAdapter) Search(ctx context.Context, query string, page, pageSize
 func (s *ShodanAdapter) searchRetryConfig() utils.RetryConfig {
 	return utils.RetryConfig{
 		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
-		Exponential: true, Jitter: true, RetryableFunc: func(err error) bool { return true },
+		Exponential: true, Jitter: true,
+		// key 级失败（鉴权/欠费/限流）不重试当前 key，交给 withKeyFailover 切换备用 key
+		RetryableFunc: func(err error) bool {
+			if isKeyError(err) {
+				return false
+			}
+			return true
+		},
 	}
 }
 
+// classifyShodanStatus 将 HTTP/业务错误归类为 key 级失败，触发备用 key 切换。
+// HTTP 401 鉴权、402 欠费、403 无权限、429 限流；业务错误消息含鉴权失败字样也算。
+func classifyShodanStatus(code int, body string) *keyError {
+	if code == 401 || code == 402 || code == 403 || code == 429 {
+		return &keyError{engine: "shodan", code: code, msg: sanitizeBody(body)}
+	}
+	lower := strings.ToLower(body)
+	if strings.Contains(lower, "not authorized") || strings.Contains(lower, "access denied") ||
+		strings.Contains(lower, "invalid api key") || strings.Contains(lower, "unable to authenticate") {
+		return &keyError{engine: "shodan", code: code, msg: sanitizeBody(body)}
+	}
+	return nil
+}
+
 // executeShodanSearch 执行单次 Shodan API 调用
-func (s *ShodanAdapter) executeShodanSearch(query string, page, pageSize int, result **model.EngineResult) error {
+func (s *ShodanAdapter) executeShodanSearch(query string, page, pageSize int, apiKey string, result **model.EngineResult) error {
 	resp, err := s.client.R().SetQueryParams(map[string]string{
-		"key": s.apiKey, "query": query, "page": fmt.Sprintf("%d", page), "limit": fmt.Sprintf("%d", pageSize),
+		"key": apiKey, "query": query, "page": fmt.Sprintf("%d", page), "limit": fmt.Sprintf("%d", pageSize),
 	}).Get(fmt.Sprintf("%s/shodan/host/search", s.baseURL))
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode() != 200 {
+		if keyErr := classifyShodanStatus(resp.StatusCode(), resp.String()); keyErr != nil {
+			return keyErr
+		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
 	}
 	return parseShodanSearchResponse(resp.Body(), page, pageSize, s.Name(), result)
@@ -271,6 +301,9 @@ func parseShodanSearchResponse(body []byte, page, pageSize int, engineName strin
 		return err
 	}
 	if resp.Error != "" {
+		if keyErr := classifyShodanStatus(0, resp.Error); keyErr != nil {
+			return keyErr
+		}
 		return fmt.Errorf("%s", resp.Error)
 	}
 	rawData := make([]interface{}, len(resp.Matches))
@@ -480,7 +513,7 @@ type ShodanAdapterWebOnly struct {
 
 // NewShodanAdapterWebOnly 创建Shodan Web-only适配器
 func NewShodanAdapterWebOnly() *ShodanAdapterWebOnly {
-	baseAdapter := NewShodanAdapter("", "", 3, 30*time.Second)
+	baseAdapter := NewShodanAdapter("", "", "", 3, 30*time.Second)
 	return &ShodanAdapterWebOnly{
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "shodan"),
 	}

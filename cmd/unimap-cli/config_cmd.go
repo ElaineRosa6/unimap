@@ -61,13 +61,13 @@ func runConfigShow(args []string) {
 	}
 
 	engines := map[string]engineConfig{
-		"fofa":      {cfg.Engines.Fofa.Enabled, mask(cfg.Engines.Fofa.APIKey), "", cfg.Engines.Fofa.APIBaseURL},
+		"fofa":      {cfg.Engines.Fofa.Enabled, mask(cfg.Engines.Fofa.APIKey), mask(cfg.Engines.Fofa.BackupAPIKey), cfg.Engines.Fofa.APIBaseURL},
 		"hunter":    {cfg.Engines.Hunter.Enabled, mask(cfg.Engines.Hunter.APIKey), mask(cfg.Engines.Hunter.BackupAPIKey), cfg.Engines.Hunter.BaseURL},
-		"zoomeye":   {cfg.Engines.Zoomeye.Enabled, mask(cfg.Engines.Zoomeye.APIKey), "", cfg.Engines.Zoomeye.BaseURL},
-		"quake":     {cfg.Engines.Quake.Enabled, mask(cfg.Engines.Quake.APIKey), "", cfg.Engines.Quake.BaseURL},
-		"shodan":    {cfg.Engines.Shodan.Enabled, mask(cfg.Engines.Shodan.APIKey), "", cfg.Engines.Shodan.BaseURL},
-		"censys":    {cfg.Engines.Censys.Enabled, mask(cfg.Engines.Censys.APIID), "", cfg.Engines.Censys.BaseURL},
-		"daydaymap": {cfg.Engines.Daydaymap.Enabled, mask(cfg.Engines.Daydaymap.APIKey), "", cfg.Engines.Daydaymap.BaseURL},
+		"zoomeye":   {cfg.Engines.Zoomeye.Enabled, mask(cfg.Engines.Zoomeye.APIKey), mask(cfg.Engines.Zoomeye.BackupAPIKey), cfg.Engines.Zoomeye.BaseURL},
+		"quake":     {cfg.Engines.Quake.Enabled, mask(cfg.Engines.Quake.APIKey), mask(cfg.Engines.Quake.BackupAPIKey), cfg.Engines.Quake.BaseURL},
+		"shodan":    {cfg.Engines.Shodan.Enabled, mask(cfg.Engines.Shodan.APIKey), mask(cfg.Engines.Shodan.BackupAPIKey), cfg.Engines.Shodan.BaseURL},
+		"censys":    {cfg.Engines.Censys.Enabled, mask(cfg.Engines.Censys.APIID), mask(cfg.Engines.Censys.BackupAPIID), cfg.Engines.Censys.BaseURL},
+		"daydaymap": {cfg.Engines.Daydaymap.Enabled, mask(cfg.Engines.Daydaymap.APIKey), mask(cfg.Engines.Daydaymap.BackupAPIKey), cfg.Engines.Daydaymap.BaseURL},
 	}
 	data := map[string]interface{}{
 		"config_path": *configPath,

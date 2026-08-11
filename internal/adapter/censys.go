@@ -20,9 +20,33 @@ type CensysAdapter struct {
 	baseURL   string
 	apiID     string
 	apiSecret string
-	useBearer bool // true when using new-format personal API key (Bearer auth)
-	qps       int
-	timeout   time.Duration
+	// backupAPIID/backupAPISecret 备用凭据对：主凭据遇到鉴权/限流/欠费失败时自动切换重试
+	backupAPIID     string
+	backupAPISecret string
+	qps             int
+	timeout         time.Duration
+}
+
+// censysKeyPair 一对 Censys 凭据（API ID + Secret）。
+// 新版个人 API key 以 "censys_" 开头且无 secret，使用 Bearer 鉴权而非 Basic Auth。
+type censysKeyPair struct {
+	id     string
+	secret string
+}
+
+// useBearer 判断该凭据对是否使用 Bearer 鉴权（新版个人 key）。
+func (p censysKeyPair) useBearer() bool {
+	return p.secret == "" && strings.HasPrefix(p.id, "censys_")
+}
+
+// activeKeyPairs 返回依次尝试的 Censys 凭据对（主 + 备用）。
+func (c *CensysAdapter) activeKeyPairs() []censysKeyPair {
+	pairs := []censysKeyPair{{id: c.apiID, secret: c.apiSecret}}
+	backup := censysKeyPair{id: c.backupAPIID, secret: c.backupAPISecret}
+	if backup.id != "" && backup.id != c.apiID {
+		pairs = append(pairs, backup)
+	}
+	return pairs
 }
 
 // --- Censys v3 API response structs ---
@@ -129,32 +153,29 @@ type CensysRawEntry struct {
 }
 
 // NewCensysAdapter 创建Censys适配器
-func NewCensysAdapter(baseURL, apiID, apiSecret string, qps int, timeout time.Duration) *CensysAdapter {
+func NewCensysAdapter(baseURL, apiID, apiSecret, backupAPIID, backupAPISecret string, qps int, timeout time.Duration) *CensysAdapter {
 	client := resty.New().
 		SetTimeout(timeout).
 		SetHeader("User-Agent", "unimap/1.0")
 
-	// New-format Censys personal API keys start with "censys_" and use Bearer
-	// auth instead of the legacy API_ID:API_Secret Basic Auth.
-	useBearer := apiSecret == "" && strings.HasPrefix(apiID, "censys_")
-
 	return &CensysAdapter{
-		client:    client,
-		baseURL:   baseURL,
-		apiID:     apiID,
-		apiSecret: apiSecret,
-		useBearer: useBearer,
-		qps:       qps,
-		timeout:   timeout,
+		client:          client,
+		baseURL:         baseURL,
+		apiID:           apiID,
+		apiSecret:       apiSecret,
+		backupAPIID:     backupAPIID,
+		backupAPISecret: backupAPISecret,
+		qps:             qps,
+		timeout:         timeout,
 	}
 }
 
 // setAuth applies the appropriate authentication to a resty request.
-func (c *CensysAdapter) setAuth(r *resty.Request) *resty.Request {
-	if c.useBearer {
-		return r.SetAuthToken(c.apiID)
+func (c *CensysAdapter) setAuth(r *resty.Request, pair censysKeyPair) *resty.Request {
+	if pair.useBearer() {
+		return r.SetAuthToken(pair.id)
 	}
-	return r.SetBasicAuth(c.apiID, c.apiSecret)
+	return r.SetBasicAuth(pair.id, pair.secret)
 }
 
 // Name 返回引擎名称
@@ -291,8 +312,11 @@ func (c *CensysAdapter) Search(ctx context.Context, query string, page, pageSize
 		return &model.EngineResult{EngineName: c.Name(), Error: "Censys API key not configured"}, nil
 	}
 	var engineResult *model.EngineResult
-	err := utils.Retry(c.searchRetryConfig(), func() error {
-		return c.executeCensysSearch(ctx, query, page, pageSize, &engineResult)
+	pairs := c.activeKeyPairs()
+	err := withKeyFailover(c.Name(), len(pairs), func(idx int) error {
+		return utils.Retry(c.searchRetryConfig(), func() error {
+			return c.executeCensysSearch(ctx, query, page, pageSize, pairs[idx], &engineResult)
+		})
 	})
 	if err != nil {
 		return &model.EngineResult{EngineName: c.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
@@ -303,14 +327,35 @@ func (c *CensysAdapter) Search(ctx context.Context, query string, page, pageSize
 func (c *CensysAdapter) searchRetryConfig() utils.RetryConfig {
 	return utils.RetryConfig{
 		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
-		Exponential: true, Jitter: true, RetryableFunc: func(err error) bool { return true },
+		Exponential: true, Jitter: true,
+		// key 级失败（鉴权/欠费/限流）不重试当前 key，交给 withKeyFailover 切换备用 key
+		RetryableFunc: func(err error) bool {
+			if isKeyError(err) {
+				return false
+			}
+			return true
+		},
 	}
 }
 
-// executeCensysSearch 执行 Censys v3 单 IP 查询
+// classifyCensysStatus 将 HTTP 错误归类为 key 级失败，触发备用凭据切换。
+// HTTP 401 鉴权失败、403 无权限、429 限流；配额耗尽时 body 可能含 quota/credit 字样。
+func classifyCensysStatus(code int, body string) *keyError {
+	if code == 401 || code == 403 || code == 429 {
+		return &keyError{engine: "censys", code: code, msg: sanitizeBody(body)}
+	}
+	for _, pat := range []string{"quota", "credit", "limit exceeded", "insufficient"} {
+		if strings.Contains(strings.ToLower(body), pat) {
+			return &keyError{engine: "censys", code: code, msg: sanitizeBody(body)}
+		}
+	}
+	return nil
+}
+
+// executeCensysSearch 执行 Censys v3 单 IP 查询（凭据按 key 逐请求设置）
 // Free tier supports GET /v3/global/asset/host/{ip} with Bearer token.
 // Keyword/bulk search requires API ID+Secret (v2) or paid plan (v3).
-func (c *CensysAdapter) executeCensysSearch(ctx context.Context, query string, page, pageSize int, result **model.EngineResult) error {
+func (c *CensysAdapter) executeCensysSearch(ctx context.Context, query string, page, pageSize int, pair censysKeyPair, result **model.EngineResult) error {
 	// Extract IP from query — v3 free tier only supports single-host lookups
 	ip := extractIP(query)
 	if ip == "" {
@@ -322,13 +367,16 @@ func (c *CensysAdapter) executeCensysSearch(ctx context.Context, query string, p
 	}
 
 	searchURL := fmt.Sprintf("%s/v3/global/asset/host/%s", c.baseURL, ip)
-	resp, err := c.setAuth(c.client.R()).
+	resp, err := c.setAuth(c.client.R(), pair).
 		SetHeader("Accept", "application/json").
 		Get(searchURL)
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode() != 200 {
+		if keyErr := classifyCensysStatus(resp.StatusCode(), resp.String()); keyErr != nil {
+			return keyErr
+		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), sanitizeBody(resp.String()))
 	}
 	return parseCensysV3HostResponse(resp.Body(), page, pageSize, c.Name(), result)
@@ -592,7 +640,7 @@ type CensysAdapterWebOnly struct {
 
 // NewCensysAdapterWebOnly 创建Censys Web-only适配器
 func NewCensysAdapterWebOnly() *CensysAdapterWebOnly {
-	baseAdapter := NewCensysAdapter("", "", "", 3, 30*time.Second)
+	baseAdapter := NewCensysAdapter("", "", "", "", "", 3, 30*time.Second)
 	return &CensysAdapterWebOnly{
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "censys"),
 	}

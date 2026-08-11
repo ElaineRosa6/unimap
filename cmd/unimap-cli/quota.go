@@ -48,7 +48,7 @@ func runQuotaCommand(args []string) {
 	}
 	checks := []quotaCheck{
 		{"fofa", cfg.Engines.Fofa.Enabled, func() (int, int, string, error) {
-			a := adapter.NewFofaAdapter(cfg.Engines.Fofa.APIBaseURL, cfg.Engines.Fofa.APIKey, cfg.Engines.Fofa.Email, cfg.Engines.Fofa.QPS, time.Duration(cfg.Engines.Fofa.Timeout)*time.Second)
+			a := adapter.NewFofaAdapter(cfg.Engines.Fofa.APIBaseURL, cfg.Engines.Fofa.APIKey, cfg.Engines.Fofa.Email, cfg.Engines.Fofa.BackupAPIKey, cfg.Engines.Fofa.BackupEmail, cfg.Engines.Fofa.QPS, time.Duration(cfg.Engines.Fofa.Timeout)*time.Second)
 			q, err := a.GetQuota()
 			if err != nil {
 				return -1, -1, "", err
@@ -70,7 +70,7 @@ func runQuotaCommand(args []string) {
 			return q.Remaining, q.Total, q.Unit, nil
 		}},
 		{"zoomeye", cfg.Engines.Zoomeye.Enabled, func() (int, int, string, error) {
-			a := adapter.NewZoomEyeAdapter(cfg.Engines.Zoomeye.BaseURL, cfg.Engines.Zoomeye.APIKey, cfg.Engines.Zoomeye.QPS, time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second)
+			a := adapter.NewZoomEyeAdapter(cfg.Engines.Zoomeye.BaseURL, cfg.Engines.Zoomeye.APIKey, cfg.Engines.Zoomeye.BackupAPIKey, cfg.Engines.Zoomeye.QPS, time.Duration(cfg.Engines.Zoomeye.Timeout)*time.Second)
 			q, err := a.GetQuota()
 			if err != nil {
 				return -1, -1, "", err
@@ -81,7 +81,7 @@ func runQuotaCommand(args []string) {
 			return q.Remaining, q.Total, q.Unit, nil
 		}},
 		{"quake", cfg.Engines.Quake.Enabled, func() (int, int, string, error) {
-			a := adapter.NewQuakeAdapter(cfg.Engines.Quake.BaseURL, cfg.Engines.Quake.APIKey, cfg.Engines.Quake.QPS, time.Duration(cfg.Engines.Quake.Timeout)*time.Second)
+			a := adapter.NewQuakeAdapter(cfg.Engines.Quake.BaseURL, cfg.Engines.Quake.APIKey, cfg.Engines.Quake.BackupAPIKey, cfg.Engines.Quake.QPS, time.Duration(cfg.Engines.Quake.Timeout)*time.Second)
 			q, err := a.GetQuota()
 			if err != nil {
 				return -1, -1, "", err
@@ -92,7 +92,7 @@ func runQuotaCommand(args []string) {
 			return q.Remaining, q.Total, q.Unit, nil
 		}},
 		{"shodan", cfg.Engines.Shodan.Enabled, func() (int, int, string, error) {
-			a := adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second)
+			a := adapter.NewShodanAdapter(cfg.Engines.Shodan.BaseURL, cfg.Engines.Shodan.APIKey, cfg.Engines.Shodan.BackupAPIKey, cfg.Engines.Shodan.QPS, time.Duration(cfg.Engines.Shodan.Timeout)*time.Second)
 			q, err := a.GetQuota()
 			if err != nil {
 				return -1, -1, "", err

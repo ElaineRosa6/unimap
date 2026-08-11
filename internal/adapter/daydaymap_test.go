@@ -15,14 +15,14 @@ import (
 // ===== DayDayMapAdapter: Constructor, Name, IsWebOnly =====
 
 func TestDayDayMapAdapter_Name(t *testing.T) {
-	a := NewDayDayMapAdapter("https://www.daydaymap.com", "key", 3, 30*time.Second)
+	a := NewDayDayMapAdapter("https://www.daydaymap.com", "key", "", 3, 30*time.Second)
 	if got := a.Name(); got != "daydaymap" {
 		t.Errorf("Name() = %q, want %q", got, "daydaymap")
 	}
 }
 
 func TestDayDayMapAdapter_IsWebOnly(t *testing.T) {
-	a := NewDayDayMapAdapter("https://www.daydaymap.com", "key", 3, 30*time.Second)
+	a := NewDayDayMapAdapter("https://www.daydaymap.com", "key", "", 3, 30*time.Second)
 	if a.IsWebOnly() {
 		t.Error("expected IsWebOnly() = false")
 	}
@@ -31,7 +31,7 @@ func TestDayDayMapAdapter_IsWebOnly(t *testing.T) {
 // ===== DayDayMapAdapter: Translate =====
 
 func TestDayDayMapAdapter_Translate(t *testing.T) {
-	a := NewDayDayMapAdapter("https://www.daydaymap.com", "key", 3, 30*time.Second)
+	a := NewDayDayMapAdapter("https://www.daydaymap.com", "key", "", 3, 30*time.Second)
 
 	tests := []struct {
 		name    string
@@ -253,7 +253,7 @@ func TestDayDayMapAdapter_Translate(t *testing.T) {
 
 func TestDayDayMapAdapter_Search(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewDayDayMapAdapter("https://www.daydaymap.com", "", 3, 30*time.Second)
+		a := NewDayDayMapAdapter("https://www.daydaymap.com", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -285,7 +285,7 @@ func TestDayDayMapAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewDayDayMapAdapter(server.URL, "testkey", 3, 30*time.Second)
+		a := NewDayDayMapAdapter(server.URL, "testkey", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "ip.port=\"80\"", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -318,7 +318,7 @@ func TestDayDayMapAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewDayDayMapAdapter(server.URL, "testkey", 3, 30*time.Second)
+		a := NewDayDayMapAdapter(server.URL, "testkey", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -335,7 +335,7 @@ func TestDayDayMapAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewDayDayMapAdapter(server.URL, "testkey", 3, 30*time.Second)
+		a := NewDayDayMapAdapter(server.URL, "testkey", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -352,7 +352,7 @@ func TestDayDayMapAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewDayDayMapAdapter(server.URL, "testkey", 3, 30*time.Second)
+		a := NewDayDayMapAdapter(server.URL, "testkey", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -366,7 +366,7 @@ func TestDayDayMapAdapter_Search(t *testing.T) {
 // ===== DayDayMapAdapter: Normalize =====
 
 func TestDayDayMapAdapter_Normalize(t *testing.T) {
-	a := NewDayDayMapAdapter("https://www.daydaymap.com", "key", 3, 30*time.Second)
+	a := NewDayDayMapAdapter("https://www.daydaymap.com", "key", "", 3, 30*time.Second)
 
 	t.Run("empty result", func(t *testing.T) {
 		results, err := a.Normalize(&model.EngineResult{RawData: []interface{}{}})
@@ -601,7 +601,7 @@ func TestDayDayMapAdapter_Normalize(t *testing.T) {
 
 func TestDayDayMapAdapter_GetQuota(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewDayDayMapAdapter("https://www.daydaymap.com", "", 3, 30*time.Second)
+		a := NewDayDayMapAdapter("https://www.daydaymap.com", "", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error for empty api key")
@@ -609,7 +609,7 @@ func TestDayDayMapAdapter_GetQuota(t *testing.T) {
 	})
 
 	t.Run("quota API not available", func(t *testing.T) {
-		a := NewDayDayMapAdapter("https://www.daydaymap.com", "testkey", 3, 30*time.Second)
+		a := NewDayDayMapAdapter("https://www.daydaymap.com", "testkey", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error (quota API not available)")

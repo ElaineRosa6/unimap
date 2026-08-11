@@ -39,7 +39,7 @@ type EngineAdapter interface {
 
 请求流：`UQL → Parser → EngineOrchestrator → Adapter → EngineResult → Normalize → ResultMerger → cache/export`。
 
-Hunter 适配器支持主/备用 API Key 自动故障切换：主 key 返回鉴权（HTTP 401 或业务码 401xx）、积分耗尽/欠费（HTTP 402 或业务码 402xx，如 40204「积分用完了」）、限流（HTTP 429 或业务码 429xx）时自动改用备用 key（`engines.hunter.backup_api_key`），搜索与配额查询均走该切换；两类 key 都失败才返回错误。Hunter 业务码为 4-5 位，需按区间识别而非仅精确匹配 401/402/429。
+主/备用凭据自动故障切换适用于全部七引擎（FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap）。`withKeyFailover`（`internal/adapter/keyfailover.go`）按索引顺序尝试主 key、备用 key；仅当引擎返回 key 级失败（鉴权 HTTP 401/403、积分耗尽/欠费 HTTP 402、限流 HTTP 429，以及各引擎业务码，如 FOFA 820041/820003、Quake q200x/积分不足、ZoomEye credits_insufficient、Shodan "invalid api key"、Censys quota/credit、DayDayMap 积分/额度/余额）才切换，网络错误等非 key 级失败立即返回不切换，两类 key 都失败才返回错误。备用凭据字段：单 key 引擎 `engines.<engine>.backup_api_key`；FOFA 为 `backup_api_key` + `backup_email`（官方 API 邮箱+key 成对）；Censys 为 `backup_api_id` + `backup_api_secret` 成对。切换在查询（Search）路径生效；配额查询为展示用途不走切换。
 
 ## 截图与巡检
 

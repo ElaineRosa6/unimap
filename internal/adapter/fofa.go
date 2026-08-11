@@ -63,23 +63,28 @@ type FofaAdapter struct {
 	baseURL string
 	apiKey  string
 	email   string
-	qps     int
-	timeout time.Duration
+	// backupAPIKey/backupEmail 备用 key 与邮箱：主 key 遇到鉴权/限流/欠费失败时自动切换重试
+	backupAPIKey string
+	backupEmail  string
+	qps          int
+	timeout      time.Duration
 }
 
 // NewFofaAdapter 创建FOFA适配器
-func NewFofaAdapter(baseURL, apiKey, email string, qps int, timeout time.Duration) *FofaAdapter {
+func NewFofaAdapter(baseURL, apiKey, email, backupAPIKey, backupEmail string, qps int, timeout time.Duration) *FofaAdapter {
 	client := resty.New().
 		SetTimeout(timeout).
 		SetHeader("User-Agent", "unimap/1.0")
 
 	return &FofaAdapter{
-		client:  client,
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		email:   email,
-		qps:     qps,
-		timeout: timeout,
+		client:       client,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		email:        email,
+		backupAPIKey: backupAPIKey,
+		backupEmail:  backupEmail,
+		qps:          qps,
+		timeout:      timeout,
 	}
 }
 
@@ -285,11 +290,11 @@ func (f *FofaAdapter) mapField(field string) string {
 }
 
 // searchWithFields 使用指定字段执行FOFA搜索
-func (f *FofaAdapter) searchWithFields(url, encodedQuery string, page, pageSize int, fields string) (*resty.Response, error) {
+func (f *FofaAdapter) searchWithFields(url, encodedQuery string, page, pageSize int, fields, email, apiKey string) (*resty.Response, error) {
 	return f.client.R().
 		SetQueryParams(map[string]string{
-			"email":   f.email,
-			"key":     f.apiKey,
+			"email":   email,
+			"key":     apiKey,
 			"qbase64": encodedQuery,
 			"page":    fmt.Sprintf("%d", page),
 			"size":    fmt.Sprintf("%d", pageSize),
@@ -308,6 +313,26 @@ func (f *FofaAdapter) needsEmail() bool {
 	return !f.isThirdPartyFOFA()
 }
 
+// fofaCredential 返回指定 key 索引对应的邮箱与 key（0=主，1=备用）。
+func (f *FofaAdapter) fofaCredential(idx int) (email, apiKey string) {
+	if idx == 1 {
+		return f.backupEmail, f.backupAPIKey
+	}
+	return f.email, f.apiKey
+}
+
+// activeKeyCount 返回可用 key 数量。备用 key 缺失、与主 key 相同，或官方 API
+// 缺少备用邮箱时只算 1（不触发切换）。
+func (f *FofaAdapter) activeKeyCount() int {
+	if f.backupAPIKey == "" || f.backupAPIKey == f.apiKey {
+		return 1
+	}
+	if f.needsEmail() && (f.backupEmail == "" || f.backupEmail == f.email) {
+		return 1
+	}
+	return 2
+}
+
 // Search 执行FOFA搜索
 func (f *FofaAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
 	if f.apiKey == "" {
@@ -317,8 +342,11 @@ func (f *FofaAdapter) Search(ctx context.Context, query string, page, pageSize i
 		return &model.EngineResult{EngineName: f.Name(), Error: "FOFA email not configured (required for official API)"}, nil
 	}
 	var engineResult *model.EngineResult
-	err := utils.Retry(fofaSearchRetryConfig(), func() error {
-		return f.executeFofaSearch(query, page, pageSize, &engineResult)
+	err := withKeyFailover(f.Name(), f.activeKeyCount(), func(idx int) error {
+		email, apiKey := f.fofaCredential(idx)
+		return utils.Retry(fofaSearchRetryConfig(), func() error {
+			return f.executeFofaSearch(query, page, pageSize, email, apiKey, &engineResult)
+		})
 	})
 	if err != nil {
 		return &model.EngineResult{EngineName: f.Name(), Error: fmt.Sprintf("search error: %v", err)}, nil
@@ -330,11 +358,30 @@ func fofaSearchRetryConfig() utils.RetryConfig {
 	return utils.RetryConfig{
 		MaxRetries: 3, BaseDelay: 100 * time.Millisecond, MaxDelay: 2 * time.Second,
 		Exponential: true, Jitter: true,
+		// key 级失败（鉴权/欠费/限流）不重试当前 key，交给 withKeyFailover 切换备用 key；
+		// 820031 为查询语法错误，重试无意义。
 		RetryableFunc: func(err error) bool {
-			errStr := err.Error()
-			return !strings.Contains(errStr, "HTTP 401") && !strings.Contains(errStr, "HTTP 403") && !strings.Contains(errStr, "820031")
+			if isKeyError(err) {
+				return false
+			}
+			return !strings.Contains(err.Error(), "820031")
 		},
 	}
+}
+
+// classifyFofaStatus 将 HTTP/业务错误归类为 key 级失败（鉴权/欠费/限流），触发备用 key 切换。
+// HTTP 401/403 鉴权失败；业务错误 820041 邮箱或 key 错误、820011 会员到期、820003 访问过于频繁。
+// 其余返回 nil，按普通错误处理。
+func classifyFofaStatus(code int, body string) *keyError {
+	if code == 401 || code == 403 {
+		return &keyError{engine: "fofa", code: code, msg: sanitizeBody(body)}
+	}
+	for _, pat := range []string{"820041", "820011", "820003", "邮箱或key错误", "会员到期", "过于频繁"} {
+		if strings.Contains(body, pat) {
+			return &keyError{engine: "fofa", code: code, msg: sanitizeBody(body)}
+		}
+	}
+	return nil
 }
 
 // fofaFieldSets 候选字段集，按权限从全到简排列。FOFA 按请求返回字段，
@@ -370,7 +417,7 @@ func isFofaPermissionError(body []byte) bool {
 }
 
 // executeFofaSearch 执行单次 FOFA API 调用（含字段权限多级降级）
-func (f *FofaAdapter) executeFofaSearch(query string, page, pageSize int, result **model.EngineResult) error {
+func (f *FofaAdapter) executeFofaSearch(query string, page, pageSize int, email, apiKey string, result **model.EngineResult) error {
 	encodedQuery := base64.StdEncoding.EncodeToString([]byte(query))
 	url := fmt.Sprintf("%s/api/v1/search/all", f.baseURL)
 
@@ -378,11 +425,14 @@ func (f *FofaAdapter) executeFofaSearch(query string, page, pageSize int, result
 	var err error
 	activeFields := fofaFieldSets[len(fofaFieldSets)-1]
 	for i, fields := range fofaFieldSets {
-		resp, err = f.searchWithFields(url, encodedQuery, page, pageSize, fields)
+		resp, err = f.searchWithFields(url, encodedQuery, page, pageSize, fields, email, apiKey)
 		if err != nil {
 			return err
 		}
 		if resp.StatusCode() != 200 {
+			if keyErr := classifyFofaStatus(resp.StatusCode(), resp.String()); keyErr != nil {
+				return keyErr
+			}
 			return fmt.Errorf("HTTP %d: %s", resp.StatusCode(), resp.String())
 		}
 		if !isFofaPermissionError(resp.Body()) || i == len(fofaFieldSets)-1 {
@@ -391,11 +441,11 @@ func (f *FofaAdapter) executeFofaSearch(query string, page, pageSize int, result
 		}
 		logger.Warnf("fofa: 字段权限不足，降级到更少字段重试: %s", fields)
 	}
-	return parseFofaSearchResponse(resp.Body(), activeFields, page, pageSize, f.Name(), result)
+	return parseFofaSearchResponse(resp.Body(), activeFields, page, pageSize, resp.StatusCode(), f.Name(), result)
 }
 
 // parseFofaSearchResponse 解析 FOFA 搜索响应
-func parseFofaSearchResponse(body []byte, activeFields string, page, pageSize int, engineName string, result **model.EngineResult) error {
+func parseFofaSearchResponse(body []byte, activeFields string, page, pageSize int, httpStatus int, engineName string, result **model.EngineResult) error {
 	var resp struct {
 		Mode    string          `json:"mode"`
 		Results [][]interface{} `json:"results"`
@@ -420,6 +470,9 @@ func parseFofaSearchResponse(body []byte, activeFields string, page, pageSize in
 		}
 		if errMsg == "" {
 			errMsg = "FOFA API reported an error (unknown cause)"
+		}
+		if keyErr := classifyFofaStatus(httpStatus, errMsg); keyErr != nil {
+			return keyErr
 		}
 		return fmt.Errorf("FOFA API error: %s", errMsg)
 	}
@@ -672,7 +725,7 @@ type FofaAdapterWebOnly struct {
 
 // NewFofaAdapterWebOnly 创建FOFA Web-only适配器
 func NewFofaAdapterWebOnly() *FofaAdapterWebOnly {
-	baseAdapter := NewFofaAdapter("", "", "", FofaDefaultQPS, FofaDefaultTimeout)
+	baseAdapter := NewFofaAdapter("", "", "", "", "", FofaDefaultQPS, FofaDefaultTimeout)
 	return &FofaAdapterWebOnly{
 		WebOnlyAdapterBase: NewWebOnlyAdapterBase(baseAdapter, "fofa"),
 	}

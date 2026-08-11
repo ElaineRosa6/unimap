@@ -28,13 +28,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 
 	engines := map[string]map[string]interface{}{
 		"fofa": {
-			"enabled":      cfg.Engines.Fofa.Enabled,
-			"api_base_url": cfg.Engines.Fofa.APIBaseURL,
-			"web_base_url": cfg.Engines.Fofa.WebBaseURL,
-			"email":        cfg.Engines.Fofa.Email,
-			"api_key":      maskAPIKey(cfg.Engines.Fofa.APIKey),
-			"qps":          cfg.Engines.Fofa.QPS,
-			"timeout":      cfg.Engines.Fofa.Timeout,
+			"enabled":        cfg.Engines.Fofa.Enabled,
+			"api_base_url":   cfg.Engines.Fofa.APIBaseURL,
+			"web_base_url":   cfg.Engines.Fofa.WebBaseURL,
+			"email":          cfg.Engines.Fofa.Email,
+			"api_key":        maskAPIKey(cfg.Engines.Fofa.APIKey),
+			"backup_api_key": maskAPIKey(cfg.Engines.Fofa.BackupAPIKey),
+			"backup_email":   cfg.Engines.Fofa.BackupEmail,
+			"qps":            cfg.Engines.Fofa.QPS,
+			"timeout":        cfg.Engines.Fofa.Timeout,
 		},
 		"hunter": {
 			"enabled":        cfg.Engines.Hunter.Enabled,
@@ -45,39 +47,45 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 			"timeout":        cfg.Engines.Hunter.Timeout,
 		},
 		"zoomeye": {
-			"enabled":  cfg.Engines.Zoomeye.Enabled,
-			"base_url": cfg.Engines.Zoomeye.BaseURL,
-			"api_key":  maskAPIKey(cfg.Engines.Zoomeye.APIKey),
-			"qps":      cfg.Engines.Zoomeye.QPS,
-			"timeout":  cfg.Engines.Zoomeye.Timeout,
+			"enabled":        cfg.Engines.Zoomeye.Enabled,
+			"base_url":       cfg.Engines.Zoomeye.BaseURL,
+			"api_key":        maskAPIKey(cfg.Engines.Zoomeye.APIKey),
+			"backup_api_key": maskAPIKey(cfg.Engines.Zoomeye.BackupAPIKey),
+			"qps":            cfg.Engines.Zoomeye.QPS,
+			"timeout":        cfg.Engines.Zoomeye.Timeout,
 		},
 		"quake": {
-			"enabled":  cfg.Engines.Quake.Enabled,
-			"base_url": cfg.Engines.Quake.BaseURL,
-			"api_key":  maskAPIKey(cfg.Engines.Quake.APIKey),
-			"qps":      cfg.Engines.Quake.QPS,
-			"timeout":  cfg.Engines.Quake.Timeout,
+			"enabled":        cfg.Engines.Quake.Enabled,
+			"base_url":       cfg.Engines.Quake.BaseURL,
+			"api_key":        maskAPIKey(cfg.Engines.Quake.APIKey),
+			"backup_api_key": maskAPIKey(cfg.Engines.Quake.BackupAPIKey),
+			"qps":            cfg.Engines.Quake.QPS,
+			"timeout":        cfg.Engines.Quake.Timeout,
 		},
 		"shodan": {
-			"enabled":  cfg.Engines.Shodan.Enabled,
-			"base_url": cfg.Engines.Shodan.BaseURL,
-			"api_key":  maskAPIKey(cfg.Engines.Shodan.APIKey),
-			"qps":      cfg.Engines.Shodan.QPS,
+			"enabled":        cfg.Engines.Shodan.Enabled,
+			"base_url":       cfg.Engines.Shodan.BaseURL,
+			"api_key":        maskAPIKey(cfg.Engines.Shodan.APIKey),
+			"backup_api_key": maskAPIKey(cfg.Engines.Shodan.BackupAPIKey),
+			"qps":            cfg.Engines.Shodan.QPS,
 		},
 		"censys": {
-			"enabled":    cfg.Engines.Censys.Enabled,
-			"base_url":   cfg.Engines.Censys.BaseURL,
-			"api_id":     cfg.Engines.Censys.APIID,
-			"api_secret": maskAPIKey(cfg.Engines.Censys.APISecret),
-			"qps":        cfg.Engines.Censys.QPS,
-			"timeout":    cfg.Engines.Censys.Timeout,
+			"enabled":           cfg.Engines.Censys.Enabled,
+			"base_url":          cfg.Engines.Censys.BaseURL,
+			"api_id":            cfg.Engines.Censys.APIID,
+			"api_secret":        maskAPIKey(cfg.Engines.Censys.APISecret),
+			"backup_api_id":     cfg.Engines.Censys.BackupAPIID,
+			"backup_api_secret": maskAPIKey(cfg.Engines.Censys.BackupAPISecret),
+			"qps":               cfg.Engines.Censys.QPS,
+			"timeout":           cfg.Engines.Censys.Timeout,
 		},
 		"daydaymap": {
-			"enabled":  cfg.Engines.Daydaymap.Enabled,
-			"base_url": cfg.Engines.Daydaymap.BaseURL,
-			"api_key":  maskAPIKey(cfg.Engines.Daydaymap.APIKey),
-			"qps":      cfg.Engines.Daydaymap.QPS,
-			"timeout":  cfg.Engines.Daydaymap.Timeout,
+			"enabled":        cfg.Engines.Daydaymap.Enabled,
+			"base_url":       cfg.Engines.Daydaymap.BaseURL,
+			"api_key":        maskAPIKey(cfg.Engines.Daydaymap.APIKey),
+			"backup_api_key": maskAPIKey(cfg.Engines.Daydaymap.BackupAPIKey),
+			"qps":            cfg.Engines.Daydaymap.QPS,
+			"timeout":        cfg.Engines.Daydaymap.Timeout,
 		},
 	}
 
@@ -324,8 +332,14 @@ func applyFofaFields(c *config.Config, eng map[string]interface{}) {
 	if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
 		c.Engines.Fofa.APIKey = v
 	}
+	if v, _ := stringField(eng, "backup_api_key"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Fofa.BackupAPIKey = v
+	}
 	if v, _ := stringField(eng, "email"); v != "" {
 		c.Engines.Fofa.Email = v
+	}
+	if v, _ := stringField(eng, "backup_email"); v != "" {
+		c.Engines.Fofa.BackupEmail = v
 	}
 	if v, _ := intField(eng, "qps"); v > 0 {
 		c.Engines.Fofa.QPS = v
@@ -363,6 +377,9 @@ func applyZoomeyeFields(c *config.Config, eng map[string]interface{}) {
 	if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
 		c.Engines.Zoomeye.APIKey = v
 	}
+	if v, _ := stringField(eng, "backup_api_key"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Zoomeye.BackupAPIKey = v
+	}
 	if v, _ := stringField(eng, "base_url"); v != "" {
 		c.Engines.Zoomeye.BaseURL = v
 	}
@@ -381,6 +398,9 @@ func applyQuakeFields(c *config.Config, eng map[string]interface{}) {
 	if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
 		c.Engines.Quake.APIKey = v
 	}
+	if v, _ := stringField(eng, "backup_api_key"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Quake.BackupAPIKey = v
+	}
 	if v, _ := stringField(eng, "base_url"); v != "" {
 		c.Engines.Quake.BaseURL = v
 	}
@@ -398,6 +418,9 @@ func applyShodanFields(c *config.Config, eng map[string]interface{}) {
 	}
 	if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
 		c.Engines.Shodan.APIKey = v
+	}
+	if v, _ := stringField(eng, "backup_api_key"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Shodan.BackupAPIKey = v
 	}
 	if v, _ := stringField(eng, "base_url"); v != "" {
 		c.Engines.Shodan.BaseURL = v
@@ -418,6 +441,12 @@ func applyCensysFields(c *config.Config, eng map[string]interface{}) {
 	if v, _ := stringField(eng, "api_secret"); v != "" && !isMaskedSecret(v) {
 		c.Engines.Censys.APISecret = v
 	}
+	if v, _ := stringField(eng, "backup_api_id"); v != "" {
+		c.Engines.Censys.BackupAPIID = v
+	}
+	if v, _ := stringField(eng, "backup_api_secret"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Censys.BackupAPISecret = v
+	}
 	if v, _ := stringField(eng, "base_url"); v != "" {
 		c.Engines.Censys.BaseURL = v
 	}
@@ -435,6 +464,9 @@ func applyDayDayMapFields(c *config.Config, eng map[string]interface{}) {
 	}
 	if v, _ := stringField(eng, "api_key"); v != "" && !isMaskedSecret(v) {
 		c.Engines.Daydaymap.APIKey = v
+	}
+	if v, _ := stringField(eng, "backup_api_key"); v != "" && !isMaskedSecret(v) {
+		c.Engines.Daydaymap.BackupAPIKey = v
 	}
 	if v, _ := stringField(eng, "base_url"); v != "" {
 		c.Engines.Daydaymap.BaseURL = v

@@ -107,7 +107,7 @@ func TestWebOnlyAdapterBase_IsWebOnly(t *testing.T) {
 // ===== FOFA Adapter: Translate =====
 
 func TestFofaAdapter_Translate(t *testing.T) {
-	a := NewFofaAdapter("https://fofa.info", "key", "email@test.com", 3, 30*time.Second)
+	a := NewFofaAdapter("https://fofa.info", "key", "email@test.com", "", "", 3, 30*time.Second)
 
 	tests := []struct {
 		name    string
@@ -304,14 +304,14 @@ func TestFofaAdapter_Translate(t *testing.T) {
 // ===== FOFA Adapter: Name, IsWebOnly =====
 
 func TestFofaAdapter_Name(t *testing.T) {
-	a := NewFofaAdapter("https://fofa.info", "key", "email", 3, 30*time.Second)
+	a := NewFofaAdapter("https://fofa.info", "key", "email", "", "", 3, 30*time.Second)
 	if got := a.Name(); got != "fofa" {
 		t.Errorf("Name() = %q, want %q", got, "fofa")
 	}
 }
 
 func TestFofaAdapter_IsWebOnly(t *testing.T) {
-	a := NewFofaAdapter("https://fofa.info", "key", "email", 3, 30*time.Second)
+	a := NewFofaAdapter("https://fofa.info", "key", "email", "", "", 3, 30*time.Second)
 	if a.IsWebOnly() {
 		t.Error("expected IsWebOnly() = false")
 	}
@@ -320,7 +320,7 @@ func TestFofaAdapter_IsWebOnly(t *testing.T) {
 // ===== FOFA Adapter: Normalize =====
 
 func TestFofaAdapter_Normalize(t *testing.T) {
-	a := NewFofaAdapter("https://fofa.info", "key", "email", 3, 30*time.Second)
+	a := NewFofaAdapter("https://fofa.info", "key", "email", "", "", 3, 30*time.Second)
 
 	t.Run("empty result", func(t *testing.T) {
 		results, err := a.Normalize(&model.EngineResult{RawData: []interface{}{}})
@@ -409,7 +409,7 @@ func TestFofaAdapter_Normalize(t *testing.T) {
 
 func TestFofaAdapter_Search(t *testing.T) {
 	t.Run("empty api key returns error result", func(t *testing.T) {
-		a := NewFofaAdapter("https://fofa.info", "", "", 3, 30*time.Second)
+		a := NewFofaAdapter("https://fofa.info", "", "", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -426,7 +426,7 @@ func TestFofaAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewFofaAdapter(server.URL, "key", "email@test.com", 3, 30*time.Second)
+		a := NewFofaAdapter(server.URL, "key", "email@test.com", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "port=80", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -446,7 +446,7 @@ func TestFofaAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewFofaAdapter(server.URL, "key", "email@test.com", 3, 30*time.Second)
+		a := NewFofaAdapter(server.URL, "key", "email@test.com", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -461,7 +461,7 @@ func TestFofaAdapter_Search(t *testing.T) {
 
 func TestFofaAdapter_GetQuota(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewFofaAdapter("https://fofa.info", "", "", 3, 30*time.Second)
+		a := NewFofaAdapter("https://fofa.info", "", "", "", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error for empty API key")
@@ -475,7 +475,7 @@ func TestFofaAdapter_GetQuota(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewFofaAdapter(server.URL, "key", "email@test.com", 3, 30*time.Second)
+		a := NewFofaAdapter(server.URL, "key", "email@test.com", "", "", 3, 30*time.Second)
 		quota, err := a.GetQuota()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -810,7 +810,7 @@ func TestHunterAdapter_GetQuota(t *testing.T) {
 // ===== Shodan Adapter: Translate =====
 
 func TestShodanAdapter_Translate(t *testing.T) {
-	a := NewShodanAdapter("https://api.shodan.io", "key", 3, 30*time.Second)
+	a := NewShodanAdapter("https://api.shodan.io", "key", "", 3, 30*time.Second)
 
 	tests := []struct {
 		name    string
@@ -1068,14 +1068,14 @@ func TestShodanQuote(t *testing.T) {
 }
 
 func TestShodanAdapter_Name(t *testing.T) {
-	a := NewShodanAdapter("https://api.shodan.io", "key", 3, 30*time.Second)
+	a := NewShodanAdapter("https://api.shodan.io", "key", "", 3, 30*time.Second)
 	if got := a.Name(); got != "shodan" {
 		t.Errorf("Name() = %q, want %q", got, "shodan")
 	}
 }
 
 func TestShodanAdapter_IsWebOnly(t *testing.T) {
-	a := NewShodanAdapter("https://api.shodan.io", "key", 3, 30*time.Second)
+	a := NewShodanAdapter("https://api.shodan.io", "key", "", 3, 30*time.Second)
 	if a.IsWebOnly() {
 		t.Error("expected IsWebOnly() = false")
 	}
@@ -1084,7 +1084,7 @@ func TestShodanAdapter_IsWebOnly(t *testing.T) {
 // ===== Shodan Adapter: Normalize =====
 
 func TestShodanAdapter_Normalize(t *testing.T) {
-	a := NewShodanAdapter("https://api.shodan.io", "key", 3, 30*time.Second)
+	a := NewShodanAdapter("https://api.shodan.io", "key", "", 3, 30*time.Second)
 
 	t.Run("full fields", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
@@ -1113,7 +1113,7 @@ func TestShodanAdapter_Normalize(t *testing.T) {
 
 func TestShodanAdapter_Search(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewShodanAdapter("https://api.shodan.io", "", 3, 30*time.Second)
+		a := NewShodanAdapter("https://api.shodan.io", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1129,7 +1129,7 @@ func TestShodanAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewShodanAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewShodanAdapter(server.URL, "key", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "port:80", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1147,7 +1147,7 @@ func TestShodanAdapter_Search(t *testing.T) {
 
 func TestShodanAdapter_GetQuota(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewShodanAdapter("https://api.shodan.io", "", 3, 30*time.Second)
+		a := NewShodanAdapter("https://api.shodan.io", "", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error for empty API key")
@@ -1160,7 +1160,7 @@ func TestShodanAdapter_GetQuota(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewShodanAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewShodanAdapter(server.URL, "key", "", 3, 30*time.Second)
 		quota, err := a.GetQuota()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1180,7 +1180,7 @@ func TestShodanAdapter_GetQuota(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewShodanAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewShodanAdapter(server.URL, "key", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil || !strings.Contains(err.Error(), "Invalid API key") {
 			t.Fatalf("expected Shodan API error, got %v", err)
@@ -1191,7 +1191,7 @@ func TestShodanAdapter_GetQuota(t *testing.T) {
 // ===== Quake Adapter: Translate =====
 
 func TestQuakeAdapter_Translate(t *testing.T) {
-	a := NewQuakeAdapter("https://quake.io", "key", 3, 30*time.Second)
+	a := NewQuakeAdapter("https://quake.io", "key", "", 3, 30*time.Second)
 
 	tests := []struct {
 		name    string
@@ -1303,14 +1303,14 @@ func TestQuakeAdapter_Translate(t *testing.T) {
 }
 
 func TestQuakeAdapter_Name(t *testing.T) {
-	a := NewQuakeAdapter("https://quake.io", "key", 3, 30*time.Second)
+	a := NewQuakeAdapter("https://quake.io", "key", "", 3, 30*time.Second)
 	if got := a.Name(); got != "quake" {
 		t.Errorf("Name() = %q, want %q", got, "quake")
 	}
 }
 
 func TestQuakeAdapter_IsWebOnly(t *testing.T) {
-	a := NewQuakeAdapter("https://quake.io", "key", 3, 30*time.Second)
+	a := NewQuakeAdapter("https://quake.io", "key", "", 3, 30*time.Second)
 	if a.IsWebOnly() {
 		t.Error("expected IsWebOnly() = false")
 	}
@@ -1319,7 +1319,7 @@ func TestQuakeAdapter_IsWebOnly(t *testing.T) {
 // ===== Quake Adapter: Normalize =====
 
 func TestQuakeAdapter_Normalize(t *testing.T) {
-	a := NewQuakeAdapter("https://quake.io", "key", 3, 30*time.Second)
+	a := NewQuakeAdapter("https://quake.io", "key", "", 3, 30*time.Second)
 
 	t.Run("full fields", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
@@ -1380,7 +1380,7 @@ func TestQuakeAdapter_Normalize(t *testing.T) {
 
 func TestQuakeAdapter_Search(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewQuakeAdapter("https://quake.io", "", 3, 30*time.Second)
+		a := NewQuakeAdapter("https://quake.io", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1397,7 +1397,7 @@ func TestQuakeAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewQuakeAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewQuakeAdapter(server.URL, "key", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "port:80", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1418,7 +1418,7 @@ func TestQuakeAdapter_Search(t *testing.T) {
 
 func TestQuakeAdapter_GetQuota(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewQuakeAdapter("https://quake.io", "", 3, 30*time.Second)
+		a := NewQuakeAdapter("https://quake.io", "", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error for empty API key")
@@ -1432,7 +1432,7 @@ func TestQuakeAdapter_GetQuota(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewQuakeAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewQuakeAdapter(server.URL, "key", "", 3, 30*time.Second)
 		quota, err := a.GetQuota()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1449,7 +1449,7 @@ func TestQuakeAdapter_GetQuota(t *testing.T) {
 // ===== ZoomEye Adapter: Translate =====
 
 func TestZoomEyeAdapter_Translate(t *testing.T) {
-	a := NewZoomEyeAdapter("https://api.zoomeye.org", "key", 3, 30*time.Second)
+	a := NewZoomEyeAdapter("https://api.zoomeye.org", "key", "", 3, 30*time.Second)
 
 	tests := []struct {
 		name    string
@@ -1627,14 +1627,14 @@ func TestZoomEyeAdapter_Translate(t *testing.T) {
 }
 
 func TestZoomEyeAdapter_Name(t *testing.T) {
-	a := NewZoomEyeAdapter("https://api.zoomeye.org", "key", 3, 30*time.Second)
+	a := NewZoomEyeAdapter("https://api.zoomeye.org", "key", "", 3, 30*time.Second)
 	if got := a.Name(); got != "zoomeye" {
 		t.Errorf("Name() = %q, want %q", got, "zoomeye")
 	}
 }
 
 func TestZoomEyeAdapter_IsWebOnly(t *testing.T) {
-	a := NewZoomEyeAdapter("https://api.zoomeye.org", "key", 3, 30*time.Second)
+	a := NewZoomEyeAdapter("https://api.zoomeye.org", "key", "", 3, 30*time.Second)
 	if a.IsWebOnly() {
 		t.Error("expected IsWebOnly() = false")
 	}
@@ -1643,7 +1643,7 @@ func TestZoomEyeAdapter_IsWebOnly(t *testing.T) {
 // ===== ZoomEye Adapter: Normalize =====
 
 func TestZoomEyeAdapter_Normalize(t *testing.T) {
-	a := NewZoomEyeAdapter("https://api.zoomeye.org", "key", 3, 30*time.Second)
+	a := NewZoomEyeAdapter("https://api.zoomeye.org", "key", "", 3, 30*time.Second)
 
 	t.Run("full fields", func(t *testing.T) {
 		result := &model.EngineResult{RawData: []interface{}{
@@ -1719,7 +1719,7 @@ func TestZoomEyeAdapter_Normalize(t *testing.T) {
 
 func TestZoomEyeAdapter_Search(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewZoomEyeAdapter("https://api.zoomeye.org", "", 3, 30*time.Second)
+		a := NewZoomEyeAdapter("https://api.zoomeye.org", "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1736,7 +1736,7 @@ func TestZoomEyeAdapter_Search(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewZoomEyeAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewZoomEyeAdapter(server.URL, "key", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "port:80", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1754,7 +1754,7 @@ func TestZoomEyeAdapter_Search(t *testing.T) {
 
 func TestZoomEyeAdapter_GetQuota(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewZoomEyeAdapter("https://api.zoomeye.org", "", 3, 30*time.Second)
+		a := NewZoomEyeAdapter("https://api.zoomeye.org", "", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error for empty API key")
@@ -1767,7 +1767,7 @@ func TestZoomEyeAdapter_GetQuota(t *testing.T) {
 		}))
 		defer server.Close()
 
-		a := NewZoomEyeAdapter(server.URL, "key", 3, 30*time.Second)
+		a := NewZoomEyeAdapter(server.URL, "key", "", 3, 30*time.Second)
 		quota, err := a.GetQuota()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
