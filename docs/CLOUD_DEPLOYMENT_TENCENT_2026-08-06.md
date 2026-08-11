@@ -20,15 +20,25 @@
 - 云端（阿里云 `8.160.177.101`，/opt/unimap，容器 `unimap-unimap-1`，镜像 `unimap:local` 本地构建）已随
   develop `cf47728` 更新并重建验证：`/health/ready` 200、容器 healthy、`notification_push_log` 表已建、
   调度任务持久化保留。
-- 云端实际为 **13 个定时任务**（fofa×2、quake×3、hunter×4、daydaymap×2、每周快照×1、**ICP 备案查询×1**），
-  12 个查询任务通知渠道 `email_agent`（webhook→smtp-relay→QQ SMTP 邮件；2026-08-07 起已取消企微绑定），
-  `only_new=true` 增量推送，`format=excel`，`page_size=100`、`notification_detail_limit=100`；`icp_ynmobile_daily`
-  每日 8 点按云南移动 17 个公司名查 ICP 备案（4 备案类型 web/app/mapp/kapp），新增备案推送企微（`dijia_01`+`dijia_01_file`），
-  通知为**明细行式**（0 条公司行省略）并带速率限制重试；email_agent 查询任务邮件现已附带查询 Excel 附件。
-  调度时间非单一 10:15：fofa/quake/daydaymap 每天 `0 9,15 * * *`，hunter 错峰 `0/10/20/40 9 * * *`，
-  每周快照 `15 10 * * 1`。完整清单见「4. 云端任务清单」。
+- 云端实际为 **12 个定时任务**（fofa×2、quake×3、hunter×4、daydaymap×2、**ICP 备案查询×1**；原每周快照
+  `ynmobile_weekly_snapshot` 已于 2026-08-07 删除，13→12），11 个查询任务通知渠道 `email_agent`
+  （webhook→smtp-relay→QQ SMTP 邮件；2026-08-07 起已取消企微绑定），`only_new=true` 增量推送，
+  `format=excel`，`page_size=100`、`notification_detail_limit=100`；`icp_ynmobile_daily` 每日 8 点按
+  云南移动 17 个公司名查 ICP 备案（4 备案类型 web/app/mapp/kapp），推送企微（`dijia_01`；**2026-08-10 去掉
+  `dijia_01_file`**——两渠道为同一 webhook，调度器对每个绑定通道各发一次同文本 → 企微重复收两条），
+  **推送语义为首次全量 + 之后仅新增/变更增量**（对比 `GetPreviousResults` 同键上次成功 run：`🆕` 新增 /
+  `✏️` 变更明细，无变化只回一行确认），失败带状态码重试；email_agent 查询任务邮件现已附带查询 Excel 附件。
+  调度时间非单一 10:15：fofa/daydaymap 每天 `0 9,15 * * *`，quake 错峰 `0/5/10 9,15 * * *`，
+  hunter 错峰 `0/10/20/40 9 * * *`。
+  完整清单见「4. 云端任务清单」。
 - 推送为紧凑 markdown 管道表格（`| 资产 | 标题 | 状态 |`），3800B 预算对齐 WeCom 4096 上限。
-- 引擎 key 现状：fofa / hunter / quake / daydaymap ✅ 可用；**hunter 备用 key（`backup_api_key`）已同步云端**
+- 引擎 key 现状：fofa / hunter / quake / daydaymap ✅ 可用（**fofa 2026-08-11 已轮换第三方 key**：仅改云端
+  volume config `engines.fofa.api_key`，`api_base_url=https://fofoapi.com` 不变，第三方接口不需要 email，
+  容器重启后手动跑 `fofa_ynmobile_a` 新增 100 条、email_agent 推送 success，备份
+  `config.yaml.bak-fofa-swap-20260811085212`；**daydaymap 2026-08-10 已换第二把 key**，后缀
+  `c163fc`：原 key（`26b816`）的 `org=` 触发「资产所属企业查询」试用限次、试用额度耗尽连续失败 5 次，换 key 后
+  手动跑新增 99 条闭环；daydaymap 为单 `api_key` 结构、无 backup 字段，双 key 自动切换未做）；
+  **hunter 备用 key（`backup_api_key`）已同步云端**
   （2026-08-07，主 key 积分耗尽时 `withKeyFailover` 自动切换）；zoomeye ⚠️ key 有效但积分不足（402）；
   shodan ⚠️ key 有效但无 membership；censys ⚠️ api_secret 为空，仅 Web-only。
 - 生产模板齐备：`Dockerfile`（CGO_ENABLED=1 + build-base，B-01 已修复）、`docker-compose.prod.yaml`（B-02）、
@@ -59,7 +69,7 @@
    - 企业微信 webhook key（`86a6cd9e-...`）写入通知渠道配置。
 4. **配置迁移注意**：不要直接复制本机 `configs/config.yaml`（含 dev 凭据）到服务器；从 `configs/config.prod.yaml`
    基线生成独立配置并轮换已用过的凭据。调度任务 `data/scheduler_tasks.json` 可迁移（gitignored），或通过
-   `POST /api/v1/scheduler/tasks/create` 重建 13 个任务。
+   `POST /api/v1/scheduler/tasks/create` 重建 12 个任务。
 
 ## 3. 部署步骤
 
@@ -83,7 +93,7 @@ curl --fail http://127.0.0.1:8448/health/ready
 反向代理（可选）：用 Caddy / Nginx 在 443 终止 TLS 并代理到 127.0.0.1:8448，把代理网段加入
 `web.rate_limit.trusted_proxy_cidrs`。
 
-## 4. 云端任务清单（13 个，2026-08-07 实测）
+## 4. 云端任务清单（12 个，2026-08-07 实测）
 
 云端 `scheduler_tasks.json` 持久化于容器卷 `/app/data/`（宿主 volume `unimap_unimap_data`），2026-08-07
 实测清单如下（查询语句含目标指纹，已 gitignore 不入库，仅受控传输使用；各任务 payload 均可通过
@@ -93,21 +103,22 @@ curl --fail http://127.0.0.1:8448/health/ready
 |---|---|---|---|---|---|
 | fofa_ynmobile_a | fofa | `0 9,15 * * *` | 100 | 100 | 分片查询 a |
 | fofa_ynmobile_b | fofa | `0 9,15 * * *` | 100 | 100 | 分片查询 b |
-| quake_ynmobile_a | quake | `0 9,15 * * *` | 100 | 100 | favicon MD5 合并 |
-| quake_ynmobile_b | quake | `0 9,15 * * *` | 100 | 100 | 分片 |
-| quake_ynmobile_b2 | quake | `0 9,15 * * *` | 100 | 100 | 分片 |
+| quake_ynmobile_a | quake | `0 9,15 * * *` | 100 | 100 | 分片（org/asn） |
+| quake_ynmobile_b | quake | `5 9,15 * * *` | 100 | 100 | favicon MD5 合并（13 个） |
+| quake_ynmobile_b2 | quake | `10 9,15 * * *` | 100 | 100 | 分片 |
 | hunter_ynmobile_a | hunter | `40 9 * * *` | 100 | 100 | 错峰 9:40 |
 | hunter_ynmobile_b | hunter | `0 9 * * *` | 100 | 100 | 错峰 9:00 |
 | hunter_ynmobile_b2 | hunter | `10 9 * * *` | 100 | 100 | 错峰 9:10 |
 | hunter_ynmobile_b3 | hunter | `20 9 * * *` | 100 | 100 | 错峰 9:20 |
 | daydaymap_ynmobile_a | daydaymap | `0 9,15 * * *` | 100 | 100 | 分片 |
 | daydaymap_ynmobile_b | daydaymap | `0 9,15 * * *` | 100 | 100 | 分片 |
-| ynmobile_weekly_snapshot | fofa,hunter,quake,daydaymap | `15 10 * * 1` | 100 | 100 | 每周一 10:15 全引擎快照 |
-| icp_ynmobile_daily | icp | `0 8 * * *` | 50 | — | 每日 8 点 ICP 备案查询（云南移动 17 公司名，4 备案类型 web/app/mapp/kapp），新增备案推送企微 |
+| icp_ynmobile_daily | icp | `0 8 * * *` | 50 | — | 每日 8 点 ICP 备案查询（云南移动 17 公司名，4 备案类型 web/app/mapp/kapp），推送企微：首次全量 + 之后仅新增/变更增量 |
 
-- 12 个查询任务：`enabled=true`、`format=excel`、`only_new=true`（增量推送，weekly 无 only_new 字段）、`timeout_seconds=300`、`max_retries=2`。
-- 12 个查询任务通知渠道：`email_agent`（webhook→smtp-relay→QQ SMTP 邮件；2026-08-07 起已取消企微绑定）。
-- `icp_ynmobile_daily`：`type=web,app,mapp,kapp`、`page_size=50`、`timeout_seconds=2700`、`max_retries=1`；通知渠道 `dijia_01`+`dijia_01_file`（企业微信）；sidecar `132.232.231.41:16181`。通知为**明细行式**（0 条公司行省略，有记录才展开 `• 名称｜备案号`），失败行补状态码；单查询带速率限制自愈重试（`retry_count=2` 默认）。email_agent 通道已支持把查询 Excel 作为邮件附件（relay 挂载 `unimap_data` 卷）。
+- 11 个查询任务：`enabled=true`、`format=excel`、`only_new=true`（增量推送）、`timeout_seconds=300`、`max_retries=2`。
+- 11 个查询任务通知渠道：`email_agent`（webhook→smtp-relay→QQ SMTP 邮件；2026-08-07 起已取消企微绑定）。
+- `icp_ynmobile_daily`：`type=web,app,mapp,kapp`、`page_size=50`、`timeout_seconds=2700`、`max_retries=1`；通知渠道 `dijia_01`
+  （企业微信；**2026-08-10 去掉 `dijia_01_file`**——两渠道为同一 webhook，逐渠道各发一次同文本导致重复收两条）；
+  sidecar `132.232.231.41:16181`。**通知为首次全量 + 之后仅新增/变更增量**（`formatICPNotification`，2026-08-07 上线）：对比同键上次成功 run，新增 `🆕 名称｜备案号`、变更 `✏️ 名称：字段 旧 → 新`（备案号/主体/更新记录，licence 回退 Licence→MainLicWeb→MainLicence），无变化只回一行 `📋 今日无新增/变更`；失败行补状态码。email_agent 通道已支持把查询 Excel 作为邮件附件（relay 挂载 `unimap_data` 卷）。
 - `screenshot_enabled` 未启用（不截图）。
 - hunter 4 个任务错峰于 9 点档，避免同一时刻打满每日配额/限流。
 - 用 `GET /api/v1/scheduler/tasks` + `POST /api/v1/scheduler/tasks/run` 可逐任务验收。
@@ -118,13 +129,15 @@ curl --fail http://127.0.0.1:8448/health/ready
 2. 真实凭据完成一次查询并读 SQLite 结果明细；
 3. 重建容器后用户、任务、历史仍存在；备份复制到异机并恢复演练；
 4. 8448 / 9222 / 19451 未暴露公网；只开 22/80/443；
-5. 13 个任务各 run 一次：`/api/v1/scheduler/history` 为 `success`，通知含「| 资产 | 标题 | 状态 |」表头和已持久化资产；
+5. 12 个任务各 run 一次：`/api/v1/scheduler/history` 为 `success`，通知含「| 资产 | 标题 | 状态 |」表头和已持久化资产；
 6. 企业微信真机确认表格渲染；若管道表格不渲染，切 code-fence 对齐格式（需改代码 + 重新构建镜像）。
 
 ## 6. 当前状态与待办
 
 - ✅ 云端部署已完成（2026-08-07，阿里云 `8.160.177.101` /opt/unimap，develop `cf47728`），
-  13 个定时任务（12 查询 + 1 ICP）+ hunter 备用 key 均已生效；`only_new` 增量推送已在任务 payload 中（语义见 docs/API.md「增量推送（只推新增）」）。
+  12 个定时任务（11 查询 + 1 ICP，周快照已删）+ hunter 备用 key 均已生效；查询任务 `only_new` 增量推送已在任务
+  payload 中（语义见 docs/API.md「增量推送（只推新增）」），ICP 任务推送为首次全量 + 之后仅新增/变更增量
+  （`formatICPNotification`，2026-08-07 上线重建）。
 - 待办仍属云端常态化范围：TLS 反向代理与域名、安全组收紧（8448 仅 loopback 已就绪）、异机备份与恢复演练、
   24 小时资源观察（2C/1.6G 低配，CPU/内存覆盖值见顶部修订块）。
 - 任务清单（查询语句）gitignore 不入库，仅服务器端 `scheduler_tasks.json` 与受控传输使用。

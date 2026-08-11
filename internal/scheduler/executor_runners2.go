@@ -565,7 +565,7 @@ func (r *ICPQueryRunner) Execute(ctx context.Context, payload *model.TaskPayload
 		return "", execRes.ctxErr
 	}
 
-	result := formatICPResults(types, queries, execRes.succeeded, execRes.totalRecords, execRes.queryResults, execRes.errs)
+	result := r.formatICPNotification(types, queries, execRes, startedAt)
 
 	if execRes.succeeded == 0 && len(execRes.errs) > 0 {
 		return result, fmt.Errorf("all %d ICP query(ies) failed", len(execRes.errs))
@@ -785,6 +785,148 @@ func formatICPResults(types, queries []string, succeeded, totalRecords int, quer
 		fmt.Fprintf(&b, "\n❌ %s", e)
 	}
 	return sanitizeUTF8(b.String())
+}
+
+// formatICPNotification builds the push message for an ICP query run.
+//
+// 推送语义（2026-08-07 起）：
+//   - 首次推送（无任何历史基线，或未启用持久化）→ 全量明细；
+//   - 之后仅推送相对上一次落库结果的新增与变更，不再每天刷全量；
+//   - 无新增/变更且无失败时返回一行确认，避免通道静默。
+func (r *ICPQueryRunner) formatICPNotification(types, queries []string, res icpExecResult, startedAt time.Time) string {
+	// 无持久化（store 为空）时退化为全量，语义同 formatICPResults。
+	if r.store == nil {
+		return formatICPResults(types, queries, res.succeeded, res.totalRecords, res.queryResults, res.errs)
+	}
+
+	firstRunAll := true // 没有任何 (公司,类型) 存在历史基线 → 首次全量
+	var keys []icpNotifKey
+	newTotal, changeTotal := 0, 0
+	for _, qr := range res.queryResults {
+		previous, err := r.store.GetPreviousResults(qr.query, qr.qtype, startedAt)
+		if err != nil {
+			logger.Errorf("[scheduler] ICP: failed to load previous results for %q type=%s: %v", qr.query, qr.qtype, err)
+		}
+		prevMap := make(map[string]*icpdb.ICPResultRow, len(previous))
+		for _, p := range previous {
+			if p.Domain != "" {
+				prevMap[p.Domain] = p
+			}
+		}
+		if len(prevMap) > 0 {
+			firstRunAll = false
+		}
+
+		key := icpNotifKey{query: qr.query, qtype: qr.qtype}
+		for _, cur := range qr.results {
+			if cur.Domain == "" {
+				continue
+			}
+			name := icpResultName(cur)
+			p, ok := prevMap[cur.Domain]
+			if !ok {
+				// 无基线（首次）或新域名 → 视为新增
+				key.newRecords = append(key.newRecords, fmt.Sprintf("  🆕 %s｜%s", name, icpLicence(cur)))
+				continue
+			}
+			for _, c := range diffICPRecord(p, cur) {
+				key.changes = append(key.changes, fmt.Sprintf("  ✏️ %s：%s", name, c))
+			}
+		}
+		if len(key.newRecords) > 0 || len(key.changes) > 0 {
+			keys = append(keys, key)
+			newTotal += len(key.newRecords)
+			changeTotal += len(key.changes)
+		}
+	}
+
+	if firstRunAll {
+		full := formatICPResults(types, queries, res.succeeded, res.totalRecords, res.queryResults, res.errs)
+		if res.succeeded == 0 {
+			return full // 全失败时保留原始失败摘要，不带“首次全量”误导
+		}
+		return "🆕 ICP 备案首次全量推送（之后仅推送新增/变更）\n\n" + full
+	}
+
+	if newTotal == 0 && changeTotal == 0 && len(res.errs) == 0 {
+		return fmt.Sprintf("📋 ICP 备案：今日无新增/变更（成功 %d/%d，共 %d 条记录）", res.succeeded, len(queries)*len(types), res.totalRecords)
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "ICP 备案推送（%s）｜增量\n\n", strings.Join(types, ","))
+	fmt.Fprintf(&b, "📊 成功: %d/%d，共 %d 条记录｜本次推送：新增 %d / 变更 %d\n",
+		res.succeeded, len(queries)*len(types), res.totalRecords, newTotal, changeTotal)
+	for _, k := range keys {
+		if len(k.newRecords) > 0 {
+			fmt.Fprintf(&b, "\n✅ %s [%s]: 新增 %d 条\n", k.query, k.qtype, len(k.newRecords))
+			b.WriteString(strings.Join(k.newRecords, "\n"))
+			b.WriteString("\n")
+		}
+		if len(k.changes) > 0 {
+			fmt.Fprintf(&b, "\n✏️ %s [%s]: 变更 %d 条\n", k.query, k.qtype, len(k.changes))
+			b.WriteString(strings.Join(k.changes, "\n"))
+			b.WriteString("\n")
+		}
+	}
+	for _, e := range res.errs {
+		fmt.Fprintf(&b, "\n❌ %s", e)
+	}
+	return sanitizeUTF8(b.String())
+}
+
+type icpNotifKey struct {
+	query, qtype string
+	newRecords   []string
+	changes      []string
+}
+
+// icpResultName returns the display name for an ICP result, matching
+// formatICPResults' fallback chain.
+func icpResultName(r adapter.ICPResult) string {
+	if r.Domain != "" {
+		return r.Domain
+	}
+	if r.ServiceName != "" {
+		return r.ServiceName
+	}
+	if r.ContentName != "" {
+		return r.ContentName
+	}
+	return "(无名称)"
+}
+
+// icpLicence returns the display licence (Licence → MainLicWeb → MainLicence).
+func icpLicence(r adapter.ICPResult) string {
+	if r.Licence != "" {
+		return r.Licence
+	}
+	if r.MainLicWeb != "" {
+		return r.MainLicWeb
+	}
+	if r.MainLicence != "" {
+		return r.MainLicence
+	}
+	return ""
+}
+
+// diffICPRecord compares a persisted row against a fresh result and returns the
+// human-readable changes (same field set as persistRun's change detection).
+func diffICPRecord(p *icpdb.ICPResultRow, cur adapter.ICPResult) []string {
+	var out []string
+	if p.Licence != cur.Licence && cur.Licence != "" {
+		old := p.Licence
+		if old == "" {
+			old = p.MainLicence
+		}
+		out = append(out, fmt.Sprintf("备案号 %s → %s", old, cur.Licence))
+	}
+	if p.UnitName != cur.UnitName && cur.UnitName != "" {
+		out = append(out, fmt.Sprintf("主体 %s → %s", p.UnitName, cur.UnitName))
+	}
+	if p.UpdateRecord != cur.UpdateRecord && cur.UpdateRecord != "" {
+		out = append(out, fmt.Sprintf("更新记录 %s → %s", p.UpdateRecord, cur.UpdateRecord))
+	}
+	return out
 }
 
 func (r *ICPQueryRunner) persistRun(taskID, keyword, queryType string, page, pageSize, total int, results []adapter.ICPResult, startedAt time.Time) {

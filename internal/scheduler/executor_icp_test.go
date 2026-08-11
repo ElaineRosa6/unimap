@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/adapter"
+	icpdb "github.com/unimap/project/internal/icp/database"
 	"github.com/unimap/project/internal/model"
 )
 
@@ -538,6 +539,156 @@ func TestDefaultTemplates_ICPTemplateFields(t *testing.T) {
 	}
 	if weekly.CronExpr != "0 0 3 * * 1" {
 		t.Errorf("weekly cron expected '0 0 3 * * 1', got %q", weekly.CronExpr)
+	}
+}
+
+// --- formatICPNotification（首次全量 / 增量）tests ---
+// 测试数据全部为通用占位符，不涉及任何真实目标。
+
+// fakeICPStore 提供内存 prev 结果集，用于验证增量 diff。
+type fakeICPStore struct {
+	prev map[string][]*icpdb.ICPResultRow // key: query|qtype
+}
+
+func (f *fakeICPStore) SaveRun(*icpdb.ICPQueryRun) (int64, error) { return 1, nil }
+func (f *fakeICPStore) SaveResults(int64, []adapter.ICPResult, time.Time) error {
+	return nil
+}
+func (f *fakeICPStore) GetLatestResults(string, string) ([]*icpdb.ICPResultRow, error) {
+	return nil, nil
+}
+func (f *fakeICPStore) GetPreviousResults(keyword, queryType string, _ time.Time) ([]*icpdb.ICPResultRow, error) {
+	return f.prev[keyword+"|"+queryType], nil
+}
+
+func newTestICPRunner(store ICPResultStore) *ICPQueryRunner {
+	return NewICPQueryRunner(func() adapter.ICPConfig { return defaultICPConfig() }, store, nil)
+}
+
+func TestICPFormatNotification_FirstRunFull(t *testing.T) {
+	r := newTestICPRunner(&fakeICPStore{prev: map[string][]*icpdb.ICPResultRow{}})
+	res := icpExecResult{
+		succeeded: 1, totalRecords: 2,
+		queryResults: []icpQueryResult{
+			{query: "公司甲", qtype: "web", total: 2, results: []adapter.ICPResult{
+				{Domain: "web-a.example.com", Licence: "京ICP备12345678号"},
+				{Domain: "web-b.example.com", Licence: "京ICP备87654321号"},
+			}},
+		},
+	}
+	got := r.formatICPNotification([]string{"web"}, []string{"公司甲"}, res, time.Now())
+	for _, want := range []string{"首次全量", "共 2 条记录", "✅ 公司甲 [web]: 2 条", "• web-a.example.com｜京ICP备12345678号"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestICPFormatNotification_Incremental_OnlyNew(t *testing.T) {
+	r := newTestICPRunner(&fakeICPStore{prev: map[string][]*icpdb.ICPResultRow{
+		"公司甲|web": {{Domain: "a.example.com", Licence: "L1"}},
+	}})
+	res := icpExecResult{
+		succeeded: 1, totalRecords: 2,
+		queryResults: []icpQueryResult{
+			{query: "公司甲", qtype: "web", total: 2, results: []adapter.ICPResult{
+				{Domain: "a.example.com", Licence: "L1"},
+				{Domain: "b.example.com", Licence: "L2"},
+			}},
+		},
+	}
+	got := r.formatICPNotification([]string{"web"}, []string{"公司甲"}, res, time.Now())
+	for _, want := range []string{"增量", "新增 1 条", "🆕 b.example.com｜L2"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in:\n%s", want, got)
+		}
+	}
+	// 已有记录不得再次出现在推送中
+	if strings.Contains(got, "a.example.com") {
+		t.Errorf("old record must NOT be re-pushed, got:\n%s", got)
+	}
+	if strings.Contains(got, "首次全量") {
+		t.Errorf("must be incremental, got:\n%s", got)
+	}
+}
+
+func TestICPFormatNotification_Incremental_Changed(t *testing.T) {
+	r := newTestICPRunner(&fakeICPStore{prev: map[string][]*icpdb.ICPResultRow{
+		"公司甲|web": {{Domain: "a.example.com", Licence: "L1", UnitName: "主体A", UpdateRecord: "2026-01-01"}},
+	}})
+	res := icpExecResult{
+		succeeded: 1, totalRecords: 1,
+		queryResults: []icpQueryResult{
+			{query: "公司甲", qtype: "web", total: 1, results: []adapter.ICPResult{
+				{Domain: "a.example.com", Licence: "L9", UnitName: "主体B", UpdateRecord: "2026-01-01"},
+			}},
+		},
+	}
+	got := r.formatICPNotification([]string{"web"}, []string{"公司甲"}, res, time.Now())
+	// 变更 2 行：备案号 + 主体
+	for _, want := range []string{"变更 2 条", "✏️ a.example.com：备案号 L1 → L9", "✏️ a.example.com：主体 主体A → 主体B"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestICPFormatNotification_Incremental_NewKeyAllNew(t *testing.T) {
+	r := newTestICPRunner(&fakeICPStore{prev: map[string][]*icpdb.ICPResultRow{
+		"公司甲|web": {{Domain: "a.example.com", Licence: "L1"}},
+	}})
+	res := icpExecResult{
+		succeeded: 2, totalRecords: 3,
+		queryResults: []icpQueryResult{
+			{query: "公司甲", qtype: "web", total: 1, results: []adapter.ICPResult{{Domain: "a.example.com", Licence: "L1"}}},
+			{query: "公司乙", qtype: "web", total: 2, results: []adapter.ICPResult{
+				{Domain: "x.example.com", Licence: "LX"},
+				{Domain: "y.example.com", Licence: "LY"},
+			}},
+		},
+	}
+	got := r.formatICPNotification([]string{"web"}, []string{"公司甲", "公司乙"}, res, time.Now())
+	// 公司乙无基线 → 其记录全部按新增并入增量（整体不再是首次全量）
+	for _, want := range []string{"增量", "✅ 公司乙 [web]: 新增 2 条", "🆕 x.example.com｜LX"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "首次全量") {
+		t.Errorf("must be incremental, got:\n%s", got)
+	}
+}
+
+func TestICPFormatNotification_NoChanges(t *testing.T) {
+	r := newTestICPRunner(&fakeICPStore{prev: map[string][]*icpdb.ICPResultRow{
+		"公司甲|web": {{Domain: "a.example.com", Licence: "L1"}},
+	}})
+	res := icpExecResult{
+		succeeded: 1, totalRecords: 1,
+		queryResults: []icpQueryResult{
+			{query: "公司甲", qtype: "web", total: 1, results: []adapter.ICPResult{{Domain: "a.example.com", Licence: "L1"}}},
+		},
+	}
+	got := r.formatICPNotification([]string{"web"}, []string{"公司甲"}, res, time.Now())
+	if !strings.Contains(got, "无新增/变更") {
+		t.Errorf("expected no-change confirmation, got:\n%s", got)
+	}
+	if strings.Contains(got, "🆕") || strings.Contains(got, "✏️") {
+		t.Errorf("no change lines expected, got:\n%s", got)
+	}
+}
+
+func TestICPFormatNotification_NilStore(t *testing.T) {
+	r := newTestICPRunner(nil)
+	res := icpExecResult{
+		succeeded: 1, totalRecords: 1,
+		queryResults: []icpQueryResult{
+			{query: "公司甲", qtype: "web", total: 1, results: []adapter.ICPResult{{Domain: "a.example.com", Licence: "L1"}}},
+		},
+	}
+	got := r.formatICPNotification([]string{"web"}, []string{"公司甲"}, res, time.Now())
+	if !strings.Contains(got, "ICP 备案查询完成") {
+		t.Errorf("nil store should fall back to full format, got:\n%s", got)
 	}
 }
 

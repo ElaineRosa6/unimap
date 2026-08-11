@@ -21,6 +21,7 @@
 - [无图形浏览器运行时决策](DECISIONS/0006-headless-browser-runtime.md)：云主机 CDP、统一路由、会话限制和容器边界。
 - [架构](ARCHITECTURE.md) 与 [业务架构](BUSINESS_AND_LOGIC_ARCHITECTURE.md)。
 - [UQL 指南](UQL_GUIDE.md) 与 [搜索引擎语法快照](SEARCH_ENGINE_SYNTAX.md)。
+- [七引擎查询语法及 API 参考（2026-08-10）](网络空间测绘平台_查询语法及API文档_2026-08-10/)：FOFA/Hunter/ZoomEye/Quake/Shodan/Censys/DayDayMap 官方查询语法与 API 示例，提交于 2026-08-11。
 - [插件架构](PLUGIN_ARCHITECTURE.md) 与 [插件开发](PLUGIN_DEVELOPMENT_GUIDE.md)。
 - [GUI 构建历史](GUI_BUILD.md)：GUI 已于 2026-08-01 删除，本页仅保留历史信息。
 - [变更日志](CHANGELOG.md)：按日期记录已完成的功能、兼容性与验证结果。
