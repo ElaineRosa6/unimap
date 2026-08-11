@@ -35,6 +35,12 @@ const (
 	// notification fits under the WeCom markdown limit (4096 bytes after the
 	// channel header) while leaving room for the "另有 N 条已持久化" trailer.
 	maxQueryNotificationDetailBytes = 3800
+	// maxQueryNotificationDetailBytesAllowed caps a per-task override
+	// (notification_detail_bytes) so a single misconfigured task cannot build an
+	// unbounded notification body. Channels without the WeCom-size constraint
+	// (e.g. the smtp-relay email path) can carry the full table, so email tasks
+	// may raise the budget well above the WeCom markdown limit.
+	maxQueryNotificationDetailBytesAllowed = 40000
 )
 
 var notificationWhitespace = regexp.MustCompile(`\s+`)
@@ -215,7 +221,7 @@ func (r *QueryRunner) Execute(ctx context.Context, payload *model.TaskPayload) (
 	for _, e := range resp.Errors {
 		fmt.Fprintf(&b, "❌ %s\n", e)
 	}
-	appendQueryAssetDetails(&b, resp.Assets, queryNotificationDetailLimit(payload))
+	appendQueryAssetDetails(&b, resp.Assets, queryNotificationDetailLimit(payload), queryNotificationDetailBytes(payload))
 	if payload.BrowserQuery {
 		enginesWithScreenshots := make([]string, 0, len(browserOutcome.AutoCapturedPaths))
 		for engine := range browserOutcome.AutoCapturedPaths {
@@ -288,12 +294,27 @@ func queryNotificationDetailLimit(payload *model.TaskPayload) int {
 	return limit
 }
 
+// queryNotificationDetailBytes returns the per-task byte budget for the asset
+// detail body. Defaults to the WeCom-markdown-safe 3800 bytes; tasks whose
+// notifications go to channels without that size limit (e.g. email) may raise
+// it via the payload field notification_detail_bytes so the full table fits.
+func queryNotificationDetailBytes(payload *model.TaskPayload) int {
+	bytes := extractInt(payload, "notification_detail_bytes", maxQueryNotificationDetailBytes)
+	if bytes < 1 {
+		return maxQueryNotificationDetailBytes
+	}
+	if bytes > maxQueryNotificationDetailBytesAllowed {
+		return maxQueryNotificationDetailBytesAllowed
+	}
+	return bytes
+}
+
 // queryNotificationTableHeader opens the markdown pipe-table for asset rows.
 // DingTalk/Feishu and the WeCom client render pipe tables; cells never contain
 // '|' because queryAssetRow escapes them.
 const queryNotificationTableHeader = "\n| 资产 | 标题 | 状态 |\n| --- | --- | --- |\n"
 
-func appendQueryAssetDetails(b *strings.Builder, assets []model.UnifiedAsset, limit int) {
+func appendQueryAssetDetails(b *strings.Builder, assets []model.UnifiedAsset, limit int, byteBudget int) {
 	if len(assets) == 0 {
 		return
 	}
@@ -304,7 +325,7 @@ func appendQueryAssetDetails(b *strings.Builder, assets []model.UnifiedAsset, li
 	shown := 0
 	for shown < min(len(assets), limit) {
 		row := queryAssetRow(assets[shown])
-		if b.Len()+len(row) > maxQueryNotificationDetailBytes-trailerReserve {
+		if b.Len()+len(row) > byteBudget-trailerReserve {
 			break
 		}
 		b.WriteString(row)

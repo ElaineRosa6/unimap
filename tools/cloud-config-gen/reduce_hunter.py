@@ -91,6 +91,7 @@ def main():
             "format": "excel",
             "only_new": True,
             "notification_detail_limit": 100,
+            "notification_detail_bytes": 40000,  # email 通道不受企微 4096 限制，携带完整表格
         }
         body = {k: t[k] for k in ALLOWED if k in t}
         print("=== update %s -> cron=%s" % (name, cron))

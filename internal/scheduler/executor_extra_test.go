@@ -273,6 +273,57 @@ func TestQueryRunner_Execute_QueryNotificationCapsDetailBodySize(t *testing.T) {
 	}
 }
 
+func TestQueryRunner_Execute_QueryNotificationBytesOverride(t *testing.T) {
+	assets := make([]model.UnifiedAsset, 0, 100)
+	for i := 0; i < 100; i++ {
+		assets = append(assets, model.UnifiedAsset{
+			IP: fmt.Sprintf("192.0.2.%d", i+1), Port: 443,
+			URL:    fmt.Sprintf("https://asset-%d.example.test/%s", i, strings.Repeat("x", 120)),
+			Title:  strings.Repeat("title", 32),
+			Server: strings.Repeat("server", 27),
+			Org:    strings.Repeat("organization", 14),
+		})
+	}
+	svc := service.NewUnifiedService()
+	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: assets})
+	runner := NewQueryRunner(service.NewQueryAppService(svc, svc.GetOrchestrator()))
+
+	t.Run("raised budget carries more rows than the WeCom default", func(t *testing.T) {
+		base, err := runner.Execute(context.Background(), &model.TaskPayload{
+			Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 100,
+			NotificationDetailLimit: 100,
+		})
+		if err != nil {
+			t.Fatalf("execute baseline API query: %v", err)
+		}
+		result, err := runner.Execute(context.Background(), &model.TaskPayload{
+			Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 100,
+			NotificationDetailLimit: 100,
+			Extra:                   map[string]any{"notification_detail_bytes": 6000},
+		})
+		if err != nil {
+			t.Fatalf("execute API query: %v", err)
+		}
+		if len(result) <= len(base)+1000 {
+			t.Fatalf("notification_detail_bytes override ignored: size = %d, base = %d", len(result), len(base))
+		}
+	})
+
+	t.Run("absurd override is clamped to the allowed cap", func(t *testing.T) {
+		result, err := runner.Execute(context.Background(), &model.TaskPayload{
+			Query: `port="443"`, Engines: []string{"fofa"}, PageSize: 100,
+			NotificationDetailLimit: 100,
+			Extra:                   map[string]any{"notification_detail_bytes": 1 << 20},
+		})
+		if err != nil {
+			t.Fatalf("execute API query: %v", err)
+		}
+		if len(result) > maxQueryNotificationDetailBytesAllowed {
+			t.Fatalf("notification_detail_bytes not clamped: size = %d, cap = %d", len(result), maxQueryNotificationDetailBytesAllowed)
+		}
+	})
+}
+
 func TestQueryRunner_Execute_ExcelExport(t *testing.T) {
 	svc := service.NewUnifiedService()
 	svc.RegisterAdapter(&successfulSchedulerAdapter{name: "fofa", assets: []model.UnifiedAsset{

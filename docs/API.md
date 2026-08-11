@@ -295,7 +295,7 @@ ICP 备案查询任务：按 `queries` 中的名称逐条查询 `type`（逗号�
 }
 ```
 
-`query` 任务的基础 payload 为 `query`、`engines`、`page_size`。查询成功通知会展开资产明细，而不是只发送数量；`notification_detail_limit` 控制通知中最多展开多少条，默认 50、最大 100。明细正文另有约 20 KiB 的渠道安全上限。超过任一上限的资产仍全部写入 SQLite，通知会标明未展开数量。通知不会包含响应头、正文片段或任意扩展字段。
+`query` 任务的基础 payload 为 `query`、`engines`、`page_size`。查询成功通知会展开资产明细，而不是只发送数量；`notification_detail_limit` 控制通知中最多展开多少条，默认 50、最大 100。明细正文另有字节预算上限，默认 3800 字节（贴近企业微信 markdown 正文 4096 上限）；`notification_detail_bytes` 可按任务覆盖该预算，最大 40000，用于不受企微大小限制的渠道（如 smtp-relay 邮件通道）携带完整表格。超过任一上限的资产仍全部写入 SQLite，通知会标明未展开数量。通知不会包含响应头、正文片段或任意扩展字段。
 
 需要完整 Bridge 闭环时增加：
 
