@@ -141,6 +141,10 @@ data/
 # Scheduled-task query statements (local rebuild reference — not for VCS)
 docs/CLOUD_SCHEDULER_TASKS_*.json
 docs/SCHEDULED_TASKS_*.md
+# Rewrite rules / query statements containing real target fingerprints and a
+# 2026-08-07 history-rewrite token — local ops reference only, never commit
+docs/unimap_rewrite_rules*.txt
+docs/查询语句*.txt
 
 # Tamper test/runtime data
 internal/tamper/data/
