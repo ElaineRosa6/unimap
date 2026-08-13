@@ -236,6 +236,11 @@ func (z *ZoomEyeAdapter) buildCondition(field, op, value string) string {
 
 // Search 执行搜索
 func (z *ZoomEyeAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
+	// 未配置任何 API key 时本地快速失败，不发起真实 HTTP 请求（测试确定性 + 资源保护）。
+	if z.apiKey == "" && z.backupAPIKey == "" {
+		return &model.EngineResult{EngineName: z.Name(), Error: "ZoomEye API key not configured"}, nil
+	}
+
 	var engineResult *model.EngineResult
 	keys := activeKeys(z.apiKey, z.backupAPIKey)
 	err := withKeyFailover(z.Name(), len(keys), func(idx int) error {

@@ -23,6 +23,10 @@ services:
       UNIMAP_CHROME_USER_DATA_DIR: /app/chrome-profile
       UNIMAP_DATA_DIR: /app/data
       UNIMAP_CONTAINER_BIND_ADDRESS: 0.0.0.0
+      # 非 loopback 启动契约：显式 token、非默认 username、bootstrap 密码三者都必须提供，
+      # 缺失时 Compose 直接报错；Web 启动 preflight 还会二次校验（username != "admin"）。
+      UNIMAP_ADMIN_TOKEN: ${UNIMAP_ADMIN_TOKEN:?set UNIMAP_ADMIN_TOKEN in the deployment environment}
+      UNIMAP_ADMIN_USERNAME: ${UNIMAP_ADMIN_USERNAME:?set a non-default UNIMAP_ADMIN_USERNAME}
       UNIMAP_BOOTSTRAP_PASSWORD: ${UNIMAP_BOOTSTRAP_PASSWORD:?set UNIMAP_BOOTSTRAP_PASSWORD in the deployment environment}
     restart: unless-stopped
     deploy:

@@ -184,3 +184,8 @@ web/screenshots/
 __pycache__/
 *.pyc
 artifacts/
+
+# Local communication / runtime workspace data (email exports, MCP runtime workspace)
+# Root-anchored so subdirectory test fixtures stay visible to VCS
+/*.eml
+/mimoclaw_workspace/

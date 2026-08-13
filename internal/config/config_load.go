@@ -109,6 +109,7 @@ func (m *Manager) resolveEnv(config *Config) {
 	}
 	config.Web.Auth.AdminToken = m.ResolveEnv(config.Web.Auth.AdminToken)
 	config.Web.Auth.Username = m.ResolveEnv(config.Web.Auth.Username)
+	config.Web.Auth.PasswordHash = m.ResolveEnv(config.Web.Auth.PasswordHash)
 
 	// 解析旧版告警 Webhook 配置
 	config.Alerting.Webhook.URL = m.ResolveEnv(config.Alerting.Webhook.URL)
@@ -140,24 +141,44 @@ func (m *Manager) resolveEnv(config *Config) {
 }
 
 // ResolveEnv 解析环境变量。
-// 如果值是 $VAR 或 ${VAR} 格式但对应环境变量未设置，返回空字符串（而非原始占位符），
-// 使下游能优雅跳过空配置（如未配置的 webhook URL）。
+// 如果值是 $VAR 或 ${VAR} 格式（VAR 为合法环境变量名）但对应环境变量未设置，
+// 返回空字符串（而非原始占位符），使下游能优雅跳过空配置（如未配置的 webhook URL）。
+// 非占位符原样返回——例如以 $2a$10$ 开头的 bcrypt 哈希不会被误当作 $VAR 引用而清空。
 func (m *Manager) ResolveEnv(value string) string {
-	// 检查 $VAR 格式
-	if strings.HasPrefix(value, "$") && !strings.HasPrefix(value, "${") {
-		envName := strings.TrimPrefix(value, "$")
-		if envValue := os.Getenv(envName); envValue != "" {
-			return envValue
-		}
-		return "" // 环境变量未设置，返回空字符串
-	}
-	// 检查 ${VAR} 格式
-	if strings.HasPrefix(value, "${") && strings.HasSuffix(value, "}") {
-		envName := strings.TrimSuffix(strings.TrimPrefix(value, "${"), "}")
-		if envValue := os.Getenv(envName); envValue != "" {
+	if name, ok := envVarName(value); ok {
+		if envValue := os.Getenv(name); envValue != "" {
 			return envValue
 		}
 		return "" // 环境变量未设置，返回空字符串
 	}
 	return value
+}
+
+// envVarName 提取 $VAR / ${VAR} 中的环境变量名；仅当剩余部分是合法
+// 环境变量名（字母/数字/下划线，不以数字开头）时返回 ok=true。
+func envVarName(value string) (string, bool) {
+	var name string
+	switch {
+	case strings.HasPrefix(value, "${") && strings.HasSuffix(value, "}"):
+		name = strings.TrimSuffix(strings.TrimPrefix(value, "${"), "}")
+	case strings.HasPrefix(value, "$") && !strings.HasPrefix(value, "${"):
+		name = strings.TrimPrefix(value, "$")
+	default:
+		return "", false
+	}
+	if name == "" {
+		return "", false
+	}
+	for i, r := range name {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r == '_':
+		case r >= '0' && r <= '9':
+			if i == 0 {
+				return "", false
+			}
+		default:
+			return "", false
+		}
+	}
+	return name, true
 }

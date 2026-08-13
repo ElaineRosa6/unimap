@@ -45,7 +45,7 @@ func initNotifyPepperStrict(bindAddr string) {
 		return
 	}
 	notifyPepper = legacyNotifyPepper
-	if !isLoopbackBind(bindAddr) {
+	if !IsLoopbackBind(bindAddr) {
 		logger.Warnf("生产环境 (bind=%s) 未设置 %s，使用 legacy pepper 保护通知渠道密钥；"+
 			"建议设置该环境变量以增强安全性", bindAddr, pepperEnvVar)
 	} else {

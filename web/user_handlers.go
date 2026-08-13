@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/unimap/project/internal/auth"
+	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/logger"
 	"github.com/unimap/project/internal/model"
 	"golang.org/x/crypto/bcrypt"
@@ -63,7 +64,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	s.registrationMutex.Lock()
 	defer s.registrationMutex.Unlock()
 	// If users already exist, require authentication (admin or logged-in user)
-	count, _ := s.userRepo.Count()
+	count, err := s.userRepo.Count()
+	if err != nil {
+		logger.Errorf("register: failed to count users: %v", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
 	if count > 0 {
 		currentUser := s.getCurrentUser(r)
 		if currentUser == nil {
@@ -72,6 +78,17 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		}
 		if currentUser.Role != "admin" {
 			writeError(w, http.StatusForbidden, "only admin can register new users")
+			return
+		}
+	}
+
+	// 防御性校验（与中间件 isRegistrationPublic 使用同一 loopback 判定）：
+	// 匿名首用户注册仅允许 loopback 绑定且用户数为 0；非 loopback 即使数据库为空
+	// 也必须拒绝，防止远程抢先注册首个管理员。
+	if count == 0 {
+		cfg := s.currentConfig()
+		if cfg == nil || !config.IsLoopbackBind(cfg.Web.BindAddress) {
+			writeError(w, http.StatusForbidden, "anonymous registration is disabled on non-loopback deployments")
 			return
 		}
 	}

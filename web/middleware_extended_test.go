@@ -146,18 +146,102 @@ func TestIsRegistrationPublic_NilRepo(t *testing.T) {
 }
 
 func TestIsRegistrationPublic_EmptyDB(t *testing.T) {
-	s := &Server{userRepo: newMockUserRepo()}
+	cfg := &config.Config{}
+	cfg.Web.BindAddress = "127.0.0.1"
+	s := &Server{userRepo: newMockUserRepo(), config: cfg}
 	if !s.isRegistrationPublic() {
-		t.Fatal("expected true when no users")
+		t.Fatal("expected true when loopback bind and no users")
 	}
 }
 
-func TestIsRegistrationPublic_HasUsers(t *testing.T) {
+func TestIsRegistrationPublic_LoopbackHasUsers(t *testing.T) {
 	repo := newMockUserRepo()
 	repo.Create("admin", "hash", "admin")
-	s := &Server{userRepo: repo}
+	cfg := &config.Config{}
+	cfg.Web.BindAddress = "127.0.0.1"
+	s := &Server{userRepo: repo, config: cfg}
 	if s.isRegistrationPublic() {
 		t.Fatal("expected false when users exist")
+	}
+}
+
+func TestIsRegistrationPublic_NonLoopbackEmptyDB(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Web.BindAddress = "0.0.0.0"
+	s := &Server{userRepo: newMockUserRepo(), config: cfg}
+	if s.isRegistrationPublic() {
+		t.Fatal("non-loopback must never open anonymous registration, even with an empty database")
+	}
+}
+
+func TestIsRegistrationPublic_NilConfig(t *testing.T) {
+	s := &Server{userRepo: newMockUserRepo()}
+	if s.isRegistrationPublic() {
+		t.Fatal("expected false when config is nil")
+	}
+}
+
+func TestRegistrationMiddleware_LoopbackBootstrapPublic(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "secret-token"
+	cfg.Web.BindAddress = "127.0.0.1"
+	s := &Server{config: cfg, userRepo: newMockUserRepo()}
+
+	handlerCalled := false
+	mw := s.adminAuthMiddleware()
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handlerCalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/register", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if !handlerCalled {
+		t.Fatal("loopback cold start must let anonymous registration reach the handler")
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from inner handler, got %d", rec.Code)
+	}
+}
+
+func TestRegistrationMiddleware_NonLoopbackAnonymousRejected(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "secret-token"
+	cfg.Web.BindAddress = "0.0.0.0"
+	s := &Server{config: cfg, userRepo: newMockUserRepo()}
+
+	mw := s.adminAuthMiddleware()
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler must not run for non-loopback anonymous registration")
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/register", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for non-loopback anonymous registration, got %d", rec.Code)
+	}
+}
+
+func TestRegistrationMiddleware_ClosedAfterFirstUser(t *testing.T) {
+	repo := newMockUserRepo()
+	repo.Create("admin", "hash", "admin")
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.Auth.AdminToken = "secret-token"
+	cfg.Web.BindAddress = "127.0.0.1"
+	s := &Server{config: cfg, userRepo: repo}
+
+	mw := s.adminAuthMiddleware()
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler must not run once users exist")
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/register", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for anonymous registration after first user, got %d", rec.Code)
 	}
 }
 

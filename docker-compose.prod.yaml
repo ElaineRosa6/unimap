@@ -22,10 +22,15 @@ services:
       - unimap_backups:/app/backups
 
     environment:
+      # 容器内绑定 0.0.0.0：触发 Web 启动 preflight，强制显式
+      # admin_token / 非默认 username / bcrypt password_hash。
+      # 宿主发布端口仍只映射 127.0.0.1:8448（见上方 ports），由反向代理提供公网入口。
+      UNIMAP_CONTAINER_BIND_ADDRESS: 0.0.0.0
       # 生产环境强制要求固定管理令牌
       UNIMAP_ADMIN_TOKEN: ${UNIMAP_ADMIN_TOKEN:?set UNIMAP_ADMIN_TOKEN in the deployment environment}
       UNIMAP_DISTRIBUTED_ADMIN_TOKEN: ${UNIMAP_DISTRIBUTED_ADMIN_TOKEN:?set UNIMAP_DISTRIBUTED_ADMIN_TOKEN}
       UNIMAP_ADMIN_USERNAME: ${UNIMAP_ADMIN_USERNAME:?set a non-default UNIMAP_ADMIN_USERNAME}
+      UNIMAP_BOOTSTRAP_PASSWORD: ${UNIMAP_BOOTSTRAP_PASSWORD:?set UNIMAP_BOOTSTRAP_PASSWORD in the deployment environment}
       UNIMAP_NOTIFY_PEPPER: ${UNIMAP_NOTIFY_PEPPER:?set an independent UNIMAP_NOTIFY_PEPPER}
       UNIMAP_CONFIG_PATH: /app/runtime-config/config.yaml
       UNIMAP_CONFIG_TEMPLATE: /app/configs/config.prod.yaml

@@ -37,9 +37,10 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	s.setCSRFCookie(w, r, csrfToken)
 
 	data := map[string]interface{}{
-		"staticVersion": s.staticVersion,
-		"CSRFToken":     csrfToken,
-		"Error":         "",
+		"staticVersion":    s.staticVersion,
+		"CSRFToken":        csrfToken,
+		"Error":            "",
+		"RegistrationOpen": s.isRegistrationPublic(),
 	}
 	s.renderTemplateWithNonce(r, w, http.StatusOK, "login.html", data)
 }
@@ -141,6 +142,14 @@ func (s *Server) validateLoginCredentials(w http.ResponseWriter, username, passw
 			expectedUser := cfg.Web.Auth.Username
 			expectedHash := cfg.Web.Auth.PasswordHash
 			if expectedUser == "" || expectedHash == "" {
+				// Loopback cold-start: zero users and no configured credential hash means
+				// bootstrap is pending. Guide the caller to create the first admin instead
+				// of failing with a misleading 500. Non-bootstrap "login not configured"
+				// keeps its existing 500 behavior.
+				if s.isRegistrationPublic() {
+					writeJSON(w, http.StatusConflict, map[string]string{"error": "bootstrap required: create the first admin account before logging in (请先创建管理员)"})
+					return 0, false
+				}
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "login not configured"})
 				return 0, false
 			}

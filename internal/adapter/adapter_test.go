@@ -1718,14 +1718,28 @@ func TestZoomEyeAdapter_Normalize(t *testing.T) {
 // ===== ZoomEye Adapter: Search =====
 
 func TestZoomEyeAdapter_Search(t *testing.T) {
-	t.Run("empty api key", func(t *testing.T) {
-		a := NewZoomEyeAdapter("https://api.zoomeye.org", "", "", 3, 30*time.Second)
+	t.Run("empty api key fails fast without network", func(t *testing.T) {
+		hits := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits++
+			t.Errorf("unexpected HTTP request: %s %s", r.Method, r.URL.Path)
+		}))
+		defer server.Close()
+
+		a := NewZoomEyeAdapter(server.URL, "", "", 3, 30*time.Second)
+		start := time.Now()
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if result.Error == "" {
 			t.Error("expected error in result for empty API key")
+		}
+		if hits != 0 {
+			t.Fatalf("empty API key must fail before any HTTP request, got %d request(s)", hits)
+		}
+		if elapsed := time.Since(start); elapsed > time.Second {
+			t.Errorf("empty API key should fail fast, took %v", elapsed)
 		}
 	})
 
@@ -1753,11 +1767,21 @@ func TestZoomEyeAdapter_Search(t *testing.T) {
 // ===== ZoomEye Adapter: GetQuota =====
 
 func TestZoomEyeAdapter_GetQuota(t *testing.T) {
-	t.Run("empty api key", func(t *testing.T) {
-		a := NewZoomEyeAdapter("https://api.zoomeye.org", "", "", 3, 30*time.Second)
+	t.Run("empty api key fails fast without network", func(t *testing.T) {
+		hits := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits++
+			t.Errorf("unexpected HTTP request: %s %s", r.Method, r.URL.Path)
+		}))
+		defer server.Close()
+
+		a := NewZoomEyeAdapter(server.URL, "", "", 3, 30*time.Second)
 		_, err := a.GetQuota()
 		if err == nil {
 			t.Error("expected error for empty API key")
+		}
+		if hits != 0 {
+			t.Fatalf("empty API key must fail before any HTTP request, got %d request(s)", hits)
 		}
 	})
 

@@ -34,6 +34,14 @@ func main() {
 	}
 	cfg := cfgManager.GetConfig()
 
+	// 认证启动 preflight：仅 Web 主入口在服务创建前执行。
+	// 非 loopback 启动强制显式 admin_token、非默认 username、有效 bcrypt password_hash；
+	// loopback 允许空凭据走“首用户注册”流程。失败即退出，不启动服务。
+	if err := config.StartupPreflight(cfg); err != nil {
+		logger.Errorf("Startup preflight failed: %v", err)
+		os.Exit(1)
+	}
+
 	// 创建统一服务
 	svc := service.NewUnifiedServiceWithConfig(cfg)
 

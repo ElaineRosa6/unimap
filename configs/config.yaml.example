@@ -153,6 +153,10 @@ tamper:
 #     fallback_to_cdp: false
 
 web:
+    # 默认仅监听回环（127.0.0.1）。改为 0.0.0.0 或公网地址属于非 loopback 启动，
+    # 启动 preflight 将强制要求显式 admin_token、非默认 username、有效 bcrypt password_hash。
+    bind_address: 127.0.0.1
+    port: 8448
     cors:
         allowed_origins:
             - http://localhost:8448
@@ -184,9 +188,16 @@ web:
         max_multipart_memory_bytes: 10485760
     auth:
         enabled: true
-        admin_token: ""       # API/CLI 使用的管理 token，留空自动生成
-        username: "admin"     # Web 登录用户名
-        password_hash: ""     # Web 登录密码的 bcrypt 哈希，留空默认为 "admin"
+        # loopback（bind_address=127.0.0.1/localhost/::1）下允许留空：
+        # 首次启动通过 Web 页面“注册首用户”初始化，不再生成默认 admin/admin 或随机 token。
+        # 非 loopback（如 0.0.0.0 / Docker / 云部署）下启动 preflight 强制：
+        #   admin_token 显式非空（如 ${UNIMAP_ADMIN_TOKEN}）
+        #   username 显式非空且不等于 "admin"（如 ${UNIMAP_ADMIN_USERNAME}）
+        #   password_hash 为有效 bcrypt（可由环境变量 UNIMAP_BOOTSTRAP_PASSWORD 在内存生成，
+        #     明文不写回配置、不进入日志）
+        admin_token: ""       # loopback 可留空；非 loopback 必须显式非空
+        username: "admin"     # loopback 占位；非 loopback 必须非空且不等于 "admin"
+        password_hash: ""     # loopback 可留空（走首用户注册）；非 loopback 必须为有效 bcrypt
 
 network:
     proxy_pool:

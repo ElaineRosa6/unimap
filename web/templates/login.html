@@ -44,6 +44,7 @@
 					<h1>登录</h1>
 					<p class="login-sub">输入凭证以访问控制台</p>
 				</header>
+				<div id="login-success" class="login-success hidden-init"></div>
 				<form id="login-form" autocomplete="off">
 					<!-- Hidden decoy fields to defeat Chrome autofill -->
 					<input type="text" name="prevent_autofill_username" class="hidden-init" tabindex="-1" autocomplete="username">
@@ -63,6 +64,35 @@
 					</button>
 				</form>
 			</div>
+
+			{{if .RegistrationOpen}}
+			<div class="login-card login-card--register">
+				<header class="login-header">
+					<h1>创建管理员</h1>
+					<p class="login-sub">检测到首次启动，请先创建管理员账号（仅本机可注册）</p>
+				</header>
+				<form id="register-form" autocomplete="off">
+					<div class="field">
+						<label for="reg-username">用户名</label>
+						<input type="text" id="reg-username" name="username" autocomplete="off" minlength="3" maxlength="32" placeholder="3-32 个字符" required>
+					</div>
+					<div class="field">
+						<label for="reg-password">密码</label>
+						<input type="password" id="reg-password" name="password" autocomplete="new-password" minlength="8" placeholder="至少 8 个字符" required>
+					</div>
+					<div class="field">
+						<label for="reg-password2">确认密码</label>
+						<input type="password" id="reg-password2" autocomplete="new-password" required>
+					</div>
+					<div id="register-error" class="login-error hidden-init"></div>
+					<button type="submit" id="register-btn" class="btn btn-primary">
+						<span class="btn__text">创建管理员</span>
+						<span class="btn__spinner hidden-init" aria-hidden="true"></span>
+					</button>
+				</form>
+			</div>
+			{{end}}
+
 			<p class="login-footer">UniMap &copy; 2026</p>
 		</div>
 	</div>
@@ -74,26 +104,43 @@
 			return match ? decodeURIComponent(match[2]) : '';
 		}
 
+		function show(el, text) {
+			el.textContent = text || '';
+			el.style.display = 'block';
+		}
+
+		function hide(el) {
+			el.style.display = 'none';
+		}
+
+		function setBusy(btn, busy) {
+			var text = btn.querySelector('.btn__text');
+			var spinner = btn.querySelector('.btn__spinner');
+			btn.disabled = busy;
+			if (text) text.style.display = busy ? 'none' : 'inline';
+			if (spinner) spinner.style.display = busy ? 'inline-block' : 'none';
+		}
+
+		// 注册成功提示：/login?registered=1
+		if (new URLSearchParams(window.location.search).get('registered') === '1') {
+			show(document.getElementById('login-success'), '管理员创建成功，请使用新账号登录');
+		}
+
 		document.getElementById('login-form').addEventListener('submit', async function(e) {
 			e.preventDefault();
 			var btn = document.getElementById('login-btn');
-			var btnText = btn.querySelector('.btn__text');
-			var btnSpinner = btn.querySelector('.btn__spinner');
 			var errDiv = document.getElementById('login-error');
 			var username = document.getElementById('username').value.trim();
 			var password = document.getElementById('password').value;
 			var csrfToken = getCookie('unimap_csrf');
 
 			if (!username || !password) {
-				errDiv.textContent = '请输入用户名和密码';
-				errDiv.style.display = 'block';
+				show(errDiv, '请输入用户名和密码');
 				return;
 			}
 
-			btn.disabled = true;
-			btnText.style.display = 'none';
-			btnSpinner.style.display = 'inline-block';
-			errDiv.style.display = 'none';
+			setBusy(btn, true);
+			hide(errDiv);
 
 			try {
 				var resp = await fetch('/api/v1/login', {
@@ -109,18 +156,60 @@
 				if (resp.ok && data.success) {
 					window.location.href = data.redirect || '/';
 				} else {
-					errDiv.textContent = data.error || '登录失败';
-					errDiv.style.display = 'block';
+					show(errDiv, data.error || '登录失败');
 				}
 			} catch (err) {
-				errDiv.textContent = '网络错误，请重试';
-				errDiv.style.display = 'block';
+				show(errDiv, '网络错误，请重试');
 			} finally {
-				btn.disabled = false;
-				btnText.style.display = 'inline';
-				btnSpinner.style.display = 'none';
+				setBusy(btn, false);
 			}
 		});
+
+		var registerForm = document.getElementById('register-form');
+		if (registerForm) {
+			registerForm.addEventListener('submit', async function(e) {
+				e.preventDefault();
+				var btn = document.getElementById('register-btn');
+				var errDiv = document.getElementById('register-error');
+				var username = document.getElementById('reg-username').value.trim();
+				var password = document.getElementById('reg-password').value;
+				var password2 = document.getElementById('reg-password2').value;
+
+				if (username.length < 3 || username.length > 32) {
+					show(errDiv, '用户名长度需为 3-32 个字符');
+					return;
+				}
+				if (password.length < 8) {
+					show(errDiv, '密码至少需要 8 个字符');
+					return;
+				}
+				if (password !== password2) {
+					show(errDiv, '两次输入的密码不一致');
+					return;
+				}
+
+				setBusy(btn, true);
+				hide(errDiv);
+
+				try {
+					var resp = await fetch('/api/v1/users/register', {
+						method: 'POST',
+						headers: {'Content-Type': 'application/json'},
+						body: JSON.stringify({username: username, password: password})
+					});
+					var data = await resp.json();
+					if (resp.ok && data.success) {
+						window.location.href = '/login?registered=1';
+					} else {
+						show(errDiv, (data && (data.error || data.message)) || '注册失败，请重试');
+					}
+				} catch (err) {
+					show(errDiv, '网络错误，请重试');
+				} finally {
+					setBusy(btn, false);
+				}
+			});
+		}
 	})();
 	</script>
 </body>

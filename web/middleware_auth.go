@@ -172,10 +172,18 @@ func (s *Server) isPublicPath(path string) bool {
 	return false
 }
 
-// isRegistrationPublic returns true if registration should be publicly accessible.
-// This is only true when the user DB has zero accounts (bootstrap mode).
+// isRegistrationPublic returns true only when anonymous first-admin
+// registration is allowed: the server must be bound to a loopback address
+// AND the user database must contain zero accounts. Non-loopback deployments
+// must never open anonymous registration, even with an empty database, to
+// prevent a remote first-admin hijack race. The same loopback判定 is reused
+// from the config package (config.IsLoopbackBind).
 func (s *Server) isRegistrationPublic() bool {
 	if s.userRepo == nil {
+		return false
+	}
+	cfg := s.currentConfig()
+	if cfg == nil || !config.IsLoopbackBind(cfg.Web.BindAddress) {
 		return false
 	}
 	count, err := s.userRepo.Count()

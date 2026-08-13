@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/unimap/project/internal/auth"
+	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/model"
 )
 
@@ -20,8 +22,10 @@ func contextWithUserID(ctx context.Context, userID int64) context.Context {
 
 // mockUserRepo is a minimal in-memory user repository for testing.
 type mockUserRepo struct {
-	users  map[int64]*auth.User
-	nextID int64
+	users       map[int64]*auth.User
+	nextID      int64
+	countErr    error
+	createCalls int
 }
 
 func newMockUserRepo() *mockUserRepo {
@@ -29,6 +33,7 @@ func newMockUserRepo() *mockUserRepo {
 }
 
 func (m *mockUserRepo) Create(username, passwordHash, role string) (*auth.User, error) {
+	m.createCalls++
 	u := &auth.User{
 		ID:           m.nextID,
 		Username:     username,
@@ -94,6 +99,9 @@ func (m *mockUserRepo) UpdatePassword(id int64, passwordHash string) error {
 }
 
 func (m *mockUserRepo) Count() (int, error) {
+	if m.countErr != nil {
+		return 0, m.countErr
+	}
 	return len(m.users), nil
 }
 
@@ -179,8 +187,15 @@ func TestHandleRegister_ShortPassword(t *testing.T) {
 	}
 }
 
+func loopbackServer(repo auth.UserRepository) *Server {
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.BindAddress = "127.0.0.1"
+	return &Server{config: cfg, userRepo: repo}
+}
+
 func TestHandleRegister_FirstUserGetsAdmin(t *testing.T) {
-	s := &Server{userRepo: newMockUserRepo()}
+	s := loopbackServer(newMockUserRepo())
 	rec := httptest.NewRecorder()
 	body, _ := json.Marshal(map[string]string{"username": "admin", "password": "password123"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/register", bytes.NewReader(body))
@@ -195,6 +210,52 @@ func TestHandleRegister_FirstUserGetsAdmin(t *testing.T) {
 	}
 }
 
+func TestHandleRegister_LoopbackBootstrapCreatesAdminRole(t *testing.T) {
+	repo := newMockUserRepo()
+	s := loopbackServer(repo)
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]string{"username": "first-admin", "password": "password123"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/register", bytes.NewReader(body))
+	s.handleRegister(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rec.Code)
+	}
+	users, _ := repo.List()
+	if len(users) != 1 || users[0].Role != "admin" {
+		t.Fatalf("first registered user must become admin, got %+v", users)
+	}
+}
+
+func TestHandleRegister_NonLoopbackRejected(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.BindAddress = "0.0.0.0"
+	s := &Server{config: cfg, userRepo: newMockUserRepo()}
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]string{"username": "attacker", "password": "password123"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/register", bytes.NewReader(body))
+	s.handleRegister(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-loopback anonymous registration, got %d", rec.Code)
+	}
+	if count, _ := s.userRepo.Count(); count != 0 {
+		t.Fatalf("non-loopback rejected registration must not create a user, got count=%d", count)
+	}
+}
+
+func TestHandleRegister_AnonymousClosedAfterFirstUser(t *testing.T) {
+	repo := newMockUserRepo()
+	repo.Create("admin", "hash", "admin")
+	s := loopbackServer(repo)
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]string{"username": "sneaky", "password": "password123"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/register", bytes.NewReader(body))
+	s.handleRegister(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for anonymous registration after first user, got %d", rec.Code)
+	}
+}
+
 func TestHandleRegister_NonAdminRequiresAuth(t *testing.T) {
 	repo := newMockUserRepo()
 	repo.Create("existing", "hash", "admin")
@@ -205,6 +266,25 @@ func TestHandleRegister_NonAdminRequiresAuth(t *testing.T) {
 	s.handleRegister(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestHandleRegister_CountErrorReturns500NoCreate(t *testing.T) {
+	repo := newMockUserRepo()
+	repo.countErr = errors.New("user db unavailable")
+	s := loopbackServer(repo)
+	rec := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]string{"username": "first-admin", "password": "password123"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/register", bytes.NewReader(body))
+	s.handleRegister(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when user count fails, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	if repo.createCalls != 0 {
+		t.Fatalf("Count failure must not create any user, got createCalls=%d", repo.createCalls)
+	}
+	if len(repo.users) != 0 {
+		t.Fatalf("Count failure must leave user store empty, got %d users", len(repo.users))
 	}
 }
 

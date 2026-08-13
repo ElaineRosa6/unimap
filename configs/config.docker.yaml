@@ -6,8 +6,12 @@ web:
   port: 8448
   auth:
     enabled: true
-    admin_token: ""
-    username: admin
+    # 镜像单独运行时保持 loopback，admin_token/username 可留空（首用户注册初始化）。
+    # Compose 以 UNIMAP_CONTAINER_BIND_ADDRESS=0.0.0.0 切换非 loopback 时，
+    # 必须显式提供 UNIMAP_ADMIN_TOKEN / UNIMAP_ADMIN_USERNAME（非 "admin"），
+    # 并由 UNIMAP_BOOTSTRAP_PASSWORD 在内存生成 bcrypt 哈希；缺失将拒绝启动。
+    admin_token: "${UNIMAP_ADMIN_TOKEN}"
+    username: "${UNIMAP_ADMIN_USERNAME}"
     password_hash: ""
 
 engines:

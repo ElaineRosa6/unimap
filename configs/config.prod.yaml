@@ -5,8 +5,12 @@ web:
   port: 8448
   auth:
     enabled: true
+    # 非 loopback 启动由 Web preflight 强制：admin_token 显式非空、
+    # username 显式非空且不等于 "admin"、password_hash 为有效 bcrypt。
     admin_token: "${UNIMAP_ADMIN_TOKEN}"
     username: "${UNIMAP_ADMIN_USERNAME}"
+    # 由 UNIMAP_BOOTSTRAP_PASSWORD 环境变量在内存生成 bcrypt 哈希，
+    # 明文不写回配置、不进入日志。
     password_hash: ""
 
 distributed:

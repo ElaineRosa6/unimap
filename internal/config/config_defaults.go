@@ -221,19 +221,12 @@ func (m *Manager) applyWebDefaults(config *Config) {
 	}
 }
 
-// isLoopbackBind 判断绑定地址是否仅监听回环接口。
-// 0.0.0.0 绑定所有接口（Docker/云部署常见），不应视为回环。
-func isLoopbackBind(addr string) bool {
-	switch addr {
-	case "127.0.0.1", "localhost", "::1":
-		return true
-	default:
-		return false
-	}
-}
-
-// applyAuthDefaults 应用认证默认配置（admin token + 登录凭据）
+// applyAuthDefaults 应用认证默认配置（admin token + 登录凭据）。
+// 不再生成任何默认/随机凭据：loopback 允许空凭据走“首用户注册”流程，
+// 非 loopback 的凭据完整性由 StartupPreflight 在 Web 主入口强制。
 func (m *Manager) applyAuthDefaults(config *Config) {
+	// UNIMAP_BOOTSTRAP_PASSWORD -> bcrypt 内存哈希。
+	// 仅当未显式配置 password_hash 时生效；明文不写回配置、不进入日志。
 	if strings.TrimSpace(config.Web.Auth.PasswordHash) == "" {
 		if password := os.Getenv("UNIMAP_BOOTSTRAP_PASSWORD"); strings.TrimSpace(password) != "" {
 			hash, err := HashPassword(password)
@@ -244,43 +237,17 @@ func (m *Manager) applyAuthDefaults(config *Config) {
 			}
 		}
 	}
-	if strings.TrimSpace(config.Web.Auth.AdminToken) == "" {
-		if !isLoopbackBind(config.Web.BindAddress) {
-			config.Web.Auth.AdminToken = generateSecureToken(32)
-			config.Web.Auth.Enabled = true
-			logger.Infof("[config] Generated production admin token (bind=%s): ****", config.Web.BindAddress)
-			logger.Infof("[config] SAVE THIS TOKEN: it will not be shown again. Set 'admin_token' in your config file.")
-		} else {
-			token := generateSecureToken(32)
-			config.Web.Auth.AdminToken = token
-			config.Web.Auth.Enabled = true
-			logger.Infof("[config] Generated development admin token (bind=%s): ****", config.Web.BindAddress)
-		}
-	} else if !config.Web.Auth.Enabled {
+
+	// 认证默认启用（与历史行为一致）。不再自动生成 admin_token：
+	// loopback 允许为空走“首用户注册”；非 loopback 由 StartupPreflight 强制显式配置。
+	if !config.Web.Auth.Enabled {
 		config.Web.Auth.Enabled = true
 	}
 
-	// 0.0.0.0 绑定所有接口，视为公网暴露
-	isPublic := !isLoopbackBind(config.Web.BindAddress)
-
-	if strings.TrimSpace(config.Web.Auth.Username) == "" {
-		if isPublic {
-			logger.Fatalf("生产环境 (bind=%s) 禁止使用默认用户名，请在配置文件中设置 'username'", config.Web.BindAddress)
-		}
+	// loopback 下 username 缺省为 "admin" 仅作占位：
+	// password_hash 为空时登录走用户库“首用户注册”，不会恢复 admin/admin 默认口令。
+	if strings.TrimSpace(config.Web.Auth.Username) == "" && IsLoopbackBind(config.Web.BindAddress) {
 		config.Web.Auth.Username = "admin"
-	}
-	if strings.TrimSpace(config.Web.Auth.PasswordHash) == "" {
-		if isPublic {
-			logger.Fatalf("生产环境 (bind=%s) 禁止使用默认密码，请在配置文件中设置 'password_hash'", config.Web.BindAddress)
-		}
-		hash, err := HashPassword("admin")
-		if err != nil {
-			logger.Warnf("[config] failed to hash default password: %v", err)
-		} else {
-			config.Web.Auth.PasswordHash = hash
-			logger.Infof("[config] Generated default login credentials: admin/admin")
-			logger.Infof("[config] CHANGE THESE CREDENTIALS: set 'username' and 'password_hash' in your config file.")
-		}
 	}
 }
 

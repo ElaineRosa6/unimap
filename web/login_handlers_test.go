@@ -100,6 +100,51 @@ func TestHandleLoginPage_Normal(t *testing.T) {
 	}
 }
 
+func TestHandleLoginPage_RegistrationEntry_LoopbackColdStart(t *testing.T) {
+	templates, err := loadTemplates(".")
+	if err != nil {
+		t.Fatalf("load templates: %v", err)
+	}
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.BindAddress = "127.0.0.1"
+	s := &Server{config: cfg, templates: templates, userRepo: newMockUserRepo()}
+	s.staticVersion = "1.0"
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	setTestRemoteAddr(req, "127.0.0.1:12345")
+	s.handleLoginPage(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `id="reg-username"`) || !strings.Contains(body, "创建管理员") {
+		t.Fatal("loopback cold start /login must expose the first-admin registration entry")
+	}
+}
+
+func TestHandleLoginPage_NoRegistrationEntry_NonLoopback(t *testing.T) {
+	templates, err := loadTemplates(".")
+	if err != nil {
+		t.Fatalf("load templates: %v", err)
+	}
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.BindAddress = "0.0.0.0"
+	s := &Server{config: cfg, templates: templates, userRepo: newMockUserRepo()}
+	s.staticVersion = "1.0"
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	setTestRemoteAddr(req, "203.0.113.50:12345")
+	s.handleLoginPage(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), `id="reg-username"`) {
+		t.Fatal("non-loopback /login must not expose the anonymous registration entry")
+	}
+}
+
 func TestHandleLoginAPI_InvalidForm(t *testing.T) {
 	s := &Server{}
 	s.config = &config.Config{}
@@ -180,6 +225,41 @@ func TestHandleLoginAPI_EmptyCredentials(t *testing.T) {
 	s.handleLoginAPI(rec, req)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+}
+
+func TestHandleLoginAPI_LoopbackColdStartReturns409Bootstrap(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.BindAddress = "127.0.0.1"
+	s := &Server{config: cfg, userRepo: newMockUserRepo()}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader("username=admin&password=whatever&csrf_token=valid"))
+	setTestRemoteAddr(req, "203.0.113.30:12345")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "valid"})
+	s.handleLoginAPI(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 for loopback cold-start login, got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "create the first admin") {
+		t.Fatalf("cold-start login error must guide the caller to create the first admin, got body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleLoginAPI_NonLoopbackUnconfiguredStill500(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.BindAddress = "0.0.0.0"
+	s := &Server{config: cfg, userRepo: newMockUserRepo()}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader("username=admin&password=whatever&csrf_token=valid"))
+	setTestRemoteAddr(req, "203.0.113.31:12345")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "valid"})
+	s.handleLoginAPI(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected non-bootstrap unconfigured login to stay 500, got %d (body=%s)", rec.Code, rec.Body.String())
 	}
 }
 
