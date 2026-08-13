@@ -78,10 +78,10 @@ func buildProd(engines, notifications map[string]any) string {
 			},
 		},
 		"distributed": map[string]any{
-			"enabled":         false,
-			"admin_token":     "${UNIMAP_DISTRIBUTED_ADMIN_TOKEN}",
+			"enabled":          false,
+			"admin_token":      "${UNIMAP_DISTRIBUTED_ADMIN_TOKEN}",
 			"node_auth_tokens": map[string]any{},
-			"scheduler":       map[string]any{"strategy": "health_load"},
+			"scheduler":        map[string]any{"strategy": "health_load"},
 		},
 		"engines":       engines,
 		"notifications": notifications,
