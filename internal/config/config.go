@@ -1,9 +1,7 @@
 package config
 
 import (
-	"crypto/rand"
 	"fmt"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -276,26 +274,6 @@ func (m *Manager) GetRedisPrefix() string {
 		return "unimap:"
 	}
 	return prefix
-}
-
-// generateSecureToken generates a cryptographically secure random token
-// of the specified length using URL-safe base64 encoding.
-func generateSecureToken(length int) string {
-	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-	token := make([]byte, length)
-	for i := range token {
-		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
-		if err != nil {
-			// Fall back to a simple hex token if crypto/rand fails (extremely unlikely)
-			b := make([]byte, length/2)
-			if _, err := rand.Read(b); err == nil {
-				return fmt.Sprintf("%x", b)
-			}
-			return "fallback-token-" + fmt.Sprintf("%d", os.Getpid())
-		}
-		token[i] = charset[n.Int64()]
-	}
-	return string(token)
 }
 
 // HashPassword hashes a password using bcrypt with default cost.

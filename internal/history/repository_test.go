@@ -249,8 +249,8 @@ func TestNotificationPushLogRoundTrip(t *testing.T) {
 		Error:         "webhook 40058 截断",
 	}
 	for _, l := range []NotificationPushLog{first, second} {
-		if err := repo.RecordNotificationLog(l); err != nil {
-			t.Fatalf("record push log: %v", err)
+		if recordErr := repo.RecordNotificationLog(l); recordErr != nil {
+			t.Fatalf("record push log: %v", recordErr)
 		}
 	}
 

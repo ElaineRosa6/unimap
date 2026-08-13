@@ -330,10 +330,7 @@ func (c *CensysAdapter) searchRetryConfig() utils.RetryConfig {
 		Exponential: true, Jitter: true,
 		// key 级失败（鉴权/欠费/限流）不重试当前 key，交给 withKeyFailover 切换备用 key
 		RetryableFunc: func(err error) bool {
-			if isKeyError(err) {
-				return false
-			}
-			return true
+			return !isKeyError(err)
 		},
 	}
 }
