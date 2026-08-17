@@ -26,9 +26,12 @@ func isKeyError(err error) bool {
 }
 
 // activeKeys 返回依次尝试的 API key 列表（主 key + 备用 key）。
-// 备用 key 为空或与主 key 相同时不重复。
+// 空主键视为未配置，不占用一次失败请求；备用 key 为空或与主 key 相同时不重复。
 func activeKeys(primary, backup string) []string {
-	keys := []string{primary}
+	var keys []string
+	if primary != "" {
+		keys = append(keys, primary)
+	}
 	if backup != "" && backup != primary {
 		keys = append(keys, backup)
 	}

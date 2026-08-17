@@ -144,16 +144,23 @@ func (s *Server) validateLoginCredentials(w http.ResponseWriter, username, passw
 			if expectedUser == "" || expectedHash == "" {
 				// Loopback cold-start: zero users and no configured credential hash means
 				// bootstrap is pending. Guide the caller to create the first admin instead
-				// of failing with a misleading 500. Non-bootstrap "login not configured"
-				// keeps its existing 500 behavior.
+				// of failing with a misleading 500. Non-bootstrap empty stores stay 500.
+				// After the first admin exists, an unknown username is a normal auth miss.
 				if s.isRegistrationPublic() {
 					writeJSON(w, http.StatusConflict, map[string]string{"error": "bootstrap required: create the first admin account before logging in (请先创建管理员)"})
 					return 0, false
 				}
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "login not configured"})
-				return 0, false
-			}
-			if secureCompare(username, expectedUser) && config.CheckPassword(password, expectedHash) {
+				populated, err := s.userStorePopulated()
+				if err != nil {
+					logger.Errorf("login: failed to count users: %v", err)
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+					return 0, false
+				}
+				if !populated {
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "login not configured"})
+					return 0, false
+				}
+			} else if secureCompare(username, expectedUser) && config.CheckPassword(password, expectedHash) {
 				return 0, true
 			}
 		}

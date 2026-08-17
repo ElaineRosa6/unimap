@@ -269,6 +269,9 @@ func (q *QuakeAdapter) buildCondition(field, op, value string) string {
 
 // Search 执行搜索
 func (q *QuakeAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
+	if q.apiKey == "" && q.backupAPIKey == "" {
+		return &model.EngineResult{EngineName: q.Name(), Error: "Quake API key not configured"}, nil
+	}
 	var engineResult *model.EngineResult
 	keys := activeKeys(q.apiKey, q.backupAPIKey)
 	err := withKeyFailover(q.Name(), len(keys), func(idx int) error {

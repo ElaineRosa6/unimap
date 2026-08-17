@@ -233,7 +233,7 @@ func (s *ShodanAdapter) mapField(field string) string {
 
 // Search 执行Shodan搜索
 func (s *ShodanAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
-	if s.apiKey == "" {
+	if s.apiKey == "" && s.backupAPIKey == "" {
 		return &model.EngineResult{EngineName: s.Name(), Error: "Shodan API key not configured"}, nil
 	}
 	var engineResult *model.EngineResult

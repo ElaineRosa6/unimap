@@ -1380,13 +1380,23 @@ func TestQuakeAdapter_Normalize(t *testing.T) {
 
 func TestQuakeAdapter_Search(t *testing.T) {
 	t.Run("empty api key", func(t *testing.T) {
-		a := NewQuakeAdapter("https://quake.io", "", "", 3, 30*time.Second)
+		hits := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits++
+			t.Errorf("unexpected HTTP request: %s %s", r.Method, r.URL.Path)
+		}))
+		defer server.Close()
+
+		a := NewQuakeAdapter(server.URL, "", "", 3, 30*time.Second)
 		result, err := a.Search(context.Background(), "test", 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if result.Error == "" {
 			t.Error("expected error in result for empty API key")
+		}
+		if hits != 0 {
+			t.Fatalf("empty API key must fail before any HTTP request, got %d", hits)
 		}
 	})
 

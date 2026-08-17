@@ -44,7 +44,7 @@ Bridge 任务动作：
 - `screenshot`：采集截图。
 - `collect_and_capture`：同一次任务中采集字段并截图。
 
-源码识别 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap。稳定 Web UI 目前仅展示前五个；后两个不应被描述为已在 UI 中正式启用。
+源码识别 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap。稳定 Web UI 当前展示全部七个引擎；缺少 API 凭据时走 Web-only adapter。
 
 ## 调试
 

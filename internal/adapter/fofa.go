@@ -315,31 +315,41 @@ func (f *FofaAdapter) needsEmail() bool {
 
 // fofaCredential 返回指定 key 索引对应的邮箱与 key（0=主，1=备用）。
 func (f *FofaAdapter) fofaCredential(idx int) (email, apiKey string) {
+	if f.apiKey == "" {
+		return f.backupEmail, f.backupAPIKey
+	}
 	if idx == 1 {
 		return f.backupEmail, f.backupAPIKey
 	}
 	return f.email, f.apiKey
 }
 
-// activeKeyCount 返回可用 key 数量。备用 key 缺失、与主 key 相同，或官方 API
-// 缺少备用邮箱时只算 1（不触发切换）。
+// activeKeyCount 返回可用 key 数量。空主键不占一次尝试；备用 key 缺失、与主
+// key 相同，或官方 API 缺少备用邮箱时不计入备用。
 func (f *FofaAdapter) activeKeyCount() int {
+	n := 0
+	if f.apiKey != "" {
+		n++
+	}
 	if f.backupAPIKey == "" || f.backupAPIKey == f.apiKey {
-		return 1
+		return n
 	}
-	if f.needsEmail() && (f.backupEmail == "" || f.backupEmail == f.email) {
-		return 1
+	if f.needsEmail() && f.backupEmail == "" {
+		return n
 	}
-	return 2
+	return n + 1
 }
 
 // Search 执行FOFA搜索
 func (f *FofaAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
-	if f.apiKey == "" {
+	if f.apiKey == "" && f.backupAPIKey == "" {
 		return &model.EngineResult{EngineName: f.Name(), Error: "FOFA API key not configured"}, nil
 	}
-	if f.needsEmail() && f.email == "" {
-		return &model.EngineResult{EngineName: f.Name(), Error: "FOFA email not configured (required for official API)"}, nil
+	if f.needsEmail() {
+		email, _ := f.fofaCredential(0)
+		if email == "" {
+			return &model.EngineResult{EngineName: f.Name(), Error: "FOFA email not configured (required for official API)"}, nil
+		}
 	}
 	var engineResult *model.EngineResult
 	err := withKeyFailover(f.Name(), f.activeKeyCount(), func(idx int) error {

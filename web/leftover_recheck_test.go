@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/unimap/project/internal/config"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestLeftover_NoBackupRestoreRoute(t *testing.T) {
@@ -48,7 +50,7 @@ func TestLeftover_HandleRegisterDoesNotPersistAdminToken(t *testing.T) {
 	}
 }
 
-func TestLeftover_UnknownUsernameAfterBootstrapStill500(t *testing.T) {
+func TestLeftover_UnknownUsernameAfterBootstrapReturns401(t *testing.T) {
 	repo := newMockUserRepo()
 	if _, err := repo.Create("admin", "hash", "admin"); err != nil {
 		t.Fatalf("seed admin: %v", err)
@@ -64,8 +66,55 @@ func TestLeftover_UnknownUsernameAfterBootstrapStill500(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "valid"})
 	s.handleLoginAPI(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unknown username after bootstrap returned %d, want 401 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLeftover_WrongPasswordAfterBootstrapReturns401(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	repo := newMockUserRepo()
+	if _, err := repo.Create("admin", string(hash), "admin"); err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.BindAddress = "127.0.0.1"
+	s := &Server{config: cfg, userRepo: repo}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader("username=admin&password=wrong-password&csrf_token=valid"))
+	setTestRemoteAddr(req, "203.0.113.92:12345")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "valid"})
+	s.handleLoginAPI(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password after bootstrap returned %d, want 401 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLeftover_LoginCountErrorReturns500(t *testing.T) {
+	repo := newMockUserRepo()
+	if _, err := repo.Create("admin", "hash", "admin"); err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+	repo.countErr = errors.New("user db unavailable")
+	cfg := &config.Config{}
+	cfg.Web.Auth.Enabled = true
+	cfg.Web.BindAddress = "127.0.0.1"
+	s := &Server{config: cfg, userRepo: repo}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", strings.NewReader("username=nobody&password=whatever&csrf_token=valid"))
+	setTestRemoteAddr(req, "203.0.113.93:12345")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "valid"})
+	s.handleLoginAPI(rec, req)
 	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("U-15 leftover: unknown username after bootstrap returned %d, want 500 (body=%s)", rec.Code, rec.Body.String())
+		t.Fatalf("count error returned %d, want 500 (body=%s)", rec.Code, rec.Body.String())
 	}
 }
 
@@ -137,7 +186,7 @@ func TestLeftover_GUIEntryStillPresent(t *testing.T) {
 	}
 }
 
-func TestLeftover_GetConfigExposesNotificationSecrets(t *testing.T) {
+func TestLeftover_GetConfigMasksNotificationSecrets(t *testing.T) {
 	s := newServerForConfigTest()
 	s.config.Notifications.Channels = []config.NotificationChannelCfg{{
 		ID:         "ops",
@@ -153,8 +202,11 @@ func TestLeftover_GetConfigExposesNotificationSecrets(t *testing.T) {
 		t.Fatalf("get config = %d, want 200 (body=%s)", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "secret-token-value") && !strings.Contains(body, "notify-signing-secret-value") {
-		t.Fatal("expected GET /api/v1/config leftover to include raw notification webhook or secret")
+	if strings.Contains(body, "secret-token-value") || strings.Contains(body, "notify-signing-secret-value") {
+		t.Fatalf("GET /api/v1/config leaked notification secret: %s", body)
+	}
+	if !strings.Contains(body, `"id":"ops"`) && !strings.Contains(body, `"id": "ops"`) {
+		t.Fatalf("GET /api/v1/config should still list channel id, body=%s", body)
 	}
 }
 

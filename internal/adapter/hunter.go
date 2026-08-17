@@ -89,11 +89,7 @@ func NewHunterAdapter(baseURL, apiKey, backupAPIKey string, qps int, timeout tim
 // activeAPIKeys 返回依次尝试的 API key 列表（主 key + 备用 key）。
 // 备用 key 为空或与主 key 相同时不重复。
 func (h *HunterAdapter) activeAPIKeys() []string {
-	keys := []string{h.apiKey}
-	if h.backupAPIKey != "" && h.backupAPIKey != h.apiKey {
-		keys = append(keys, h.backupAPIKey)
-	}
-	return keys
+	return activeKeys(h.apiKey, h.backupAPIKey)
 }
 
 // hunterKeyError 表示与特定 API key 相关的失败（401 鉴权 / 402 欠费 / 429 限流）。
@@ -288,7 +284,7 @@ func (h *HunterAdapter) buildCondition(field, op, value string) string {
 
 // Search 执行Hunter搜索
 func (h *HunterAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
-	if h.apiKey == "" {
+	if h.apiKey == "" && h.backupAPIKey == "" {
 		return &model.EngineResult{EngineName: h.Name(), Error: "Hunter API key not configured"}, nil
 	}
 	var engineResult *model.EngineResult

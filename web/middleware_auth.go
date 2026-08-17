@@ -194,6 +194,20 @@ func (s *Server) isRegistrationPublic() bool {
 	return count == 0
 }
 
+// userStorePopulated reports whether the user database already has accounts.
+// A count error is returned so login can fail closed instead of treating a
+// broken store as "unconfigured".
+func (s *Server) userStorePopulated() (bool, error) {
+	if s.userRepo == nil {
+		return false, nil
+	}
+	count, err := s.userRepo.Count()
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func generateRandomToken() string {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

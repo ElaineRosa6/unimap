@@ -7,6 +7,7 @@ import (
 
 	"github.com/unimap/project/internal/config"
 	"github.com/unimap/project/internal/logger"
+	"github.com/unimap/project/internal/model"
 	"github.com/unimap/project/internal/screenshot"
 )
 
@@ -110,9 +111,23 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"cache_max_entries": cfg.System.CacheMaxSize,
 	}
 
+	channels := make([]model.NotificationChannelInfo, 0, len(cfg.Notifications.Channels))
+	for _, ch := range cfg.Notifications.Channels {
+		channels = append(channels, model.NotificationChannelInfo{
+			ID:                       ch.ID,
+			Type:                     ch.Type,
+			Enabled:                  ch.Enabled,
+			AppID:                    ch.AppID,
+			ChatID:                   ch.ChatID,
+			AllowPrivateIP:           ch.AllowPrivateIP,
+			WeComMsgType:             ch.WeComMsgType,
+			WeComMentionedList:       ch.WeComMentionedList,
+			WeComMentionedMobileList: ch.WeComMentionedMobileList,
+		})
+	}
 	notifyCfg := map[string]interface{}{
 		"enabled":  cfg.Notifications.Enabled,
-		"channels": cfg.Notifications.Channels,
+		"channels": channels,
 	}
 	if cfg.Notifications.FeishuApp != nil {
 		notifyCfg["feishu_app"] = map[string]interface{}{

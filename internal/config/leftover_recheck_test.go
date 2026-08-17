@@ -28,22 +28,15 @@ func TestLeftover_ExampleConfigEvidenceScreenshotDisabled(t *testing.T) {
 
 func TestLeftover_ExampleConfigLoadThroughManager(t *testing.T) {
 	mgr := NewManager(exampleConfigPath(t))
-	err := mgr.Load()
+	if err := mgr.Load(); err != nil {
+		t.Fatalf("example config must load: %v", err)
+	}
 	cfg := mgr.GetConfig()
 	if cfg == nil {
-		t.Fatal("Load must still publish a config snapshot")
-	}
-	if err == nil {
-		if cfg.Tamper.EvidenceScreenshotEnabled {
-			t.Fatal("loaded example config enabled evidence screenshots")
-		}
-		return
-	}
-	if !strings.Contains(err.Error(), "unmarshal") {
-		t.Fatalf("Load example config failed unexpectedly: %v", err)
+		t.Fatal("Load must publish a config snapshot")
 	}
 	if cfg.Tamper.EvidenceScreenshotEnabled {
-		t.Fatal("fallback defaults must keep evidence screenshots disabled")
+		t.Fatal("loaded example config enabled evidence screenshots")
 	}
 }
 

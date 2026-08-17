@@ -201,7 +201,7 @@ Compose 已透传可选 `QUAKE_API_KEY`、`HUNTER_API_KEY`。Key 留空时只表
 
 ## 5. 本轮已纠正的记录
 
-- GUI 入口 (cmd/unimap-gui) 已删除，Fyne 依赖已清除（2026-08-01）；项目入口为 unimap-web + unimap-cli；
+- GUI 入口 `cmd/unimap-gui` 仍在（`gui` build tag + Fyne）；默认入口为 unimap-web 与 unimap-cli；
 - CLI 已完成 Agent 友好化改造：JSON 信封、语义退出码、分页、--format json、quota/config show/help --json；
 - CLI 不直接集成 CDP/Bridge，截图通过 Web API 代理；
 

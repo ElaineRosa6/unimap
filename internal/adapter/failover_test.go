@@ -33,6 +33,16 @@ func TestActiveKeys(t *testing.T) {
 			t.Fatalf("expected [k1 k2], got %v", got)
 		}
 	})
+	t.Run("empty primary uses backup only", func(t *testing.T) {
+		if got := activeKeys("", "k2"); len(got) != 1 || got[0] != "k2" {
+			t.Fatalf("expected [k2], got %v", got)
+		}
+	})
+	t.Run("both empty", func(t *testing.T) {
+		if got := activeKeys("", ""); len(got) != 0 {
+			t.Fatalf("expected empty, got %v", got)
+		}
+	})
 }
 
 func TestWithKeyFailover(t *testing.T) {
