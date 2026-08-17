@@ -16,7 +16,7 @@ go run -tags gui ./cmd/unimap-gui
 go build -tags gui -o unimap-gui ./cmd/unimap-gui
 ```
 
-GUI 构建所需的系统图形依赖见 [GUI_BUILD.md](GUI_BUILD.md)。
+GUI 需系统图形库：`go run -tags gui ./cmd/unimap-gui`。默认入口为 Web 与 CLI。
 
 ## 配置引擎
 

@@ -17,9 +17,20 @@
 
 ## 0. 当前状态（本机与云端均已闭环）
 
+> **2026-08-17 修订**：云端 `/opt/unimap` 与镜像 `unimap:local` 已快进到 `71371f1`
+> （`fix: fail-fast empty engine keys, mask notify secrets, return 401 after bootstrap`）。
+> 升级前将运行配置中的默认 `web.auth.username=admin` 改为非默认名，并同步
+> `UNIMAP_ADMIN_USERNAME`，否则当前 `StartupPreflight` 会在容器内 `0.0.0.0` 绑定下拒绝启动。
+> 口令哈希与 admin token 未改。旧镜像标签 `unimap:local-bak-20260817`。
+> recreate 后 `/health/ready` 为 ok、`scheduler=ok`；12 个任务定义与渠道绑定保留
+> （9 个启用：fofa×2、hunter×4、daydaymap×2、icp×1；3 个 quake 仍为 disabled）。
+> 升级当日 08:00–09:40 的启用任务均为 success（升级前）；新镜像下首次自动执行窗口为 15:00。
+> 用户表仍为空，登录走配置账号。截图配置仍关闭，readiness 中 screenshot 为 degraded。
+> smtp-relay 容器未随本次 recreate。
+
 - 云端（阿里云 `8.160.177.101`，/opt/unimap，容器 `unimap-unimap-1`，镜像 `unimap:local` 本地构建）已随
-  develop `cf47728` 更新并重建验证：`/health/ready` 200、容器 healthy、`notification_push_log` 表已建、
-  调度任务持久化保留。
+  `master` `71371f1`（2026-08-17）更新并重建验证：`/health/ready` 200、容器 healthy、`notification_push_log` 表已建、
+  调度任务持久化保留。此前 2026-08-07 基线为 develop `cf47728`。
 - 云端实际为 **12 个定时任务**（fofa×2、quake×3、hunter×4、daydaymap×2、**ICP 备案查询×1**；原每周快照
   `ynmobile_weekly_snapshot` 已于 2026-08-07 删除，13→12），11 个查询任务通知渠道 `email_agent`
   （webhook→smtp-relay→QQ SMTP 邮件；2026-08-07 起已取消企微绑定），`only_new=true` 增量推送，

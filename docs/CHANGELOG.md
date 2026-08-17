@@ -4,6 +4,18 @@
 
 ---
 
+## [2026-08-17] 本地审查收口与阿里云镜像升级
+
+- 示例配置 Redis `prefix` 改为带引号，`config.yaml.example` 可通过 `Manager.Load` 解析。
+- Quake / Hunter / FOFA / Shodan `Search`：主备 Key 都空时本地失败、不发起 HTTP；空主键不再占用一次请求，只配备用 Key 时直接使用备用 Key。
+- 用户库已有账号后，未知用户名登录返回 401；loopback 冷启动仍为 409；非 loopback 空库仍为 500 `login not configured`。
+- `GET /api/v1/config` 的 `notifications.channels` 只返回公开字段，不再带出 webhook URL / 签名密钥。
+- 文档与代码对齐：稳定 Web UI 为七引擎；`cmd/unimap-gui` 仍在（`gui` build tag）。
+- 阿里云试运行机：运行配置中的默认 `web.auth.username=admin` 已改为非默认名（与 `UNIMAP_ADMIN_USERNAME` 对齐），以满足非 loopback `StartupPreflight`；随后将 `/opt/unimap` 与镜像 `unimap:local` 快进到 `71371f1` 并 recreate `unimap-unimap-1`。`/health/ready` 为 ok，12 个调度任务定义保留。升级前当日 08:00–09:40 的启用任务均为 success；升级后下一档为 15:00。旧镜像标签 `unimap:local-bak-20260817`。
+- 仍不实施：Load 失败即退出、非 loopback 首管理员落库、注册时展示 token、保存 Cookie 时自动 CDP 探测、`/screenshots/` 强制登录、证据截图、恢复 API、配额趋势/告警、按事件分渠道。
+
+---
+
 ## [2026-08-06] 七引擎字段不丢失修复与真实 API 复验
 
 - 修复引擎字段丢失：各适配器结构体新增 `Extra` 捕获（`rawUnknown` + 自定义 `UnmarshalJSON`），未声明顶层键不再被 Go JSON 静默丢弃；`promoteLastSeen` 从 `lastupdatetime`/`time`/`updated_at`/`time_stamp` 等键统一提升资产 `last_seen`。覆盖 fofa/hunter/quake/zoomeye/daydaymap/censys/shodan。

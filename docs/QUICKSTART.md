@@ -71,7 +71,7 @@ go run ./cmd/unimap-cli -q 'title="login"' -e fofa,hunter,quake -o result.xlsx
 go run -tags gui ./cmd/unimap-gui
 ```
 
-说明：GUI 依赖系统图形库，具体见 GUI_BUILD.md。
+说明：GUI 依赖系统图形库，使用 `go run -tags gui ./cmd/unimap-gui`。默认请走 Web 或 CLI。
 
 ## 5. 本地检查命令
 

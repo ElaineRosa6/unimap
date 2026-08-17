@@ -362,7 +362,7 @@ ICP 备案查询任务：按 `queries` 中的名称逐条查询 `type`（逗号�
 | GET | `/api/v1/users` | 用户列表 |
 | GET/PUT/DELETE | `/api/v1/users/{id}` | 读取、更新、删除用户 |
 | POST | `/api/v1/users/{id}/password` | 修改用户密码 |
-| GET/POST | `/api/v1/config` | 读取、保存配置；需管理员 |
+| GET/POST | `/api/v1/config` | 读取、保存配置；需管理员。GET 的 `notifications.channels` 只含公开字段（id/type/enabled 等），不含 `webhook_url` / `secret` / `app_secret`；渠道密钥仍走 `/api/v1/notifications/channels` 的保存与测试接口 |
 
 数据库用户会话在每次受保护请求上校验用户存在、active 状态和 `session_version`。禁用、删除或修改密码后，旧 Cookie 的下一次请求会返回 401；用户数据库不可用时返回 503。legacy 单用户会话与管理令牌认证不读取用户表。
 | POST | `/api/v1/history/save` | 保存操作历史；需管理员 |

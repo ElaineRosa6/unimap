@@ -1,6 +1,6 @@
 # UniMap 运维 Runbook
 
-> 最后按代码核对：2026-07-24。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
+> 最后按代码核对：2026-08-17。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
 
 ## 0. 先确认服务与认证
 
@@ -17,6 +17,22 @@ Invoke-RestMethod http://127.0.0.1:8448/metrics -Headers @{ 'X-Admin-Token' = $e
 ```
 
 不要把管理令牌、Bridge token 或引擎 Key 写入命令历史、工单或日志。
+
+### 启动预检与登录语义（2026-08-17）
+
+`cmd/unimap-web` 在创建服务前执行 `StartupPreflight`：
+
+- 绑定回环：允许空 `admin_token` / `password_hash`，走 `/login` 首管理员注册。
+- 绑定 `0.0.0.0` 等非回环（含 Docker 容器内监听）：必须认证开启、`admin_token` 非空、`password_hash` 为合法 bcrypt，且 **`web.auth.username` 不能是 `admin`**。不满足则进程退出，容器不会变为 healthy。
+- 容器内监听 `0.0.0.0`、宿主机只发布 `127.0.0.1:8448` 时，预检仍按非回环处理。升级带该预检的镜像前，先把运行配置和 `UNIMAP_ADMIN_USERNAME` 改成非默认用户名；不要把容器绑定改成 `127.0.0.1` 来绕过预检（会破坏 Docker 端口映射）。
+
+登录 API：
+
+- loopback 且用户库为空：409，引导创建首管理员。
+- 用户库已有账号、未知用户名或密码错误：401。
+- 非 loopback 且用户库为空、配置也无哈希：500 `login not configured`。
+
+`GET /api/v1/config` 不再返回通知渠道的 webhook/密钥。保存 Cookie（`POST` cookies）只落盘，不会自动做 CDP 登录探测；探测使用 `GET /api/v1/cookies/login-status`。
 
 ### 发布前审计门槛（2026-07-15）
 

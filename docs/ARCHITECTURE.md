@@ -1,6 +1,6 @@
 # UniMap 架构
 
-> 最后按代码核对：2026-07-29。Go 版本为 1.26.5；路由事实来源为 `web/router.go`。
+> 最后按代码核对：2026-08-17。Go 版本为 1.26.5；路由事实来源为 `web/router.go`。
 
 ## 分层
 
@@ -39,7 +39,7 @@ type EngineAdapter interface {
 
 请求流：`UQL → Parser → EngineOrchestrator → Adapter → EngineResult → Normalize → ResultMerger → cache/export`。
 
-主/备用凭据自动故障切换适用于全部七引擎（FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap）。`withKeyFailover`（`internal/adapter/keyfailover.go`）按索引顺序尝试主 key、备用 key；仅当引擎返回 key 级失败（鉴权 HTTP 401/403、积分耗尽/欠费 HTTP 402、限流 HTTP 429，以及各引擎业务码，如 FOFA 820041/820003、Quake q200x/积分不足、ZoomEye credits_insufficient、Shodan "invalid api key"、Censys quota/credit、DayDayMap 积分/额度/余额）才切换，网络错误等非 key 级失败立即返回不切换，两类 key 都失败才返回错误。备用凭据字段：单 key 引擎 `engines.<engine>.backup_api_key`；FOFA 为 `backup_api_key` + `backup_email`（官方 API 邮箱+key 成对）；Censys 为 `backup_api_id` + `backup_api_secret` 成对。切换在查询（Search）路径生效；配额查询为展示用途不走切换。
+主/备用凭据自动故障切换适用于全部七引擎（FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap）。`activeKeys` 跳过空主键，只配备用 Key 时第一次请求即使用备用 Key。主备都空时 `Search` 在本地返回“未配置”，不发起 HTTP。`withKeyFailover`（`internal/adapter/keyfailover.go`）按索引顺序尝试主 key、备用 key；仅当引擎返回 key 级失败（鉴权 HTTP 401/403、积分耗尽/欠费 HTTP 402、限流 HTTP 429，以及各引擎业务码，如 FOFA 820041/820003、Quake q200x/积分不足、ZoomEye credits_insufficient、Shodan "invalid api key"、Censys quota/credit、DayDayMap 积分/额度/余额）才切换，网络错误等非 key 级失败立即返回不切换，两类 key 都失败才返回错误。备用凭据字段：单 key 引擎 `engines.<engine>.backup_api_key`；FOFA 为 `backup_api_key` + `backup_email`（官方 API 邮箱+key 成对）；Censys 为 `backup_api_id` + `backup_api_secret` 成对。切换在查询（Search）路径生效；配额查询为展示用途不走切换。关闭引擎请用 `enabled: false`，不要只靠清空主键。
 
 ## 截图与巡检
 
