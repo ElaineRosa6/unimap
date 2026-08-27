@@ -1,6 +1,8 @@
 module github.com/unimap/project
 
-go 1.26.5
+go 1.26.6
+
+toolchain go1.26.6
 
 require (
 	fyne.io/fyne/v2 v2.4.3
@@ -19,9 +21,9 @@ require (
 	github.com/xuri/excelize/v2 v2.11.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.53.0
-	golang.org/x/image v0.43.0
+	golang.org/x/image v0.45.0
 	golang.org/x/net v0.56.0
-	golang.org/x/text v0.38.0
+	golang.org/x/text v0.41.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -69,7 +71,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/mobile v0.0.0-20230531173138-3c911d8e3eda // indirect
-	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 	honnef.co/go/js/dom v0.0.0-20210725211120-f030747120f2 // indirect
 )
