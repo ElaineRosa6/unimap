@@ -162,14 +162,24 @@ func TestGetSortedAssets(t *testing.T) {
 
 	assets := []model.UnifiedAsset{
 		{IP: "2.2.2.2", Port: 80, Source: "fofa"},
-		{IP: "1.1.1.1", Port: 80, Source: "fofa"},
+		{IP: "1.1.1.1", Port: 443, Source: "fofa"},
+		{IP: "1.1.1.1", Port: 80, Source: "hunter"},
 	}
 
 	mergeResult := merger.Merge(assets)
 	sorted := merger.GetSortedAssets(mergeResult)
 
-	if len(sorted) != 2 {
-		t.Errorf("expected 2 sorted assets, got %d", len(sorted))
+	if len(sorted) != 3 {
+		t.Fatalf("expected 3 sorted assets, got %d", len(sorted))
+	}
+	if sorted[0].IP != "1.1.1.1" || sorted[0].Port != 80 {
+		t.Errorf("expected first asset 1.1.1.1:80, got %s:%d", sorted[0].IP, sorted[0].Port)
+	}
+	if sorted[1].IP != "1.1.1.1" || sorted[1].Port != 443 {
+		t.Errorf("expected second asset 1.1.1.1:443, got %s:%d", sorted[1].IP, sorted[1].Port)
+	}
+	if sorted[2].IP != "2.2.2.2" || sorted[2].Port != 80 {
+		t.Errorf("expected third asset 2.2.2.2:80, got %s:%d", sorted[2].IP, sorted[2].Port)
 	}
 }
 
