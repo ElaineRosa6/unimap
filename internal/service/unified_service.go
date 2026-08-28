@@ -363,8 +363,9 @@ func (s *UnifiedService) executeAndNormalizeQuery(ctx context.Context, req Query
 
 	if len(allAssets) > 0 && s.merger != nil {
 		mergeResult := s.merger.Merge(allAssets)
-		allAssets = make([]model.UnifiedAsset, 0, mergeResult.Total)
-		for _, asset := range mergeResult.Assets {
+		sorted := s.merger.GetSortedAssets(mergeResult)
+		allAssets = make([]model.UnifiedAsset, 0, len(sorted))
+		for _, asset := range sorted {
 			if asset != nil {
 				allAssets = append(allAssets, *asset)
 			}

@@ -360,16 +360,60 @@ func BenchmarkNewUnifiedServiceWithConfig(b *testing.B) {
 
 // mock adapter for testing
 type testMockAdapter struct {
-	name string
+	name    string
+	results []model.UnifiedAsset
 }
 
 func (m *testMockAdapter) Name() string                                { return m.name }
 func (m *testMockAdapter) Translate(ast *model.UQLAST) (string, error) { return "translated", nil }
 func (m *testMockAdapter) Search(ctx context.Context, query string, page, pageSize int) (*model.EngineResult, error) {
-	return &model.EngineResult{EngineName: m.name}, nil
+	return &model.EngineResult{EngineName: m.name, Total: len(m.results)}, nil
 }
 func (m *testMockAdapter) Normalize(raw *model.EngineResult) ([]model.UnifiedAsset, error) {
-	return nil, nil
+	return m.results, nil
 }
 func (m *testMockAdapter) GetQuota() (*model.QuotaInfo, error) { return &model.QuotaInfo{}, nil }
 func (m *testMockAdapter) IsWebOnly() bool                     { return false }
+
+func TestExecuteAndNormalizeQuery_DeterministicAssetOrder(t *testing.T) {
+	svc := NewUnifiedService()
+	defer svc.Shutdown()
+	svc.RegisterAdapter(&testMockAdapter{
+		name: "fofa",
+		results: []model.UnifiedAsset{
+			{IP: "10.0.0.3", Port: 443, Source: "fofa"},
+			{IP: "10.0.0.1", Port: 80, Source: "fofa"},
+			{IP: "10.0.0.2", Port: 22, Source: "fofa"},
+			{IP: "10.0.0.1", Port: 443, Source: "fofa"},
+		},
+	})
+
+	assets, _, errs, err := svc.executeAndNormalizeQuery(context.Background(), QueryRequest{
+		Query:    `port="80"`,
+		Engines:  []string{"fofa"},
+		PageSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("executeAndNormalizeQuery: %v", err)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("unexpected query errors: %v", errs)
+	}
+	if len(assets) != 4 {
+		t.Fatalf("expected 4 assets, got %d", len(assets))
+	}
+	want := []struct {
+		ip   string
+		port int
+	}{
+		{"10.0.0.1", 80},
+		{"10.0.0.1", 443},
+		{"10.0.0.2", 22},
+		{"10.0.0.3", 443},
+	}
+	for i, w := range want {
+		if assets[i].IP != w.ip || assets[i].Port != w.port {
+			t.Errorf("assets[%d] = %s:%d, want %s:%d (full=%v)", i, assets[i].IP, assets[i].Port, w.ip, w.port, assets)
+		}
+	}
+}

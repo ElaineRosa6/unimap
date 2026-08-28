@@ -221,6 +221,32 @@ func TestListAdapters(t *testing.T) {
 	if len(names) != 2 {
 		t.Errorf("expected 2 adapters, got %d", len(names))
 	}
+	if names[0] != "fofa" || names[1] != "hunter" {
+		t.Errorf("expected sorted [fofa hunter], got %v", names)
+	}
+}
+
+func TestListAdapters_StableSortedOrder(t *testing.T) {
+	o := NewEngineOrchestrator()
+	// Register out of alphabetical order so map iteration cannot be the source of stability.
+	o.RegisterAdapter(&mockAdapter{name: "zoomeye"})
+	o.RegisterAdapter(&mockAdapter{name: "hunter"})
+	o.RegisterAdapter(&mockAdapter{name: "quake"})
+	o.RegisterAdapter(&mockAdapter{name: "fofa"})
+
+	names := o.ListAdapters()
+	want := []string{"fofa", "hunter", "quake", "zoomeye"}
+	if len(names) != len(want) {
+		t.Fatalf("expected %d adapters, got %d: %v", len(want), len(names), names)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Fatalf("ListAdapters() = %v, want sorted %v", names, want)
+		}
+	}
+	if names[0] != "fofa" {
+		t.Errorf("expected stable default engine fofa, got %s", names[0])
+	}
 }
 
 // 测试 GetAdapter

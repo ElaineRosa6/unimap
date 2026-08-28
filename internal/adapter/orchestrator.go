@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -144,7 +145,7 @@ func (o *EngineOrchestrator) GetAdapter(name string) (EngineAdapter, bool) {
 	return adapter, exists
 }
 
-// ListAdapters 列出所有适配器
+// ListAdapters 列出所有适配器（按名称排序，保证默认引擎与 UI 列表稳定）。
 func (o *EngineOrchestrator) ListAdapters() []string {
 	o.mutex.RLock()
 	defer o.mutex.RUnlock()
@@ -152,6 +153,7 @@ func (o *EngineOrchestrator) ListAdapters() []string {
 	for name := range o.adapters {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
 

@@ -38,18 +38,17 @@ func TestQueryAppService_ResolveEngines(t *testing.T) {
 		t.Errorf("expected nil, got %v", got)
 	}
 
-	// orchestrator with adapters — returns first available adapter
+	// orchestrator with adapters — default is first sorted adapter name
 	orch2 := adapter.NewEngineOrchestrator()
-	orch2.RegisterAdapter(&mockEngineAdapter{name: "fofa"})
 	orch2.RegisterAdapter(&mockEngineAdapter{name: "hunter"})
+	orch2.RegisterAdapter(&mockEngineAdapter{name: "fofa"})
 	svc2 := NewQueryAppService(nil, orch2)
 	got = svc2.ResolveEngines(nil)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 engine, got %d", len(got))
 	}
-	// Should be one of the registered adapters
-	if got[0] != "fofa" && got[0] != "hunter" {
-		t.Errorf("expected fofa or hunter, got %v", got)
+	if got[0] != "fofa" {
+		t.Errorf("expected stable default engine fofa (sorted names), got %v", got)
 	}
 
 	// orchestrator with no adapters
