@@ -2,8 +2,6 @@ module github.com/unimap/project
 
 go 1.26.6
 
-toolchain go1.26.6
-
 require (
 	fyne.io/fyne/v2 v2.4.3
 	github.com/PuerkitoBio/goquery v1.11.0
