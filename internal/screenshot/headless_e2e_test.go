@@ -23,9 +23,7 @@ func TestHeadlessChromeExecutesJavaScriptAndCapturesPNG(t *testing.T) {
 	if chromePath == "" {
 		t.Fatal("UNIMAP_CHROME_PATH is required for the headless integration test")
 	}
-	if healthy, err := (&CDPHealthChecker{ConfiguredChromePath: chromePath}).Check(t.Context()); err != nil || !healthy {
-		t.Fatalf("Chrome readiness probe failed: healthy=%v err=%v", healthy, err)
-	}
+	waitForChromeReady(t, chromePath)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -33,10 +31,11 @@ func TestHeadlessChromeExecutesJavaScriptAndCapturesPNG(t *testing.T) {
 	}))
 	defer server.Close()
 
+	profileDir := softChromeProfileDir(t)
 	mgr := NewManager(Config{
-		BaseDir:     t.TempDir(),
+		BaseDir:     softTempDir(t),
 		ChromePath:  chromePath,
-		UserDataDir: filepath.Join(t.TempDir(), "profile"),
+		UserDataDir: profileDir,
 		Headless:    true,
 		Timeout:     20 * time.Second,
 		WaitTime:    100 * time.Millisecond,
@@ -66,6 +65,7 @@ func TestHeadlessDOMCollectionBlocksPrivateRedirect(t *testing.T) {
 	if chromePath == "" {
 		t.Fatal("UNIMAP_CHROME_PATH is required for the headless integration test")
 	}
+	waitForChromeReady(t, chromePath)
 
 	var blockedHits atomic.Int64
 	blocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -80,9 +80,9 @@ func TestHeadlessDOMCollectionBlocksPrivateRedirect(t *testing.T) {
 	defer entry.Close()
 
 	mgr := NewManager(Config{
-		BaseDir:     t.TempDir(),
+		BaseDir:     softTempDir(t),
 		ChromePath:  chromePath,
-		UserDataDir: filepath.Join(t.TempDir(), "profile"),
+		UserDataDir: softChromeProfileDir(t),
 		Headless:    true,
 		Timeout:     20 * time.Second,
 		WaitTime:    10 * time.Millisecond,
@@ -108,6 +108,7 @@ func TestHeadlessDOMCollectionBlocksPrivateSubresources(t *testing.T) {
 	if chromePath == "" {
 		t.Fatal("UNIMAP_CHROME_PATH is required for the headless integration test")
 	}
+	waitForChromeReady(t, chromePath)
 
 	var blockedHits atomic.Int64
 	blocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -122,9 +123,9 @@ func TestHeadlessDOMCollectionBlocksPrivateSubresources(t *testing.T) {
 	defer entry.Close()
 
 	mgr := NewManager(Config{
-		BaseDir:     t.TempDir(),
+		BaseDir:     softTempDir(t),
 		ChromePath:  chromePath,
-		UserDataDir: filepath.Join(t.TempDir(), "profile"),
+		UserDataDir: softChromeProfileDir(t),
 		Headless:    true,
 		Timeout:     20 * time.Second,
 		WaitTime:    10 * time.Millisecond,
@@ -143,6 +144,62 @@ func TestHeadlessDOMCollectionBlocksPrivateSubresources(t *testing.T) {
 	if got := blockedHits.Load(); got != 0 {
 		t.Fatalf("blocked subresource origin received %d request(s), want 0", got)
 	}
+}
+
+// waitForChromeReady retries the CDP readiness probe with backoff. CI runners
+// occasionally stall on the first chrome --version probe (3s timeout), which
+// previously failed the suite immediately with healthy=false err=<nil>.
+func waitForChromeReady(t *testing.T, chromePath string) {
+	t.Helper()
+	checker := &CDPHealthChecker{
+		ConfiguredChromePath: chromePath,
+		ChromeProbe: func(ctx context.Context, path string) bool {
+			probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			return validateChromeBinary(probeCtx, path)
+		},
+	}
+
+	deadline := time.Now().Add(45 * time.Second)
+	var lastHealthy bool
+	var lastErr error
+	for attempt := 0; time.Now().Before(deadline); attempt++ {
+		lastHealthy, lastErr = checker.Check(t.Context())
+		if lastErr == nil && lastHealthy {
+			return
+		}
+		sleep := time.Duration(200*(1<<min(attempt, 4))) * time.Millisecond
+		if sleep > 2*time.Second {
+			sleep = 2 * time.Second
+		}
+		select {
+		case <-t.Context().Done():
+			t.Fatalf("Chrome readiness probe canceled: healthy=%v err=%v", lastHealthy, lastErr)
+		case <-time.After(sleep):
+		}
+	}
+	t.Fatalf("Chrome readiness probe failed after retries: healthy=%v err=%v", lastHealthy, lastErr)
+}
+
+// softTempDir is like t.TempDir but cleanup failures (e.g. Chrome locks) are
+// logged and do not fail the suite.
+func softTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "unimap-e2e-*")
+	if err != nil {
+		t.Fatalf("mkdir temp: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Logf("soft temp cleanup ignored: %v", err)
+		}
+	})
+	return dir
+}
+
+func softChromeProfileDir(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(softTempDir(t), "profile")
 }
 
 func allowHeadlessFixtureOrigin(t *testing.T, mgr *Manager, rawOrigin string) {
