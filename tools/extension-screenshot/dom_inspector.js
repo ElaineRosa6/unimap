@@ -16,7 +16,7 @@
   const lower = location.href.toLowerCase();
   if (lower.includes('fofa.info')) results.engine = 'fofa';
   else if (lower.includes('hunter.qianxin.com')) results.engine = 'hunter';
-  else if (lower.includes('zoomeye.org') || lower.includes('zoomeye.com')) results.engine = 'zoomeye';
+  else if (lower.includes('zoomeye.org') || lower.includes('zoomeye.com') || lower.includes('zoomeye.ai')) results.engine = 'zoomeye';
   else if (lower.includes('quake.360.net') || lower.includes('quake.360.cn')) results.engine = 'quake';
 
   // Find all classes containing result/list/table/row/card/item

@@ -1,21 +1,22 @@
 # UniMap 当前剩余工作清单
 
-> 最后核对：2026-08-17。本文是当前本地待办入口；当前具体实施顺序见
-> [2026-08-02 后续实施清单](NEXT_STEPS_20260802.md)，长期按旬排期见
-> [后续实施计划](IMPLEMENTATION_PLAN_2026-07-23.md)。历史审计、计划和 E2E 报告只表达对应日期的事实。
-> 完成项必须同时满足代码、测试和所声明后端的真实验收，不能因存在选择器、接口或单元测试就标记完成。
+> 最后核对：2026-08-21。本文是能力矩阵与完成标准入口；**后续 agent 的执行顺序**见
+> [2026-08-20 推进计划书](AGENT_CONTINUATION_PLAN_2026-08-20.md)。
+> 08-02 清单与 07-23 按旬计划只表达当时事实。历史审计、E2E 和旧计划若与当前代码冲突，以代码、
+> API/Runbook 和上述计划书为准。完成项必须同时满足代码、测试和所声明后端的真实验收，
+> 不能因存在选择器、接口或单元测试就标记完成。
 
 ## 1. 引擎能力事实矩阵
 
-| 引擎 | 稳定 Web UI | API 适配 | Bridge 结构化采集实测 | CDP 结构化采集实测 |
-|---|---|---|---|---|
-| FOFA | 已接入 | 已有适配器；历史另有真实 API 证据 | 2026-08-02 复验通过（10） | 代码完成（L1+L3），待当前账号校准 |
-| Hunter | 已接入 | 已有适配器 | 2026-08-02 复验通过（10） | 2026-07-29 通过（10 资产 + 截图，选择器已校准） |
-| ZoomEye | 已接入 | 已有适配器 | 2026-08-02 复验通过（10） | 代码完成（L1+L3），待当前账号校准 |
-| Quake | 已接入 | 已有适配器 | 2026-08-02 复验通过（10） | 2026-07-29 通过（10 资产 + 截图） |
-| Shodan | 已接入 | 已有适配器 | 2026-08-02 通过（10） | 代码完成（L1+L3），待当前账号校准 |
-| Censys | 已接入 | 已完成，2026-06-27 API 实机验证通过 | 2026-08-02 通过（9） | CDP 识别 Cloudflare 挑战；自动回退 Bridge 通过（9） |
-| DayDayMap | 已接入 | 已完成，2026-06-27 API 实机验证通过 | 2026-08-02 重试通过（1） | Bridge→CDP 通过（10） |
+| 引擎 | 稳定 Web UI | API 适配 | Bridge 结构化采集实测 | 插件活页 DOM（2026-08-21） | CDP 结构化采集实测 |
+|---|---|---|---|---|---|
+| FOFA | 已接入 | 已有适配器；历史另有真实 API 证据 | 2026-08-02 复验通过（10） | 10 条（`.hsxa-meta-data-item`）；host/端口拆分后未再活抽 | **2026-08-21 通过**（10 + PNG）。当天傍晚又改 ExtractJS，**未再跑 CDP** |
+| Hunter | 已接入 | 已有适配器 | 2026-08-02 复验通过（10） | 13 条含 ICP 脏行；跳过逻辑后未再活抽 | 2026-07-29 通过（10 + 截图）。ExtractJS 当天有补丁，**未再跑 CDP** |
+| ZoomEye | 已接入 | 已有适配器 | 2026-08-02 复验通过（10） | `.org` 今日可开，10 条（等 loading）；host:port 修复后未再活抽 | **2026-08-21 受限**（当时 `.org` 521 / `.ai` SSO）。代码 URL 仍 `.org` |
+| Quake | 已接入 | 已有适配器 | 2026-08-02 复验通过（10） | 英文页 10 条；聚合块/`--` 修复后未再活抽 | 2026-07-29 通过（10 + 截图）。ExtractJS 当天有补丁，**未再跑 CDP** |
+| Shodan | 已接入 | 已有适配器 | 2026-08-02 通过（10） | 10 条，`.l-search-results .result` | **2026-08-21 通过**（校准后 10 + PNG） |
+| Censys | 已接入 | 已完成，2026-06-27 API 实机验证通过 | 2026-08-02 通过（9） | 宽选择器 102 条误伤；已改 `a[href*='/hosts/']`，**新选择器未活抽** | 挑战识别 + Bridge fallback 通过（9）。新 ExtractJS **未再跑 CDP** |
+| DayDayMap | 已接入 | 已完成，2026-06-27 API 实机验证通过 | 2026-08-02 重试通过（1） | **0.4.18 复验 10 条**，`tr.ant-table-row`，总数 2,163,417,935 | 08-02 Bridge→CDP 通过（10）。当天改 `ant-table-row` 后 **未再跑 CDP** |
 
 说明：
 
@@ -25,9 +26,24 @@
 - `live_bridge_e2e` 白名单已扩展为七个引擎（2026-08-01）；
 - 2026-08-02 产品范围升级为七引擎稳定 Web UI；Censys、DayDayMap 缺少 API 凭据时注册明确的 Web-only adapter；
 - 普通网页 CDP 截图通过不等于测绘引擎 CDP 结构化采集通过。
+- 2026-08-21 插件活页与 CDP 分列见 [PLUGIN_CDP_STATUS_2026-08-21.md](PLUGIN_CDP_STATUS_2026-08-21.md)。插件 0.4.18 不是 Bridge 闭环；改完的 ExtractJS 必须再跑 `CollectAndCapture` 才能更新 CDP 列。
 - 2026-08-01：七引擎均已有 L1 Network 解析器（Censys/DayDayMap 新增）和 L3 DOM ExtractJS；
   FOFA DOM 选择器已加固（4 级行选择器回退）；Censys/DayDayMap 搜索 URL 构造、
   Extension 选择器、Bridge 白名单和设置页配置均已接通。
+
+## 1.1 云端试运行（2026-08-20）
+
+日更闭环已在转，不是待办。机内待办（执行见计划书 A/B 波）：
+
+- OPS-1 清旧镜像；**已完成（2026-08-20，盘 73%→43%）**
+- OPS-2 对齐 `.env` 与运行配置的 admin token；**已完成（2026-08-20）**
+- OPS-3 下次重建写入 git commit
+- OPS-5 安全组复核（需控制台）
+- BIZ-1 Quake 三任务：用户确认无 key，**保持 disabled**（2026-08-20）
+- BIZ-2 ZoomEye / Shodan / Censys：用户确认无可用 key，**不进日更**（2026-08-20）
+- BIZ-3 云端截图：**不开**（2026-08-20）
+- BIZ-4～BIZ-6 未拍板：FOFA 字段降级、smtp-relay recreate、TLS（默认保持）
+- 日更范围冻结：FOFA / Hunter / DayDayMap 查询 → 邮件，ICP → 企微。未补 key 并再次确认前，禁止 enable `quake_*`、禁止新建 ZoomEye/Shodan/Censys 调度、禁止打开 `screenshot.enabled`
 
 ## 2. P1：下一阶段必须完成
 
@@ -94,6 +110,8 @@ Compose 已透传可选 `QUAKE_API_KEY`、`HUNTER_API_KEY`。Key 留空时只表
 8. 容器重启后会话和结果恢复。
 
 ### RW-03 七个稳定引擎 CDP 能力定级
+
+状态：**FOFA/Shodan 08-21 已定级通过；ZoomEye 08-21 受限。** 当天傍晚按活页改了 ExtractJS（含 DayDayMap `ant-table-row`、Censys `/hosts/` 等），**CDP 尚未用新脚本复跑**。插件活页不能替代本项。下一步顺序见 [PLUGIN_CDP_STATUS_2026-08-21.md](PLUGIN_CDP_STATUS_2026-08-21.md) 第 4 节。
 
 现有 CDP URL、Cookie、Network/DOM 和 `collect_and_capture` 代码不能替代真实验证。
 
@@ -216,6 +234,7 @@ Compose 已透传可选 `QUAKE_API_KEY`、`HUNTER_API_KEY`。Key 留空时只表
   云端真实变化与图片送达尚未验收继续保留待办。
 - 本地代码基线已提交为 `f9317a3`，2026-08-04 已推送到 `origin/develop`。
 - 2026-08-17：空 Key fail-fast、备用 Key 跳过空主键、登录 401、`GET /api/v1/config` 渠道脱敏已合入 `master` `71371f1` 并推送；阿里云试运行机镜像已升到该提交。未做项见 [变更日志 2026-08-17](CHANGELOG.md)。
+- 2026-08-20 SSH 机内核查：容器 healthy，`71371f1` 仍在跑；9 个启用任务 08-17 后至 08-20 15:00 共 52 次 success、0 failed；smtp-relay 仍 healthy。执行队列改为 [推进计划书](AGENT_CONTINUATION_PLAN_2026-08-20.md) 的 A–D 波（清镜像、token 对齐、试运行拍板、CDP 定级、证据截图外部输入）。`develop` 落后 `master`，发布基线是 `master`。
 
 ## 6. 最终验证（2026-08-02）
 

@@ -24,12 +24,12 @@ function extractOrigin(url) {
  * @param {string} url - The page URL
  * @returns {string} Engine name or "unknown"
  */
-function detectEngine(url) {
+export function detectEngine(url) {
   if (!url) return "unknown";
   const lower = url.toLowerCase();
   if (lower.includes("fofa.info")) return "fofa";
   if (lower.includes("hunter.qianxin.com")) return "hunter";
-  if (lower.includes("zoomeye.org") || lower.includes("zoomeye.com")) return "zoomeye";
+  if (lower.includes("zoomeye.org") || lower.includes("zoomeye.com") || lower.includes("zoomeye.ai")) return "zoomeye";
   if (lower.includes("quake.360.cn") || lower.includes("quake.360.net")) return "quake";
   if (lower.includes("shodan.io")) return "shodan";
   if (lower.includes("censys.io")) return "censys";
@@ -40,10 +40,10 @@ function detectEngine(url) {
 // Known cookie names that indicate login state per engine.
 const LOGIN_COOKIE_NAMES = {
   fofa: ["fofa_token", "fofa_user", "session", "fofasession"],
-  hunter: ["HSESSION", "hunter_token", "sessionid", "jwt"],
-  zoomeye: ["session", "jwt", "zmsession", "ctoken"],
-  quake: ["session", "jwt", "token", "QSESSIONID"],
-  shodan: ["session_id", "flash", "reveal", "token"],
+  hunter: ["HSESSION", "hunter_token", "sessionid", "jwt", "token", "User-Center", "csrf_token"],
+  zoomeye: ["session", "jwt", "zmsession", "ctoken", "token"],
+  quake: ["session", "jwt", "token", "QSESSIONID", "cert_common"],
+  shodan: ["session", "session_id", "flash", "reveal", "token"],
   censys: ["session", "jwt", "token", "censys_session"],
   daydaymap: ["session", "token", "jwt", "daydaymap_token"]
 };
@@ -57,7 +57,7 @@ export async function checkLoginCookies(url) {
   const engine = detectEngine(url);
   let origin = "";
   try {
-    origin = new URL(url).hostname;
+    origin = new URL(url).hostname.replace(/^www\./, "");
   } catch {
     return { has_login_cookies: false, cookie_count: 0, cookie_names: [], engine };
   }
@@ -302,31 +302,23 @@ export function normalizeCollectPayload(items, title, requestId, startedAt) {
  * DOM selector configurations per engine.
  * These can be updated without redeploying the extension.
  */
-const ENGINE_SELECTORS = {
+export const ENGINE_SELECTORS = {
   fofa: {
     // FOFA uses Vue SPA with hsxa-* prefixed class names.
-    // CDP DOM inspection (2026-06-03):
-    //   Row: .hsxa-meta-data-item (result card container)
-    //   Cells: <a> links with qbase64 params (stable across FOFA updates)
-    //   Key span: .hsxa-host = "IP:Port" directly
+    // Live DOM (2026-08-21): row .hsxa-meta-data-item; span.hsxa-host is IP only;
+    // port is span.hsxa-port / qbase64=cG9ydD0. Do not reuse hsxa-host as host.
     row: [
       ".hsxa-meta-data-item",
       "[class*='meta-data-item']",
       ".result-card", "[class*='result-card']",
-      "[class*='result-item']", ".result-item",
-      "[class*='result'] > div"
+      "[class*='result-item']", ".result-item"
     ],
     cells: {
-      // Link-based extraction: each link's text IS the field value.
-      // qbase64 param patterns are FOFA's internal query format — stable/rarely change.
-      // IMPORTANT: a[href*='qbase64=aXA9'] matches country links too (not just IP).
-      // span.hsxa-host is the PRIMARY IP selector: it shows "IP:Port" directly.
-      // CDP verified (2026-06-03): span.hsxa-host returns "8.8.8.8:53" correctly.
-      ip: { selector: "span.hsxa-host, a[href*='qbase64=aXA9']" },
-      port: { selector: "a[href*='qbase64=cG9ydD0']" },
+      ip: { selector: "span.hsxa-host, .hsxa-ip a, a[href*='qbase64=aXA9']" },
+      port: { selector: "span.hsxa-port, a[href*='qbase64=cG9ydD0']" },
       protocol: { selector: "a[href*='qbase64=cHJvdG9jb2w9'], a[href*='qbase64=cHJvdG9jb2xf']" },
-      host: { selector: "a[href*='qbase64=ZG9tYWluPS'], a[href*='qbase64=aG9zdD0'], span.hsxa-host" },
-      title: { selector: "[class*='title'] a, [class*='title'] span, [class*='name']" },
+      host: { selector: "a[href*='qbase64=ZG9tYWluPS'], a[href*='qbase64=aG9zdD0']" },
+      title: { selector: ".hsxa-title a, .hsxa-title, [class*='title'] a, [class*='title'] span" },
       country_code: { selector: "a[href*='qbase64=Y291bnRyeT0']" },
       asn: { selector: "a[href*='qbase64=YXNuPS']" },
       org: { selector: "a[href*='qbase64=b3JnPS']" },
@@ -372,19 +364,10 @@ const ENGINE_SELECTORS = {
     // IP: div.url-container span or div.ip-detail-box span (stable selectors)
     // Pagination: ul.ant-pagination
     row: [
-      // Primary — card container (2026-06-15 verified)
       ".search-result-item-container",
-      // Broader card matches
       "[class*='search-result-item-container']",
-      ".search-result-item",
-      "[class*='search-result-item']",
-      // Generic fallbacks
-      "[class*='result-item']",
-      "[class*='result-list'] > div",
-      "[class*='result'] > div",
-      // Ant Design table — DEPRECATED, kept as last fallback
-      ".ant-table tbody tr",
-      ".ant-table-tbody tr"
+      ".search-result-list > .search-result-item-container",
+      ".search-result-item"
     ],
     cells: {
       // IP: prefer div.url-container text (stable), fallback to div.ip-detail-box span
@@ -415,6 +398,9 @@ const ENGINE_SELECTORS = {
     // Title: span.ellipse-text inside div.title-line
     // ASN/Org/ISP: div.item span.label + span.ellipse-text
     row: [
+      ".item-container:has(span.port)",
+      ".item-container:has(div.ip)",
+      ".content-container .item-container",
       ".item-container",
       "[class*='result-item']",
       "[class*='result-card']",
@@ -455,9 +441,9 @@ const ENGINE_SELECTORS = {
     // Country: .flag img + sibling a text
     // Banner: div.banner-data pre text
     row: [
-      // Primary: most specific Shodan result container (INSIDE the search results area)
-      ".row.l-search-results .result",
+      // 2026-08-21: results live under .l-search-results without a .row wrapper.
       ".l-search-results .result",
+      ".row.l-search-results .result",
       // Main result div (narrow to avoid false positives)
       "div.result",
       // Card-based layout match
@@ -487,19 +473,22 @@ const ENGINE_SELECTORS = {
       country_code: { selector: "img.flag + a, .result-details img.flag + a, [class*='country']" },
       banner: { selector: "div.banner-data pre, div[data-banner] pre, .banner pre, pre" },
       server: { selector: "pre" },
+      host: { selector: "li.hostnames" },
     },
-    total: [".total", "[class*='total']", ".result-count", "[class*='result-count']", "div[class*='summary']"],
+    total: ["h4.total-results", ".total-results", ".total", "[class*='total']", ".result-count", "[class*='result-count']", "div[class*='summary']"],
     nextPage: [".next", ".pagination-next", "[class*='next']", "a[rel='next']", "nav ul li:last-child a"]
   },
   censys: {
     // Censys uses a modern SPA layout with result cards.
     row: [
+      "[data-search-results-layout] a[href*='/hosts/']",
+      "a[href*='/hosts/']",
       "[class*='result-card']", "[class*='search-result']",
-      "[class*='result-list'] > div", "[class*='result'] > div",
+      "[class*='result-list'] > div",
       "table tbody tr"
     ],
     cells: {
-      ip: { selector: "[class*='ip'], [data-ip]" },
+      ip: { selector: "a[href*='/hosts/']", attr: "href", extract: "ip_from_path" },
       port: { selector: "[class*='port'], [data-port]" },
       host: { selector: "[class*='hostname'], [class*='domain']" },
       title: { selector: "[class*='title'], h2, h3" },
@@ -510,22 +499,30 @@ const ENGINE_SELECTORS = {
     nextPage: ["[class*='next']", "button[aria-label='next']"]
   },
   daydaymap: {
-    // DayDayMap uses a layout similar to FOFA.
+    // Live 2026-08-21: Ant Design table, 10 data rows as tr.ant-table-row.
+    // table tbody tr also matches the hidden ant-table-measure-row (no assets).
+    // Columns: 序号, IP, 域名/访问链接, 端口, 服务, 传输...
     row: [
-      "[class*='result-item']", "[class*='result-card']",
-      "[class*='result-list'] > div", "[class*='result'] > div",
+      "tr.ant-table-row",
+      ".ant-table-row",
+      "[class*='table-row']",
+      "[class*='result-item']",
+      "[class*='result-card']",
+      "[class*='result-list'] > div",
+      ".el-table__row",
       "table tbody tr"
     ],
     cells: {
-      ip: { selector: "[class*='ip'], [data-ip]" },
-      port: { selector: "[class*='port'], [data-port]" },
-      host: { selector: "[class*='domain'], [class*='host']" },
-      title: { selector: "[class*='title'], [class*='name']" },
+      ip: { selector: "td:nth-child(2), [class*='ip'], [data-ip]" },
+      host: { selector: "td:nth-child(3), [class*='domain'], [class*='host']" },
+      port: { selector: "td:nth-child(4), [class*='port'], [data-port]" },
+      protocol: { selector: "td:nth-child(5), [class*='protocol'], [class*='service']" },
+      title: { selector: "td:nth-child(7), [class*='title'], [class*='name']" },
       country_code: { selector: "[class*='country'], [class*='location']" },
       org: { selector: "[class*='org'], [class*='company']" }
     },
-    total: ["[class*='total']", "[class*='count']"],
-    nextPage: ["[class*='next']", ".el-pagination__next"]
+    total: ["[class*='StyleSummary']", ".search-result-header", "[class*='total']", "[class*='count']"],
+    nextPage: [".ant-pagination-next:not(.ant-pagination-disabled)", "[class*='next']", ".el-pagination__next"]
   }
 };
 
@@ -611,10 +608,14 @@ export async function extractEngineAssets(tabId) {
         let rows = [];
         let rowSelectorUsed = "";
         for (const rowSel of engineSelectors.row) {
-          rows = document.querySelectorAll(rowSel);
-          if (rows.length > 0) {
-            rowSelectorUsed = rowSel;
-            break;
+          try {
+            rows = document.querySelectorAll(rowSel);
+            if (rows.length > 0) {
+              rowSelectorUsed = rowSel;
+              break;
+            }
+          } catch {
+            rows = [];
           }
         }
 
@@ -628,6 +629,12 @@ export async function extractEngineAssets(tabId) {
           const selectors = cellConfig.selector.split(/,\s*/);
           let el = null;
           for (const sel of selectors) {
+            try {
+              if (row.matches && row.matches(sel)) {
+                el = row;
+                break;
+              }
+            } catch { /* invalid selector for matches() */ }
             el = row.querySelector(sel);
             if (el) break;
           }
@@ -646,10 +653,24 @@ export async function extractEngineAssets(tabId) {
             // Post-process: extract IP or port from URL paths
             if (cellConfig.extract) {
               if (cellConfig.extract === "ip_from_path") {
+                const markers = ["/hosts/", "/host/"];
+                for (const marker of markers) {
+                  const idx = val.indexOf(marker);
+                  if (idx < 0) continue;
+                  const rest = val.slice(idx + marker.length);
+                  const cut = rest.search(/[/?#]/);
+                  const ip = cut >= 0 ? rest.slice(0, cut) : rest;
+                  try { return decodeURIComponent(ip); } catch { return ip; }
+                }
                 const m = val.match(/\/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
                 return m ? m[1] : val;
               }
               if (cellConfig.extract === "port_from_url") {
+                const br = val.lastIndexOf("]:");
+                if (br >= 0) {
+                  const n = parseInt(val.slice(br + 2), 10);
+                  if (n) return String(n);
+                }
                 // Match port at end of URL: http://IP:PORT  OR  with path: http://IP:PORT/path
                 const m = val.match(/:(\d{1,5})(\/|$)/);
                 if (m) return m[1];
@@ -700,23 +721,19 @@ export async function extractEngineAssets(tabId) {
         // Extract data from each row/card
         const seenKeys = new Set();
         rows.forEach((row) => {
+          if (String(row.className || "").includes("measure-row")) return;
           const cells = row.querySelectorAll("td");
           const item = {};
           const cellConfig = engineSelectors.cells;
 
-          if (cells.length > 0) {
-            // Table-based layout: extract by cell index
-            Object.keys(cellConfig).forEach((key) => {
-              const cfg = cellConfig[key];
+          Object.keys(cellConfig).forEach((key) => {
+            const cfg = cellConfig[key];
+            if (cells.length > 0 && /td:nth-child/.test(cfg.selector || "")) {
               item[key] = extractCellTextFromCells(cells, cfg);
-            });
-          } else {
-            // Card/div-based layout: extract by selectors
-            Object.keys(cellConfig).forEach((key) => {
-              const cfg = cellConfig[key];
+            } else {
               item[key] = extractCellText(row, cfg);
-            });
-          }
+            }
+          });
 
           // Clean Hunter UI text from title/ip/host
           if (typeof item.title === "string") item.title = cleanHunterText(item.title);
@@ -760,7 +777,43 @@ export async function extractEngineAssets(tabId) {
             }
           }
 
+          function looksLikeIPv4(value) {
+            return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(String(value || ""));
+          }
+          function looksLikeIPv6(value) {
+            return /:/.test(String(value || "")) && /[0-9a-f]/i.test(String(value || "")) && !/^\d{1,3}(?:\.\d{1,3}){3}:\d+$/.test(String(value || ""));
+          }
+          function normalizeEndpoint(target) {
+            const raw = String(target.ip || "").trim();
+            if (!raw) return;
+            let m = raw.match(/^(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})$/);
+            if (m) {
+              target.ip = m[1];
+              if (!target.port) target.port = parseInt(m[2], 10) || 0;
+              return;
+            }
+            m = raw.match(/^([A-Za-z0-9.-]+\.[A-Za-z]{2,}):(\d{1,5})$/);
+            if (m) {
+              target.host = target.host && target.host !== raw ? target.host : m[1];
+              target.ip = looksLikeIPv4(m[1]) ? m[1] : "";
+              if (!target.port) target.port = parseInt(m[2], 10) || 0;
+              return;
+            }
+            if (!looksLikeIPv4(raw) && !looksLikeIPv6(raw) && /[A-Za-z]/.test(raw) && raw.indexOf(":") < 0) {
+              if (!target.host || target.host === raw) target.host = raw;
+              target.ip = "";
+            }
+          }
+          if (item.host === "--" || item.host === "-" || item.host === "—") item.host = "";
+          if (item.ip && !looksLikeIPv4(item.ip) && !looksLikeIPv6(item.ip)) {
+            const ipOnly = String(item.ip).match(/(\d{1,3}(?:\.\d{1,3}){3})/);
+            if (ipOnly) item.ip = ipOnly[1];
+          }
+          normalizeEndpoint(item);
+          if (item.host && item.ip && item.host === item.ip && looksLikeIPv4(item.host)) item.host = "";
+
           if (eng === "quake") {
+            if (!row.querySelector("div.ip, span.port, span.copy_btn, [data-clipboard-text]")) return;
             const copyButton = row.querySelector("div.ip span.copy_btn[data-clipboard-text], [data-clipboard-text]");
             const endpoint = copyButton?.getAttribute("data-clipboard-text") || "";
             const endpointMatch = endpoint.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$/);
@@ -771,13 +824,14 @@ export async function extractEngineAssets(tabId) {
             row.querySelectorAll(".item").forEach((detail) => {
               const label = (detail.querySelector(".label")?.textContent || "").trim().toLowerCase();
               const value = (detail.querySelector(".ellipse-text")?.textContent || "").trim();
-              if (!value) return;
+              if (!value || value === "--" || value === "-") return;
               if (/host|domain|主机|域名/.test(label)) item.host = value;
               else if (/^asn$|自治系统号/.test(label)) item.asn = value;
               else if (/organization|组织|机构|公司/.test(label)) item.org = value;
               else if (/^isp$|运营商/.test(label)) item.isp = value;
             });
           }
+          if (item.host === "--" || item.host === "-" || item.host === "—") item.host = "";
 
           // Clean Shodan country/org: extract from multi-line result-details
           if (typeof item.country_code === "string" && item.country_code.includes("\n")) {
@@ -817,8 +871,14 @@ export async function extractEngineAssets(tabId) {
 
           // Hunter-specific: protocol may contain port number (e.g. "8081 http")
           // Extract only the known protocol name
+          if (eng === "shodan") {
+            const names = Array.from(row.querySelectorAll("li.hostnames")).map((el) => (el.textContent || "").trim()).filter(Boolean);
+            const domain = names.find((n) => n !== item.ip && /[A-Za-z]/.test(n));
+            item.host = domain || "";
+          }
+
           if (eng === "hunter" && item.protocol) {
-            const protoMatch = String(item.protocol).match(/\b(http|https|tcp|udp|ssh|ftp|smtp|pop3|imap|mysql|rdp|smb|dns)\b/i);
+            const protoMatch = String(item.protocol).match(/\b(http|https|tls|ssl|tcp|udp|ssh|ftp|smtp|pop3|imap|mysql|rdp|smb|dns)\b/i);
             if (protoMatch) {
               item.protocol = protoMatch[1].toLowerCase();
             } else if (/^\d+$/.test(String(item.protocol))) {
@@ -832,13 +892,20 @@ export async function extractEngineAssets(tabId) {
             if (m) item.ip = m[1];
           }
 
+          if (eng === "hunter") {
+            const ipOk = looksLikeIPv4(item.ip) || looksLikeIPv6(item.ip);
+            const hostOk = !!String(item.host || "").split(/\s+/)[0] && /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i.test(String(item.host).split(/\s+/)[0]);
+            if (!ipOk && !hostOk) return;
+          }
+
           // Skip completely empty rows
           const hasAnyValue = Object.values(item).some(v => v !== "" && v !== 0);
           if (!hasAnyValue) return;
+          if (!item.ip && !item.host) return;
 
           // Deduplicate by ip:port (Hunter shows duplicate summary+detail rows)
-          if (item.ip && item.port > 0) {
-            const dedupKey = item.ip + ":" + item.port;
+          if (item.ip) {
+            const dedupKey = item.ip + ":" + (item.port || 0);
             if (seenKeys.has(dedupKey)) return;
             seenKeys.add(dedupKey);
           }
@@ -849,8 +916,9 @@ export async function extractEngineAssets(tabId) {
         // Extract pagination info
         const totalEl = queryOne(document, engineSelectors.total);
         if (totalEl) {
-          const text = totalEl.textContent.trim().replace(/[^0-9]/g, "");
-          total = parseInt(text, 10) || 0;
+          const raw = totalEl.textContent.trim();
+          const labeled = raw.match(/共有\s*([\d,]+)\s*个/) || raw.match(/([\d,]+)/);
+          total = labeled ? parseInt(labeled[1].replace(/,/g, ""), 10) || 0 : 0;
         }
 
         const nextEl = queryOne(document, engineSelectors.nextPage);

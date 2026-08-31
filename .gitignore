@@ -32,6 +32,8 @@ smtp-relay/dump_queries.py
 smtp-relay/trigger_verify.py
 # 探测 ICP sidecar 的公司名清单脚本（真实目标指纹）— 不入库
 smtp-relay/probe_icp_companies.py
+# 云端 ICP 任务创建/探测脚本（容器路径、任务 UUID、公司名）— 不入库
+smtp-relay/icp_*.py
 # cloud ops scripts with server task UUIDs / container paths
 scripts/cloud_quake_stagger.py
 
@@ -189,3 +191,6 @@ artifacts/
 # Root-anchored so subdirectory test fixtures stay visible to VCS
 /*.eml
 /mimoclaw_workspace/
+
+# Local one-off verification output
+/tmp_*

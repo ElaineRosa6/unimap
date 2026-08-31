@@ -24,3 +24,29 @@ test("prepareDayDayMapSearch injects the native query and waits for the result r
   assert.equal(injectedQuery, 'ip.port="443"');
   assert.equal(finalURL, "https://www.daydaymap.com/searchResult");
 });
+
+test("prepareDayDayMapSearch returns to home when result URL has no keyword", async () => {
+  let url = "https://www.daydaymap.com/searchResult";
+  const updates = [];
+  const finalURL = await prepareDayDayMapSearch(7, 'port="80"', {
+    scripting: {
+      async executeScript(options) {
+        if (!options.args && url.includes("/home")) {
+          url = "https://www.daydaymap.com/searchResult?keyword=cG9ydD0iODAi";
+        }
+        return [{ result: { ok: true } }];
+      }
+    },
+    tabs: {
+      async get() {
+        return { url };
+      },
+      async update(_id, info) {
+        updates.push(info.url);
+        url = info.url;
+      }
+    }
+  });
+  assert.equal(updates[0], "https://www.daydaymap.com/home");
+  assert.ok(finalURL.includes("/searchResult"));
+});

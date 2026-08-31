@@ -241,23 +241,18 @@ func TestWeComChannel_Send_Image_UnsupportedExtension(t *testing.T) {
 	}
 }
 
-// TestWeComChannel_Send_File drives the two-step flow: upload_media (multipart)
-// then the file message carrying the returned media_id.
-func TestWeComChannel_Send_File(t *testing.T) {
-	var (
-		uploadSeen bool
-		fileName   string
-		fileBody   []byte
-	)
+func startWeComFileServer(t *testing.T) (base string, sendTypes *[]string, uploadName *string, uploaded *[]byte) {
+	t.Helper()
+	types := []string{}
+	var name string
+	var body []byte
+	var uploadSeen bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/webhook/upload_media":
 			uploadSeen = true
 			if got := r.URL.Query().Get("type"); got != "file" {
 				t.Errorf("upload type param = %q, want file", got)
-			}
-			if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
-				t.Errorf("upload Content-Type = %q", r.Header.Get("Content-Type"))
 			}
 			if err := r.ParseMultipartForm(1 << 24); err != nil {
 				t.Errorf("parse multipart form: %v", err)
@@ -271,20 +266,25 @@ func TestWeComChannel_Send_File(t *testing.T) {
 				return
 			}
 			defer f.Close()
-			fileName = filepath.Base(fh.Filename)
-			fileBody, _ = io.ReadAll(f)
+			name = filepath.Base(fh.Filename)
+			body, _ = io.ReadAll(f)
 			json.NewEncoder(w).Encode(map[string]interface{}{"errcode": 0, "media_id": "MEDIA_123", "type": "file"})
 		case "/webhook/send":
-			if !uploadSeen {
-				t.Error("send called before upload")
+			var envelope struct {
+				MsgType string `json:"msgtype"`
+				File    struct {
+					MediaID string `json:"media_id"`
+				} `json:"file"`
 			}
-			var received WeComFileBody
-			json.NewDecoder(r.Body).Decode(&received)
-			if received.MsgType != "file" {
-				t.Errorf("send msgtype = %q, want file", received.MsgType)
-			}
-			if received.File.MediaID != "MEDIA_123" {
-				t.Errorf("media_id = %q, want MEDIA_123", received.File.MediaID)
+			json.NewDecoder(r.Body).Decode(&envelope)
+			types = append(types, envelope.MsgType)
+			if envelope.MsgType == "file" {
+				if !uploadSeen {
+					t.Error("file send called before upload")
+				}
+				if envelope.File.MediaID != "MEDIA_123" {
+					t.Errorf("media_id = %q, want MEDIA_123", envelope.File.MediaID)
+				}
 			}
 			w.WriteHeader(http.StatusOK)
 		default:
@@ -292,9 +292,15 @@ func TestWeComChannel_Send_File(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
+	return server.URL, &types, &name, &body
+}
 
-	ch, err := NewWeComChannelWithOptions("w", server.URL+"/webhook/send", true, true, WeComOptions{MsgType: WeComMsgTypeFile})
+// TestWeComChannel_Send_File sends markdown for the text body first, then
+// upload_media + file, so a single file channel can replace a markdown+file pair.
+func TestWeComChannel_Send_File(t *testing.T) {
+	base, sendTypes, fileName, fileBody := startWeComFileServer(t)
+	ch, err := NewWeComChannelWithOptions("w", base+"/webhook/send", true, true, WeComOptions{MsgType: WeComMsgTypeFile})
 	if err != nil {
 		t.Fatalf("failed to create channel: %v", err)
 	}
@@ -303,19 +309,53 @@ func TestWeComChannel_Send_File(t *testing.T) {
 	if err := os.WriteFile(path, payload, 0o644); err != nil {
 		t.Fatalf("write temp file: %v", err)
 	}
-	n := TaskNotification{Status: "success", ImagePaths: []string{path}}
+	n := TaskNotification{Status: "success", Result: "ok", ImagePaths: []string{path}}
 	if err := ch.Send(context.Background(), n); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !uploadSeen {
-		t.Error("upload_media was never called")
+	if got, want := *sendTypes, []string{"markdown", "file"}; !equalStrings(got, want) {
+		t.Errorf("send msgtypes = %v, want %v", got, want)
 	}
-	if fileName != "report.pdf" {
-		t.Errorf("uploaded filename = %q, want report.pdf", fileName)
+	if *fileName != "report.pdf" {
+		t.Errorf("uploaded filename = %q, want report.pdf", *fileName)
 	}
-	if !bytes.Equal(fileBody, payload) {
+	if !bytes.Equal(*fileBody, payload) {
 		t.Error("uploaded bytes differ")
 	}
+}
+
+func TestWeComChannel_Send_Markdown_AttachesFile(t *testing.T) {
+	base, sendTypes, fileName, _ := startWeComFileServer(t)
+	ch, err := NewWeComChannelWithOptions("w", base+"/webhook/send", true, true, WeComOptions{MsgType: WeComMsgTypeMarkdown})
+	if err != nil {
+		t.Fatalf("failed to create channel: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "assets.xlsx")
+	if err := os.WriteFile(path, []byte("xlsx"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	n := TaskNotification{Status: "success", Result: "table", ImagePaths: []string{path}}
+	if err := ch.Send(context.Background(), n); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := *sendTypes, []string{"markdown", "file"}; !equalStrings(got, want) {
+		t.Errorf("send msgtypes = %v, want %v", got, want)
+	}
+	if *fileName != "assets.xlsx" {
+		t.Errorf("uploaded filename = %q, want assets.xlsx", *fileName)
+	}
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestWeComChannel_Send_File_Fallback(t *testing.T) {

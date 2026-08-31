@@ -4,6 +4,68 @@
 
 ---
 
+## [2026-08-25] 企微单通道可带附件；清空本地测试任务
+
+- WeCom `markdown` / `markdown_v2` / `text` 在正文之后若有 Excel/截图则再发 `file`；`file` 类型先发明文再传文件。无附件时仍只发 markdown。这样 `dijia_01` 单独就能覆盖原来 `dijia_01`+`dijia_01_file` 的分工，两个通道不要再绑在同一任务上。
+- 本地 `data/scheduler_tasks.json` 已清空（本机任务只作测试）。云端 12 个日更任务未改。
+- 本地 `email_agent` 已接通：`smtp-relay/.env` 配发件箱 `SMTP_USER` 和收件箱 `MAIL_TO`（可多个），`python smtp-relay/relay.py` 监听 `127.0.0.1:8099`；UniMap 渠道指向该地址且 `allow_private_ip=true`。改发件/收件后重启 relay。
+- 2026-08-25 本机 smtp-relay 使用与云端哈希一致的 SMTP 账号直发 webhook 测试信（标记 `local-smtp-verify-105439`）；用户确认收件箱已收到。当时本机 UniMap `:8448` 未运行，未走 Web 渠道测试接口。
+
+## [2026-08-25] 云端轮换 DayDayMap API key
+
+- 本机对官方 `POST /api/v1/raymap/search/all` 核验新 key（后缀 `46e868`）：`domain=` / `org=` / `ip=` 均 HTTP 200 且 `检索成功`；`org="中国移动通信集团云南有限公司"` total=156，不再踩旧 key 的企业查询试用限次。
+- 云端 live 配置仍是已耗尽的 `26b816`（08-10 备份 `config.yaml.bak-ddm-swap-20260810102837` 还在，但 live 未保持当时换上的 `c163fc`）。已备份 `config.yaml.bak-ddm-swap-20260825094938`，写入新 key，`POST /api/v1/config` 热加载适配器（未 recreate 容器）。
+- UniMap `domain="ynsxxcy.com"` 小查询：HTTP 200、status=success、engineStats daydaymap=1、errors 空。`/health/ready` 仍 ok。未跑日更任务、未打开截图。
+
+## [2026-08-21] 插件 0.4.18 活页核验与文档
+
+- DayDayMap 在用户已登录 Chrome、插件 0.4.18 上复抽：`tr.ant-table-row` 10 条，IP 为纯 IPv4，总数 2,163,417,935，非登录墙。
+- 插件活抽与 CDP `CollectAndCapture` 分开记录；今天改过的 ExtractJS **尚未**再跑 CDP。下一步见 [PLUGIN_CDP_STATUS_2026-08-21.md](PLUGIN_CDP_STATUS_2026-08-21.md)。
+
+## [2026-08-21] 七引擎插件活页选择器校准
+
+- 在已登录的本机 Chrome 上用插件 `scripting` 对七个引擎结果页做了 DOM dump（插件 `0.4.16`）。
+- FOFA：`.hsxa-meta-data-item` 仍命中；`span.hsxa-host` 现为纯 IP，端口在 `.hsxa-port`；不再把 host 写成 IP。
+- Hunter：`.q-table tbody tr` 仍命中；丢掉 ICP 垃圾行；`443 tls` 只保留协议 `tls`。
+- ZoomEye：`.org` 今日可开；卡片仍是 `.search-result-item-container`，但 SPA 需等 loading 结束；`hostname:port` 进 host 而不是 ip。去掉会误伤顶栏的 `[class*='result'] > div`。
+- Quake：英文结果页仍是 `.item-container`，侧栏聚合块不再当资产；host `--` 视为空。
+- Shodan：`.l-search-results .result` 继续 10 条；hostname 与 IP 去重。
+- Censys：CSS module 没有 `result-card`，改走 `a[href*='/hosts/']`。查询语法需 `host.services.port:"80"`。
+- DayDayMap：登录后活页为 Ant Design `tr.ant-table-row`（约 21.6 亿条）；原先 `table tbody tr` 先命中空的 `ant-table-measure-row` 抽出 0 条。插件/Go 改为 `.ant-table-row` + 列抽取，空结果页会先回首页再填检索。IP 单元格含「视频监控设备+0」时只保留 IPv4；总数按「共有 N 个」解析。
+- Extension 与 Go `ExtractJS` 同步；活页报告在 `data/selector-audit-2026-08-21/`（不入库）。
+
+## [2026-08-21] Shodan 结果页选择器校准
+
+- 当前 Shodan 搜索页是 `.l-search-results > div.result`（不再有 `.row`），host 链接为 IPv6 `/host/2600:…` 与 `http://[v6]:80`，总数在 `h4.total-results`。
+- 原 ExtractJS 把 `/host/` 写成 Go raw string 里的正则，生成的 JS 非法，10 张卡片抽出 0 条。改为字符串解析 IPv4/IPv6；Extension `capture.js` 同步。
+- 复测 CDP：Shodan DOM 10 条、total≈517 万、结果页 PNG。FOFA 仍为 10 条。ZoomEye 仍因站点/SSO 受限。
+
+## [2026-08-21] FOFA/Shodan 本地 CDP 定级
+
+- 在本机 CDP Chrome（:9222）走 `CollectAndCaptureSearchEngineResult`：FOFA 10 条结构化资产 + 结果页 PNG，定级通过。Shodan 已登录并打开搜索页（侧栏约 516 万），DOM 抽出 0 条，定级受限。ZoomEye 按站点问题记受限（`.org` 521，`.ai` 登录回调超时）。证据见 [CDP_VERIFICATION_FOFA_SHODAN_2026-08-21.md](CDP_VERIFICATION_FOFA_SHODAN_2026-08-21.md)。
+- 未改云端调度，未打开云端截图。
+
+## [2026-08-20] 云端 A 波：清镜像与 admin token 对齐
+
+- A1：删除未在用的旧 UniMap 镜像（08-11 备份、08-02 browser-seven/acceptance/ACR 重复标签）及悬空层；`docker builder prune` 清悬空构建缓存。根分区 40G 从 73%（剩 11G）降到 43%（剩 22G）。保留 `unimap:local`、`unimap:local-bak-20260817`、`unimap-smtp-relay:latest` 及构建底包。
+- A2：以运行配置 `web.auth.admin_token` 为准覆盖 `/opt/unimap/.env` 的 `UNIMAP_ADMIN_TOKEN`（先写 `.env.bak-token-*`），`--no-deps` recreate `unimap-unimap-1`。对齐后容器环境变量与配置一致，`GET /api/v1/scheduler/tasks` 200、12 任务（9 启用 / 3 Quake disabled）仍在。smtp-relay 未重建，仍 healthy。
+- 未做：A3 提交号打进镜像（并入下次升级）；A5 安全组控制台复核。
+- B1–B3 用户拍板（2026-08-20）：Quake 三任务因无 key 保持关闭；ZoomEye / Shodan / Censys 因无可用 key 不进日更；云端截图继续关闭。未改云端任务或截图配置。
+
+## [2026-08-20] 试运行范围拍板
+
+- 日更固定为 FOFA / Hunter / DayDayMap 查询（`email_agent`）+ ICP（企微）。Quake 三个任务维持 disabled；不把 ZoomEye、Shodan、Censys 写入调度；`screenshot.enabled` 保持 false。
+- 后续 agent 在补齐 key 并再次确认前，不得自行启用上述引擎任务或打开云端截图。详见 [推进计划书](AGENT_CONTINUATION_PLAN_2026-08-20.md) B 波。
+
+## [2026-08-20] 云端机内核查与后续推进计划
+
+- SSH 核对阿里云试运行机：`unimap-unimap-1` / `unimap-smtp-relay` 均为 healthy；运行 git `71371f1`；8448 仅 loopback；截图关闭导致 readiness `screenshot=degraded` 为预期。
+- 9 个启用调度任务在 08-17 升级后至 08-20 15:00 共 52 次 success、0 failed（FOFA/Hunter/DayDayMap 查询邮件 + ICP 企微）。Quake 三个任务仍 disabled。
+- 发现运行配置 admin token 与 `.env` 不一致（环境变量调 API 401）；根分区约 73%，旧镜像待清理。
+- 新增后续 agent 执行入口 [AGENT_CONTINUATION_PLAN_2026-08-20.md](AGENT_CONTINUATION_PLAN_2026-08-20.md)；`REMAINING_WORK`、README、`AGENTS.md`/`CLAUDE.md` 改为发布基线跟踪 `master`，08-02 清单降为历史快照。
+
+---
+
 ## [2026-08-17] 本地审查收口与阿里云镜像升级
 
 - 示例配置 Redis `prefix` 改为带引号，`config.yaml.example` 可通过 `Manager.Load` 解析。

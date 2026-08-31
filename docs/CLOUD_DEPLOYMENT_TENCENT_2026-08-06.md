@@ -17,6 +17,21 @@
 
 ## 0. 当前状态（本机与云端均已闭环）
 
+> **2026-08-25 本机邮件**：smtp-relay `.env` 与云端 SMTP 账号哈希一致；本机 `python smtp-relay/relay.py` 直发测试信，用户确认收件箱收到（`local-smtp-verify-105439`）。本机监听 `127.0.0.1:8099`，云端仍是容器 `unimap-smtp-relay`。未改云端通知渠道或任务。
+>
+> **2026-08-25 DayDayMap key**：本机官方 API 核验新 key（后缀 `46e868`）可用，含日更使用的 `org=`。云端 live 仍为已耗尽的 `26b816`（08-10 备份在，live 未保持 `c163fc`）。已备份 `config.yaml.bak-ddm-swap-20260825094938`，热加载写入新 key；UniMap 小查询 1 条成功。未 recreate 容器，未跑日更、未开截图。
+>
+> **2026-08-20 frps**：曾安装 v0.62.1 服务端，同日按用户要求拆除（`frps.service`、`/opt/frp`、`/etc/frp`、系统用户 `frp` 已删除）。安全组里为穿透临时放行的 TCP 7000 / 2222 应在控制台关掉。
+>
+> **2026-08-20 傍晚拍板**：Quake 三任务因无可用 key 保持 disabled；ZoomEye / Shodan / Censys 不进日更（无可用 key）；云端截图继续关闭。日更为 FOFA / Hunter / DayDayMap + ICP。未改运行配置或任务开关。
+>
+> **2026-08-20 傍晚 A 波**：清旧镜像后根分区 40G 从 73% 降到 43%（可用约 22G）。admin token 已以运行配置为准写入 `.env` 并 recreate `unimap-unimap-1`；`/health/ready` ok，12 任务保留（9 on / 3 Quake off）。smtp-relay 未重建，仍 healthy。`.env` 备份文件名 `.env.bak-token-20260820172429`。
+>
+> **2026-08-20 机内核查**：SSH 确认容器仍为 `71371f1`，当时 `unimap-unimap-1` Up 3 days (healthy)，
+> `unimap-smtp-relay` Up 12 days (healthy)，`/health/ready` ok。8448 仅 `127.0.0.1`。
+> 截图关闭，screenshot=degraded 为预期。9 个启用任务在 08-17 后至 08-20 15:00 共 52 次 success、0 failed。
+> 当时 `.env` 与运行配置的 admin token 不一致（环境变量调 API 401）；已在同日 A2 对齐。
+>
 > **2026-08-17 修订**：云端 `/opt/unimap` 与镜像 `unimap:local` 已快进到 `71371f1`
 > （`fix: fail-fast empty engine keys, mask notify secrets, return 401 after bootstrap`）。
 > 升级前将运行配置中的默认 `web.auth.username=admin` 改为非默认名，并同步
@@ -26,7 +41,7 @@
 > （9 个启用：fofa×2、hunter×4、daydaymap×2、icp×1；3 个 quake 仍为 disabled）。
 > 升级当日 08:00–09:40 的启用任务均为 success（升级前）；新镜像下首次自动执行窗口为 15:00。
 > 用户表仍为空，登录走配置账号。截图配置仍关闭，readiness 中 screenshot 为 degraded。
-> smtp-relay 容器未随本次 recreate。
+> smtp-relay 容器未随本次 recreate（08-20 核查：旧容器仍 healthy，邮件仍发送成功）。
 
 - 云端（阿里云 `8.160.177.101`，/opt/unimap，容器 `unimap-unimap-1`，镜像 `unimap:local` 本地构建）已随
   `master` `71371f1`（2026-08-17）更新并重建验证：`/health/ready` 200、容器 healthy、`notification_push_log` 表已建、
@@ -46,9 +61,11 @@
 - 引擎 key 现状：fofa / hunter / quake / daydaymap ✅ 可用（**fofa 2026-08-11 已轮换第三方 key**：仅改云端
   volume config `engines.fofa.api_key`，`api_base_url=https://fofoapi.com` 不变，第三方接口不需要 email，
   容器重启后手动跑 `fofa_ynmobile_a` 新增 100 条、email_agent 推送 success，备份
-  `config.yaml.bak-fofa-swap-20260811085212`；**daydaymap 2026-08-10 已换第二把 key**，后缀
-  `c163fc`：原 key（`26b816`）的 `org=` 触发「资产所属企业查询」试用限次、试用额度耗尽连续失败 5 次，换 key 后
-  手动跑新增 99 条闭环；daydaymap 为单 `api_key` 结构、无 backup 字段，双 key 自动切换未做）；
+  `config.yaml.bak-fofa-swap-20260811085212`；**daydaymap 2026-08-25 已换第三把 key**，后缀
+  `46e868`：08-25 核查 live 仍为 `26b816`（08-10 备份 `config.yaml.bak-ddm-swap-20260810102837` 仍在，
+  live 未保持当时的 `c163fc`）。`26b816` 的 `org=` 曾触发「资产所属企业查询」试用限次并连续失败。
+  新 key 官方 API `org=` total=156 通过；云端热加载后 UniMap 小查询 1 条成功，备份
+  `config.yaml.bak-ddm-swap-20260825094938`。`backup_api_key` 仍空，未把已耗尽的旧 key 设为备用）；
   **hunter 备用 key（`backup_api_key`）已同步云端**
   （2026-08-07，主 key 积分耗尽时 `withKeyFailover` 自动切换）；zoomeye ⚠️ key 有效但积分不足（402）；
   shodan ⚠️ key 有效但无 membership；censys ⚠️ api_secret 为空，仅 Web-only。

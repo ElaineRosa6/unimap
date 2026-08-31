@@ -38,19 +38,19 @@ var selectorsByEngine = map[string]*engineSelectors{
 		TotalSelector:  ".total-count",
 	},
 	"shodan": {
-		RowSelector:    ".row.l-search-results .result",
+		RowSelector:    ".l-search-results .result",
 		ExtractJS:      extractShodanJS,
 		PaginationNext: ".pagination .next:not(.disabled) a, a[rel='next'], nav ul li:last-child a",
-		TotalSelector:  ".result-count, [class*='total'], div[class*='summary']",
+		TotalSelector:  "h4.total-results, .result-count, [class*='total-results']",
 	},
 	"censys": {
-		RowSelector:    "[class*='result-card']",
+		RowSelector:    "a[href*='/hosts/']",
 		PaginationNext: "[class*='next']",
 		ExtractJS:      extractCensysJS,
 		TotalSelector:  "[class*='total']",
 	},
 	"daydaymap": {
-		RowSelector:    "[class*='result-item']",
+		RowSelector:    "tr.ant-table-row",
 		PaginationNext: ".el-pagination__next",
 		ExtractJS:      extractDayDayMapJS,
 		TotalSelector:  "[class*='total']",
@@ -91,13 +91,25 @@ const extractFofaJS = `
     var row = rows[i];
     var asset = {};
 
-    // IP:Port from .hsxa-host or IP:port text pattern
-    var ipEl = row.querySelector('.hsxa-host');
+    // Live 2026-08-21: span.hsxa-host is IP only; port lives in span.hsxa-port.
+    // Older pages still put "IP:port" in .hsxa-host.
+    var ipEl = row.querySelector('.hsxa-host, .hsxa-ip a');
     if (ipEl) {
       var ipText = ipEl.textContent.trim();
-      var parts = ipText.split(':');
-      asset.ip = parts[0] || '';
-      if (parts.length > 1) asset.port = parseInt(parts[1]) || 0;
+      var hostPort = ipText.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$/);
+      if (hostPort) {
+        asset.ip = hostPort[1];
+        if (hostPort[2]) asset.port = parseInt(hostPort[2], 10) || 0;
+      } else {
+        asset.ip = ipText.split(':')[0] || '';
+      }
+    }
+    if (!asset.port) {
+      var portEl = row.querySelector('.hsxa-port');
+      if (portEl) {
+        var portMatch = portEl.textContent.trim().match(/(\d{1,5})/);
+        if (portMatch) asset.port = parseInt(portMatch[1], 10) || 0;
+      }
     }
     if (!asset.ip) {
       var textNodes = row.querySelectorAll('a, span, div, td');
@@ -140,7 +152,7 @@ const extractFofaJS = `
       var value = valueEl ? valueEl.textContent.trim() : f.textContent.trim();
       if (!value || value === label) continue;
       var ll = label.toLowerCase();
-      if ((ll.indexOf('域名') >= 0 || ll.indexOf('host') >= 0 || ll.indexOf('domain') >= 0) && !asset.host) asset.host = value;
+      if ((ll.indexOf('域名') >= 0 || ll.indexOf('host') >= 0 || ll.indexOf('domain') >= 0) && !asset.host && value !== asset.ip) asset.host = value;
       if ((ll.indexOf('标题') >= 0 || ll.indexOf('title') >= 0) && !asset.title) asset.title = value;
       if ((ll.indexOf('国家') >= 0 || ll.indexOf('country') >= 0) && !asset.country) asset.country = value;
       if ((ll.indexOf('组织') >= 0 || ll.indexOf('org') >= 0 || ll.indexOf('isp') >= 0) && !asset.org) asset.org = value;
@@ -230,7 +242,7 @@ const extractHunterJS = `
     var portText = getCellText(3);
     var pm = portText.match(/(\d{1,5})/);
     if (pm) asset.port = parseInt(pm[1]);
-    var protoMatch = portText.match(/\b(http|https|tcp|udp|ssh|ftp|smtp|pop3|imap|mysql|rdp|smb|dns|ssl|tls)\b/i);
+    var protoMatch = portText.match(/\b(http|https|tls|ssl|tcp|udp|ssh|ftp|smtp|pop3|imap|mysql|rdp|smb|dns)\b/i);
     if (protoMatch) asset.protocol = protoMatch[1].toLowerCase();
     // Title from column 4
     var titleRaw = getCellText(4);
@@ -260,6 +272,7 @@ const extractHunterJS = `
     asset.source = 'hunter';
 
     if (!asset.ip && !asset.host) return;
+    if (asset.ip && !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(asset.ip) && asset.ip.indexOf(':') < 0) return;
     var key = asset.ip + ':' + asset.port;
     if (asset.port > 0 && seen[key]) return;
     if (asset.port > 0) seen[key] = true;
@@ -293,6 +306,17 @@ const extractZoomEyeJS = `
       } else if (!asset.host) {
         asset.host = ipText;
       }
+    }
+    if (asset.host) {
+      var hostPort = asset.host.match(/^([A-Za-z0-9.-]+\.[A-Za-z]{2,}):(\d{1,5})$/);
+      if (hostPort) {
+        asset.host = hostPort[1];
+        if (!asset.port) asset.port = parseInt(hostPort[2], 10) || 0;
+      }
+    }
+    if (asset.ip && /[A-Za-z]/.test(asset.ip)) {
+      if (!asset.host) asset.host = asset.ip;
+      asset.ip = '';
     }
     // Extract host:port from header-bar > div.url-container
     var urlContainer = container.querySelector('div.url-container');
@@ -388,9 +412,11 @@ const extractQuakeJS = `
     var copyBtn = container.querySelector('div.ip span.copy_btn, [data-clipboard-text]');
     if (copyBtn) {
       var clipText = copyBtn.getAttribute('data-clipboard-text') || '';
-      var parts = clipText.split(':');
-      asset.ip = parts[0] || '';
-      if (parts.length > 1) asset.port = parseInt(parts[1]) || 0;
+      var v4 = clipText.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$/);
+      if (v4) {
+        asset.ip = v4[1];
+        if (v4[2]) asset.port = parseInt(v4[2], 10) || 0;
+      }
     }
     // Port from span.port
     var portEl = container.querySelector('span.port');
@@ -413,9 +439,13 @@ const extractQuakeJS = `
       var label = item.querySelector('.label');
       if (label && /host|domain/i.test(label.textContent)) {
         var val = item.querySelector('.ellipse-text');
-        if (val) asset.host = val.textContent.trim();
+        if (val) {
+          var hostVal = val.textContent.trim();
+          if (hostVal && hostVal !== '--' && hostVal !== '-' && hostVal !== asset.ip) asset.host = hostVal;
+        }
       }
     });
+    if (asset.host === '--' || asset.host === '-') asset.host = '';
     asset.source = 'quake';
     if (asset.ip || asset.host) assets.push(asset);
   });
@@ -429,149 +459,119 @@ const extractQuakeJS = `
 
 const extractShodanJS = `
 (function() {
-  // Try multiple row selectors, most specific first
-  var rowSelectors = [
-    '.row.l-search-results .result',
-    '.result',
-    '[class*="search-result"]',
-    '[class*="result-item"]',
-    'div:has(a[href*="/host/"])',
-    '.list-group-item'
-  ];
+  // 2026-08-21 layout: .l-search-results > div.result (no .row wrapper).
+  // Host links use /host/<ipv4|ipv6>; IPv6 service URLs are http://[v6]:port.
+  // Do not use /host/ regex literals here: they break when this script lives in a Go raw string.
+  function ipFromHostPath(href) {
+    if (!href) return '';
+    var marker = '/host/';
+    var i = href.indexOf(marker);
+    if (i < 0) return '';
+    var rest = href.slice(i + marker.length);
+    var end = -1;
+    for (var k = 0; k < rest.length; k++) {
+      var ch = rest.charAt(k);
+      if (ch === '/' || ch === '?' || ch === '#') { end = k; break; }
+    }
+    var ip = end >= 0 ? rest.slice(0, end) : rest;
+    try { ip = decodeURIComponent(ip); } catch (e) {}
+    return ip;
+  }
+  function portFromHref(href) {
+    if (!href) return 0;
+    var br = href.lastIndexOf(']:');
+    if (br >= 0) return parseInt(href.slice(br + 2), 10) || 0;
+    var scheme = href.indexOf('://');
+    var start = scheme >= 0 ? scheme + 3 : 0;
+    var colon = href.lastIndexOf(':');
+    if (colon <= start) return 0;
+    return parseInt(href.slice(colon + 1), 10) || 0;
+  }
 
+  var rowSelectors = [
+    '.l-search-results .result',
+    'div.result',
+    '.row.l-search-results .result',
+    '[class*="search-result"]'
+  ];
   var results = [];
+  var rowSelectorUsed = '';
   for (var selIdx = 0; selIdx < rowSelectors.length; selIdx++) {
     try {
       var nodes = document.querySelectorAll(rowSelectors[selIdx]);
       if (nodes.length > 0) {
         results = nodes;
+        rowSelectorUsed = rowSelectors[selIdx];
         break;
       }
-    } catch(e) { /* skip invalid selector */ }
+    } catch (e) {}
   }
 
   var assets = [];
   for (var i = 0; i < results.length; i++) {
     var el = results[i];
     var asset = {};
-
-    // IP + Title: try multiple selectors for /host/IP link
-    var ipSelectors = ["div.heading a.title", "a[href*='/host/']", "div[class*='heading'] a[href*='/host/']", ".host-title"];
-    for (var s = 0; s < ipSelectors.length; s++) {
-      var ipLink = el.querySelector(ipSelectors[s]);
-      if (ipLink) {
-        var href = ipLink.getAttribute('href') || '';
-        var m = href.match(/\\/host\\/([^/?#]+)/);
-        if (m) asset.ip = m[1];
-        if (!asset.title) asset.title = ipLink.textContent.trim();
-        break;
-      }
+    var ipLink = el.querySelector("div.heading a.title[href*='/host/'], a.title[href*='/host/'], a[href*='/host/']");
+    if (ipLink) {
+      asset.ip = ipFromHostPath(ipLink.getAttribute('href') || '');
+      asset.title = (ipLink.textContent || '').trim();
     }
-
-    // Port: try multiple selectors, extract from http://IP:PORT URL
-    var portSelectors = ["div.heading a.text-danger", "div[class*='heading'] a[href^='http://']", "div[class*='heading'] a[href^='https://']", "a[href^='http']"];
-    for (var ps = 0; ps < portSelectors.length; ps++) {
-      var portLink = el.querySelector(portSelectors[ps]);
-      if (portLink) {
-        var portHref = portLink.getAttribute('href') || '';
-        var portMatch = portHref.match(/:(\\d+)(\\/|$)/);
-        if (portMatch) {
-          asset.port = parseInt(portMatch[1]) || 0;
-          break;
-        }
-      }
+    if (!asset.ip) {
+      var hostLi = el.querySelector('li.hostnames');
+      if (hostLi) asset.ip = (hostLi.textContent || '').trim();
     }
-
-    // Timestamp extraction
-    var tsSelectors = ["div.heading div.timestamp", ".timestamp", "[class*='timestamp']", "time"];
-    for (var ts = 0; ts < tsSelectors.length; ts++) {
-      var tsEl = el.querySelector(tsSelectors[ts]);
-      if (tsEl) {
-        asset.last_seen = tsEl.textContent.trim();
-        break;
-      }
+    var portLink = el.querySelector("div.heading a.text-danger, div.heading a[href^='http://'], div.heading a[href^='https://']");
+    if (portLink) asset.port = portFromHref(portLink.getAttribute('href') || '');
+    var tsEl = el.querySelector('div.heading div.timestamp, .timestamp, time');
+    if (tsEl) asset.last_seen = (tsEl.textContent || '').trim();
+    var orgLink = el.querySelector('.result-details a.filter-link.filter-org, a.filter-org');
+    if (orgLink) asset.org = (orgLink.textContent || '').trim();
+    var countryEl = el.querySelector('img.flag + a');
+    if (countryEl) asset.country_code = (countryEl.textContent || '').trim();
+    var banner = el.querySelector('.banner-data pre, pre');
+    if (banner) asset.banner = (banner.textContent || '').trim().substring(0, 200);
+    var hostEl = el.querySelector('li.hostnames');
+    if (hostEl) {
+      var hostText = (hostEl.textContent || '').trim();
+      if (hostText && hostText !== asset.ip) asset.host = hostText;
     }
-
-    // Org/ASN extraction
-    var orgSelectors = [".result-details a.filter-link.filter-org", "a.filter-org", ".org", "[class*='org']"];
-    for (var os = 0; os < orgSelectors.length; os++) {
-      var orgLink = el.querySelector(orgSelectors[os]);
-      if (orgLink) {
-        asset.org = orgLink.textContent.trim();
-        break;
-      }
-    }
-
-    // Country extraction (with try-catch for :has() selector)
-    var countrySelectors = ["img.flag + a", "[class*='country']"];
-    for (var cs = 0; cs < countrySelectors.length; cs++) {
-      try {
-        var countryEl = el.querySelector(countrySelectors[cs]);
-        if (countryEl) {
-          asset.country_code = countryEl.textContent.trim();
-          break;
-        }
-      } catch(e) { continue; }
-    }
-    // Try :has() selectors separately with try-catch
-    try {
-      if (!asset.country_code) {
-        var hasCountryEl = el.querySelector(".result-details li:has(.flag) a");
-        if (hasCountryEl) asset.country_code = hasCountryEl.textContent.trim();
-      }
-    } catch(e) {}
-
-    // Banner data extraction
-    var bannerSelectors = [".banner-data pre", "div[data-banner] pre", ".banner pre", "pre"];
-    for (var bs = 0; bs < bannerSelectors.length; bs++) {
-      var banner = el.querySelector(bannerSelectors[bs]);
-      if (banner) {
-        asset.banner = banner.textContent.trim().substring(0, 200);
-        break;
-      }
-    }
-
     asset.source = 'shodan';
-    if (asset.ip) assets.push(asset);
+    if (asset.ip || asset.host) assets.push(asset);
   }
 
-  // Total count extraction (with comma support)
   var total = 0;
-  var totalSelectors = [".result-count", "[class*='total']", "div[class*='summary']"];
+  var totalSelectors = ['h4.total-results', '.total-results', '.result-count'];
   for (var t = 0; t < totalSelectors.length; t++) {
     var totalEl = document.querySelector(totalSelectors[t]);
-    if (totalEl) {
-      var totalMatch = totalEl.textContent.match(/([\\d,]+)/);
-      if (totalMatch) {
-        total = parseInt(totalMatch[1].replace(/,/g, ''));
-        break;
-      }
+    if (!totalEl) continue;
+    var totalMatch = (totalEl.textContent || '').match(/([\d,]+)/);
+    if (totalMatch) {
+      total = parseInt(totalMatch[1].replace(/,/g, ''), 10) || 0;
+      break;
     }
   }
 
-  // Pagination detection (with try-catch for :not())
   var hasNext = false;
-  var nextSelectors = ['a[rel="next"]', 'nav ul li:last-child a', '.next-page', '[class*="next"]'];
-  for (var n = 0; n < nextSelectors.length; n++) {
-    try {
-      if (document.querySelector(nextSelectors[n])) {
-        hasNext = true;
-        break;
-      }
-    } catch(e) { continue; }
-  }
-  // Try :not() selector separately
-  try { if (!hasNext && document.querySelector('.pagination .next:not(.disabled) a')) hasNext = true; } catch(e) {}
+  try { hasNext = !!document.querySelector('a[rel="next"]'); } catch (e) {}
+  try { if (!hasNext && document.querySelector('.pagination .next:not(.disabled) a')) hasNext = true; } catch (e) {}
 
-  return JSON.stringify({assets: assets, total: total, hasMore: hasNext});
+  return JSON.stringify({
+    assets: assets,
+    total: total,
+    hasMore: hasNext,
+    rowSelectorUsed: rowSelectorUsed,
+    rowsFound: results.length
+  });
 })()
 `
 
 const extractCensysJS = `
 (function() {
   var rowSelectors = [
+    "[data-search-results-layout] a[href*='/hosts/']",
+    "a[href*='/hosts/']",
     "[class*='result-card']", "[class*='search-result']",
-    "[class*='result-list'] > div", "[class*='result'] > div",
+    "[class*='result-list'] > div",
     "table tbody tr", ".host-row", "[data-testid*='result']"
   ];
   var rows = [];
@@ -586,11 +586,16 @@ const extractCensysJS = `
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
     var asset = {};
-    var ipLink = row.querySelector("a[href*='/hosts/']");
+    var ipLink = row;
+    if (!(row.tagName && row.tagName.toLowerCase() === 'a' && (row.getAttribute('href') || '').indexOf('/hosts/') >= 0)) {
+      ipLink = row.querySelector("a[href*='/hosts/']");
+    }
     if (ipLink) {
       var href = ipLink.getAttribute('href') || '';
       var m = href.match(/\/hosts\/([^/?#]+)/);
-      if (m) asset.ip = m[1];
+      if (m) {
+        try { asset.ip = decodeURIComponent(m[1]); } catch (e) { asset.ip = m[1]; }
+      }
       if (!asset.title) asset.title = ipLink.textContent.trim();
     }
     if (!asset.ip) {
@@ -645,8 +650,9 @@ const extractCensysJS = `
 const extractDayDayMapJS = `
 (function() {
   var rowSelectors = [
+    "tr.ant-table-row", ".ant-table-row",
     "[class*='result-item']", "[class*='result-card']",
-    "[class*='result-list'] > div", "[class*='result'] > div",
+    "[class*='result-list'] > div",
     ".el-table__row", "table tbody tr", ".list_content > div"
   ];
   var rows = [];
@@ -660,7 +666,24 @@ const extractDayDayMapJS = `
   var assets = [];
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
+    if ((row.className || '').indexOf('measure-row') >= 0) continue;
     var asset = {};
+    var cells = row.querySelectorAll('td');
+    if (cells.length >= 4) {
+      function cellText(idx) {
+        if (idx >= cells.length) return '';
+        return (cells[idx].textContent || '').replace(/\s+/g, ' ').trim();
+      }
+      var ipCell = cellText(1);
+      var ipCellMatch = ipCell.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+      if (ipCellMatch) asset.ip = ipCellMatch[1];
+      var hostCell = cellText(2);
+      if (hostCell && hostCell !== asset.ip && hostCell !== '-' && hostCell !== '--') asset.host = hostCell.split(' ')[0];
+      var portCell = cellText(3).match(/^(\d{1,5})\b/);
+      if (portCell) asset.port = parseInt(portCell[1], 10) || 0;
+      var protoCell = cellText(4).match(/\b(https?|tcp|udp|ssh|ftp|smtp|ssl|tls)\b/i);
+      if (protoCell) asset.protocol = protoCell[1].toLowerCase();
+    }
     var ipLink = row.querySelector("a[href*='ip='], a[href*='/host/']");
     if (ipLink) {
       var ipText = ipLink.textContent.trim();

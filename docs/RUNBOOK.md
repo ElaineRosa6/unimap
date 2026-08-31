@@ -1,6 +1,6 @@
 # UniMap 运维 Runbook
 
-> 最后按代码核对：2026-08-17。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
+> 最后按代码核对：2026-08-25。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
 
 ## 0. 先确认服务与认证
 
@@ -140,7 +140,7 @@ Compose 通过专用的 `UNIMAP_CONTAINER_BIND_ADDRESS` 显式切换为容器内
 
 生产部署还必须设置固定管理令牌和非默认管理员用户名。生产模板显式启用 Quake、Hunter，QPS 为 1；缺少 API Key 时注册的 Web-only adapter 并不代表真实查询已经可用，必须执行一次真实查询或浏览器采集验收。未配置的其他引擎默认禁用；启用 Censys、DayDayMap 但缺少完整 API 凭据时注册明确的 Web-only adapter，查询必须同时设置 `browser_query=true`。
 
-当前阿里云试运行机的 SSH 隧道登录、Quake/Hunter API Key 与 Cookie 准备、秘密录入限制和验证顺序见 [云服务器常态化运行准备与协作清单的操作章节](CLOUD_STEADY_STATE_PLAN_2026-07-23.md#10-管理登录与凭据录入操作)。首次录入后必须完成保存、容器重启和恢复验证；本地代码测试不能替代该云机证据。
+当前阿里云试运行机的 SSH 隧道登录、Quake/Hunter API Key 与 Cookie 准备、秘密录入限制和验证顺序见 [云服务器常态化运行准备与协作清单的操作章节](CLOUD_STEADY_STATE_PLAN_2026-07-23.md#10-管理登录与凭据录入操作)。首次录入后必须完成保存、容器重启和恢复验证；本地代码测试不能替代该云机证据。2026-08-20 机内状态与后续运维条目见 [CLOUD_DEPLOYMENT_TENCENT_2026-08-06.md](CLOUD_DEPLOYMENT_TENCENT_2026-08-06.md) 第 0 节和 [推进计划书](AGENT_CONTINUATION_PLAN_2026-08-20.md)。
 
 镜像内置 Chromium 和中日韩字体，固定 `UNIMAP_CHROME_PATH=/usr/bin/chromium`，并持久化 `/app/data`、`/app/screenshots`、`/app/chrome-profile`。Compose 把 `/dev/shm` 提高到 256 MiB；容器基线显式设置 `no_sandbox: true`，普通主机应保持 false 以使用 Chrome sandbox。不得删掉 `--disable-dev-shm-usage` 或独立 `user-data-dir`。持久化 Chrome profile 有独占锁，程序会把其并发会话自动限制为 1；不使用固定 profile 时可按内存逐步提高 `screenshot.max_sessions`。
 
@@ -212,6 +212,8 @@ Invoke-RestMethod http://127.0.0.1:8448/api/v1/scheduler/history
 创建任务的端点是 `POST /api/v1/scheduler/tasks/create`，不是旧的 `/api/scheduler/tasks`。一次性、延迟和 cron 任务分别通过 `schedule_type` 的 `once`、`delay`、`cron` 表示。通知通道从 `GET /api/v1/notifications/channels` 查看，并可用 `/api/v1/notifications/channels/test` 验证。
 
 通知通道列表只返回编辑所需的非凭据字段，不回传 Webhook URL、签名 secret 或 app secret。编辑既有通道时应提交 `preserve_existing=true`，并将不修改的凭据留空；不要把页面掩码值重新提交。该模式只允许编辑同 ID、同类型通道，渠道类型变化必须删除旧通道后重新创建。保存后再执行测试接口，确认服务端实际配置可投递。
+
+查询日更的邮件通道是 `email_agent`（webhook → smtp-relay → SMTP）。发件箱 `SMTP_USER`、收件箱 `MAIL_TO` 只写在 gitignore 的 `smtp-relay/.env`，改完重启 relay。云端是 compose 服务 `unimap-smtp-relay`（容器内 URL `http://smtp-relay:8099/webhook`）。本机不跑 Docker 时：`python smtp-relay/relay.py`，监听 `127.0.0.1:8099`，UniMap 渠道指 `http://127.0.0.1:8099/webhook` 且 `allow_private_ip=true`。2026-08-25 本机用与云端相同的 SMTP 配置直发测试信，用户确认收件；细节见 [smtp-relay/README.md](../smtp-relay/README.md)。
 
 任务列表的 `enabled=true` 表示期望启用；还要检查 `runtime_status`。`schedule_error` 表示加载或布置失败，具体诊断在同名错误字段中。删除、停用持久化失败会返回 500 并回滚内存调度状态，不应按 404 处理。
 

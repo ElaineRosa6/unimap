@@ -1,6 +1,8 @@
 # UniMap V1 后续实施清单
 
 > 核对日期：2026-08-02（Asia/Shanghai）；当前事实以代码、测试和 [七引擎浏览器验收记录](BROWSER_SEVEN_ENGINE_VERIFICATION_2026-08-02.md) 为准。
+>
+> **执行队列已移交：** 2026-08-20 起后续 agent 按 [推进计划书](AGENT_CONTINUATION_PLAN_2026-08-20.md) 推进。本文保留为 08-02 收口快照，不再当待办顺序。
 
 ## 本轮已完成
 

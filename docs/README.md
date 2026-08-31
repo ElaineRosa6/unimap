@@ -9,15 +9,19 @@
 - [云服务器部署评估（2026-07-20）](CLOUD_DEPLOYMENT_ASSESSMENT_2026-07-20.md)：容量建议、CGO/SQLite 发布阻断、生产配置、端口、持久化与正式云机验收清单。
 - [阿里云真实环境验收（2026-07-23）](CLOUD_ACCEPTANCE_2026-07-23.md)：真实容器、headless、截图、巡检、调度、备份和持久化证据及剩余边界。
 - [云服务器常态化运行准备与协作清单（2026-07-23）](CLOUD_STEADY_STATE_PLAN_2026-07-23.md)：当前能力边界、CDP-only 架构、用户配合事项、凭据安全交付、分阶段实施与完全通过标准。
-- [当前剩余工作清单（2026-07-23）](REMAINING_WORK_2026-07-23.md)：七引擎 API/UI/Bridge/CDP 事实矩阵、浏览器层 SSRF 前置条件、优先级和完成标准。
-- [实施收口状态（2026-08-02）](FINAL_IMPLEMENTATION_STATUS_2026-08-02.md)：七引擎、云端发布、飞书通知、交付证据与唯一外部输入的最新结论。
-- [后续实施清单（2026-08-02）](NEXT_STEPS_20260802.md)：当前基线、Quake 主链路、会话闭环、云端验收、发布顺序和协作输入。
+- [后续推进计划书（2026-08-20）](AGENT_CONTINUATION_PLAN_2026-08-20.md)：当前冻结基线、硬约束、A–D 波执行队列和状态板；后续 agent 从这里接着做。
+- [当前剩余工作清单（2026-07-23）](REMAINING_WORK_2026-07-23.md)：七引擎 API/UI/Bridge/CDP 事实矩阵、完成标准和暂缓项。
+- [实施收口状态（2026-08-02）](FINAL_IMPLEMENTATION_STATUS_2026-08-02.md)：七引擎、云端发布、飞书通知、交付证据与唯一外部输入的日期化结论。
+- [后续实施清单（2026-08-02）](NEXT_STEPS_20260802.md)：08-02 收口快照，执行顺序已移交 08-20 计划书。
 - [安全发布收口修复计划（2026-07-29）](SECURITY_RELEASE_CLOSURE_REPAIR_PLAN_2026-07-29.md)：SSRF、截图格式、Bridge 取消、Quake 双链路、依赖漏洞和文档同步的分阶段修复与发布门槛。
 - [安全发布收口修复记录（2026-07-29）](SECURITY_RELEASE_CLOSURE_REPAIR_REPORT_2026-07-29.md)：本轮代码修复、专项验证、Quake 分链路证据和仍待外部验收的发布边界。
 - [云端安全收口验收 Runbook（2026-07-29）](CLOUD_SECURITY_ACCEPTANCE_RUNBOOK_2026-07-29.md)：DNS 动态变化、页面篡改证据截图、图片通知和重启恢复的受控 live E2E 契约。
 - [后续实施计划（2026-07-23）](IMPLEMENTATION_PLAN_2026-07-23.md)：按旬排期的开发阶段、当前本地提交状态、依赖、验收门槛和用户配合事项。
 - [截图扩展运维](OPS_SCREENSHOT_EXTENSION.md)：本机配对、Bridge token 与回调协议。
 - [2026-08-02 七引擎浏览器验收](BROWSER_SEVEN_ENGINE_VERIFICATION_2026-08-02.md)：Bridge、CDP 凭据交接、闭环通知与外部限制。
+- [2026-08-21 插件/CDP 现状与下一步](PLUGIN_CDP_STATUS_2026-08-21.md)：插件 0.4.18 活页核验、CDP 定级分列、改 ExtractJS 后待复跑的顺序。
+- [2026-08-21 FOFA/Shodan/ZoomEye 原生 CDP 定级](CDP_VERIFICATION_FOFA_SHODAN_2026-08-21.md)：FOFA 通过；Shodan 校准后通过；ZoomEye 当时站点/SSO 受限。
+- [2026-08-21 中国电信上海分公司 ICP 与资产测绘结果](ICP_ASSET_SURVEY_SHANGHAI_TELECOM_2026-08-21.md)：云端查询条件、22 条 ICP 明细、31 条合并资产、归组判断与后续建议。
 - [无图形浏览器运行时决策](DECISIONS/0006-headless-browser-runtime.md)：云主机 CDP、统一路由、会话限制和容器边界。
 - [架构](ARCHITECTURE.md) 与 [业务架构](BUSINESS_AND_LOGIC_ARCHITECTURE.md)。
 - [UQL 指南](UQL_GUIDE.md) 与 [搜索引擎语法快照](SEARCH_ENGINE_SYNTAX.md)。

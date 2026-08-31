@@ -1,6 +1,6 @@
 # UniMap — 多引擎资产查询与网页巡检工具
 
-> 最后按当前工作区核对：2026-08-17。主开发分支为 `develop`，当前阿里云试运行机跟踪 `master` `71371f1`。Go 版本以 `go.mod` 的 1.26.5 为准。
+> 最后按当前工作区核对：2026-08-21。发布与试运行跟踪 `master`（云端 `71371f1`，仓库文档提交 `fdb3292`）。`origin/develop` 停在 `71be507`，落后 master，不是当前基线。Go 版本以 `go.mod` 的 1.26.5 为准。后续执行顺序见 `docs/AGENT_CONTINUATION_PLAN_2026-08-20.md`。插件/CDP 分列见 `docs/PLUGIN_CDP_STATUS_2026-08-21.md`。
 
 ## 项目现状
 
@@ -9,7 +9,10 @@ UniMap 提供 Web 和 CLI 入口，覆盖资产查询、浏览器采集、网页
 
 稳定 Web UI 当前使用 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap。七引擎
 Bridge 真实结构化采集均非空；DayDayMap 原生 CDP 通过，Censys challenge 识别与 Bridge
-fallback 通过，FOFA、ZoomEye、Shodan 原生 CDP 仍待非空定级。
+fallback 通过。FOFA/Shodan 原生 CDP 于 2026-08-21 通过；ZoomEye 同日站点/SSO 受限。
+当天傍晚 Extension 0.4.18 活页选择器已校准（DayDayMap 复验 10 条）；改完的 ExtractJS
+尚未再用 CDP CollectAndCapture 复跑。2026-08-25 本机 smtp-relay 已用与云端相同的 SMTP
+配置发出测试信，用户确认收件；发件/收件只改 `smtp-relay/.env`。
 
 普通公网网页的云端 CDP headless 截图已经通过。Quake、Hunter 已完成真实 CDP 登录、
 结构化采集和结果页截图；Quake L1 Network 已于 2026-07-29 按当前接口重新实测通过。
@@ -131,6 +134,8 @@ go build ./...
 
 ## 当前待办
 
+后续 agent 从 [2026-08-20 推进计划书](docs/AGENT_CONTINUATION_PLAN_2026-08-20.md) 的状态板接着做，不要重开已完成的日更闭环。
+
 ### P0：工作区与发布基线
 
 - 本地代码与文档基线已审查并提交；**已完成**
@@ -138,7 +143,7 @@ go build ./...
 - 根目录 Chrome 测速入口已迁移到带显式 build tag 的工具目录；**已完成**
 - 修正文档中的过期云端状态；**已完成**
 - 重新执行全量 race、vet、build、Extension 和前端检查；**已完成**
-- 推送 `develop` 当前领先远端的本地提交；**已完成（2026-08-04）**
+- 推送 `develop` 当时领先远端的本地提交；**已完成（2026-08-04）**。2026-08-20 起发布基线是 `master`；`develop` 落后，快进与否由用户决定
 
 ### P1：网页巡检收尾
 
@@ -152,9 +157,9 @@ go build ./...
 
 ### P1：浏览器与引擎验收
 
-- Quake、Hunter 真实 CDP 查询、采集、截图、入库、通知和重启恢复；
-- FOFA、ZoomEye、Shodan 的原生 CDP 非空定级；
-- Cookie/Profile 登录探针、失败熔断、告警和恢复；
+- Quake、Hunter 真实 CDP 查询、采集、截图；**已完成（2026-07-29）**。云端试运行当前关闭截图，日更走 API。
+- FOFA、ZoomEye、Shodan 的原生 CDP 非空定级；**FOFA/Shodan 08-21 通过，ZoomEye 受限。** ExtractJS 傍晚又改过，CDP 复跑与插件改后活抽见 [PLUGIN_CDP_STATUS_2026-08-21.md](docs/PLUGIN_CDP_STATUS_2026-08-21.md)
+- Cookie/Profile 登录探针、失败熔断、告警和恢复；框架已接线，真实验收见计划书 C2
 - Censys challenge 页面策略允许时复验原生 CDP；现有自动 Bridge fallback 已通过。
 
 ### P2/P3：产品与生产化
@@ -188,7 +193,9 @@ go build ./...
 | 架构 | `docs/ARCHITECTURE.md` |
 | Bridge | `docs/OPS_SCREENSHOT_EXTENSION.md` |
 | 当前待办 | `docs/REMAINING_WORK_2026-07-23.md` |
-| 实施计划 | `docs/IMPLEMENTATION_PLAN_2026-07-23.md` |
+| 后续执行计划 | `docs/AGENT_CONTINUATION_PLAN_2026-08-20.md` |
+| 插件/CDP 现状 | `docs/PLUGIN_CDP_STATUS_2026-08-21.md` |
+| 实施计划（历史排期） | `docs/IMPLEMENTATION_PLAN_2026-07-23.md` |
 | 云端验收 | `docs/CLOUD_ACCEPTANCE_2026-07-23.md` |
 | 云端常态化 | `docs/CLOUD_STEADY_STATE_PLAN_2026-07-23.md` |
 | 历史知识 | `memory/MEMORY.md`、`docs/archive/` |

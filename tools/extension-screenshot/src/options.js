@@ -49,3 +49,15 @@ clearBtn.addEventListener("click", async () => {
 
 loadCurrentToken();
 loadCurrentAPIBaseURL();
+
+const inspectMode = new URLSearchParams(location.search).get("inspect");
+if (inspectMode === "1" || inspectMode === "2" || inspectMode === "ddm") {
+  import("./inspect_live.js").then((mod) => {
+    if (inspectMode === "ddm") return mod.runLiveInspectDayDayMap();
+    return inspectMode === "2" ? mod.runLiveInspectPass2() : mod.runLiveInspect();
+  }).catch((err) => {
+    const el = document.createElement("pre");
+    el.textContent = `inspect failed: ${String(err && err.stack || err)}`;
+    document.body.prepend(el);
+  });
+}

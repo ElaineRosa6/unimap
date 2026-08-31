@@ -8,7 +8,19 @@
 
 # Project Memory Index
 
-## 当前事实快照（2026-08-02）
+## 当前事实快照（2026-08-25）
+
+- 发布与试运行跟踪 `master`。云端 `/opt/unimap` 与 `unimap:local` 为 `71371f1`；仓库文档基线 `fdb3292`。`origin/develop` 停在 `71be507`，落后 24 个提交。
+- 2026-08-20 SSH：`unimap-unimap-1` 与 `unimap-smtp-relay` healthy；8448 仅 loopback；截图关闭 → screenshot degraded 为预期。9 个启用任务 08-17 后至 08-20 15:00 共 52 success / 0 failed。
+- 后续执行入口：[docs/AGENT_CONTINUATION_PLAN_2026-08-20.md](../docs/AGENT_CONTINUATION_PLAN_2026-08-20.md)。能力矩阵：[docs/REMAINING_WORK_2026-07-23.md](../docs/REMAINING_WORK_2026-07-23.md)。
+- GUI 入口 `cmd/unimap-gui` 仍在（`gui` build tag），不要按 08-02 过期记忆当作已删除。
+- 自动证据截图仍默认关闭。FOFA/Shodan 原生 CDP 08-21 通过；ZoomEye 当时受限。插件 0.4.18 活页校准（DayDayMap 复验 10 条）。ExtractJS 改后 CDP 未复跑。分列与下一步：[docs/PLUGIN_CDP_STATUS_2026-08-21.md](../docs/PLUGIN_CDP_STATUS_2026-08-21.md)。
+- 以下 08-20 条目仍有效：发布跟踪 `master`；云端 `71371f1`、截图关闭、日更 FOFA/Hunter/DayDayMap/ICP。
+- 2026-08-25：云端 DayDayMap 已换成核验通过的新 key（后缀 `46e868`）。live 此前仍是耗尽的 `26b816`。
+- 2026-08-25：本机 smtp-relay 已用与云端相同的 SMTP 配置发出测试信，用户确认收件箱收到（标记 `local-smtp-verify-105439`）。发件/收件在 gitignore 的 `smtp-relay/.env`（`SMTP_USER` / `MAIL_TO`），本机监听 `127.0.0.1:8099`；`configs/config.yaml` 的 `email_agent` 指向该地址且 `allow_private_ip=true`。本机调度任务已清空。不要把 SMTP 口令、relay token 写入文档。
+
+以下 08-02/08-06 条目是历史知识，不覆盖上述当前事实。
+
 - [工作与提交记录文档 2026-08-04](project_worklog_doc_2026-08-04.md) — docs/WORK_LOG_2026-07-15_to_2026-08-04.md 及同名 Word 版已生成（纯黑白样式），均未提交。
 - [urlive.py MD5 FIPS 兼容性修复 2026-08-04](project_urlive_md5_fips_2026-08-04.md) — 全目录审查：MD5 指纹加 usedforsecurity=False（含旧版回退）；unimap 其余 P0 核实为误报/已修复，详见记忆文件。
 - [工作日志入库与推送 2026-08-05](project_worklog_push_2026-08-05.md) — WORK_LOG 入库（d6cce6d）+ develop 推送同步
@@ -19,27 +31,26 @@
 
 - [七引擎、云端发布与飞书闭环 2026-08-02](project_seven_engine_cloud_feishu_closeout_2026-08-02.md) — 当前七引擎、CDP/fallback、云端发布、通知与外部 fixture 状态。
 - 当前稳定 Web UI 已接入 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap；七引擎 Bridge 真实结构化采集均非空。
-- Quake/Hunter/DayDayMap 原生 CDP 已通过；Censys challenge 被结构化识别且自动 Bridge fallback 通过；FOFA/ZoomEye/Shodan 原生 CDP 待非空校准。
+- Quake/Hunter/DayDayMap 原生 CDP 已通过；Censys challenge 被结构化识别且自动 Bridge fallback 通过；FOFA/Shodan 原生 CDP 2026-08-21 通过；ZoomEye 同日受限。当天插件活页不能替代 CDP 复跑。
 - Censys、DayDayMap 的服务端/CLI API、Web-only adapter、L1/L3、Bridge、设置页、截图、调度和 SQLite 单历史闭环均已接通。
 - 云端最终 CGO/SQLite 镜像已通过健康、重启、旧镜像回滚与重新发布；飞书应用通知两次真实发送 HTTP 200，配置回滚与重应用通过。
 - 自动“发现变化 → 证据截图 → 图片通知”尚未启用。调用前 URL 校验不能覆盖浏览器跨主机重定向
   和 DNS rebinding，浏览器层 SSRF 防护已实现（2026-07-29），自动证据截图需云端验收后启用。
-- 本地 22 个提交已于 2026-08-04 推送到 `origin/develop`，与远端同步。
+- 本地 22 个提交已于 2026-08-04 推送到 `origin/develop`（当时事实）；2026-08-20 起发布基线是 `master`。
 - 云端安全验收 fixture 已构建（`tools/acceptance-fixture/`）：DNS rebinding 控制 API、
   可变页面、私网 sink、Cloudflare DNS 翻转、Caddy HTTPS、Docker Compose。
   静态 fixture 已进入 staging；取得受控域名、DNS 编辑参数和控制/目标 URL 后运行 `live_dns_e2e` 与 `live_tamper_e2e`。
 - 七引擎（FOFA/Hunter/ZoomEye/Quake/Shodan/Censys/DayDayMap）均已有 L1 Network 解析器
   和 L3 DOM ExtractJS（2026-08-01），单元测试全部通过。Censys/DayDayMap 新增 L1 解析器、
   DOM 选择器、搜索 URL 构造、Extension 登录 Cookie 检测和设置页配置。
-- GUI 入口 (cmd/unimap-gui) 已于 2026-08-01 删除，Fyne 依赖已清除；项目入口精简为
-  unimap-web（主服务）+ unimap-cli（Agent 友好脚本工具）。
+- GUI 入口 `cmd/unimap-gui` 仍保留（`gui` build tag + Fyne）；默认入口为 unimap-web 与 unimap-cli。
 - CLI Agent 友好化已完成（2026-08-01）：JSON 信封、语义退出码、分页、全子命令 --format json、
   quota/config show 子命令、--fields 列选择、12 个 UNIMAP_* 环境变量、help --json 自描述。
   详见 docs/CLI_AGENT_GUIDE.md。
 
 > 本索引后续的日期条目是历史知识，不覆盖上述当前事实。当前实施状态以
 > [`docs/REMAINING_WORK_2026-07-23.md`](../docs/REMAINING_WORK_2026-07-23.md) 和
-> [`docs/IMPLEMENTATION_PLAN_2026-07-23.md`](../docs/IMPLEMENTATION_PLAN_2026-07-23.md) 为准。
+> [`docs/AGENT_CONTINUATION_PLAN_2026-08-20.md`](../docs/AGENT_CONTINUATION_PLAN_2026-08-20.md) 为准。
 
 ## 项目知识（历史合并与专题记录）
 

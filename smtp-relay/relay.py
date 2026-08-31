@@ -52,7 +52,34 @@ def _env(name, default=None):
     return val if val else default
 
 
+def load_env_file(path=None, environ=None):
+    """Load KEY=VALUE pairs from smtp-relay/.env into environ if the key is unset.
+
+    Docker already injects env_file; this lets `python relay.py` on a desktop
+    pick up the same SMTP_USER (sender) and MAIL_TO (recipients) file.
+    Existing environment variables win so Compose/runtime values are not overwritten.
+    """
+    environ = os.environ if environ is None else environ
+    if path is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = fh.read()
+    except OSError:
+        return
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key = key.strip()
+        val = val.strip().strip('"').strip("'")
+        if key and val and key not in environ:
+            environ[key] = val
+
+
 def load_config():
+    load_env_file()
     cfg = {
         "smtp_host": _env("SMTP_HOST", "smtp.qq.com"),
         "smtp_port": int(_env("SMTP_PORT", "465")),

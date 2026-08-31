@@ -27,6 +27,17 @@ UniMap 定时任务 ──webhook POST──▶ smtp-relay:8099/webhook ──SM
 端口只绑宿主机 `127.0.0.1:8099`（loopback），不暴露公网；UniMap 容器经 compose
 网络用 `http://smtp-relay:8099/webhook` 访问。
 
+本机不跑 Docker 时：复制 `.env.example` 为 `.env`，填 `SMTP_USER`（发件箱）和 `MAIL_TO`（收件箱，多个用逗号），然后：
+
+```bash
+python smtp-relay/relay.py
+curl -s http://127.0.0.1:8099/health     # {"status":"ok"}
+```
+
+UniMap 本机进程把 `email_agent` 指到 `http://127.0.0.1:8099/webhook`，并设 `allow_private_ip=true`。若 `.env` 里有 `RELAY_TOKEN`，渠道 `headers` 需带 `X-Relay-Token`。改发件箱/收件箱后重启 `relay.py`。
+
+**2026-08-25 本机验收**：`.env` 的 SMTP 账号与云端一致；`POST /webhook` 测试信 webhook 200，用户确认收件箱收到（标记 `local-smtp-verify-105439`）。当时本机 UniMap `:8448` 未运行。云端日更继续用 compose 里的 `unimap-smtp-relay` 容器。
+
 ## 启动
 
 ```bash

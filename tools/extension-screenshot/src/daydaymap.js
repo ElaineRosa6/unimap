@@ -8,23 +8,35 @@ export async function prepareDayDayMapSearch(tabId, query, chromeApi = chrome) {
   if (initialURL.pathname.includes("/searchResult") && initialURL.searchParams.get("keyword")) {
     return initialURL.toString();
   }
+  if (initialURL.pathname.includes("/searchResult")) {
+    await chromeApi.tabs.update(tabId, { url: "https://www.daydaymap.com/home" });
+    const homeDeadline = Date.now() + 10000;
+    while (Date.now() < homeDeadline) {
+      const tab = await chromeApi.tabs.get(tabId);
+      const href = tab?.url || "";
+      if (href.includes("/home") || /daydaymap\.com\/?$/.test(href)) break;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
   const result = await chromeApi.scripting.executeScript({
     target: { tabId },
     func: (nativeQuery) => {
-      const inputs = Array.from(document.querySelectorAll("input"));
+      const inputs = Array.from(document.querySelectorAll("input, textarea"));
       const input = inputs.find((element) => {
         const placeholder = (element.getAttribute("placeholder") || "").toLowerCase();
-        return placeholder.includes("search") || placeholder.includes("检索") || placeholder.includes("关键词");
-      }) || inputs.find((element) => element.type === "text");
+        return placeholder.includes("search") || placeholder.includes("检索") || placeholder.includes("关键词") || placeholder.includes("语法");
+      }) || inputs.find((element) => element.type === "text" || element.tagName === "TEXTAREA");
       if (!input) return { ok: false, reason: "search_input_missing" };
 
-      const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+      input.focus();
+      const proto = input.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
       if (descriptor?.set) descriptor.set.call(input, nativeQuery);
       else input.value = nativeQuery;
-      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: nativeQuery }));
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertFromPaste", data: nativeQuery }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
 
-      return { ok: true };
+      return { ok: true, value: input.value };
     },
     args: [query]
   });

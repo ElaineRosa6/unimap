@@ -1,0 +1,8 @@
+{
+  "name": "unimap-extension-screenshot-tests",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "linkedom": "^0.18.12"
+  }
+}

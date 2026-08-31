@@ -396,7 +396,10 @@ func (c *WeComChannel) Send(ctx context.Context, n TaskNotification) error {
 	}
 	switch c.msgType {
 	case WeComMsgTypeText:
-		return c.sendText(ctx, n)
+		if err := c.sendText(ctx, n); err != nil {
+			return err
+		}
+		return c.sendAttachedFiles(ctx, n)
 	case WeComMsgTypeImage:
 		return c.sendImage(ctx, n)
 	case WeComMsgTypeFile:
@@ -404,9 +407,15 @@ func (c *WeComChannel) Send(ctx context.Context, n TaskNotification) error {
 	case WeComMsgTypeMarkdownV2:
 		// markdown_v2 renders pipe tables, lists and code blocks that classic
 		// markdown does not (doc §4.3), so the compact query table stays a table.
-		return c.sendMarkdown(ctx, n, WeComMsgTypeMarkdownV2)
+		if err := c.sendMarkdown(ctx, n, WeComMsgTypeMarkdownV2); err != nil {
+			return err
+		}
+		return c.sendAttachedFiles(ctx, n)
 	default:
-		return c.sendMarkdown(ctx, n, WeComMsgTypeMarkdown)
+		if err := c.sendMarkdown(ctx, n, WeComMsgTypeMarkdown); err != nil {
+			return err
+		}
+		return c.sendAttachedFiles(ctx, n)
 	}
 }
 
@@ -453,14 +462,22 @@ func (c *WeComChannel) sendImage(ctx context.Context, n TaskNotification) error 
 	return c.postWeCom(ctx, body)
 }
 
-// sendFile uploads the first suitable screenshot to the media endpoint and
-// sends it as a file message (doc §4.6 + §5), which allows sizes up to 20MB —
-// beyond the 2MB image-message cap. Falls back to markdown when nothing is
-// attached.
+// sendFile sends the markdown body first, then the first attached file (doc
+// §4.6 + §5, up to 20MB). With no attachment it is markdown-only, so a single
+// wecom channel covers both text and Excel/screenshot delivery.
 func (c *WeComChannel) sendFile(ctx context.Context, n TaskNotification) error {
+	if err := c.sendMarkdown(ctx, n, WeComMsgTypeMarkdown); err != nil {
+		return err
+	}
+	return c.sendAttachedFiles(ctx, n)
+}
+
+// sendAttachedFiles uploads and sends the first deliverable path as a file
+// message. It is a no-op when nothing is attached.
+func (c *WeComChannel) sendAttachedFiles(ctx context.Context, n TaskNotification) error {
 	filePath := firstSuitablePath(n.ImagePaths, wecomFileMaxBytes, nil)
 	if filePath == "" {
-		return c.sendMarkdown(ctx, n, WeComMsgTypeMarkdown)
+		return nil
 	}
 	mediaID, err := c.uploadMedia(ctx, filePath)
 	if err != nil {
