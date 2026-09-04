@@ -1,6 +1,6 @@
 # UniMap 运维 Runbook
 
-> 最后按代码核对：2026-08-25。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
+> 最后按代码核对：2026-09-04。当前发布基线为 `master/e31e03d`，Go 版本为 `1.26.6`。所有业务 API 使用 `/api/v1/...`；旧 `/api/...` 路径已移除。
 
 ## 0. 先确认服务与认证
 
@@ -79,8 +79,8 @@ go test -tags headless_e2e -run 'TestRelaxed_|TestStrict_MD5Change|TestNormalDyn
 
 1. 先确认登录状态：`GET /api/v1/cookies/login-status`。
 2. 使用 API 查询时发送表单字段 `query`、可选 `engines` 与 `page_size`；不要发送旧文档中的 JSON `limit/offset/timeout` 请求体。
-3. `page_size` 最大为 500。查询状态使用 `GET /api/v1/query/status?query_id=...`。
-4. 检查目标引擎 API Key、Cookie、额度和网络连通性。Web UI 展示七引擎；无 API 凭据时使用 Web-only adapter。七引擎 Bridge 已有真实非空证据，CDP 的逐引擎限制见 2026-08-02 验收记录。
+3. `page_size` 默认 50，最大为 3000；DayDayMap API 单页上限为 2500。查询状态使用 `GET /api/v1/query/status?query_id=...`。
+4. 检查目标引擎 API Key、Cookie、额度和网络连通性。Web UI 展示七引擎；无 API 凭据时使用 Web-only adapter。七引擎 Bridge 已有真实非空证据，CDP 的逐引擎限制见 [CURRENT_STATUS_2026-09-04.md](CURRENT_STATUS_2026-09-04.md)。
 
 ## 3. Chrome/CDP 或截图失败
 

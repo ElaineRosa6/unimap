@@ -1,8 +1,8 @@
 # UniMap 后续推进计划书（2026-08-20）
 
 > 对象：后续会话里的 agent。目标是按冻结基线继续推进，而不是重做已完成工作。
-> 核对：2026-08-25（Asia/Shanghai）。仓库文档调查 + 阿里云 SSH 机内核查（08-20）；08-21 本机插件活页与 CDP 分列见 [PLUGIN_CDP_STATUS_2026-08-21.md](PLUGIN_CDP_STATUS_2026-08-21.md)；08-25 本机邮件通道与云端 SMTP 配置一致并经收件确认。
-> 权威关系：执行顺序以本文为准；能力矩阵与完成标准以 [REMAINING_WORK_2026-07-23.md](REMAINING_WORK_2026-07-23.md) 为准；API/安全以代码、`docs/API.md`、`docs/RUNBOOK.md` 为准。
+> 本文是 2026-08-20 至 2026-08-25 的历史推进快照；当前发布基线为 `master/e31e03d`，Go 版本为 `1.26.6`，当前状态见 [CURRENT_STATUS_2026-09-04.md](CURRENT_STATUS_2026-09-04.md)。
+> 历史关系：本文只保留当期执行顺序；当前状态以 [CURRENT_STATUS_2026-09-04.md](CURRENT_STATUS_2026-09-04.md) 为准，能力矩阵与完成标准以 [REMAINING_WORK_2026-07-23.md](REMAINING_WORK_2026-07-23.md) 为准；API/安全以代码、`docs/API.md`、`docs/RUNBOOK.md` 为准。
 > 历史计划：[NEXT_STEPS_20260802.md](NEXT_STEPS_20260802.md)、[IMPLEMENTATION_PLAN_2026-07-23.md](IMPLEMENTATION_PLAN_2026-07-23.md) 只表达当时事实，不再当执行队列。
 
 ## 0. 新会话怎么开始

@@ -4,7 +4,7 @@
 
 ## 前置条件
 
-- Go 1.26.5。
+- Go 1.26.6。
 - 在本仓库内创建实现和测试。
 - 阅读 [PLUGIN_ARCHITECTURE.md](PLUGIN_ARCHITECTURE.md) 与 `internal/plugin/example_engine_plugin.go`。
 

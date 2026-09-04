@@ -4,7 +4,7 @@
 
 ## 0. 前置条件
 
-- Go 1.26.5（以 `go.mod` 为准）
+- Go 1.26.6（以 `go.mod` 为准）
 - 可访问各引擎 API
 - Windows 建议使用 PowerShell；Linux/macOS 使用 Bash
 

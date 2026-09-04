@@ -4,6 +4,13 @@
 
 ---
 
+## [2026-09-04] 当前发布基线与文档同步
+
+- 当前发布基线为 master/e31e03d；本地、origin/master 与 GitHub master 已核对一致。
+- 最新 master 提交的 ci、bridge-smoke 和 Docker Build & Push 均成功。
+- README、API、架构、使用、Runbook、开发指南和引擎/CDP 状态入口已统一到 Go 1.26.6 与当前日期化状态页。
+- 历史计划和验收记录继续保留原始日期事实，并在入口处标明历史快照属性。
+
 ## [2026-08-25] 企微单通道可带附件；清空本地测试任务
 
 - WeCom `markdown` / `markdown_v2` / `text` 在正文之后若有 Excel/截图则再发 `file`；`file` 类型先发明文再传文件。无附件时仍只发 markdown。这样 `dijia_01` 单独就能覆盖原来 `dijia_01`+`dijia_01_file` 的分工，两个通道不要再绑在同一任务上。

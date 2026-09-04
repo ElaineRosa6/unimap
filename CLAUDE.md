@@ -1,6 +1,6 @@
 # UniMap — 多引擎资产查询与网页巡检工具
 
-> 最后按当前工作区核对：2026-08-21。发布与试运行跟踪 `master`（云端 `71371f1`，仓库文档提交 `fdb3292`）。`origin/develop` 停在 `71be507`，落后 master，不是当前基线。Go 版本以 `go.mod` 的 1.26.5 为准。后续执行顺序见 `docs/AGENT_CONTINUATION_PLAN_2026-08-20.md`。插件/CDP 分列见 `docs/PLUGIN_CDP_STATUS_2026-08-21.md`。
+> 最后按当前工作区核对：2026-09-04。当前发布基线为 `master`；本地、`origin/master` 与 GitHub `master` 均为 `e31e03d`。`origin/develop` 停在 `71be507`，落后 master 32 个提交，不是当前基线。Go 版本以 `go.mod` 的 `1.26.6` 为准。当前状态见 [当前项目状态](docs/CURRENT_STATUS_2026-09-04.md)。
 
 ## 项目现状
 
@@ -22,7 +22,7 @@ Quake 真实 Extension 调度闭环和云端飞书通知已通过；受控页面
 
 | 类别 | 当前实现 |
 |---|---|
-| 语言 | Go 1.26.5 |
+| 语言 | Go 1.26.6 |
 | Web | `net/http`、`gorilla/websocket`、`go-resty` |
 | CLI | Go 标准库 `flag`，不是 Cobra |
 | 浏览器 | chromedp + Chrome Extension Bridge |
@@ -133,6 +133,7 @@ go build ./...
 - 配置文件可以在受控本地环境保存秘密，但必须被 Git 忽略并限制文件权限。
 
 ## 当前待办
+当前发布基线、CI/CD 和浏览器证据的日期化快照见 docs/CURRENT_STATUS_2026-09-04.md。
 
 后续 agent 从 [2026-08-20 推进计划书](docs/AGENT_CONTINUATION_PLAN_2026-08-20.md) 的状态板接着做，不要重开已完成的日更闭环。
 

@@ -1,6 +1,6 @@
 # UniMap 业务与逻辑架构
 
-> 当前状态：2026-07-23，基于 `develop` 工作区代码核对。本文替代 2026-06-05 的旧分支快照；接口细节见 [API.md](API.md)。
+> 当前状态：2026-09-04，基于 `master/e31e03d` 工作区代码核对。日期化浏览器证据见 [CURRENT_STATUS_2026-09-04.md](CURRENT_STATUS_2026-09-04.md)；接口细节见 [API.md](API.md)。
 
 ## 业务能力
 
@@ -23,7 +23,7 @@
 
 ## 引擎范围
 
-Web UI 的稳定引擎为 FOFA、Hunter、ZoomEye、Quake、Shodan。Censys 和 DayDayMap 当前只完成服务端/CLI API 适配与 API 实机验证；未接入稳定 UI，Bridge/CDP 结构化抓取和真实测试也未完成。仓库中的泛化选择器占位不能视为已支持。
+Web UI 的稳定引擎为 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap。七个引擎均有 API 或 Web-only adapter；Bridge 结构化采集已有真实非空证据，CDP 逐引擎结论按 CURRENT_STATUS_2026-09-04.md 的日期化矩阵维护。
 
 ## 核心逻辑
 
@@ -34,9 +34,9 @@ UQL → Parser → EngineOrchestrator → 多个 EngineAdapter
     → 标准化 UnifiedAsset → 归并/缓存 → Web、CLI、GUI、导出
 ```
 
-Web API 查询是 `POST /api/v1/query` 的表单协议；最大 `page_size` 为 500。浏览器采集是可选并行路径，不替代 API 适配器。
+Web API 查询是 `POST /api/v1/query` 的表单协议；默认 `page_size` 为 50，最大为 3000（DayDayMap API 单页上限为 2500）。浏览器采集是可选并行路径，不替代 API 适配器。
 
-五个稳定引擎过去的真实结构化采集结果来自 Bridge。CDP 目前仅能确认代码链路存在以及普通网页截图可用，尚不能确认测绘引擎结果页能稳定返回结构化资产。
+七个引擎的真实结构化采集结果以 Bridge 为共同基线；Quake、Hunter、DayDayMap 的 CDP 证据已通过，FOFA/Shodan 的最近一次 CDP 证据为 2026-08-21，ZoomEye 受当时站点/SSO 状态限制，Censys 走 challenge 识别与 Extension fallback。
 
 ### 截图与巡检
 

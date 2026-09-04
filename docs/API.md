@@ -1,6 +1,7 @@
 # UniMap HTTP API
 
-> 最后按代码核对：2026-07-24。路由的唯一事实来源是 `web/router.go`；handler 的请求/响应细节以对应 `web/*_handlers.go` 为准。
+> 最后按代码核对：2026-09-04。路由的唯一事实来源是 `web/router.go`；当前发布基线与日期化验收边界见 [CURRENT_STATUS_2026-09-04.md](CURRENT_STATUS_2026-09-04.md)。
+> 最新 `master/e31e03d` 的 CI、Bridge smoke 和 Docker 镜像发布均已通过；本页只维护 HTTP 契约，真实浏览器证据以日期化状态页为准。
 
 ## 约定
 

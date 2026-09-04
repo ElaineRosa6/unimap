@@ -1,6 +1,6 @@
 # UniMap 使用指南
 
-> 最后按代码核对：2026-07-13。Web、CLI 和 GUI 共用 `configs/config.yaml` 与配置管理器；配置保存不是“仅内存”。
+> 最后按代码核对：2026-09-04。Web、CLI 和 GUI 共用 `configs/config.yaml` 与配置管理器；当前发布基线为 `master/e31e03d`。
 
 ## 启动方式
 
@@ -20,7 +20,7 @@ GUI 需系统图形库：`go run -tags gui ./cmd/unimap-gui`。默认入口为 W
 
 ## 配置引擎
 
-复制 `configs/config.yaml.example` 为 `configs/config.yaml`，再配置所需引擎。稳定 Web UI 支持 FOFA、Hunter、ZoomEye、Quake、Shodan；CLI/服务端还可通过 API 适配器注册已配置的 Censys 与 DayDayMap。后两者尚未接入稳定 UI，也没有 Bridge/CDP 抓取通过记录。
+复制 `configs/config.yaml.example` 为 `configs/config.yaml`，再配置所需引擎。稳定 Web UI 支持 FOFA、Hunter、ZoomEye、Quake、Shodan、Censys、DayDayMap；缺少 API 凭据时使用 Web-only adapter，经 ScreenshotRouter 执行浏览器采集。
 
 GUI 的引擎配置对话框在保存时调用配置管理器的 `Save()`，会写入当前配置文件。配置文件和备份可能包含敏感值，应限制访问权限；不要在截图、日志、Issue 或聊天记录中粘贴真实凭证。
 
@@ -43,7 +43,7 @@ go run ./cmd/unimap-cli -q 'country="CN" && port="80"' -e fofa,hunter -l 100
 go run ./cmd/unimap-cli -q 'title="login"' -e fofa,hunter,quake -o result.xlsx
 ```
 
-Web API 使用 `POST /api/v1/query`，请求参数是表单字段 `query`、可选 `engines` 与 `page_size`（最大 500），不是旧版 JSON `limit/offset` 协议。详情见 [API.md](API.md)。
+Web API 使用 `POST /api/v1/query`，请求参数是表单字段 `query`、可选 `engines` 与 `page_size`（默认 50，最大 3000），不是旧版 JSON `limit/offset` 协议。详情见 [API.md](API.md)。
 
 ## 截图与巡检
 

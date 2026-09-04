@@ -1,6 +1,6 @@
 # UniMap 架构
 
-> 最后按代码核对：2026-08-17。Go 版本为 1.26.5；路由事实来源为 `web/router.go`。
+> 最后按代码核对：2026-09-04。当前发布基线为 `master/e31e03d`；Go 版本为 `1.26.6`；路由事实来源为 `web/router.go`。
 
 ## 分层
 
@@ -46,7 +46,7 @@ type EngineAdapter interface {
 - 截图、浏览器查询、调度截图与巡检共用 ScreenshotRouter；`cdp`、`extension`、`auto` 的配置模式和实际活动模式分离，仅在允许 fallback 时切换后端。
 - CDP 使用 Chrome/Chromium 新版 headless，不依赖图形会话。可执行文件按显式配置、`UNIMAP_CHROME_PATH`、平台探测顺序解析；显式路径错误会立即暴露。Windows readiness 使用无进程的 PE 静态验证，缺少 CDP provider 时不探测浏览器。浏览器 allocator 共享有界会话槽，固定 user-data-dir 时因 Chromium profile 锁自动串行。
 - Extension Bridge 的配对、任务和回调仅允许 loopback 请求，使用短期 token；可选 HMAC 签名和 nonce 防重放。
-- 七引擎的真实结构化采集 E2E 使用 Bridge。Quake、Hunter、DayDayMap 已有真实 CDP 非空结构化证据；Quake L1 Network 已按当前 endpoint/数组响应重新实测通过。FOFA、ZoomEye、Shodan 的 CDP 定级仍未执行；Censys CDP 被站点挑战阻断并已验证单任务 Extension fallback。
+- 七引擎的真实结构化采集 E2E 使用 Bridge。Quake、Hunter、DayDayMap 已有真实 CDP 非空结构化证据；FOFA 与 Shodan 于 2026-08-21 通过；ZoomEye 当时受站点/SSO 限制；Censys CDP 被挑战阻断并已验证单任务 Extension fallback。2026-08-21 后 ExtractJS 有调整，但截至 2026-09-04 尚无新的 CollectAndCapture CDP 复跑。
 - Bridge `get_browser_credentials` 只在目标引擎同源标签页读取 Cookie、localStorage 与 sessionStorage；Cookie 持久化到受保护配置，Web Storage 仅驻留内存并在 CDP 导航后注入、刷新。
 - CDP 业务入口统一通过 guarded browser session：提交前 URL/实时 DNS 校验、CDP Fetch 全资源逐跳拦截，以及在实际拨号时重新解析并固定公网 IP 的 loopback 出口代理。可选上游仅接受 literal-loopback SOCKS5，且只收到经复核的固定公网 IP；HTTP/外部上游代理和远程 Chrome 失败关闭。
 - Extension 搜索引擎任务要求回调 `final_url` 且不得离开批准主机；未提供受控出口证明时，Extension 任意 URL 与批量截图保持禁用。
