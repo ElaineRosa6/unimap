@@ -58,17 +58,21 @@ func (lm *loadMonitor) getLoadMetrics() (queueLength, activeWorkers int, avgDura
 	return queueLength, activeWorkers, time.Duration(avgNs)
 }
 
+// Pool is single-use: after a running pool is stopped, create a new Pool
+// for another run. Start and resizing are harmless no-ops after shutdown.
 type Pool struct {
 	tasks              chan Task
 	results            chan error
 	exitCh             chan struct{}
 	monitorStopCh      chan struct{}
+	submitMutex        sync.RWMutex // protects task sends against channel closure
 	wg                 sync.WaitGroup
 	minConcurrency     int32
 	maxConcurrency     int32
 	currentConcurrency int32
 	running            int32      // 0: stopped, 1: running
-	mutex              sync.Mutex // 只用于调整并发数时的保护
+	mutex              sync.Mutex // serializes lifecycle changes and worker creation
+	stopped            bool       // terminal state, protected by mutex
 	loadMonitor        *loadMonitor
 }
 
@@ -113,13 +117,15 @@ func NewDynamicPool(minConcurrency, maxConcurrency int) *Pool {
 }
 
 func (p *Pool) Start() {
-	if atomic.LoadInt32(&p.running) == 1 {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	if p.stopped || atomic.LoadInt32(&p.running) == 1 {
 		return
 	}
 
 	if atomic.CompareAndSwapInt32(&p.running, 0, 1) {
 		// 启动初始工作线程
-		for i := int32(0); i < p.minConcurrency; i++ {
+		for i := int32(0); i < atomic.LoadInt32(&p.currentConcurrency); i++ {
 			p.wg.Add(1)
 			go p.worker()
 		}
@@ -135,14 +141,21 @@ func (p *Pool) Stop() {
 }
 
 func (p *Pool) StopWithTimeout(timeout time.Duration) {
+	p.mutex.Lock()
 	if atomic.LoadInt32(&p.running) == 0 {
+		p.mutex.Unlock()
 		return
 	}
 
 	if atomic.CompareAndSwapInt32(&p.running, 1, 0) {
-		close(p.tasks)
-		close(p.exitCh)
+		p.stopped = true
+		// Wake blocked submitters before waiting for their send guards.
+		// Taking the write lock first would deadlock on a full task queue.
 		close(p.monitorStopCh)
+		p.submitMutex.Lock()
+		close(p.tasks)
+		p.submitMutex.Unlock()
+		close(p.exitCh)
 
 		done := make(chan struct{})
 		go func() {
@@ -152,6 +165,7 @@ func (p *Pool) StopWithTimeout(timeout time.Duration) {
 			close(p.results)
 			close(done)
 		}()
+		p.mutex.Unlock()
 
 		select {
 		case <-done:
@@ -159,16 +173,24 @@ func (p *Pool) StopWithTimeout(timeout time.Duration) {
 		case <-time.After(timeout):
 			// 超时，记录日志并继续
 		}
-
+		return
 	}
+	p.mutex.Unlock()
 }
 
 func (p *Pool) Submit(task Task) {
+	p.submitMutex.RLock()
+	defer p.submitMutex.RUnlock()
+
 	if atomic.LoadInt32(&p.running) == 0 {
 		return
 	}
 
-	p.tasks <- task
+	select {
+	case p.tasks <- task:
+	case <-p.monitorStopCh:
+		return
+	}
 
 	// 更新队列长度
 	p.loadMonitor.setQueueLength(len(p.tasks))
@@ -237,56 +259,36 @@ func (p *Pool) startLoadMonitoring() {
 
 // adjustConcurrency 根据负载动态调整工作线程数量
 func (p *Pool) adjustConcurrency() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
 	if atomic.LoadInt32(&p.running) == 0 {
 		return
 	}
 
 	queueLength, activeWorkers, _ := p.loadMonitor.getLoadMetrics()
 	currentConcurrency := atomic.LoadInt32(&p.currentConcurrency)
-
-	// 动态调整逻辑
 	if queueLength > int(currentConcurrency*2) && currentConcurrency < p.maxConcurrency {
-		p.mutex.Lock()
-		// 再次检查，避免竞态条件
-		currentConcurrency = atomic.LoadInt32(&p.currentConcurrency)
-		if queueLength > int(currentConcurrency*2) && currentConcurrency < p.maxConcurrency {
-			// 队列积压，增加工作线程
-			newConcurrency := currentConcurrency * 2
-			if newConcurrency > p.maxConcurrency {
-				newConcurrency = p.maxConcurrency
-			}
-
-			// 添加新的工作线程
-			for i := currentConcurrency; i < newConcurrency; i++ {
-				p.wg.Add(1)
-				go p.worker()
-			}
-
-			atomic.StoreInt32(&p.currentConcurrency, newConcurrency)
+		newConcurrency := currentConcurrency * 2
+		if newConcurrency > p.maxConcurrency {
+			newConcurrency = p.maxConcurrency
 		}
-		p.mutex.Unlock()
+		for i := currentConcurrency; i < newConcurrency; i++ {
+			p.wg.Add(1)
+			go p.worker()
+		}
+		atomic.StoreInt32(&p.currentConcurrency, newConcurrency)
 	} else if queueLength == 0 && activeWorkers < int(currentConcurrency/2) && currentConcurrency > p.minConcurrency {
-		p.mutex.Lock()
-		// 再次检查，避免竞态条件
-		currentConcurrency = atomic.LoadInt32(&p.currentConcurrency)
-		if queueLength == 0 && activeWorkers < int(currentConcurrency/2) && currentConcurrency > p.minConcurrency {
-			// 负载过低，减少工作线程
-			newConcurrency := currentConcurrency / 2
-			if newConcurrency < p.minConcurrency {
-				newConcurrency = p.minConcurrency
-			}
-
-			// 通知多余的 worker 退出
-			for i := newConcurrency; i < currentConcurrency; i++ {
-				select {
-				case p.exitCh <- struct{}{}:
-				default:
-				}
-			}
-
-			atomic.StoreInt32(&p.currentConcurrency, newConcurrency)
+		newConcurrency := currentConcurrency / 2
+		if newConcurrency < p.minConcurrency {
+			newConcurrency = p.minConcurrency
 		}
-		p.mutex.Unlock()
+		for i := newConcurrency; i < currentConcurrency; i++ {
+			select {
+			case p.exitCh <- struct{}{}:
+			default:
+			}
+		}
+		atomic.StoreInt32(&p.currentConcurrency, newConcurrency)
 	}
 }
 
@@ -306,6 +308,14 @@ func (p *Pool) SetConcurrency(concurrency int) {
 
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+	if p.stopped {
+		return
+	}
+	if atomic.LoadInt32(&p.running) == 0 {
+		// Before Start, configure the initial worker count without spawning.
+		atomic.StoreInt32(&p.currentConcurrency, int32(concurrency))
+		return
+	}
 
 	currentConcurrency := atomic.LoadInt32(&p.currentConcurrency)
 	diff := int32(concurrency) - currentConcurrency

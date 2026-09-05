@@ -16,13 +16,13 @@ import (
 type iterationConnector struct{ terminal error }
 
 func (c iterationConnector) Connect(context.Context) (driver.Conn, error) {
-	return iterationConn{c.terminal}, nil
+	return iterationConn(c), nil
 }
-func (c iterationConnector) Driver() driver.Driver { return iterationDriver{c.terminal} }
+func (c iterationConnector) Driver() driver.Driver { return iterationDriver(c) }
 
 type iterationDriver struct{ terminal error }
 
-func (d iterationDriver) Open(string) (driver.Conn, error) { return iterationConn{d.terminal}, nil }
+func (d iterationDriver) Open(string) (driver.Conn, error) { return iterationConn(d), nil }
 
 type iterationConn struct{ terminal error }
 

@@ -161,3 +161,32 @@ Web currentConfig 使用 Manager.GetConfig，而后者每次 YAML marshal/unmars
 把 results 的关闭移到 wg.Wait 完成之后，由最后的生产者退出保证关闭时机。worker 发布错误同时监听停止信号，退出期间不依赖调用方排空错误队列。已缓冲的错误仍可读取；停止过程中尾部错误允许不再投递。StopWithTimeout 到期仍返回，但 Results 只有在生产者全部退出后才关闭，调用方不应把停止超时当成任务强制终止。
 
 晚到错误、满错误队列退出、上轮低延迟退出回归重复 10 次通过。此处仍不宣称 Submit 与 Stop、并发扩缩容及已停止池重启的所有组合已通过审计。
+
+
+### 第十六轮：满队列 Submit 与 Stop 并发崩溃
+
+固定与动态工作池分别用 testing/synctest 确认：一个任务占住 worker，填满队列，再让一个 Submit 阻塞；StopWithTimeout 关闭 tasks 时，原实现使该 Submit panic（send on closed channel）。测试仅在夹具 goroutine 捕获 panic 以记录失败，生产代码不使用 recover 掩盖错误。
+
+增加提交读写锁：Submit 在读锁内检查运行状态，并同时等待入队或停止信号；Stop 先广播停止，唤醒满队列提交者，再取写锁关闭任务通道，避免先取写锁造成死锁。停止期间的提交仍为 best-effort、没有返回值；此修改未将 Stop 定义为排空所有队列任务，也未承诺强制终止正在执行的 Task。
+
+两种构造器的阻塞提交回归重复 20 次；同时复验超时停止后的晚到错误、满错误队列和低延迟退出。Start/Stop 与扩缩容之间的生命周期审计仍待继续，不把该回归扩大为所有工作池并发组合已验证。
+
+
+### 第十七轮：工作池生命周期与扩缩容互斥
+
+基线再次复现：扩到 4 个 worker 后 Stop，再 SetConcurrency(1) 会向已关闭的 exitCh 发送并 panic。另一个 synctest 回归证实，Start 前 SetConcurrency(4) 已经偷偷启动 3 个 worker，能从内部队列执行任务。
+
+Start、Stop、自动与手动扩缩容共用生命周期锁，保证新增 worker 的 WaitGroup.Add 完成在关闭/等待之前，且退出信号关闭与缩容发送互斥。停止开始后标记终态，Start/SetConcurrency 不再复活已关闭的通道；当前 6 个生产构造点均为每次操作新建工作池，未发现复用已停止池的生产路径。Pool 注释明确单次使用，下一轮操作新建实例；未提供新的重启 API。Start 前 SetConcurrency 只配置初始并发数，由 Start 统一创建 worker；未启动时 Stop 仍保持原有 no-op 行为。
+
+回归包括停止后缩容、已停止池重复启动、停止超时但任务仍执行时的启动/扩容、启动前配置，以及 50 组同时 Start/Stop/Submit/扩缩容（半数从未启动状态开始）。定向套件重复 20 次，共 1000 组并发生命周期场景，连同此前提交与错误发布回归通过。重复 Stop 仍保持原有快速返回语义，等待实际 worker 完成使用 Wait/Results；未增加强制终止 Task 的承诺。
+
+
+### 第十八轮：推送后 CI 暴露测试与 lint 差异
+
+GitHub 连接恢复，已推送 5fbcfcb2e180deeb130e615056bb9d2d83eb5266，并以 ls-remote 核对 master 同 SHA。该提交不含第十六、十七轮尚未提交的工作池改动。
+
+远端 ci run 33985155270 最终 failure：Ubuntu 测试的 TestDockerProxyFallback 三个成功下载子用例在 TempDir 清理时因模块缓存只读而 permission denied；历史回归夹具的三处同结构字面量触发 gosimple/S1016。Ubuntu lint failure，macOS 两项后续任务为 cancelled；两平台构建、无界面浏览器、扩展脚本和漏洞扫描 success，Docker skipped。独立 bridge-smoke run 33985155280 success。远端原始状态和失败日志保存在 round18/ci.json、ci-failed.log；这不是全绿记录，也尚未验证 Docker 镜像构建。
+
+修复：历史夹具三个同结构转换使用显式类型转换；Go proxy 测试子进程 GOFLAGS=-modcacherw，仅让独立临时模块缓存可写，生产 Docker 的代理与校验策略不变。Windows 上 golangci-lint v1.64.8 复现 3 处 S1016，修改后完整 lint 通过；副本无 Git 元数据，因此该副本 lint 显式 GOFLAGS=-buildvcs=false，不关闭任何 lint 规则。定向历史/proxy 测试重复 5 次通过，并执行全量竞态测试。
+
+本机 WSL Ubuntu 当前无 Go，Windows 验证不代替 Linux 清理复验。上述改动还需提交后的远端运行证明 Linux/macOS、lint 与 Docker 门禁全部通过；持续保留未完成状态，未重跑同一失败提交来掩盖问题。

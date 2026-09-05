@@ -108,7 +108,9 @@ func TestDockerProxyFallback(t *testing.T) {
 			defer cancel()
 			cmd := exec.CommandContext(ctx, "go", "mod", "download", "-json", "fixture.invalid/fallback@v1.0.0")
 			cmd.Dir = dir
-			cmd.Env = append(os.Environ(), "GOPROXY="+localProxy, "GOSUMDB=off", "GOPRIVATE=", "GONOPROXY=", "GONOSUMDB=", "GOWORK=off", "GOFLAGS=", "GOTOOLCHAIN=local", "GO111MODULE=on", "GOMODCACHE="+filepath.Join(dir, "cache"), "GOPATH="+filepath.Join(dir, "gopath"))
+			// Keep this disposable cache writable so TempDir cleanup also works
+			// for unprivileged Unix runners; production module-cache policy is unchanged.
+			cmd.Env = append(os.Environ(), "GOPROXY="+localProxy, "GOSUMDB=off", "GOPRIVATE=", "GONOPROXY=", "GONOSUMDB=", "GOWORK=off", "GOFLAGS=-modcacherw", "GOTOOLCHAIN=local", "GO111MODULE=on", "GOMODCACHE="+filepath.Join(dir, "cache"), "GOPATH="+filepath.Join(dir, "gopath"))
 			// Checksum lookup is disabled only for this synthetic local module;
 			// production Docker retains the normal checksum database.
 			out, err := cmd.CombinedOutput()
