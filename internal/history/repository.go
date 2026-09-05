@@ -126,6 +126,9 @@ func (r *Repository) ListHistory(opType string, limit, offset int) ([]OperationH
 		}
 		items = append(items, h)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate operation_history: %w", err)
+	}
 	return items, total, nil
 }
 
@@ -163,6 +166,9 @@ func (r *Repository) GetResults(historyID int64) ([]OperationResult, error) {
 			return nil, fmt.Errorf("failed to scan operation_result: %w", err)
 		}
 		results = append(results, res)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate operation_results: %w", err)
 	}
 	return results, nil
 }

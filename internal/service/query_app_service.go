@@ -156,9 +156,14 @@ func (s *QueryAppService) executeQuery(ctx context.Context, query string, engine
 	})
 }
 
-// withoutDeadline returns a context that propagates cancellation from parent
-// but carries no deadline, so executeQuery applies its own QueryExecutionTimeout.
-// The browser-workflow deadline must never cap the parallel API query.
+// deadlineHiddenContext hides only the advertised deadline. Values, Done, Err,
+// and cancellation causes remain those of the parent, without a relay goroutine.
+type deadlineHiddenContext struct{ context.Context }
+
+func (deadlineHiddenContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+
+// withoutDeadline lets executeQuery install its own timeout while retaining
+// parent cancellation, including cancellation caused by the parent's deadline.
 func withoutDeadline(parent context.Context) context.Context {
 	if parent == nil {
 		return context.Background()
@@ -166,15 +171,7 @@ func withoutDeadline(parent context.Context) context.Context {
 	if _, ok := parent.Deadline(); !ok {
 		return parent
 	}
-	child, cancel := context.WithCancelCause(context.Background())
-	go func() {
-		select {
-		case <-parent.Done():
-			cancel(parent.Err())
-		case <-child.Done():
-		}
-	}()
-	return child
+	return deadlineHiddenContext{Context: parent}
 }
 
 // ExecuteQueryWithBrowserWorkflow runs the API query and Bridge collection in
@@ -197,9 +194,8 @@ func (s *QueryAppService) ExecuteQueryWithBrowserWorkflow(
 		opts.BrowserRouter, nil,
 	)
 
-	// The API query keeps its own QueryExecutionTimeout; the caller-supplied
-	// deadline caps the browser workflow (60/150s), not the HTTP query. Otherwise
-	// a slow engine query is cancelled mid-flight instead of returning results.
+	// Install the API query timeout independently, but preserve caller
+	// cancellation. Hiding Deadline does not detach the parent's Done signal.
 	resp, queryErr := s.executeQuery(withoutDeadline(ctx), query, engines, pageSize)
 	var browserOutcome BrowserQueryOutcome
 	if browserCh != nil {

@@ -881,21 +881,44 @@ func (s *Scheduler) executeTaskWithRetry(task *ScheduledTask, handler TaskHandle
 		StartedAt: now.Format(time.RFC3339),
 	}
 
+	cancelled := func() ExecutionRecord {
+		record.Status = "failed"
+		record.Error = s.ctx.Err().Error()
+		record.FinishedAt = time.Now().Format(time.RFC3339)
+		record.DurationMs = time.Since(now).Milliseconds()
+		return record
+	}
 	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if s.ctx.Err() != nil {
+			return cancelled()
+		}
 		if attempt > 0 {
+			timer := time.NewTimer(time.Duration(attempt*2) * time.Second)
+			select {
+			case <-s.ctx.Done():
+				timer.Stop()
+				return cancelled()
+			case <-timer.C:
+			}
+			if s.ctx.Err() != nil {
+				return cancelled()
+			}
 			record.RetryCount = attempt
 			metrics.IncSchedulerTaskRetry(taskType)
-			time.Sleep(time.Duration(attempt*2) * time.Second)
 		}
+		attemptStarted := time.Now()
 		result, err := s.runTaskHandler(handler, task, timeoutSec)
 		elapsed := time.Since(now)
 		record.FinishedAt = time.Now().Format(time.RFC3339)
 		record.DurationMs = elapsed.Milliseconds()
 
 		if err != nil {
-			if elapsed >= time.Duration(timeoutSec)*time.Second {
+			if s.ctx.Err() != nil {
+				return cancelled()
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
 				record.Status = "timeout"
-				record.Error = fmt.Sprintf("task timed out after %s", elapsed.Round(time.Millisecond))
+				record.Error = fmt.Sprintf("task timed out after %s", time.Since(attemptStarted).Round(time.Millisecond))
 			} else {
 				record.Status = "failed"
 				record.Error = err.Error()
@@ -903,6 +926,7 @@ func (s *Scheduler) executeTaskWithRetry(task *ScheduledTask, handler TaskHandle
 			continue
 		}
 		record.Status = "success"
+		record.Error = ""
 		record.Result = result
 		break
 	}
@@ -941,6 +965,11 @@ func (s *Scheduler) runTaskHandler(handler TaskHandler, task *ScheduledTask, tim
 		}()
 		result, err = handler.Execute(ctx, task.Payload)
 	}()
+	// A handler may return nil after its deadline; do not publish that late
+	// result as a successful attempt. Cancellation remains cooperative.
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 	return result, err
 }
 

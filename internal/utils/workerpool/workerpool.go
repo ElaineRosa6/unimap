@@ -62,6 +62,7 @@ type Pool struct {
 	tasks              chan Task
 	results            chan error
 	exitCh             chan struct{}
+	monitorStopCh      chan struct{}
 	wg                 sync.WaitGroup
 	minConcurrency     int32
 	maxConcurrency     int32
@@ -85,6 +86,7 @@ func NewPool(concurrency int) *Pool {
 		currentConcurrency: int32(concurrency),
 		running:            0,
 		loadMonitor:        newLoadMonitor(),
+		monitorStopCh:      make(chan struct{}),
 	}
 }
 
@@ -106,6 +108,7 @@ func NewDynamicPool(minConcurrency, maxConcurrency int) *Pool {
 		currentConcurrency: int32(minConcurrency),
 		running:            0,
 		loadMonitor:        newLoadMonitor(),
+		monitorStopCh:      make(chan struct{}),
 	}
 }
 
@@ -139,10 +142,14 @@ func (p *Pool) StopWithTimeout(timeout time.Duration) {
 	if atomic.CompareAndSwapInt32(&p.running, 1, 0) {
 		close(p.tasks)
 		close(p.exitCh)
+		close(p.monitorStopCh)
 
 		done := make(chan struct{})
 		go func() {
 			p.wg.Wait()
+			// Only the final producer exit may close results. A timed-out
+			// Stop can return while a task is still finishing.
+			close(p.results)
 			close(done)
 		}()
 
@@ -153,7 +160,6 @@ func (p *Pool) StopWithTimeout(timeout time.Duration) {
 			// 超时，记录日志并继续
 		}
 
-		close(p.results)
 	}
 }
 
@@ -190,7 +196,12 @@ func (p *Pool) worker() {
 			p.loadMonitor.recordTaskEnd(duration)
 
 			if err != nil {
-				p.results <- err
+				select {
+				case p.results <- err:
+				case <-p.monitorStopCh:
+					// Shutdown must not depend on a caller draining errors.
+					return
+				}
 			}
 		case <-p.exitCh:
 			return
@@ -208,16 +219,19 @@ func (p *Pool) startLoadMonitoring() {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	// 纯 ticker 阻塞，避免忙等待空转 CPU。
-	// 不读取 p.exitCh：该通道被 adjustConcurrency 用于精准终止超额 worker，
-	// 监控协程若读取会窃取信号导致 worker 泄漏。改为每个 tick 检查 running 标志，
-	// Stop 时 running→0，至多 5s 后退出（Stop 自带 30s 超时容忍）。
+	// Worker retirement and whole-pool shutdown need separate signals: the
+	// monitor must not consume a worker's retirement token, nor wait five
+	// seconds for a ticker before allowing Stop to return.
 	for {
-		<-ticker.C
-		if atomic.LoadInt32(&p.running) == 0 {
+		select {
+		case <-p.monitorStopCh:
 			return
+		case <-ticker.C:
+			if atomic.LoadInt32(&p.running) == 0 {
+				return
+			}
+			p.adjustConcurrency()
 		}
-		p.adjustConcurrency()
 	}
 }
 

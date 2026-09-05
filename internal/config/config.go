@@ -32,7 +32,7 @@ func (m *Manager) GetConfig() *Config {
 	if m.config == nil {
 		return nil
 	}
-	return copyConfig(m.config)
+	return m.config.Clone()
 }
 
 // SetConfig replaces the current config (thread-safe).
@@ -40,7 +40,7 @@ func (m *Manager) GetConfig() *Config {
 func (m *Manager) SetConfig(cfg *Config) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.config = cfg
+	m.config = cfg.Clone()
 }
 
 // applyDefaults 应用默认值
@@ -59,6 +59,8 @@ func (m *Manager) ApplyDefaults(config *Config) { m.applyDefaults(config) }
 
 // IsValid 检查配置是否有效
 func (m *Manager) IsValid() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.config != nil
 }
 
@@ -67,25 +69,26 @@ func (m *Manager) Validate(cfg *Config) error { return m.validate(cfg) }
 
 // GetEngineConfig 获取引擎配置
 func (m *Manager) GetEngineConfig(name string) (interface{}, error) {
-	if !m.IsValid() {
+	cfg := m.GetConfig()
+	if cfg == nil {
 		return nil, fmt.Errorf("config not loaded")
 	}
 
 	switch strings.ToLower(name) {
 	case "quake":
-		return &m.config.Engines.Quake, nil
+		return &cfg.Engines.Quake, nil
 	case "zoomeye":
-		return &m.config.Engines.Zoomeye, nil
+		return &cfg.Engines.Zoomeye, nil
 	case "hunter":
-		return &m.config.Engines.Hunter, nil
+		return &cfg.Engines.Hunter, nil
 	case "fofa":
-		return &m.config.Engines.Fofa, nil
+		return &cfg.Engines.Fofa, nil
 	case "shodan":
-		return &m.config.Engines.Shodan, nil
+		return &cfg.Engines.Shodan, nil
 	case "censys":
-		return &m.config.Engines.Censys, nil
+		return &cfg.Engines.Censys, nil
 	case "daydaymap":
-		return &m.config.Engines.Daydaymap, nil
+		return &cfg.Engines.Daydaymap, nil
 	default:
 		return nil, fmt.Errorf("unknown engine: %s", name)
 	}
@@ -152,7 +155,14 @@ func (m *Manager) SaveConfig(candidate *Config) error {
 
 // GetEngineCacheConfig 获取引擎级别的缓存配置
 func (m *Manager) GetEngineCacheConfig(engineName string) EngineCacheConfig {
-	if !m.IsValid() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.getEngineCacheConfigLocked(engineName)
+}
+
+// getEngineCacheConfigLocked requires the caller to hold m.mu.
+func (m *Manager) getEngineCacheConfigLocked(engineName string) EngineCacheConfig {
+	if m.config == nil {
 		return EngineCacheConfig{Enabled: true, TTL: 3600, MaxSize: 500}
 	}
 
@@ -167,10 +177,19 @@ func (m *Manager) GetEngineCacheConfig(engineName string) EngineCacheConfig {
 
 // GetAllEngineCacheConfigs 获取所有引擎的缓存配置
 func (m *Manager) GetAllEngineCacheConfigs() map[string]EngineCacheConfig {
-	if !m.IsValid() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.config == nil {
 		return make(map[string]EngineCacheConfig)
 	}
-	return m.config.Cache.Engines
+	if m.config.Cache.Engines == nil {
+		return nil
+	}
+	result := make(map[string]EngineCacheConfig, len(m.config.Cache.Engines))
+	for name, cfg := range m.config.Cache.Engines {
+		result[name] = cfg
+	}
+	return result
 }
 
 // IsCacheEnabledForEngine 检查指定引擎是否启用缓存
@@ -206,11 +225,13 @@ func normalizeProxyList(raw []string) []string {
 
 // GetCacheTTLForEngine 获取指定引擎的缓存 TTL（秒）
 func (m *Manager) GetCacheTTLForEngine(engineName string) int {
-	cfg := m.GetEngineCacheConfig(engineName)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cfg := m.getEngineCacheConfigLocked(engineName)
 	if cfg.TTL > 0 {
 		return cfg.TTL
 	}
-	if m.IsValid() {
+	if m.config != nil {
 		return m.config.System.CacheTTL
 	}
 	return 3600 // 默认1小时
@@ -218,11 +239,13 @@ func (m *Manager) GetCacheTTLForEngine(engineName string) int {
 
 // GetCacheMaxSizeForEngine 获取指定引擎的最大缓存条目数
 func (m *Manager) GetCacheMaxSizeForEngine(engineName string) int {
-	cfg := m.GetEngineCacheConfig(engineName)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cfg := m.getEngineCacheConfigLocked(engineName)
 	if cfg.MaxSize > 0 {
 		return cfg.MaxSize
 	}
-	if m.IsValid() {
+	if m.config != nil {
 		return m.config.System.CacheMaxSize
 	}
 	return 1000 // 默认1000条
@@ -230,7 +253,9 @@ func (m *Manager) GetCacheMaxSizeForEngine(engineName string) int {
 
 // GetCacheBackend 获取缓存后端类型
 func (m *Manager) GetCacheBackend() string {
-	if !m.IsValid() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.config == nil {
 		return "memory"
 	}
 	backend := strings.ToLower(strings.TrimSpace(m.config.Cache.Backend))
@@ -242,7 +267,9 @@ func (m *Manager) GetCacheBackend() string {
 
 // GetRedisAddr 获取Redis地址
 func (m *Manager) GetRedisAddr() string {
-	if !m.IsValid() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.config == nil {
 		return "127.0.0.1:6379"
 	}
 	return strings.TrimSpace(m.config.Cache.Redis.Addr)
@@ -250,7 +277,9 @@ func (m *Manager) GetRedisAddr() string {
 
 // GetRedisPassword 获取Redis密码
 func (m *Manager) GetRedisPassword() string {
-	if !m.IsValid() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.config == nil {
 		return ""
 	}
 	return m.config.Cache.Redis.Password
@@ -258,7 +287,9 @@ func (m *Manager) GetRedisPassword() string {
 
 // GetRedisDB 获取Redis数据库
 func (m *Manager) GetRedisDB() int {
-	if !m.IsValid() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.config == nil {
 		return 0
 	}
 	return m.config.Cache.Redis.DB
@@ -266,7 +297,9 @@ func (m *Manager) GetRedisDB() int {
 
 // GetRedisPrefix 获取Redis键前缀
 func (m *Manager) GetRedisPrefix() string {
-	if !m.IsValid() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.config == nil {
 		return "unimap:"
 	}
 	prefix := strings.TrimSpace(m.config.Cache.Redis.Prefix)
@@ -288,17 +321,4 @@ func HashPassword(password string) (string, error) {
 // CheckPassword compares a password against a bcrypt hash.
 func CheckPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
-}
-
-// copyConfig creates a deep copy of Config via YAML round-trip.
-func copyConfig(src *Config) *Config {
-	data, err := yaml.Marshal(src)
-	if err != nil {
-		return src
-	}
-	var dst Config
-	if err := yaml.Unmarshal(data, &dst); err != nil {
-		return src
-	}
-	return &dst
 }

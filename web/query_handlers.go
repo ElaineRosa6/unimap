@@ -232,6 +232,11 @@ func (s *Server) handleAPIQuery(w http.ResponseWriter, r *http.Request) {
 	var browserOutcome browserQueryOutcome
 	var err error
 	if browserEnabled {
+		// Match the synchronous workflow's default before choosing its budget.
+		// The legacy WebSocket collect default is intentionally unchanged.
+		if browserAction == "" {
+			browserAction = "collect_and_capture"
+		}
 		autoCaptureEnabled := false
 		if cfg := s.currentConfig(); cfg != nil {
 			autoCaptureEnabled = cfg.Screenshot.AutoCapture.Enabled && cfg.Screenshot.AutoCapture.CaptureSearchResults

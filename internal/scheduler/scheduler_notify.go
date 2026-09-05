@@ -234,9 +234,16 @@ func sendNotifyChannelWithRetry(ch notify.NotifyChannel, msg notify.TaskNotifica
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		lastErr = ch.Send(ctx, msg)
+		// Preserve the deadline even if a channel replaces the context error.
+		// Read it before cancel(), which would otherwise mark every attempt
+		// canceled. An acknowledged (nil-error) send remains successful.
+		sendContextErr := ctx.Err()
 		cancel()
 		if lastErr == nil {
 			return nil
+		}
+		if sendContextErr != nil {
+			lastErr = errors.Join(lastErr, sendContextErr)
 		}
 		// A timeout means the message may already have been delivered but the
 		// response was slow; retrying would duplicate it. Only clearly transient

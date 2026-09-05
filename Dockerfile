@@ -11,8 +11,10 @@ WORKDIR /app
 # 复制go.mod和go.sum文件
 COPY go.mod go.sum ./
 
-# 国内网络使用 goproxy.cn，境外 fallback 官方源
-ENV GOPROXY=https://goproxy.cn,direct
+# 可用 --build-arg GOPROXY=... 按构建网络覆盖。
+# 竖线允许在 5xx/网络错误时回退；逗号仅在 404/410 时回退。
+ARG GOPROXY="https://proxy.golang.org|https://goproxy.cn|direct"
+ENV GOPROXY=${GOPROXY}
 
 # 下载依赖
 RUN go mod download

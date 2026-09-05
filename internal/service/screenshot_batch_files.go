@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,7 +26,15 @@ type FileInfo struct {
 
 // ListBatches 列出所有截图批次
 func (s *ScreenshotAppService) ListBatches() ([]BatchInfo, error) {
-	entries, err := os.ReadDir(s.baseDir)
+	root, err := os.OpenRoot(s.baseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []BatchInfo{}, nil
+		}
+		return nil, fmt.Errorf("failed to open screenshot directory: %w", err)
+	}
+	defer root.Close()
+	entries, err := fs.ReadDir(root.FS(), ".")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []BatchInfo{}, nil
@@ -38,16 +47,16 @@ func (s *ScreenshotAppService) ListBatches() ([]BatchInfo, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		info, infoErr := entry.Info()
+		info, infoErr := root.Lstat(entry.Name())
 		if infoErr != nil {
 			continue
 		}
 
 		fileCount := 0
-		children, childErr := os.ReadDir(filepath.Join(s.baseDir, entry.Name()))
+		children, childErr := fs.ReadDir(root.FS(), entry.Name())
 		if childErr == nil {
 			for _, child := range children {
-				if !child.IsDir() {
+				if child.Type().IsRegular() {
 					fileCount++
 				}
 			}
@@ -74,23 +83,27 @@ func (s *ScreenshotAppService) ListBatchFiles(batch string, previewURLBuilder fu
 		return nil, fmt.Errorf("invalid batch name")
 	}
 
-	batchDir := filepath.Join(s.baseDir, batchToken)
-	absBatchDir, err := filepath.Abs(batchDir)
+	root, err := os.OpenRoot(s.baseDir)
 	if err != nil {
-		return nil, fmt.Errorf("invalid batch path")
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("batch not found: %w", err)
+		}
+		return nil, fmt.Errorf("failed to open screenshot directory: %w", err)
 	}
-
-	// 安全检查：确保目录在 baseDir 内
-	absBaseDir, err := filepath.Abs(s.baseDir)
+	defer root.Close()
+	batchRoot, err := root.OpenRoot(batchToken)
 	if err != nil {
-		return nil, fmt.Errorf("invalid base directory")
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("batch not found: %w", err)
+		}
+		return nil, fmt.Errorf("failed to open batch directory: %w", err)
 	}
-	rel, err := filepath.Rel(absBaseDir, absBatchDir)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
-		return nil, fmt.Errorf("invalid batch path")
+	defer batchRoot.Close()
+	absBatchDir, err := filepath.Abs(filepath.Join(s.baseDir, batchToken))
+	if err != nil {
+		return nil, fmt.Errorf("invalid batch path: %w", err)
 	}
-
-	entries, err := os.ReadDir(absBatchDir)
+	entries, err := fs.ReadDir(batchRoot.FS(), ".")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("batch not found")
@@ -100,11 +113,11 @@ func (s *ScreenshotAppService) ListBatchFiles(batch string, previewURLBuilder fu
 
 	files := make([]FileInfo, 0)
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if !entry.Type().IsRegular() {
 			continue
 		}
-		info, infoErr := entry.Info()
-		if infoErr != nil {
+		info, infoErr := batchRoot.Lstat(entry.Name())
+		if infoErr != nil || !info.Mode().IsRegular() {
 			continue
 		}
 
@@ -136,30 +149,27 @@ func (s *ScreenshotAppService) DeleteBatch(batch string) error {
 		return fmt.Errorf("invalid batch name")
 	}
 
-	batchDir := filepath.Join(s.baseDir, batchToken)
-	absBatchDir, err := filepath.Abs(batchDir)
+	root, err := os.OpenRoot(s.baseDir)
 	if err != nil {
-		return fmt.Errorf("invalid batch path")
-	}
-
-	// 安全检查
-	absBaseDir, err := filepath.Abs(s.baseDir)
-	if err != nil {
-		return fmt.Errorf("invalid base directory")
-	}
-	rel, err := filepath.Rel(absBaseDir, absBatchDir)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("invalid batch path")
-	}
-
-	if _, err := os.Stat(absBatchDir); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("batch not found")
+			return fmt.Errorf("batch not found: %w", err)
+		}
+		return fmt.Errorf("failed to open screenshot directory: %w", err)
+	}
+	defer root.Close()
+	info, err := root.Stat(batchToken)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("batch not found: %w", err)
 		}
 		return fmt.Errorf("failed to access batch: %w", err)
 	}
-
-	return os.RemoveAll(absBatchDir)
+	if !info.IsDir() {
+		return fmt.Errorf("batch name does not point to a directory")
+	}
+	// Resolve and remove relative to the same directory handle, not a checked
+	// absolute path that could be redirected by a concurrent symlink change.
+	return root.RemoveAll(batchToken)
 }
 
 // DeleteFile 删除指定批次中的文件
@@ -174,48 +184,33 @@ func (s *ScreenshotAppService) DeleteFile(batch, fileName string) error {
 		return fmt.Errorf("invalid file name")
 	}
 
-	batchDir := filepath.Join(s.baseDir, batchToken)
-	absBatchDir, err := filepath.Abs(batchDir)
-	if err != nil {
-		return fmt.Errorf("invalid batch path")
-	}
-
-	// 安全检查
-	absBaseDir, err := filepath.Abs(s.baseDir)
-	if err != nil {
-		return fmt.Errorf("invalid base directory")
-	}
-	rel, err := filepath.Rel(absBaseDir, absBatchDir)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("invalid batch path")
-	}
-
-	// Remove old hash entries
-
-	targetFile := filepath.Join(absBatchDir, fileToken)
-	absTarget, err := filepath.Abs(targetFile)
-	if err != nil {
-		return fmt.Errorf("invalid file path")
-	}
-
-	// 安全检查：确保文件在批次目录内
-	relFile, err := filepath.Rel(absBatchDir, absTarget)
-	if err != nil || relFile == "." || strings.HasPrefix(relFile, "..") {
-		return fmt.Errorf("invalid file path")
-	}
-
-	info, err := os.Stat(absTarget)
+	root, err := os.OpenRoot(s.baseDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("file not found")
+			return fmt.Errorf("file not found: %w", err)
+		}
+		return fmt.Errorf("failed to open screenshot directory: %w", err)
+	}
+	defer root.Close()
+	batchRoot, err := root.OpenRoot(batchToken)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("file not found: %w", err)
+		}
+		return fmt.Errorf("failed to open batch directory: %w", err)
+	}
+	defer batchRoot.Close()
+	info, err := batchRoot.Stat(fileToken)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("file not found: %w", err)
 		}
 		return fmt.Errorf("failed to access file: %w", err)
 	}
 	if info.IsDir() {
 		return fmt.Errorf("file name points to a directory")
 	}
-
-	return os.Remove(absTarget)
+	return batchRoot.Remove(fileToken)
 }
 
 // normalizePathToken 规范化路径令牌，防止路径穿越

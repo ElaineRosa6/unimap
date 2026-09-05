@@ -314,14 +314,26 @@ func (s *Server) executeWSQueryAsync(ctx context.Context, connID, queryID, query
 		select {
 		case r := <-apiCh:
 			apiDone = true
+			apiCh = nil
 			resp = r.resp
 			queryErr = r.err
-		case outcome := <-browserQueryCh:
+		case outcome, ok := <-browserQueryCh:
 			browserDone = true
-			browserOutcome = outcome
+			// A closed result channel is always readable. Disable this select
+			// arm after its single result so zero values cannot overwrite it.
+			browserQueryCh = nil
+			if ok {
+				browserOutcome = outcome
+			}
+			browserTimerCh = nil
+			if browserTimer != nil {
+				browserTimer.Stop()
+			}
 		case <-browserTimerCh:
 			// 浏览器查询超时，放弃等待，用已有结果返回
 			browserDone = true
+			browserQueryCh = nil
+			browserTimerCh = nil
 			logger.Warnf("browser query timed out after %s for WS query %s, returning API results only", browserWaitTimeout, queryID)
 		}
 	}
