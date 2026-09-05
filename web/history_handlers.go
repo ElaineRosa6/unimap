@@ -56,12 +56,6 @@ func (s *Server) handleHistorySave(w http.ResponseWriter, r *http.Request) {
 		DurationMS:    req.DurationMS,
 	}
 
-	id, err := s.historyRepo.CreateHistory(h)
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
-		return
-	}
-
 	maxResults := 1000
 	if cfg := s.currentConfig(); cfg != nil && cfg.History.MaxResults > 0 {
 		maxResults = cfg.History.MaxResults
@@ -69,16 +63,17 @@ func (s *Server) handleHistorySave(w http.ResponseWriter, r *http.Request) {
 	if len(req.Results) > maxResults {
 		req.Results = req.Results[:maxResults]
 	}
-	if len(req.Results) > 0 {
-		results := make([]history.OperationResult, len(req.Results))
-		for i, r := range req.Results {
-			data, _ := json.Marshal(r)
-			results[i] = history.OperationResult{Data: string(data)}
-		}
-		if err := s.historyRepo.CreateResults(id, results); err != nil {
-			writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
-			return
-		}
+	results := make([]history.OperationResult, len(req.Results))
+	for i, r := range req.Results {
+		data, _ := json.Marshal(r)
+		results[i] = history.OperationResult{Data: string(data)}
+	}
+	// Publish the parent and all retained results together. A failed result
+	// insert must not leave a successful-looking, empty history on retry.
+	id, err := s.historyRepo.CreateHistoryWithResults(h, results)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "db_error", "database operation failed", nil)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{

@@ -308,3 +308,9 @@ go test -race ./...
 ```
 
 随后至少验证 `/health`、受影响的 `/api/v1/...` 路由，以及相关 UI 流程。修改路由、认证或 Bridge 协议时，同步更新 [API 文档](API.md) 和本 Runbook。
+
+## 历史库数据完整性（2026-09-06）
+
+历史库连接现在通过 DSN 为每个池连接开启外键。删除单条历史、按类型清空及全部清空会同时删除对应结果明细；新结果必须引用已有历史。既有孤儿明细不自动清理，先备份并按 [检查记录](PROJECT_REVIEW_2026-09-06.md) 的只读 SQL 核查。删除行不保证数据库文件立即缩小。
+
+镜像发布需等待 test、lint、security、headless-browser、extension-scripts；覆盖率附件按操作系统分别命名。本地 YAML 检查不替代 GitHub Actions 实跑。

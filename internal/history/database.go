@@ -14,7 +14,9 @@ type Database struct {
 
 // NewDatabase opens or creates the SQLite database at dbPath.
 func NewDatabase(dbPath string) (*Database, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	// Configure foreign keys in the DSN so every pooled connection enforces
+	// result ownership and ON DELETE CASCADE, including after a reopen.
+	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open history database: %w", err)
 	}
